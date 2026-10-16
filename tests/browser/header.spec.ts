@@ -25,7 +25,7 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);
     for (const width of [1440, 1200, 1100, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
-      if (width <= 1200) await expect(page.locator('header .header-menu-toggle')).toBeVisible();
+      if (width <= 1200 || current === 'Listening room') await expect(page.locator('header .header-menu-toggle')).toBeVisible();
       else await expect(page.locator('header .header-menu-toggle')).toBeHidden();
       await openNavigation(page); await expect(navigation).toBeVisible(); await noOverflow(page);
     }

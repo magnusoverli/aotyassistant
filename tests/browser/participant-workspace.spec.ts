@@ -21,6 +21,66 @@ async function workspace(browser: Browser, host: Page, origin: string, demo: Dem
   return { page, context, post, request, async close() { await context.close(); } };
 }
 
+test('participant typography, surfaces and desktop alignment match the host pages, with uploads beside search', async ({ browser, page: host, isolatedApp }) => {
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 3); const page = r.page;
+  const typography = (node: Element) => {
+    const style = getComputedStyle(node);
+    return { family: style.fontFamily, weight: style.fontWeight, size: style.fontSize, spacing: style.letterSpacing };
+  };
+  const surface = (node: Element) => {
+    const style = getComputedStyle(node);
+    return { background: style.backgroundColor, border: style.borderColor, radius: style.borderRadius, padding: style.padding };
+  };
+  try {
+    await host.setViewportSize({ width: 1440, height: 1000 }); await host.goto('/host/settings');
+    await expect(host.getByRole('button', { name: 'Find Music Assistant', exact: true })).toBeEnabled();
+    const titleStyle = await host.getByRole('heading', { level: 1 }).evaluate(typography);
+    const sectionStyle = await host.locator('.settings-connection h2').evaluate(typography);
+    await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
+    expect(await page.locator('.participant-hero h1').evaluate(typography)).toEqual(titleStyle);
+    expect(await page.locator('.catalogue-panel h2').evaluate(typography)).toEqual(sectionStyle);
+    expect(await page.locator('.preparation-list h2').evaluate(typography)).toEqual(sectionStyle);
+    await host.goto('/host'); await expect(host.locator('.host-people')).toBeVisible();
+    expect(await page.locator('.catalogue-panel').evaluate(surface)).toEqual(await host.locator('.host-people').evaluate(surface));
+    expect((await page.locator('main').boundingBox())!.x).toBe((await host.locator('main').boundingBox())!.x);
+    expect((await page.locator('.catalogue-panel').boundingBox())!.x).toBe((await host.locator('.host-workspace').boundingBox())!.x);
+    await expect(page.locator('.catalogue-panel').getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
+    await expect(page.getByRole('region', { name: 'Upload a private track', exact: true })).toHaveCount(1);
+    await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Workspace');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.locator('.catalogue-results .count-tag')).toHaveText('3 tracks');
+    expect((await page.getByRole('button', { name: 'Upload a track', exact: true }).boundingBox())!.y).toBeLessThan((await page.locator('.catalogue-results').boundingBox())!.y);
+    await page.screenshot({ path: 'test-results/participant-coherent-desktop.png', fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeInViewport();
+    await page.screenshot({ path: 'test-results/participant-coherent-mobile.png', fullPage: true });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.locator('.catalogue-results .track-row').first().getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(page.locator('.playback-card')).toBeVisible();
+    expect((await page.locator('.playback-card').boundingBox())!.width).toBe((await page.locator('.catalogue-panel').boundingBox())!.width);
+    await page.screenshot({ path: 'test-results/participant-coherent-playing-desktop.png', fullPage: true });
+  } finally { await r.close(); }
+});
+
+test('search exposes pending/results feedback and restores keyboard focus without starting playback', async ({ browser, page: host, isolatedApp }) => {
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 1); const page = r.page;
+  let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/api/participant/search**', async route => { await pending; await route.continue(); });
+  try {
+    await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Summer');
+    const search = page.locator('#catalogue-search-submit'); await search.focus(); await search.press('Enter');
+    await expect(search).toHaveText('Searching…'); await expect(search).toBeDisabled();
+    await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'true');
+    release();
+    await expect(search).toHaveText('Search'); await expect(search).toBeFocused();
+    await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('.catalogue-results .count-tag')).toHaveText('1 track');
+    await expect(page.getByRole('status').filter({ hasText: /^1 track found\.$/ })).toHaveCount(1);
+    await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Summer');
+    expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeFalsy();
+  } finally { release(); await r.close(); }
+});
+
 test('search and one private list share desktop/phone layouts, including long metadata and short viewports', async ({ browser, page: host, isolatedApp }) => {
   const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo);
   const page = r.page;

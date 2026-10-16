@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Release 0.2.5 with coherent host, settings, participant, listening-room, and joining interfaces, plus clearer navigation and search feedback.
+- Align Join room with the host and participant pages’ sans-serif headings, dark background, form styling, and responsive card spacing.
+- Redesign the listening room with a spacious stage, quieter joining QR, compact navigation, and a clear current/next turn-order strip without duplicate status panels.
+- Match My seat to the host pages’ typography and surfaces, bring uploads beside search, and improve list readability, touch targets, search feedback, and speaker-setup access.
+- Simplify Connections & settings, remove the saved-settings reload button, and tuck address editing and technical guidance behind expandable controls.
+- Put the current turn first on the host desk, remove its page heading, slim the volume panel with a settings link, and move invitations to a right sidebar.
 - Remove the “updating” text from all volume controls.
 - Accept Home Assistant-verified LAN addresses alongside saved guest URLs, with a helpful setup page for other guest-address mismatches.
 - Publish public amd64/aarch64 0.2.2 images and enable download-based Home Assistant installation.

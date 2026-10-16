@@ -142,7 +142,9 @@ export class PreparationPanel {
     form.onsubmit = event => { event.preventDefault(); if (snapshot && !confirm('Replace this browser’s list access? Save its recovery key first; its saved tracks will not be deleted.')) return; const key = input.value; this.recoveryDraft = ''; void library.recover(key, Boolean(snapshot)); };
     recovery.append(form); tools.append(recovery); body.append(tools); list.append(body); panel.append(list);
     if (results) panel.append(results);
-    const uploads = el('section', undefined, 'panel music-upload'); uploads.setAttribute('aria-label', 'Upload a private track'); uploads.append(uploadPanel); panel.append(uploads);
+    const uploads = el('section', undefined, `music-upload${search ? '' : ' panel'}`); uploads.setAttribute('aria-label', 'Upload a private track'); uploads.append(uploadPanel);
+    // Keep the alternate music source beside search, not below an arbitrarily long result list.
+    if (search) search.append(uploads); else panel.append(uploads);
     return panel;
   }
   private row(entry: PreparedEntryView) {

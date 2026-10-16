@@ -161,7 +161,7 @@ test('host saves and reloads the file callback address without changing the musi
   await host.getByText('Advanced address override', { exact: true }).click();
   const field = host.getByLabel('Application address reachable from Music Assistant', { exact: true }); await expect(field).toBeEnabled();
   await field.fill(isolatedApp.origin); await host.getByRole('button', { name: 'Save file playback address' }).click();
-  await expect(host.getByText('File playback address saved. No audio was started.', { exact: true })).toBeVisible();
+  await expect(host.getByText('File playback address saved.', { exact: true })).toBeVisible();
   await host.reload(); await expect(field).toHaveValue(isolatedApp.origin);
   const settings = await (await host.request.get('/api/host/integrations')).json(); expect(settings.mediaOrigin).toBe(isolatedApp.origin); expect(settings.tokenConfigured).toBe(true);
   expect(JSON.stringify(settings)).not.toContain('fixture-token');

@@ -23,8 +23,59 @@ async function setup(browser: Browser, host: Page, origin: string, nickname = 'A
   };
 }
 async function fits(tv: Page) {
-  expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1 && document.documentElement.scrollHeight <= innerHeight + 2)).toBe(true);
+  const size = await tv.evaluate(() => ({ width: innerWidth, height: innerHeight, contentWidth: document.documentElement.scrollWidth, contentHeight: document.documentElement.scrollHeight }));
+  expect(size.contentWidth).toBeLessThanOrEqual(size.width + 1);
+  expect(size.contentHeight).toBeLessThanOrEqual(size.height + 2);
 }
+
+test('the airy display has one turn heading, a quiet invitation and a truthful, responsive current-first order strip', async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
+  const listeners = [];
+  const list = tv.getByRole('list', { name: 'Participant rotation' });
+  try {
+    await expect(tv.locator('.room-turn')).toHaveText('Alex’s turn');
+    await expect(tv.locator('.room-topline, .room-next, .room-meter, .reveal-label')).toHaveCount(0);
+    await expect(tv.getByText('Scan the QR code to join.', { exact: true })).toHaveCount(0);
+    await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Current turn');
+    await expect(tv.locator('.turn-person.is-next')).toHaveCount(0);
+    expect((await tv.locator('.turn-person').boundingBox())!.width).toBeLessThan(240);
+    await expect(tv.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
+    await expect(tv.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
+    expect(await tv.locator('.room-invitation').evaluate(node => getComputedStyle(node).borderTopWidth)).toBe('0px');
+    for (const nickname of ['Sam', 'Jordan', 'Riley', 'A longer listener name for the TV', 'Taylor', 'Morgan', 'Casey', 'Robin']) {
+      const context = await browser.newContext(); listeners.push(context);
+      const joined = await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname } }); expect(joined.ok()).toBe(true);
+    }
+    await expect(list.getByRole('listitem')).toHaveCount(6);
+    await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
+    await expect(list.locator('.seat-number, .seat-state')).toHaveCount(0);
+    await f.play(); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Playing');
+    await expect(tv.getByText('Track details stay private until the reveal.', { exact: true })).toHaveCount(0);
+    await list.focus(); await list.evaluate(node => { (window as any).orderList = node; (window as any).currentPerson = node.firstElementChild; });
+    await f.reveal(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
+    await expect(list).toBeFocused();
+    expect(await list.evaluate(node => (window as any).orderList === node && (window as any).currentPerson === node.firstElementChild)).toBe(true);
+    await f.control('pause'); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Paused');
+    await f.screen.setOffline(true); await expect(tv.getByRole('heading', { name: 'Playback unavailable.' })).toBeVisible();
+    await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Current turn');
+    await f.screen.setOffline(false); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Paused');
+    await f.control('resume');
+    await list.evaluate(node => (node as HTMLElement).blur());
+    for (const [width, height] of [[1366, 768], [1920, 1080], [1280, 720], [390, 844], [320, 700]]) {
+      await tv.setViewportSize({ width: width!, height: height! });
+      await expect(tv.locator('.turn-person.is-current strong')).toHaveText('Alex');
+      await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
+      expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      await tv.screenshot({ path: `test-results/display-airy-${width}x${height}.png`, fullPage: true });
+      if (width! > 700) await fits(tv);
+    }
+    await f.control('stop'); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Current turn');
+    await f.finish(); await expect(tv.locator('.room-turn')).toHaveText('Sam’s turn');
+    await expect(tv.locator('.turn-person.is-current strong')).toHaveText('Sam');
+    await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Jordan');
+    expect(await list.locator('strong').evaluateAll(nodes => nodes.map(node => node.textContent))).toEqual(['Sam', 'Jordan']);
+  } finally { await f.close(); for (const context of listeners) await context.close(); }
+});
 
 test('the public room is clean while idle/stopped and preserves the exact animation timelines through reveal and telemetry', async ({ browser, page: host, isolatedApp }) => {
   const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
@@ -40,16 +91,16 @@ test('the public room is clean while idle/stopped and preserves the exact animat
     await expect(tv.locator('.room-record .vinyl-owner')).toHaveText('Alex');
     expect(recordLabels).toContain(await tv.locator('.room-record .vinyl-caption').textContent());
     await expect(tv.locator('.track-times')).toBeEmpty(); expect(images).toEqual([]);
-    await expect.poll(() => tv.locator('.now-playing').evaluate(node => node.getAnimations({ subtree: true }).filter(a => a.playState === 'running' && a.startTime !== null).length)).toBe(7);
+    await expect.poll(() => tv.locator('.now-playing').evaluate(node => node.getAnimations({ subtree: true }).filter(a => a.playState === 'running' && a.startTime !== null).length)).toBe(2);
     const motion = await tv.locator('.now-playing').evaluateHandle(node => ({
-      glow: node.querySelector('.room-glow'), meter: node.querySelector('.room-meter'), record: node.querySelector('.room-record'), sticker: node.querySelector('.room-record > .vinyl-label'),
+      glow: node.querySelector('.room-glow'), record: node.querySelector('.room-record'), sticker: node.querySelector('.room-record > .vinyl-label'),
       animations: node.getAnimations({ subtree: true }), starts: node.getAnimations({ subtree: true }).map(a => a.startTime),
     }));
     const coverBounds = await tv.locator('.room-visual').boundingBox();
     await fits(tv); await tv.screenshot({ path: 'test-results/public-room-playing-hidden.png' });
     await f.reveal(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
     await expect.poll(() => tv.getByAltText('Current album artwork').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
-    expect(await tv.evaluate(saved => saved.glow === document.querySelector('.room-glow') && saved.meter === document.querySelector('.room-meter') &&
+    expect(await tv.evaluate(saved => saved.glow === document.querySelector('.room-glow') &&
       saved.record === document.querySelector('.room-record') && saved.sticker === document.querySelector('.room-record > .vinyl-label') &&
       saved.animations.every((animation, i) => document.getAnimations().includes(animation) && animation.startTime === saved.starts[i]), motion)).toBe(true);
     expect(await tv.locator('.room-visual').boundingBox()).toEqual(coverBounds);
@@ -59,6 +110,7 @@ test('the public room is clean while idle/stopped and preserves the exact animat
     await fits(tv); await tv.screenshot({ path: 'test-results/public-room-playing-revealed.png' });
     await f.control('pause'); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     await expect.poll(() => tv.locator('.now-playing').evaluate(node => node.getAnimations({ subtree: true }).every(a => a.playState === 'paused'))).toBe(true);
+    await motion.evaluate(async saved => { await Promise.all(saved.animations.map(animation => animation.ready)); });
     const times = await motion.evaluate(saved => saved.animations.map(a => a.currentTime));
     await tv.screenshot({ path: 'test-results/public-room-paused.png' });
     expect(await motion.evaluate(saved => saved.animations.map(a => a.currentTime))).toEqual(times);
@@ -99,6 +151,8 @@ test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and na
     await expect(tv.getByRole('heading', { name: track.title, exact: true })).toBeVisible();
     await fits(tv); await tv.setViewportSize({ width: 1920, height: 1080 }); await fits(tv);
     await tv.screenshot({ path: 'test-results/public-room-long-title-1920.png' });
+    const titleSize = await tv.locator('.track-info h1').evaluate(node => ({ scroll: node.scrollHeight, height: node.clientHeight, font: getComputedStyle(node).fontSize, line: getComputedStyle(node).lineHeight }));
+    expect(titleSize.scroll, JSON.stringify(titleSize)).toBeLessThanOrEqual(titleSize.height + 1);
     await tv.setViewportSize({ width: 390, height: 844 });
     expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await f.finish(); track.duration = .8; await f.play();

@@ -379,7 +379,7 @@ export class IntegrationManager implements CatalogueProvider {
         await reader.activeQueue(ma.destination.id);
       }
     } catch (error) {
-      failure = error instanceof AppError ? error.message : 'Could not load Music Assistant speakers. Reload saved settings or reconnect Music Assistant.';
+      failure = error instanceof AppError ? error.message : 'Could not load Music Assistant speakers. Refresh this page or reconnect Music Assistant.';
     }
     // Discovery is read-only and may be slow. Only publication shares the playback
     // lane; a stale inspection cannot overwrite a newly saved connection's status.
@@ -394,17 +394,17 @@ export class IntegrationManager implements CatalogueProvider {
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
     this.expected(revision); const ma = this.state.musicAssistant;
-    if (!ma) throw new AppError(409, 'Reload saved settings and select an available destination.');
+    if (!ma) throw new AppError(409, 'Refresh this page and select an available destination.');
     // Discovery must not delay Stop or other playback controls. Revalidate settings
     // and playback ownership only when committing the selected destination.
     const reader = this.reader(ma.url, ma.accessToken); const report = await reader.inspect();
     const player = report.players.find(p => p.id === id && p.available);
-    if (!player) throw new AppError(409, 'Reload saved settings and select an available destination.');
+    if (!player) throw new AppError(409, 'Refresh this page and select an available destination.');
     try { await reader.activeQueue(id); }
     catch (error) {
       return this.serial(async () => {
         this.expected(revision); this.report = report;
-        this.failure = error instanceof AppError ? error.message : 'The destination could not be loaded. Reload saved settings to try again.';
+        this.failure = error instanceof AppError ? error.message : 'The destination could not be loaded. Refresh this page to try again.';
         throw new AppError(502, this.failure);
       });
     }

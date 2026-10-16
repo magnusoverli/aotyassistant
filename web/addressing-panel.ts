@@ -11,6 +11,7 @@ export class AddressingPanel {
   private notice = '';
   private guestDraft = '';
   private mediaDraft = '';
+  private guestExpanded = false;
   private advanced = false;
   constructor(private changed: () => void, private saved: (revision: number) => void, private blocked: () => boolean) {}
   private async request(path = '', data?: unknown): Promise<AddressingView> {
@@ -61,48 +62,52 @@ export class AddressingPanel {
     if (!this.view) panel.append(el('p', 'Loading address settings…', 'muted'));
     else {
       const view = this.view;
-      panel.append(el('p', `Guest links: ${view.guestOrigin}`, 'saved-address'), el('p', `Address opened in this browser: ${location.origin}`, 'muted small'));
+      panel.append(el('p', `Guest links: ${view.guestOrigin}`, 'saved-address'));
       if (view.guestOrigin !== location.origin) {
         const link = el('a', 'Open saved guest address', 'button secondary'); link.href = `${view.guestOrigin}/host/settings`; panel.append(link);
       }
-      panel.append(el('p', 'Changing hostname or IP changes the browser’s cookie scope. Keep private-list recovery keys; people may need to rejoin or recover their list at the new address.', 'muted small'));
-      if (new URL(location.origin).hostname === 'localhost' || /^127\./.test(new URL(location.origin).hostname)) panel.append(el('p', 'Loopback addresses work only on this device. Open the app through a LAN hostname or address before sharing guest links.', 'muted small'));
-      if (!inIngress()) panel.append(this.button('Use the address I opened for guest links', async () => {
+      if (new URL(view.guestOrigin).hostname === 'localhost' || /^127\./.test(new URL(view.guestOrigin).hostname)) panel.append(el('p', 'Guest links work only on this device. Choose a LAN address to share the room.', 'muted small'));
+      const guestSettings = el('details', undefined, 'settings-address-help'); guestSettings.open = this.guestExpanded;
+      guestSettings.append(el('summary', 'Change guest address'));
+      guestSettings.ontoggle = () => { if (guestSettings.isConnected) this.guestExpanded = guestSettings.open; };
+      guestSettings.append(el('p', 'Changing address may require people to rejoin or recover their private lists. Keep recovery keys before switching.', 'muted small'));
+      if (!inIngress()) guestSettings.append(this.button('Use the address I opened for guest links', async () => {
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
-        this.notice = 'Guest address saved. Existing participant and private-list credentials were not changed.';
+        this.notice = 'Guest address saved.';
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
       }));
-      else panel.append(el('p', 'The Home Assistant address is for host controls. Guest links use the separate LAN address below.', 'muted small'));
+      else guestSettings.append(el('p', 'Guests need a LAN address, not the Home Assistant host interface.', 'muted small'));
       const guestForm = el('form', undefined, 'integration-form');
       const guest = this.field('Guest address', 'app-guest-origin', this.guestDraft, value => { this.guestDraft = value; }); guest.input.required = true;
       const save = el('button', 'Save guest address'); save.type = 'submit'; save.disabled = this.busy || this.blocked() || !navigator.onLine;
       guestForm.append(guest.group, save);
       guestForm.onsubmit = event => { event.preventDefault(); void this.run(async () => {
         this.accept(await this.request('/guest', { origin: this.guestDraft.trim(), revision: this.view!.revision }), true);
-        this.notice = 'Guest address saved. Use the new address for invitations and display links.';
+        this.notice = 'Guest address saved.';
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
-      }); }; panel.append(guestForm);
+      }); }; guestSettings.append(guestForm); panel.append(guestSettings);
       panel.append(el('p', `File access: ${view.effectiveMediaOrigin}${view.mediaOrigin ? ' (manual)' : ' (automatic)'}`, 'saved-address'));
-      const message = el('p', this.busy ? 'Checking addresses… No audio will be played.' : view.mediaCheck.message,
+      const status = this.busy ? 'Checking file access…' : !view.configured ? 'Connect Music Assistant to enable file access.'
+        : view.mediaCheck.status === 'verified' ? 'File access verified.' : view.mediaCheck.message;
+      const message = el('p', status,
         `small ${view.mediaCheck.status === 'failed' ? 'error' : view.mediaCheck.status === 'verified' ? 'success' : 'muted'}`);
       message.setAttribute('role', 'status'); panel.append(message);
-      if (view.mediaCheck.origin) panel.append(el('p', `Last tested: ${view.mediaCheck.origin}`, 'muted small'));
       if (view.mediaCheck.status === 'verified' && view.mediaCheck.origin !== view.effectiveMediaOrigin) panel.append(el('p', 'The candidate works but has not replaced the selected address. Finish owned playback or review the manual override before changing it.', 'muted small'));
       const test = this.button('Test file connection', async () => {
         this.view = { ...this.view!, mediaCheck: { ...this.view!.mediaCheck, status: 'unchecked' } }; await this.check();
-      }); test.disabled ||= !view.configured; panel.append(test);
-      if (!view.configured) panel.append(el('p', 'Save a Music Assistant connection to verify file access automatically. A speaker is not required for this check.', 'muted small'));
-      panel.append(el('p', 'Suggestions are tried through Music Assistant, not just this browser. A successful check selects the automatic media address when safe; failures keep saved addresses. No playback or library import is performed.', 'muted small'));
+      }); test.disabled ||= !view.configured; if (view.configured) panel.append(test);
       const advanced = el('details', undefined, 'settings-address-help'); advanced.open = this.advanced;
       const summary = el('summary', 'Advanced address override'); summary.id = 'app-address-advanced'; advanced.append(summary);
       advanced.ontoggle = () => { if (advanced.isConnected) this.advanced = advanced.open; };
+      if (view.mediaCheck.origin) advanced.append(el('p', `Last tested: ${view.mediaCheck.origin}`, 'muted small'));
+      advanced.append(el('p', 'File checks use Music Assistant and never play audio.', 'muted small'));
       const form = el('form', undefined, 'integration-form');
       const media = this.field('Application address reachable from Music Assistant', 'upload-media-origin', this.mediaDraft, value => { this.mediaDraft = value; }); media.input.placeholder = 'Automatic';
       const saveMedia = el('button', 'Save file playback address'); saveMedia.type = 'submit'; saveMedia.disabled = this.busy || this.blocked() || !navigator.onLine || !view.configured;
-      form.append(media.group, el('p', 'Use this only if Music Assistant needs a different app address (for example, behind a reverse proxy). Non-empty overrides must pass a real MA fetch before saving. Leave empty to return to automatic selection.', 'muted small'), saveMedia);
+      form.append(media.group, el('p', 'Only needed if Music Assistant uses a different address. Overrides must pass a file check; leave empty for automatic selection.', 'muted small'), saveMedia);
       form.onsubmit = event => { event.preventDefault(); void this.run(async () => {
         await requestJson('/api/host/integrations/media-origin', { origin: this.mediaDraft.trim() || null, revision: this.view!.revision }, 60_000);
-        this.accept(await this.request(), true); this.notice = 'File playback address saved. No audio was started.';
+        this.accept(await this.request(), true); this.notice = 'File playback address saved.';
         if (!this.view!.mediaOrigin) await this.check();
       }); }; advanced.append(form); panel.append(advanced);
     }

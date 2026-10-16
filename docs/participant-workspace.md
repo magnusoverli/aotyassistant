@@ -2,20 +2,22 @@
 
 Status: **implemented and deployed to the development instance on 2026-10-15**, alongside uploads and verified address setup. The participant page shows search and the private list together. Existing session/participants, two private libraries and MA credentials/destination were retained. List ownership, persistence and playback authority are unchanged; no speaker command was issued.
 
+**Version 0.2.5 UI update:** typography, surfaces and desktop alignment now match the host pages. Uploads are beside search, and result counts, pending feedback, keyboard focus and a speaker-settings link improve navigation. Update the installed app and refresh participant pages to load these refinements; publishing does not restart running installations.
+
 ## Implementation
 
 - `web/preparation-panel.ts` replaces the exclusive tabs with one list region and responsive inline expansion. There are no duplicate mobile/desktop lists or owners.
 - `web/main.ts` separates search controls from results, keeps the workspace visible during playback, and restores independent list scroll along with query, breadcrumbs, focus, and page scroll. The player and Finish my turn remain above the workspace.
 - `web/style.css` gives wider screens a search/list split and phones a compact sticky companion. The existing shared header, colors, artwork, and typography are reused.
-- The preparation/player controllers and backend contracts are unchanged. Existing upload controls remain in their own workspace card; this layout change does not implement or alter uploads.
+- The preparation/player controllers and backend contracts are unchanged. Upload controls now sit inside Find music, before results; list-only recovery views retain a separate upload card. Upload behavior is unchanged.
 
 ## Layout
 
-The private workspace retains the existing palette, serif headings, artwork, and restrained gold actions. It introduces no taglines, extra global navigation, or shared speaker queue.
+The private workspace uses the host pages’ sans-serif headings, dark green cards and restrained gold actions, while retaining private artwork. It introduces no taglines, extra global navigation, or shared speaker queue.
 
 ### Wider screens
 
-- At 1000px and wider, the participant page expands to at most 1160px with a flexible search column and a 340px list column.
+- At 1000px and wider, the participant page expands to at most 1500px with a flexible search column and a 360px list column. Playback and finish-turn controls align with the search column.
 - Keep search and results on the left; place **My list · N** on the right, sticky below the shared header.
 - Keep next-at-top ordering and the full upcoming list available. Cap a long list to the available height with its own scroll, while retaining normal page scrolling for search results.
 - Keep player/reveal/volume controls independent and readily accessible. Do not collapse the list when playback begins, hide it inside Choose another song, or automatically close a search the participant is using.

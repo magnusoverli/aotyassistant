@@ -15,7 +15,7 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   const login = await popupPromise;
   await expect(login.getByRole('heading', { name: 'Music Assistant sign-in' })).toBeVisible();
   await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
-  await expect(login.getByText('Music Assistant is configured.', { exact: true })).toBeVisible();
+  await expect(login.locator('.settings-connection .settings-state')).toHaveText('Configured');
   await expect(login).toHaveURL(/\/host\/settings$/);
   await expect(login.getByLabel('Playback destination', { exact: true })).toBeEnabled();
   await login.getByLabel('Playback destination', { exact: true }).selectOption('sonos:room');
@@ -57,7 +57,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     await frame.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
     const popupPromise = page.waitForEvent('popup'); await frame.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
     const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
-    await expect(login.getByText('Music Assistant is configured.', { exact: true })).toBeVisible();
+    await expect(login.locator('.settings-connection .settings-state')).toHaveText('Configured');
     await expect(login).toHaveURL(`${origin}${prefix}/host/settings`);
     await login.getByRole('link', { name: 'Host desk', exact: true }).click();
     await expect(login).toHaveURL(`${origin}${prefix}/host`);

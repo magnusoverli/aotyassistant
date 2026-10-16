@@ -79,7 +79,7 @@ export class AppHeader {
     if (inIngress() && ['participant', 'display'].includes(item.id)) { anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; }
     if (item.current) anchor.setAttribute('aria-current', 'page'); else anchor.removeAttribute('aria-current');
   }
-  private get collapsed() { return this.media.matches; }
+  private get collapsed() { return this.page === 'display' || this.media.matches; }
   private setExpanded(value: boolean, restoreFocus = false) {
     this.expanded = value; this.updateLayout();
     if (restoreFocus && !this.toggle.hidden) this.toggle.focus({ preventScroll: true });

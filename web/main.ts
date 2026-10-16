@@ -20,7 +20,9 @@ const page = pageForPath(pagePath(location.pathname));
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const turnAnnouncement = el('div', undefined, 'sr-only');
 turnAnnouncement.setAttribute('role', 'status'); turnAnnouncement.setAttribute('aria-live', 'polite'); turnAnnouncement.setAttribute('aria-atomic', 'true');
-if (page === 'participant') document.body.append(turnAnnouncement);
+const searchAnnouncement = el('div', undefined, 'sr-only');
+searchAnnouncement.setAttribute('role', 'status'); searchAnnouncement.setAttribute('aria-live', 'polite'); searchAnnouncement.setAttribute('aria-atomic', 'true');
+if (page === 'participant') document.body.append(turnAnnouncement, searchAnnouncement);
 let view: View | undefined;
 const catalogue = new CatalogueController(() => view);
 let realtime = false;
@@ -207,6 +209,7 @@ function qrCard() {
 }
 function renderDisplay() {
   if (!view) {
+    publicRoom?.destroy();
     publicRoom = undefined;
     const notice = el('div', error, 'error'); notice.hidden = !error; notice.setAttribute('role', 'alert');
     pageContent.replaceChildren(notice, closedRoom()); return;
@@ -227,14 +230,15 @@ function closedRoom() {
 }
 function host() {
   const main = el('main', undefined, 'host-page');
+  main.setAttribute('aria-label', 'Host desk');
   const workspace = el('div', undefined, 'host-workspace'); workspace.id = 'overview';
-  const heading = el('div', undefined, 'workspace-heading'); const headingText = el('div');
-  headingText.append(el('h1', 'Listening room'));
-  heading.append(headingText);
-  workspace.append(heading);
   main.append(workspace);
   const audio = el('section', undefined, 'panel host-audio'); const audioTitle = el('div'); audioTitle.append(el('h2', 'Speaker volume'));
-  if (!view?.volume?.available) audioTitle.append(el('p', 'Volume is unavailable. Check the selected speaker in settings.', 'muted small'));
+  if (!view?.volume?.available) {
+    const hint = el('p', undefined, 'muted small');
+    hint.append('Volume is unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link'));
+    audioTitle.append(hint);
+  }
   audio.append(audioTitle, volumeControl(view ? player.project(view).volume : undefined, (level, commit) => player.volume(level, commit), !realtime || !view?.connected));
   workspace.append(audio);
   if (!view) return main;
@@ -243,15 +247,13 @@ function host() {
   for (const [value, caption] of [[String(active.length).padStart(2, '0'), 'PARTICIPANTS'], [view.next?.nickname ?? '—', 'UP NEXT']]) {
     const stat = el('div', undefined, 'host-stat'); stat.append(label(caption!), el('strong', value)); stats.append(stat);
   }
-  workspace.append(stats);
   const live = el('section', undefined, 'host-live panel'); const livePerson = el('div', undefined, 'host-live-person');
   const personInfo = el('div'); personInfo.append(label('CURRENT PARTICIPANT'), el('h2', view.current?.nickname ?? 'Waiting for participants'));
   livePerson.append(avatar(view.current, 'avatar-large'), personInfo); live.append(livePerson);
   const controls = el('div', undefined, 'host-live-actions');
   const advance = button('Advance / skip current turn', () => mutate('/api/host/advance', { turnId: view!.turnId })); advance.disabled ||= !view.current; controls.append(advance);
-  live.append(controls); workspace.append(live);
-  const grid = el('div', undefined, 'host-grid');
-  const peopleColumn = el('div'); const people = el('section', undefined, 'panel host-people'); people.id = 'rotation'; people.tabIndex = -1;
+  live.append(controls); workspace.prepend(live); workspace.append(stats);
+  const people = el('section', undefined, 'panel host-people'); people.id = 'rotation'; people.tabIndex = -1;
   const orderHeading = el('div', undefined, 'section-heading'); const orderTitle = el('div'); orderTitle.append(el('h2', 'Listening order'));
   orderHeading.append(orderTitle, el('span', `${active.length} listeners`, 'count-tag')); people.append(orderHeading);
   if (!active.length) people.append(el('p', 'No participants yet. Share the invitation; the first person to join gets the first turn.', 'muted'));
@@ -275,9 +277,10 @@ function host() {
     controls.append(button('Remove', () => mutate('/api/host/remove', { id: person.id, revision: view!.revision }), true));
     row.append(controls); people.append(row);
   });
-  peopleColumn.append(people);
+  workspace.append(people);
   const aside = el('aside', undefined, 'host-invitations'); aside.append(qrCard());
-  grid.append(peopleColumn, aside); workspace.append(grid); return main;
+  aside.setAttribute('aria-label', 'Room invitation');
+  main.append(aside); return main;
 }
 function participant() {
   const main = el('main', undefined, 'participant-page');
@@ -320,13 +323,16 @@ function participant() {
   search.setAttribute('aria-labelledby', 'music-find-title');
   const searchHeading = el('div', undefined, 'section-heading'); const searchTitle = el('h2', 'Find music'); searchTitle.id = 'music-find-title'; searchHeading.append(searchTitle, el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
   const realCatalogue = view.catalogue?.source === 'music-assistant';
-  if (realCatalogue && !view.catalogue?.playbackAvailable) search.append(el('p', 'Choose a speaker in host settings before playing. You can still prepare tracks.', 'muted small'));
+  if (realCatalogue && !view.catalogue?.playbackAvailable) {
+    const hint = el('p', undefined, 'muted small');
+    hint.append('Choose a speaker in ', link('host settings', '/host/settings', 'inline-link'), ' before playing. You can still prepare tracks.'); search.append(hint);
+  }
   if (realCatalogue) {
     const modes = el('div', undefined, 'actions search-tabs');
     for (const mode of ['tracks', 'artists'] as const) {
       const tab = button(mode === 'tracks' ? 'Search tracks' : 'Search artists', () => {
         searchMode = mode; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
-      }, searchMode !== mode); tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
+      }, searchMode !== mode); tab.id = `catalogue-mode-${mode}`; tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
     }
     search.append(modes);
   }
@@ -334,7 +340,7 @@ function participant() {
   const input = el('input'); input.type = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Track, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
   input.id = 'catalogue-search';
   input.setAttribute('aria-label', 'Search catalogue'); input.value = searchText; input.oninput = () => { searchText = input.value; };
-  const submit = el('button', 'Search'); submit.type = 'submit'; submit.disabled = busy || !realtime || !view.connected;
+  const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = busy || !realtime || !view.connected;
   form.append(input, submit);
   form.onsubmit = event => {
     event.preventDefault(); if (busy) return;
@@ -356,13 +362,20 @@ function participant() {
     });
   }; search.append(form);
   const found = el('section', undefined, 'panel catalogue-results'); found.setAttribute('aria-labelledby', 'music-results-title');
+  found.setAttribute('aria-busy', String(busy || searching));
   const resultsHeading = el('div', undefined, 'section-heading'); const resultsTitle = el('h2', chosenArtist ? 'Browse music' : 'Results'); resultsTitle.id = 'music-results-title'; resultsHeading.append(resultsTitle); found.append(resultsHeading);
+  const resultKind = searchMode === 'artists' && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
+  const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
+  const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
+  if (searchDone && !searching) resultsHeading.append(el('span', resultSummary, 'count-tag'));
+  const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} found.` : '';
+  if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (!searchDone && !searching) found.append(el('p', 'Search for music to add to your private list.', 'muted small'));
   if (searching) { const status = el('p', 'Searching…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
   if (chosenArtist) {
     const crumbs = el('div', undefined, 'actions browse-crumbs');
-    crumbs.append(button('← Artists', () => { chosenArtist = undefined; chosenAlbum = undefined; albums = []; results = []; }, true));
-    if (chosenAlbum) crumbs.append(button('← Albums', () => { chosenAlbum = undefined; results = []; }, true));
+    const backToArtists = button('← Artists', () => { chosenArtist = undefined; chosenAlbum = undefined; albums = []; results = []; }, true); backToArtists.id = 'browse-artists'; crumbs.append(backToArtists);
+    if (chosenAlbum) { const backToAlbums = button('← Albums', () => { chosenAlbum = undefined; results = []; }, true); backToAlbums.id = 'browse-albums'; crumbs.append(backToAlbums); }
     found.append(crumbs, el('h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`));
   }
   for (const artist of !chosenArtist ? artists : []) {
@@ -420,13 +433,14 @@ function participant() {
 }
 function playTrack(track: CatalogueTrack) { player.play(track); }
 function joinForm() {
-  const main = el('main', undefined, 'join-page'); const panel = el('section', undefined, 'panel');
-  panel.append(el('h1', 'Join room'));
+  const main = el('main', undefined, 'join-page room-join-page'); const panel = el('section', undefined, 'panel');
+  const title = el('h1', 'Join room'); title.id = 'join-room-title'; panel.setAttribute('aria-labelledby', title.id); panel.append(title);
   const form = el('form'); const nameLabel = el('label', 'What should we call you?');
   const input = el('input'); input.name = 'nickname'; input.required = true; input.maxLength = 40; input.setAttribute('autocomplete', 'nickname'); input.id = 'nickname'; nameLabel.htmlFor = 'nickname';
   input.value = nicknameDraft; input.oninput = () => { nicknameDraft = input.value; };
-  const submit = el('button', 'Join room'); submit.type = 'submit'; submit.disabled = busy;
-  form.append(nameLabel, input, submit); form.onsubmit = event => {
+  const submit = el('button', 'Join room'); submit.id = 'join-room-submit'; submit.type = 'submit'; submit.disabled = busy;
+  const name = el('div', undefined, 'field'); name.append(nameLabel, input);
+  form.append(name, submit); form.onsubmit = event => {
     event.preventDefault(); const nickname = input.value;
     void run(async () => {
       await api('/api/participant/join', { nickname }); location.replace(appPath('/participant'));

@@ -18,7 +18,7 @@ test('pages use plain functional copy without host banners or slogans while join
   const displayContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   try {
     await host.goto('/'); await expect(host.getByRole('heading', { name: 'Albums of the Year', exact: true })).toBeVisible(); await plainCopy(host);
-    await host.goto('/host'); await expect(host.getByRole('heading', { name: 'Listening room', exact: true })).toBeVisible(); await plainCopy(host);
+    await host.goto('/host'); await expect(host.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible(); await plainCopy(host);
     await host.goto('/host/settings'); await expect(host.getByLabel('Music Assistant URL', { exact: true })).toBeVisible(); await plainCopy(host);
     // The cleanup removes the repeated open-host notice, not real error/security feedback.
     await host.getByText('Advanced: token or separate login address', { exact: true }).click();
