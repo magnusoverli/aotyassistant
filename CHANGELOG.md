@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Release 0.2.8 with grouped multi-provider artist, album, and track results, explicit source choices, and preserved recording/version distinctions.
 - Show ID-less multi-provider matches once with an unverified label and exact source choices, without merging artist or saved-recording identities.
 - Group Music Assistant duplicates by explicit identity, browse listed sources, and require exact track-source choices with clear incomplete-result notices.
 - Release 0.2.7 with a simpler participant entry, in-player turn finishing, artist-first search, and matching player/list surfaces.

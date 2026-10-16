@@ -1,6 +1,6 @@
 # Multi-provider search
 
-Feature-branch work for 0.2.8 review, **not part of the frozen 0.2.7 release**. Release/install is handled separately. No live catalogue, saved lists, speakers or installation have been changed to test it.
+Included in **0.2.8**, not 0.2.7. The deployed Metallica search response was inspected read-only to reproduce its missing cross-provider IDs; no live catalogue, saved list or speaker was changed to test it.
 
 ## Behaviour
 
@@ -25,5 +25,7 @@ Artist artwork is no longer cached by provider/name alone: that could attach one
 ## Verification
 
 Synthetic unit/integration and browser fixtures cover both identity grouping and the deployed ID-less search shape for Metallica, Iron Maiden, Megadeth and Slayer, source-required metadata browsing, known/ambiguous same-name artists, provider-only albums, release/recording distinctions, partial/full/empty source failure, fanout/concurrency bounds, source availability, opaque nested references, revocation, exact saved capture and rejection of substitutes. Mapping-only URI/provider rewriting still fails closed; no alias guard was weakened. The full existing lifecycle/privacy/browser suite remains the regression gate. No real speaker validation or real-catalogue completeness claim follows from these fixtures.
+
+Before publishing 0.2.8, the built client also read the deployed catalogue: Metallica produced **one metadata display row** with Spotify and Tidal choices; source-specific album reads returned **23 Spotify rows and 170 Tidal rows**. Only `music/search` and `music/artists/artist_albums` were called. No participant, list, integration or speaker mutation was issued; these observations do not establish catalogue completeness.
 
 Read-only upstream references reviewed: [MA media item models](https://github.com/music-assistant/models/blob/main/music_assistant_models/media_items/media_item.py), [external ID enums](https://github.com/music-assistant/models/blob/main/music_assistant_models/enums.py), [provider mappings](https://github.com/music-assistant/models/blob/main/music_assistant_models/media_items/provider_mapping.py), [URI construction](https://github.com/music-assistant/models/blob/main/music_assistant_models/helpers.py), [global-search failure handling](https://github.com/music-assistant/server/blob/dev/music_assistant/controllers/music/controller.py), and [official client artist/album commands](https://github.com/music-assistant/client/blob/main/music_assistant_client/music.py). Moving upstream branches are architectural evidence, not proof of a particular deployment's contract.
