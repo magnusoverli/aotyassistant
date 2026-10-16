@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Remove the “updating” text from all volume controls.
 - Accept Home Assistant-verified LAN addresses alongside saved guest URLs, with a helpful setup page for other guest-address mismatches.
 - Publish public amd64/aarch64 0.2.2 images and enable download-based Home Assistant installation.
 - Reject queued pause/resume commands when background polling has already revoked playback ownership.

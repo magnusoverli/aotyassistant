@@ -100,7 +100,6 @@ main { margin:0 auto; padding:40px 4vw; max-width:1500px; }
 .volume-control label,.volume-control output { font-size:12px; color:var(--muted); }
 .volume-control input[type="range"] { grid-column:1 / -1; width:100%; min-height:32px; padding:0; border:0; border-radius:0; background:transparent; accent-color:var(--accent); cursor:pointer; }
 .volume-control input:disabled { opacity:.4; cursor:not-allowed; }
-.volume-control output[data-pending="true"]:after { content:' · updating'; font-size:10px; color:var(--accent); }
 .player-pending { font-size:11px; color:var(--accent); margin:0 0 14px; }
 .host-audio { display:flex; justify-content:space-between; align-items:center; gap:28px; padding:20px 24px; }
 .host-audio h2 { font-size:18px; margin:0; }

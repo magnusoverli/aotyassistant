@@ -39,7 +39,7 @@ export function volumeControl(volume: VolumeState | undefined, change: (level: n
   slider.disabled = disabled || !volume?.available;
   slider.onpointerdown = () => { slider.dataset.dragging = 'true'; };
   slider.onpointerup = slider.onpointercancel = () => { delete slider.dataset.dragging; };
-  slider.oninput = () => { output.value = `${slider.value}%`; output.dataset.pending = 'true'; change(Number(slider.value), false); };
+  slider.oninput = () => { output.value = `${slider.value}%`; change(Number(slider.value), false); };
   slider.onchange = () => { change(Number(slider.value), true); };
   frame.append(label, output, slider); updateVolume(frame, volume); return frame;
 }
@@ -50,7 +50,6 @@ export function updateVolume(root: HTMLElement, volume?: VolumeState) {
   const output = root.querySelector<HTMLOutputElement>('.volume-control output');
   if (output) {
     output.value = volume?.level == null ? 'Unavailable' : `${volume.level}%`;
-    output.dataset.pending = String(volume?.pending === true);
-    output.title = volume?.pending ? 'Updating volume; waiting for speaker confirmation' : 'Reported speaker volume';
+    output.title = 'Volume';
   }
 }
