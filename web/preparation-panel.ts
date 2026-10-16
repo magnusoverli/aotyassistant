@@ -8,6 +8,7 @@ import { UploadPanel } from './upload-panel';
 type Options = { getView(): View | undefined; starting(): boolean; canPlay(): boolean; play(entry: PreparedEntryView): void; changed(): void };
 export class PreparationPanel {
   private expanded = false;
+  private entryExpanded = false;
   private editing = false;
   private dragging?: string;
   private recoveryDraft = '';
@@ -50,21 +51,44 @@ export class PreparationPanel {
     button.disabled ||= Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading || (!this.library.view && !this.library.missing);
     return button;
   }
-  render(search?: HTMLElement, results?: HTMLElement) {
+  renderEntry() { return this.render(undefined, undefined, true); }
+
+  render(search?: HTMLElement, results?: HTMLElement, entry = false) {
     const library = this.library; const snapshot = library.view;
-    const uploadPanel = this.uploads.render();
-    const panel = el('section', undefined, `music-workspace${search ? '' : ' is-list-only'}`); panel.setAttribute('aria-label', 'Your private music'); panel.append(this.feedback);
+    const uploadPanel = this.uploads.render(!entry);
+    const upload = () => {
+      const section = el('section', undefined, `music-upload${search ? '' : ' panel'}`); section.setAttribute('aria-label', 'Upload a private track');
+      if (entry) section.append(el('p', 'Your unfinished upload is kept. Join the room to finish adding it.', 'muted small'));
+      section.append(uploadPanel); return section;
+    };
+    if (entry && !snapshot) {
+      const access = el('section', undefined, 'entry-library-access'); access.setAttribute('aria-label', 'Saved music access');
+      if (library.loading) { const status = el('p', 'Checking your saved music…', 'muted small'); status.setAttribute('role', 'status'); access.append(status); }
+      if (library.error) {
+        const notice = el('div', undefined, 'list-notice'); notice.setAttribute('role', 'alert'); notice.append(el('p', library.error));
+        notice.append(this.button('Retry saved music', () => library.start(), true, 'entry-refresh-library')); access.append(notice);
+      }
+      access.append(this.recovery(true));
+      if (this.uploads.hasWork) { access.classList.add('panel'); access.append(upload()); }
+      return access;
+    }
+    const panel = el('section', undefined, `music-workspace${search ? '' : ' is-list-only'}${entry ? ' is-entry-music' : ''}`); panel.setAttribute('aria-label', 'Your private music'); panel.append(this.feedback);
     if (search) { search.id = 'music-find'; search.classList.add('panel'); panel.append(search); }
-    const list = el('aside', undefined, `panel preparation-list${this.expanded || !search ? ' is-expanded' : ''}`); list.id = 'music-list'; list.setAttribute('aria-labelledby', 'music-list-title');
+    const expanded = entry ? this.entryExpanded || this.editing || this.open.has('recovery') : this.expanded || !search;
+    const list = el('aside', undefined, `panel preparation-list${expanded ? ' is-expanded' : ''}${entry ? ' entry-list' : ''}`); list.id = 'music-list'; list.setAttribute('aria-labelledby', 'music-list-title');
     list.dataset.myTurn = String(Boolean(this.options.getView()?.myTurn));
     const heading = el('div', undefined, 'list-heading'); const title = el('h2', 'My list'); title.id = 'music-list-title';
     title.append(el('span', ` · ${snapshot?.upcoming.length ?? 0}`, 'list-count')); heading.append(title);
-    const expand = el('button', this.expanded ? 'Show less' : 'View all', 'secondary list-expand'); expand.type = 'button'; expand.id = 'music-list-expand';
-    expand.setAttribute('aria-expanded', String(this.expanded)); expand.setAttribute('aria-controls', 'music-list-body');
-    expand.onclick = () => { this.expanded = !this.expanded; if (!this.expanded) this.editing = false; this.options.changed(); };
-    if (search) heading.append(expand);
+    const expand = el('button', expanded ? 'Show less' : 'View all', 'secondary list-expand'); expand.type = 'button'; expand.id = 'music-list-expand';
+    expand.setAttribute('aria-expanded', String(expanded)); expand.setAttribute('aria-controls', 'music-list-body');
+    expand.onclick = () => {
+      if (entry) { this.entryExpanded = !expanded; if (expanded) this.open.delete('recovery'); } else this.expanded = !expanded;
+      if (expanded) this.editing = false; this.options.changed();
+    };
+    if (search || entry) heading.append(expand);
     const status = el('p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Not synced · draft retained' : !navigator.onLine ? 'Offline · saved list retained' : this.uploads.pending ? 'Private · upload not yet added' : snapshot ? 'Private · Saved ✓' : 'Private · saved when you add a track', 'list-save-status'); status.setAttribute('role', 'status');
     list.append(heading, status);
+    if (entry) list.append(el('p', 'Join the room to play or add music. Your saved list stays private.', 'muted small entry-list-hint'));
     const body = el('div', undefined, 'list-body'); body.id = 'music-list-body'; body.dataset.scrollKey = 'private-list';
     if (library.error) {
       const notice = el('div', undefined, 'list-notice'); notice.setAttribute('role', 'alert'); notice.append(el('p', library.error));
@@ -108,8 +132,10 @@ export class PreparationPanel {
     const actions = el('div', undefined, 'list-actions');
     const next = snapshot?.upcoming[0];
     if (next) {
-      const play = this.button('Play next', () => this.options.play(next), false, `play-next-${next.id}`); play.classList.add('list-play'); play.setAttribute('aria-label', 'Play next prepared track');
-      play.disabled ||= !this.options.canPlay() || next.sourceAvailable === false || Boolean(library.pending || snapshot?.reviewEntryId) || this.options.starting(); actions.append(play);
+      if (!entry) {
+        const play = this.button('Play next', () => this.options.play(next), false, `play-next-${next.id}`); play.classList.add('list-play'); play.setAttribute('aria-label', 'Play next prepared track');
+        play.disabled ||= !this.options.canPlay() || next.sourceAvailable === false || Boolean(library.pending || snapshot?.reviewEntryId) || this.options.starting(); actions.append(play);
+      }
       const edit = this.button(this.editing ? 'Done' : 'Edit order', () => { this.editing = !this.editing; this.options.changed(); }, true, 'list-edit'); edit.classList.add('list-edit'); edit.setAttribute('aria-pressed', String(this.editing)); actions.append(edit);
     }
     body.append(actions, ordered);
@@ -128,24 +154,27 @@ export class PreparationPanel {
       } history.append(rows);
       tools.append(history);
     }
-    const recovery = this.details('recovery', 'Keep or recover your list');
+    tools.append(this.recovery()); body.append(tools); list.append(body); panel.append(list);
+    if (results) panel.append(results);
+    if (search) search.append(upload()); else if (!entry || this.uploads.hasWork) panel.append(upload());
+    return panel;
+  }
+
+  private recovery(compact = false) {
+    const library = this.library; const snapshot = library.view;
+    const recovery = this.details('recovery', compact ? 'Recover a saved list' : 'Keep or recover your list');
     recovery.append(el('p', 'Your list survives refreshes, restarts, and new events. Keep a private recovery key for a new phone or lost browser cookies.', 'muted small'));
     if (snapshot) recovery.append(this.button('Create a new recovery key', () => { if (confirm('Create a new private recovery key? Any earlier recovery key will stop working.')) return library.createRecoveryKey(); }),
       this.button('Revoke other devices', () => { if (confirm('End private-list access on your other devices? Their saved tracks will be kept.')) return library.revokeOtherDevices(); }));
-    recovery.append(el('p', `Up to ${snapshot?.capacity.upcoming ?? 200} upcoming picks and ${snapshot?.capacity.entries ?? 1000} retained entries including history. A full list never deletes saved work. Edits require a connection; an unconfirmed change stays a draft until Saved.`, 'muted small'));
+    if (!compact) recovery.append(el('p', `Up to ${snapshot?.capacity.upcoming ?? 200} upcoming picks and ${snapshot?.capacity.entries ?? 1000} retained entries including history. A full list never deletes saved work. Edits require a connection; an unconfirmed change stays a draft until Saved.`, 'muted small'));
     if (library.recoveryKey) {
       const key = el('textarea'); key.readOnly = true; key.value = library.recoveryKey; key.setAttribute('aria-label', 'Your private recovery key'); key.rows = 3;
       recovery.append(key, el('p', 'Copy this somewhere private. It grants access to your list and is not stored in browser history.', 'small muted'), this.button('Hide key', () => library.hideRecoveryKey()));
     }
     const form = el('form', undefined, 'list-recovery-form'); const input = el('input'); input.type = 'password'; input.autocomplete = 'off'; input.maxLength = 100; input.value = this.recoveryDraft; input.placeholder = 'Private recovery key'; input.id = 'preparation-recovery-key'; input.setAttribute('aria-label', 'Recover with a private key'); input.oninput = () => { this.recoveryDraft = input.value; };
-    const recover = el('button', 'Recover my list'); recover.type = 'submit'; recover.disabled = library.saving || !navigator.onLine; form.append(input, recover);
+    const recover = el('button', 'Recover my list', compact ? 'secondary' : ''); recover.type = 'submit'; recover.disabled = library.loading || library.saving || !navigator.onLine; form.append(input, recover);
     form.onsubmit = event => { event.preventDefault(); if (snapshot && !confirm('Replace this browser’s list access? Save its recovery key first; its saved tracks will not be deleted.')) return; const key = input.value; this.recoveryDraft = ''; void library.recover(key, Boolean(snapshot)); };
-    recovery.append(form); tools.append(recovery); body.append(tools); list.append(body); panel.append(list);
-    if (results) panel.append(results);
-    const uploads = el('section', undefined, `music-upload${search ? '' : ' panel'}`); uploads.setAttribute('aria-label', 'Upload a private track'); uploads.append(uploadPanel);
-    // Keep the alternate music source beside search, not below an arbitrarily long result list.
-    if (search) search.append(uploads); else panel.append(uploads);
-    return panel;
+    recovery.append(form); return recovery;
   }
   private row(entry: PreparedEntryView) {
     const row = el('li', undefined, 'saved-track'); const identity = el('div', undefined, 'result-identity'); const copy = el('div');

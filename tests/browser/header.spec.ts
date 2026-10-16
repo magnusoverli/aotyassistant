@@ -10,6 +10,9 @@ test('every page uses the shared header with centralized navigation, current-pag
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(path);
     await expect(page.getByRole('banner')).toHaveCount(1); await expect(page.locator('header[data-header="shared"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Full screen', exact: true })).toBeEnabled();
     await openNavigation(page);
     const navigation = page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' });
     await expect(navigation).toBeVisible(); await expect(navigation.locator('.primary-links > li > a')).toHaveCount(4);
@@ -25,15 +28,17 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);
     for (const width of [1440, 1200, 1100, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
-      if (width <= 1200 || current === 'Listening room') await expect(page.locator('header .header-menu-toggle')).toBeVisible();
-      else await expect(page.locator('header .header-menu-toggle')).toBeHidden();
+      await expect(page.locator('header .header-menu-toggle')).toBeVisible();
       await openNavigation(page); await expect(navigation).toBeVisible(); await noOverflow(page);
     }
   }
   await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto('/host/settings');
   await expect(page.getByRole('heading', { name: 'Connections & settings.' })).toBeVisible();
+  await openNavigation(page);
   await expect(page.getByRole('banner').getByRole('link', { name: 'Listening room' })).toHaveAttribute('href', '/display');
+  await page.keyboard.press('Escape');
   await page.screenshot({ path: 'test-results/shared-header-settings-desktop.png', fullPage: true });
+  await openNavigation(page);
   await page.getByRole('banner').getByRole('link', { name: 'Host desk', exact: true }).click();
   await expect(page).toHaveURL('/host');
   const launch = page.locator('.host-invitations').getByRole('link', { name: 'Open public display' });
@@ -61,13 +66,38 @@ test('mobile header supports keyboard menus, stable focus across live updates, o
   await expect(room).toBeFocused();
   await page.keyboard.press('Escape'); await expect(menu).toBeFocused();
   await menu.click(); await page.mouse.click(2, 730); await expect(navigation).toBeHidden();
-  await page.setViewportSize({ width: 1440, height: 900 }); await expect(menu).toBeHidden(); await expect(navigation).toBeVisible();
-  await settings.focus(); await page.setViewportSize({ width: 320, height: 740 }); await expect(navigation).toBeHidden(); await expect(menu).toBeFocused();
+  await page.setViewportSize({ width: 1440, height: 900 }); await expect(menu).toBeVisible(); await expect(navigation).toBeHidden();
+  await openNavigation(page); await settings.focus();
+  await page.setViewportSize({ width: 320, height: 740 }); await expect(navigation).toBeVisible(); await expect(settings).toBeFocused();
+  await page.keyboard.press('Escape'); await expect(menu).toBeFocused();
   await openNavigation(page); await page.screenshot({ path: 'test-results/shared-header-menu-320.png', fullPage: true });
   await navigation.getByRole('link', { name: 'My seat', exact: true }).click();
   await expect(page).toHaveURL('/participant'); await expect(navigation).toBeHidden(); await noOverflow(page);
   await page.goto('/host'); const skip = page.getByRole('link', { name: 'Skip to content', exact: true }); await skip.focus(); await skip.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
+});
+
+test('fullscreen uses the same control on every page without writes and gracefully hides when unsupported', async ({ page, browser, isolatedApp }) => {
+  const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
+  for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
+    await page.goto(path);
+    const fullscreen = page.locator('.header-fullscreen');
+    await expect(fullscreen).toHaveText('Full screen'); await fullscreen.click();
+    await expect(fullscreen).toHaveText('Exit full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
+    await fullscreen.click(); await expect(fullscreen).toHaveText('Full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
+  }
+  expect(writes).toEqual([]);
+  const context = await browser.newContext();
+  try {
+    await context.addInitScript(() => Object.defineProperty(document, 'fullscreenEnabled', { get: () => false }));
+    const unsupported = await context.newPage();
+    for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
+      await unsupported.goto(isolatedApp.origin + path);
+      await expect(unsupported.locator('.header-fullscreen')).toBeHidden();
+      await openNavigation(unsupported); await expect(unsupported.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+    }
+  } finally { await context.close(); }
 });
 
 test('display header stays mounted through menus/fullscreen/reveal/removal without restarting record motion or disclosing private data', async ({ browser, page: host, isolatedApp }) => {

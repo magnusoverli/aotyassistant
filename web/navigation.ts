@@ -23,6 +23,6 @@ export function headerModel(page: Page, state: HeaderState) {
     mine: Boolean(view.myTurn), title: view.current ? `${view.current.nickname} is currently sharing` : 'Waiting for participants',
   } : undefined;
   const subtitle = page === 'participant' && view?.me ? view.me.nickname : page === 'display' ? 'Listening room'
-    : page === 'settings' ? 'Connections & settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : 'Home';
+    : page === 'settings' ? 'Connections & settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : page === 'participant' ? 'My seat' : 'Home';
   return { primary, turn, subtitle, modeText: mode === 'music-assistant' ? 'LIVE · SONOS' : mode === 'demo' ? 'DEMO · NO AUDIO' : '' };
 }

@@ -143,7 +143,7 @@ test('owner and room updates preserve search/caret, expanded list scroll, and th
     await expect(page.getByRole('button', { name: 'Show less', exact: true })).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('header')).toHaveAttribute('data-same-node', 'yes');
     await r.post('/api/host/remove', { id: session.current.id, revision: session.revision });
-    await expect(page.getByRole('heading', { name: 'Removed from the room.' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
     await expect(page.locator('.music-workspace')).toHaveClass(/is-list-only/);
     await expect(page.locator('.list-count')).toHaveText(' · 25');
     await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveCount(0);

@@ -25,7 +25,7 @@ test('pages use plain functional copy without host banners or slogans while join
     await expect(host.getByText('HTTP connection — use HTTPS')).toBeVisible();
     await host.screenshot({ path: 'test-results/settings-plain-copy.png', fullPage: true });
     const listener = await participantContext.newPage(); await listener.goto(isolatedApp.origin + '/participant');
-    await expect(listener.getByRole('heading', { name: 'Participant', exact: true })).toBeVisible(); await plainCopy(listener);
+    await expect(listener.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); await plainCopy(listener);
     let session = await (await host.request.get('/api/host/state')).json(); await host.goto('/host');
     await expect(host.getByRole('button', { name: 'Start listening', exact: true })).toHaveCount(0); await plainCopy(host);
     await listener.goto(session.joinUrl); await expect(listener.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); await plainCopy(listener);
@@ -45,7 +45,7 @@ test('pages use plain functional copy without host banners or slogans while join
     await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible(); await plainCopy(tv);
     session = await (await host.request.get('/api/host/state')).json(); await post('/api/host/remove', { id: session.current.id, revision: session.revision });
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible(); await plainCopy(tv);
-    await expect(listener.getByRole('heading', { name: 'Removed from the room.' })).toBeVisible(); await plainCopy(listener);
+    await expect(listener.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible(); await plainCopy(listener);
     await expect(host.getByRole('button', { name: 'Create another session' })).toHaveCount(0); await plainCopy(host);
   } finally { await participantContext.close(); await displayContext.close(); }
 });

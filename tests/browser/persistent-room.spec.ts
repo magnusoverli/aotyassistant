@@ -32,7 +32,7 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     const late = await join(2, 'Late'); await expect(late.getByRole('heading', { name: 'Seat 3 of 3', exact: true })).toBeVisible();
     const after = await (await first.request.get('/api/participant/state')).json(); expect(after.turnId).toBe(before.turnId); expect(after.ownPlayback.id).toBe(before.ownPlayback.id); expect(after.ownPlayback.status).toBe('playing');
     await host.locator('.host-people .person-row').filter({ hasText: 'Second' }).getByRole('button', { name: 'Remove', exact: true }).click();
-    await expect(second.getByRole('heading', { name: 'Removed from the room.', exact: true })).toBeVisible();
+    await expect(second.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
     await expect(first.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await host.getByRole('button', { name: 'Move Late up', exact: true }).click();
     await expect(late.getByRole('heading', { name: 'Seat 1 of 2', exact: true })).toBeVisible();

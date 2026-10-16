@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 import type { IntegrationView } from '../../src/integrations';
+import { openNavigation } from './navigation-helpers';
 
 async function noHorizontalOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -28,9 +29,12 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/host');
   const palette = await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)));
+  await openNavigation(page);
   await page.getByRole('link', { name: 'Connections & settings' }).click();
   await expect(page.getByRole('heading', { name: 'Connections & settings.' })).toBeVisible();
+  await openNavigation(page);
   await expect(page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Connections & settings' })).toHaveAttribute('aria-current', 'page');
+  await page.keyboard.press('Escape');
   expect(await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)))).toEqual(palette);
   await expect(page.getByRole('region', { name: 'Music Assistant', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Speaker or group', exact: true })).toBeVisible();

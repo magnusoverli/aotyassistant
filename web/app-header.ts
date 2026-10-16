@@ -2,7 +2,7 @@ import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
 import { navigationHref, inIngress } from './paths';
 
-/** One persistent header for every route. Page renderers never replace it or reach into its DOM. */
+/** One persistent, compact header for every route and viewport. */
 export class AppHeader {
   readonly element = el('header', undefined, 'app-header');
   private subtitle = el('span', undefined, 'brand-subtitle');
@@ -15,7 +15,6 @@ export class AppHeader {
   private fullscreen = el('button', 'Full screen', 'secondary header-fullscreen');
   private links = new Map<string, HTMLAnchorElement>();
   private expanded = false;
-  private media = matchMedia('(max-width: 1200px)');
   private resize?: ResizeObserver;
   private fullscreenPending = false;
   private lastState: HeaderState = {};
@@ -45,13 +44,12 @@ export class AppHeader {
     this.navigation.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target.closest('a') : null;
       if (!target) return;
-      // Close the same responsive menu on every page after a navigation choice.
+      // Close the shared menu after a navigation choice.
       this.setExpanded(false);
     });
     document.addEventListener('pointerdown', this.outside);
     document.addEventListener('fullscreenchange', this.fullscreenChanged);
     document.addEventListener('aoty-address-changed', this.addressChanged);
-    this.media.addEventListener('change', this.layoutChanged);
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => document.documentElement.style.setProperty('--app-header-height', `${this.element.getBoundingClientRect().height}px`));
       this.resize.observe(this.element);
@@ -79,21 +77,15 @@ export class AppHeader {
     if (inIngress() && ['participant', 'display'].includes(item.id)) { anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; }
     if (item.current) anchor.setAttribute('aria-current', 'page'); else anchor.removeAttribute('aria-current');
   }
-  private get collapsed() { return this.page === 'display' || this.media.matches; }
   private setExpanded(value: boolean, restoreFocus = false) {
     this.expanded = value; this.updateLayout();
-    if (restoreFocus && !this.toggle.hidden) this.toggle.focus({ preventScroll: true });
+    if (restoreFocus) this.toggle.focus({ preventScroll: true });
   }
   private updateLayout() {
-    this.element.classList.toggle('has-collapsed-navigation', this.collapsed);
-    this.toggle.hidden = !this.collapsed; this.toggle.setAttribute('aria-expanded', String(this.expanded));
+    this.toggle.setAttribute('aria-expanded', String(this.expanded));
     this.toggle.textContent = this.expanded ? 'Close' : 'Menu';
-    this.navigation.hidden = this.collapsed && !this.expanded;
+    this.navigation.hidden = !this.expanded;
   }
-  private layoutChanged = () => {
-    const focused = this.navigation.contains(document.activeElement);
-    this.setExpanded(false, focused && this.collapsed);
-  };
   private keydown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
     if (this.expanded) { this.setExpanded(false, true); event.preventDefault(); }
@@ -104,7 +96,7 @@ export class AppHeader {
   private fullscreenChanged = () => this.updateFullscreen();
   private addressChanged = () => this.update(this.lastState);
   private updateFullscreen() {
-    this.fullscreen.hidden = this.page !== 'display' || !document.fullscreenEnabled || !document.documentElement.requestFullscreen;
+    this.fullscreen.hidden = !document.fullscreenEnabled || !document.documentElement.requestFullscreen;
     this.fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
     this.fullscreen.setAttribute('aria-pressed', String(Boolean(document.fullscreenElement)));
     this.fullscreen.disabled = this.fullscreenPending;
@@ -118,7 +110,7 @@ export class AppHeader {
     finally { this.fullscreenPending = false; this.updateFullscreen(); }
   }
   destroy() {
-    this.resize?.disconnect(); this.media.removeEventListener('change', this.layoutChanged);
+    this.resize?.disconnect();
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);
     document.removeEventListener('aoty-address-changed', this.addressChanged);
   }

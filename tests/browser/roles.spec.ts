@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 import { saveChoice, showFind } from './preparation-helpers';
+import { openNavigation } from './navigation-helpers';
 
 async function noHorizontalOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -29,7 +30,9 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     expect(state.phase).toBeUndefined(); expect(state.active).toHaveLength(4); expect(state.waiting).toBeUndefined();
     await expect(listeners.get('Alex')!.locator('.turn-chip')).toHaveText('YOUR TURN');
     await host.setViewportSize({ width: 1440, height: 1000 }); await host.goto('/host');
+    await openNavigation(host);
     await expect(host.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
+    await host.keyboard.press('Escape');
     const alex = listeners.get('Alex')!; const sam = listeners.get('Sam')!; const jordan = listeners.get('Jordan')!; const riley = listeners.get('Riley')!;
     await expect(alex.locator('main')).toHaveAttribute('data-turn-state', 'mine');
     await expect(sam.locator('main')).toHaveAttribute('data-turn-state', 'next');
@@ -128,7 +131,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await expect(tv.getByRole('list', { name: 'Participant rotation' })).toHaveCount(0);
     await expect(jordan.getByText('Northern Lights', { exact: true })).toBeVisible();
-    await expect(jordan.getByRole('button', { name: 'Play next prepared track' })).toBeDisabled();
+    await expect(jordan.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
   } finally {
     for (const context of contexts) await context.close(); await tvContext.close();
   }

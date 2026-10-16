@@ -15,6 +15,8 @@ import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
 import './style.css';
 import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
+import { joinPanel } from './join-panel';
+import { ParticipantAccess } from './participant-access';
 
 const page = pageForPath(pagePath(location.pathname));
 const root = document.querySelector<HTMLDivElement>('#app')!;
@@ -80,6 +82,18 @@ const appHeader = new AppHeader(page, message => { error = message; render(); })
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(appHeader.element, pageContent);
 const updateHeader = () => appHeader.update({ view, mode: page === 'settings' ? settingsMode : undefined });
+const participantAccess = new ParticipantAccess(
+  () => api<View>('/api/participant/state'), () => navigator.onLine,
+  next => {
+    if (page === 'join') { view = next; location.replace(appPath('/participant')); return; }
+    accept(next); subscribe('participant');
+  },
+  () => {
+    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel();
+    results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
+    searchAnnouncement.textContent = '';
+  }, render,
+);
 let restoringFocus = false;
 function keepMusicFocusVisible() {
   if (restoringFocus || page !== 'participant') return;
@@ -183,11 +197,9 @@ function subscribe(role: 'host' | 'participant' | 'display') {
   connection.addEventListener('revoked', () => {
     if (stream !== connection) return;
     accessEnded = true;
-    player.cancel(); catalogue.cancel();
     turnAnnouncement.textContent = 'You have been removed from the listening room.';
-    stream?.close(); realtime = false; view = undefined; results = []; searchDone = false;
-    artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
-    error = page === 'display' ? '' : 'You are no longer in the listening order. Join the room again to participate.'; render();
+    error = '';
+    participantAccess.revoke(); music.uploads.stop();
   });
   connection.onerror = () => { if (stream === connection) { realtime = false; player.cancel(); render(); } };
 }
@@ -283,9 +295,8 @@ function host() {
   main.append(aside); return main;
 }
 function participant() {
+  if (!view?.me) return participantEntry();
   const main = el('main', undefined, 'participant-page');
-  if (!view?.me) { main.append(el('h1', accessEnded ? 'Removed from the room.' : 'Participant'),
-    el('p', 'Join the listening room to participate. Your private list is kept separately.', 'muted'), link('Join room', '/join')); main.append(music.render()); return main; }
   const position = view.position;
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   main.dataset.turnState = state;
@@ -433,19 +444,40 @@ function participant() {
 }
 function playTrack(track: CatalogueTrack) { player.play(track); }
 function joinForm() {
-  const main = el('main', undefined, 'join-page room-join-page'); const panel = el('section', undefined, 'panel');
-  const title = el('h1', 'Join room'); title.id = 'join-room-title'; panel.setAttribute('aria-labelledby', title.id); panel.append(title);
-  const form = el('form'); const nameLabel = el('label', 'What should we call you?');
-  const input = el('input'); input.name = 'nickname'; input.required = true; input.maxLength = 40; input.setAttribute('autocomplete', 'nickname'); input.id = 'nickname'; nameLabel.htmlFor = 'nickname';
-  input.value = nicknameDraft; input.oninput = () => { nicknameDraft = input.value; };
-  const submit = el('button', 'Join room'); submit.id = 'join-room-submit'; submit.type = 'submit'; submit.disabled = busy;
-  const name = el('div', undefined, 'field'); name.append(nameLabel, input);
-  form.append(name, submit); form.onsubmit = event => {
-    event.preventDefault(); const nickname = input.value;
-    void run(async () => {
-      await api('/api/participant/join', { nickname }); location.replace(appPath('/participant'));
-    });
-  }; panel.append(form); main.append(panel); return main;
+  return joinPanel({ nickname: nicknameDraft, busy, disabled: !navigator.onLine,
+    notice: participantAccess.removed ? 'You’re no longer in the listening order. Join again when you’re ready. Your saved music is kept.' : undefined,
+    changed: value => { nicknameDraft = value; },
+    submit: nickname => { void run(async () => {
+      const next = await api<View>('/api/participant/join', { nickname });
+      if (page === 'join') location.replace(appPath('/participant')); else participantAccess.enter(next);
+    }); },
+  });
+}
+
+function participantEntry() {
+  const main = el('main', undefined, page === 'join' ? 'join-page room-join-page' : 'participant-page participant-entry');
+  const layout = el('div', undefined, 'entry-layout');
+  const state = participantAccess.state;
+  if (state === 'unjoined') layout.append(joinForm());
+  else {
+    const status = el('section', undefined, 'panel entry-status');
+    const title = el('h1', state === 'checking' ? 'Checking your place in the room…' : state === 'offline' ? 'You’re offline.' : 'Can’t reach the room.');
+    status.append(title);
+    const message = el('p', state === 'checking' ? 'Your saved music is kept separately.' : state === 'offline' ? 'Reconnect to check your place or join the room.' : participantAccess.message, 'muted');
+    message.setAttribute('role', state === 'error' ? 'alert' : 'status'); status.append(message);
+    if (state !== 'checking') {
+      const retry = el('button', 'Retry', 'secondary'); retry.type = 'button'; retry.id = 'retry-room'; retry.disabled = !navigator.onLine;
+      retry.onclick = () => { void participantAccess.check(); }; status.append(retry);
+    }
+    layout.append(status);
+  }
+  if (page === 'participant') {
+    const savedMusic = music.renderEntry();
+    const hasMusic = Boolean(library.view || music.uploads.hasWork);
+    main.classList.toggle('has-saved-music', hasMusic);
+    if (hasMusic) layout.append(savedMusic); else layout.firstElementChild!.append(savedMusic);
+  }
+  main.append(layout); return main;
 }
 function render() {
   updateHeader();
@@ -462,7 +494,7 @@ function render() {
   if (view && !view.connected) content.append(el('div', 'Playback or storage state is uncertain. Controls are disabled.', 'error'));
   if (view?.playbackIssue) content.append(el('div', view.playbackIssue, 'warning'));
   if (page === 'host') content.append(host());
-  else if (page === 'join' && !view) content.append(joinForm());
+  else if (page === 'join' && !view) content.append(participantEntry());
   else if (page === 'participant' || page === 'join') content.append(participant());
   else {
     const main = el('main', undefined, 'join-page'); main.append(el('h1', 'Albums of the Year'),
@@ -500,11 +532,7 @@ async function init() {
   } else {
     if (page === 'join') history.replaceState(null, '', '/join');
     if (page === 'participant') void library.start();
-    try {
-      accept(await api<View>('/api/participant/state'));
-      if (page === 'join') { location.replace(appPath('/participant')); return; }
-      subscribe('participant');
-    } catch { render(); }
+    await participantAccess.check();
   }
 }
 void init();
@@ -516,6 +544,7 @@ window.addEventListener('pageshow', event => { if (event.persisted) void init();
 window.addEventListener('offline', () => {
   if (page === 'settings' || page === 'home') return;
   realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); stream = undefined; render();
+  if (page === 'participant' || page === 'join') participantAccess.offline();
   library.stop();
   music.uploads.stop();
 });

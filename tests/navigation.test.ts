@@ -31,6 +31,7 @@ test('all pages have stable navigation without display credentials or lifecycle 
 });
 
 test('header state stays presentation-only, with literal nicknames, accurate turn badges, and explicit settings mode updates', () => {
+  assert.equal(headerModel('participant', {}).subtitle, 'My seat');
   const participant = headerModel('participant', { view }); assert.equal(participant.subtitle, 'Literal <name>'); assert.equal(participant.turn!.text, 'UP NEXT');
   assert.equal(headerModel('participant', { view: { ...view, myTurn: true } }).turn!.text, 'YOUR TURN');
   assert.equal(headerModel('participant', { view: { ...view, position: { ...view.position!, turnsUntil: 2 } } }).turn!.text, 'LISTENING');

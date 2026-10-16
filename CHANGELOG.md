@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Release 0.2.6 with a compact shared header on every page and a redesigned participant entry screen that preserves saved music, recovery, and unfinished work.
+- Replace the unjoined participant fallback with a shared join form, compact saved-music access, recovery, and distinct loading/offline/error states while preserving private drafts.
+- Use the listening room’s compact, reusable Menu and Full screen header on every page, preserving contextual status and keyboard navigation.
 - Release 0.2.5 with coherent host, settings, participant, listening-room, and joining interfaces, plus clearer navigation and search feedback.
 - Align Join room with the host and participant pages’ sans-serif headings, dark background, form styling, and responsive card spacing.
 - Redesign the listening room with a spacious stage, quieter joining QR, compact navigation, and a clear current/next turn-order strip without duplicate status panels.

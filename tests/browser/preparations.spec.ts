@@ -62,10 +62,10 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
     const key = await second.getByRole('textbox', { name: 'Your private recovery key' }).inputValue(); expect(key.length).toBeGreaterThan(70);
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); r.contexts.push(context);
     const phone = await context.newPage(); await phone.goto(isolatedApp.origin + '/participant');
-    await showList(phone); await phone.locator('#list-recovery').click(); await phone.getByLabel('Recover with a private key').fill(key);
+    await phone.locator('#list-recovery').click(); await phone.getByLabel('Recover with a private key').fill(key);
     await phone.getByRole('button', { name: 'Recover my list', exact: true }).click();
     await expect(titles(phone)).toHaveText(['Late Summer', 'Northern Lights']);
-    await expect(phone.getByRole('button', { name: 'Play next prepared track' })).toBeDisabled();
+    await expect(phone.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
     expect(phone.url()).not.toContain(key); expect(await phone.evaluate(() => JSON.stringify(localStorage))).not.toContain(key);
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });
     await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);

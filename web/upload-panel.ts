@@ -119,7 +119,8 @@ export class UploadPanel {
     this.recovering = false; this.discarding = false; this.changed();
   }
   get pending() { return Boolean(this.uploadId); }
-  render() {
+  get hasWork() { return Boolean(this.uploadId || this.selection || this.error); }
+  render(allowSelection = true) {
     this.syncOwner();
     if (this.uploadId && this.library.lastSavedUploadId === this.uploadId) {
       this.uploadId = undefined; this.preview = undefined; this.persist(); this.notice = 'Added to your list.';
@@ -130,7 +131,7 @@ export class UploadPanel {
       const message = el('p', this.progress >= 100 ? 'Processing audio and artwork…' : `Uploading… ${this.progress}%`, 'muted small'); message.setAttribute('role', 'status');
       const progress = el('progress'); progress.max = 100; progress.value = this.progress; progress.setAttribute('aria-label', 'File upload progress');
       nodes.push(message, progress, this.button('Cancel upload', () => this.stop()));
-    } else nodes.push(this.button(this.uploadId ? 'Choose another file' : 'Upload a track', () => this.input.click(), disabled));
+    } else if (allowSelection) nodes.push(this.button(this.uploadId ? 'Choose another file' : 'Upload a track', () => this.input.click(), disabled));
     if (this.recovering) nodes.push(el('p', 'Checking the completed upload…', 'muted small'));
     if (this.error) { const error = el('p', this.error, 'error small'); error.setAttribute('role', 'alert'); nodes.push(error); }
     if (this.notice) { const notice = el('p', this.notice, 'success small'); notice.setAttribute('role', 'status'); nodes.push(notice); }

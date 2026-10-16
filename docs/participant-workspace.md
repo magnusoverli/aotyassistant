@@ -6,6 +6,8 @@ Status: **implemented and deployed to the development instance on 2026-10-15**, 
 
 ## Implementation
 
+- **Version 0.2.6 entry-screen refinement:** `web/participant-access.ts` distinguishes membership checking, a confirmed unjoined state, offline, and errors. `web/join-panel.ts` supplies the same explicit nickname form to `/join` and unjoined `/participant`; already-joined browsers resume the workspace after checking. The compact shared header identifies this route as My seat even without membership.
+- Unjoined browsers without a library see optional recovery, not a fake empty list or disabled uploader. Existing owners see three upcoming entries and can explicitly expand/manage their list without joining. Revocation keeps one calm notice and never removes library access. Pending edits and unfinished upload metadata remain accessible; new uploads and playback still require membership. All pre-join work remains private and never joins or plays automatically.
 - `web/preparation-panel.ts` replaces the exclusive tabs with one list region and responsive inline expansion. There are no duplicate mobile/desktop lists or owners.
 - `web/main.ts` separates search controls from results, keeps the workspace visible during playback, and restores independent list scroll along with query, breadcrumbs, focus, and page scroll. The player and Finish my turn remain above the workspace.
 - `web/style.css` gives wider screens a search/list split and phones a compact sticky companion. The existing shared header, colors, artwork, and typography are reused.

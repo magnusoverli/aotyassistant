@@ -4,6 +4,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { ingressListener } from '../../src/ingress.js';
 import { test } from './app-fixture';
+import { openNavigation } from './navigation-helpers';
 
 test('Connect signs in through MA, selects a speaker, and reconnects without losing catalogue identity', async ({ page, isolatedApp }) => {
   await page.goto('/host/settings');
@@ -59,9 +60,11 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
     await expect(login.locator('.settings-connection .settings-state')).toHaveText('Configured');
     await expect(login).toHaveURL(`${origin}${prefix}/host/settings`);
+    await openNavigation(login);
     await login.getByRole('link', { name: 'Host desk', exact: true }).click();
     await expect(login).toHaveURL(`${origin}${prefix}/host`);
     await expect(login.getByRole('link', { name: 'Open guest invitation ↗' })).toHaveAttribute('href', `${guest}/join`);
+    await openNavigation(login);
     await expect(login.getByRole('link', { name: 'Listening room', exact: true })).toHaveAttribute('href', `${guest}/display`);
     await page.request.post(`${isolatedApp.origin}/api/participant/join`, { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Ingress listener' } });
     await expect(login.getByText('Ingress listener', { exact: true }).first()).toBeVisible(); // Prefixed SSE delivered the live join.
