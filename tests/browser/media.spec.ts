@@ -1,0 +1,86 @@
+import { expect } from '@playwright/test';
+import { test } from './app-fixture';
+import { saveChoice, showFind } from './preparation-helpers';
+
+test('automatic speakers, private artist/album artwork, reveal-gated progress/times, and current/host volume', async ({ browser, page: host, isolatedApp }) => {
+  const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
+  let state = await (await host.request.get('/api/host/state')).json();
+  let settings = await (await host.request.get('/api/host/integrations')).json();
+  expect((await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: settings.revision })).ok()).toBe(true);
+  const checks: string[] = []; host.on('request', request => { if (request.url().endsWith('/check')) checks.push(request.url()); });
+  await host.goto('/host/settings');
+  await expect(host.getByLabel('Playback destination', { exact: true })).toBeEnabled();
+  await host.getByLabel('Playback destination', { exact: true }).selectOption('sonos:bedroom');
+  await host.getByRole('button', { name: 'Save destination', exact: true }).click();
+  await expect(host.getByText('Saved destination: Bedroom', { exact: true })).toBeVisible();
+  await host.reload(); await expect(host.getByLabel('Playback destination', { exact: true })).toBeEnabled();
+  expect(checks).toEqual([]);
+  await expect(host.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
+  const firstContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const secondContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const tvContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+  try {
+    const first = await firstContext.newPage(); const second = await secondContext.newPage();
+    for (const [page, name] of [[first, 'Alex'], [second, 'Sam']] as const) {
+      await page.goto(state.joinUrl); await page.getByLabel('What should we call you?').fill(name); await page.getByRole('button', { name: 'Join room' }).click();
+      await expect(page).toHaveURL(/\/participant$/);
+    }
+    state = await (await host.request.get('/api/host/state')).json();
+    await host.goto('/host');
+    await expect(host.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
+    const tv = await tvContext.newPage(); const publicImages: string[] = [];
+    tv.on('request', request => { if (request.url().includes('/artwork/')) publicImages.push(request.url()); });
+    await tv.goto(state.displayUrl); await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
+    await showFind(first);
+    await first.getByRole('button', { name: 'Search artists', exact: true }).click();
+    await first.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await first.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(first.getByAltText('Artist image', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await first.getByRole('button', { name: 'View albums', exact: true }).click();
+    await expect(first.getByAltText('Album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await first.getByRole('button', { name: 'View tracks', exact: true }).click();
+    await saveChoice(first);
+    await expect(first.getByAltText('Saved album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    expect(publicImages).toEqual([]); await expect(second.getByRole('slider', { name: 'Volume', exact: true })).toHaveCount(0);
+    await first.getByRole('button', { name: 'Play next prepared track', exact: true }).click();
+    await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
+    await expect(tv.getByRole('progressbar', { name: 'Track progress', exact: true })).toBeVisible();
+    await expect(tv.locator('.track-times')).toBeEmpty();
+    let publicState = await (await tv.request.get('/api/display/state')).json();
+    expect(Object.keys(publicState.progress).sort()).toEqual(['fraction', 'id', 'status']);
+    expect(publicImages).toEqual([]);
+    const volume = first.getByRole('slider', { name: 'Volume', exact: true });
+    await expect(volume).toBeEnabled();
+    await volume.evaluate(input => { const slider = input as HTMLInputElement; slider.value = '25'; slider.dispatchEvent(new Event('input', { bubbles: true })); slider.dispatchEvent(new Event('change', { bubbles: true })); });
+    await expect(host.locator('.volume-control output')).toHaveText('25%');
+    await host.getByRole('slider', { name: 'Volume', exact: true }).evaluate(input => { const slider = input as HTMLInputElement; slider.value = '35'; slider.dispatchEvent(new Event('input', { bubbles: true })); slider.dispatchEvent(new Event('change', { bubbles: true })); });
+    await expect(first.locator('.volume-control output')).toHaveText('35%');
+    await tv.screenshot({ path: 'test-results/display-playing-concealed.png' });
+    await first.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expect(tv.getByText('Ⅱ Paused', { exact: true })).toBeVisible();
+    const position = await tv.getByRole('progressbar').getAttribute('value');
+    await expect.poll(async () => (await tv.request.get('/api/display/state')).json().then(value => value.progress.status)).toBe('paused');
+    expect(await tv.getByRole('progressbar').getAttribute('value')).toBe(position);
+    await tv.screenshot({ path: 'test-results/display-paused-concealed.png' });
+    await first.getByRole('button', { name: 'Reveal on the display', exact: true }).click();
+    await expect(tv.getByAltText('Current album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(tv.getByAltText('Current artist image', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(tv.locator('.track-times')).toContainText('3:00');
+    publicState = await (await tv.request.get('/api/display/state')).json();
+    expect(publicState.progress.duration).toBe(180); expect(typeof publicState.progress.elapsed).toBe('number');
+    expect(JSON.stringify(publicState)).not.toContain('/api/participant/artwork/');
+    const oldImage = await tv.getByAltText('Current album artwork', { exact: true }).getAttribute('src');
+    await tv.screenshot({ path: 'test-results/display-media-revealed.png' });
+    expect(await tv.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(770);
+    await first.screenshot({ path: 'test-results/participant-media-volume.png', fullPage: true });
+    await expect(second.getByText('Real catalogue fixture')).toHaveCount(0);
+    await first.getByRole('button', { name: 'Finish my turn' }).click();
+    await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
+    await expect(tv.locator('.track-times')).toBeEmpty(); await expect(tv.getByAltText('Current album artwork')).toHaveCount(0);
+    expect((await tv.request.get(oldImage!)).status()).toBe(403);
+    await expect(first.getByRole('slider', { name: 'Volume', exact: true })).toHaveCount(0);
+  } finally {
+    await firstContext.close(); await secondContext.close(); await tvContext.close();
+    state = await (await host.request.get('/api/host/state')).json();
+    settings = await (await host.request.get('/api/host/integrations')).json(); await post('/api/host/integrations/clear', { revision: settings.revision });
+  }
+});

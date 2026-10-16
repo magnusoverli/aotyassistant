@@ -1,0 +1,28 @@
+name: Albums of the Year (development)
+version: "0.1.0"
+slug: albums_of_the_year
+url: https://github.com/magnusoverli/aotyassistant
+description: Private listening circle with artist/album browsing and turn-controlled experimental Music Assistant playback.
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: manual
+init: false
+ingress: false
+host_network: false
+ports:
+  3000/tcp: 3000
+ports_description:
+  3000/tcp: LAN guest/display endpoint and intentionally open host controls
+webui: "http://[HOST]:[PORT:3000]/host"
+environment:
+  HA_ADDON: "1"
+options:
+  guest_url: "http://homeassistant.local:3000"
+  playback_mode: demo
+  demo_track_seconds: 30
+schema:
+  guest_url: url
+  playback_mode: list(demo)
+  demo_track_seconds: int(1,3600)

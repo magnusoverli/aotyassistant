@@ -1,0 +1,53 @@
+# Changelog
+
+## [Unreleased]
+
+- Add a public Home Assistant source repository, lab installation guidance, and automated application checks.
+- Deploy the audit fixes and restart the development app with saved data/settings retained; refresh open pages.
+- Harden playback, private-list recovery, uploads and live updates against stale requests; fix startup errors and consolidate shared infrastructure without changing the feature set.
+- Replace sessions with one persistent room, permanent public display/join links, and no Create/Start/End or admission controls; retain private music and host reordering/removal.
+- Restore the development app/MA addresses and original catalogue identity/speaker while retaining the newly configured valid token; live file verification passes.
+- Deploy uploads, the combined participant workspace, and MA-verified address setup; guest links now use the LAN address, with existing session/lists retained.
+- Suggest and verify app media addresses through Music Assistant without playback, with host-configurable guest links, safe LAN setup, and verified manual overrides.
+- Verify real Music Assistant protected-file fetches for all supported formats over LAN after disconnecting the conflicting development VPN; no routing workarounds needed.
+- Show participant search and private lists together, with a desktop sidebar, expandable phone preview, and uninterrupted access during playback.
+- Add private single-file uploads with metadata/cover review, durable lists, guarded Music Assistant playback, and permanent deletion; support MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus without storage quotas (not standalone AAC).
+- Document a combined participant search/private-list layout with a desktop sidebar, compact expandable phone list, and standalone visual prototype.
+- Document uploaded-audio research, broad formats without storage quotas, AAC timing handling, and Music Assistant callback-network requirements.
+- Deployed identical header menus and the plain-copy cleanup; refresh open pages to load the changes.
+- Use identical header navigation on every page, remove the redundant Session links menu and open-host banners, and replace decorative slogans with concise functional wording.
+- Deployed the shared header and navigation on all pages; refresh open pages to load it.
+- Share one persistent header across every page, with centralized desktop/mobile navigation, host session links, accessible menus, and preserved playback/display state.
+- Deployed durable private playlists and automatic speaker readiness; refresh participant pages, then use an explicit Play when ready.
+- Remove the manual playback enable/disable switch; configured speakers are available automatically, with explicit Play actions and all playback/ownership safeguards retained.
+- Deployed the simplified Music Assistant settings; refresh pages and re-enable live playback when ready.
+- Simplify configured Music Assistant settings to a summary and Disconnect button, hiding setup fields and removing the redundant manual connection check.
+- Connect durable private playlists to participant search, reordering, history/recovery, guarded Play next, and restart-safe catalogue identities; reserve private asset-backed entries for future uploads.
+- Deployed whole-record rotation so the personalized label now turns with the disc.
+- Started the durable private-playlist backend with saved ordering, reversible history, conflict-safe edits, and owner recovery; participant UI integration is still pending.
+- Enable this deployment's LAN/Tailscale port access with the correct Tailscale invitation URL, and document persistent Docker bind settings.
+- Make the record label spin with the disc so rotation is clearly visible, without changing the rest of the public display.
+- Document the proposed durable private preparation playlist, with ordered tracks, recovery safeguards, and a compact participant UI.
+- Deployed personalized record stickers and slow rotation; refresh the public display to load the new visuals.
+- Personalize unrevealed vinyl stickers with the current listener’s name and 180 playful labels, shuffled without repeats until exhausted and remembered across display refreshes.
+- Spin the public record slowly during playback, keeping its label readable and rotation continuous through reveal, frozen on pause, and disabled for reduced motion.
+- Deployed the cleaner public display; refresh pages and re-enable live playback after upgrading.
+- Clean up the idle public display and add restrained playback motion that stays continuous through reveal, pauses with playback, and respects reduced motion.
+- Deployed the speaker-change fix; refresh pages once and re-enable live playback to continue.
+- Preserve private prepared tracks, browsing, and artwork when changing speakers, while keeping playback and destination safety checks intact.
+- Made the participant player and host volume respond optimistically without page-wide locking, coalescing rapid adjustments and correcting failed or mismatched updates.
+- Keep paused tracks resumable indefinitely when Music Assistant releases their stream, while retaining exact-item and external-source safeguards.
+- Discover speakers automatically in settings, without requiring a manual connection check before changing destination.
+- Added public playback status and progress, revealing elapsed/total times only with the track information.
+- Added private artist/album artwork browsing and guarded, reveal-only images on the public display.
+- Added destination-bound volume controls for the current playing participant and host, with group-volume support.
+- Cleaned up Connections & settings to match the host desk, with separate connection, speaker, and playback cards plus on-demand setup details.
+- Simplified the participant page with the public display’s dark green-and-gold theme, compact turn/seat status, and less repeated information.
+- Redesigned the TV display, host desk, and participant UI with clear turn states, seat positions, and a private rotation countdown.
+- Disable session controls immediately when the browser goes offline and revalidate state on reconnection.
+- Added private artist/album browsing and preparation for all participants, plus host-enabled experimental single-track Music Assistant playback.
+- Connected private participant search to all Music Assistant catalogue sources, with clear empty/error states; real playback remains disabled.
+- Recorded development-only Music Assistant API discovery and the editable host-UI configuration workflow.
+- Added host-browser Music Assistant setup, read-only checks, and speaker/group selection with server-only tokens; playback remains demo-only.
+- Added a runnable demo with QR joining, private reveals, atomic turn controls, mobile/TV/host views, persistence, tests, container/add-on packaging, and a read-only Music Assistant probe; live Sonos playback remains pending.
+- Added the Albums of the Year implementation plan, confirmed owner decisions, and progress/acceptance checklists.

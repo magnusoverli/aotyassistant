@@ -1,0 +1,118 @@
+import { el, link } from './dom';
+import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
+
+/** One persistent header for every route. Page renderers never replace it or reach into its DOM. */
+export class AppHeader {
+  readonly element = el('header', undefined, 'app-header');
+  private subtitle = el('span', undefined, 'brand-subtitle');
+  private meta = el('div', undefined, 'header-meta');
+  private mode = el('span', undefined, 'badge mode-badge');
+  private turn = el('span', undefined, 'turn-chip');
+  private navigation = el('nav', undefined, 'primary-navigation');
+  private primary = el('ul', undefined, 'primary-links');
+  private toggle = el('button', 'Menu', 'secondary header-menu-toggle');
+  private fullscreen = el('button', 'Full screen', 'secondary header-fullscreen');
+  private links = new Map<string, HTMLAnchorElement>();
+  private expanded = false;
+  private media = matchMedia('(max-width: 1200px)');
+  private resize?: ResizeObserver;
+  private fullscreenPending = false;
+
+  constructor(private page: Page, private failed: (message: string) => void) {
+    const skip = link('Skip to content', '#main-content', 'skip-link');
+    skip.onclick = event => {
+      const content = document.getElementById('main-content');
+      if (!content) return;
+      // Focus without changing the current URL or creating a history entry.
+      event.preventDefault(); content.focus({ preventScroll: true }); content.scrollIntoView({ block: 'start' });
+    };
+    const inner = el('div', undefined, 'header-inner');
+    const brand = link('', routes.home, 'brand'); brand.setAttribute('aria-label', 'Albums of the Year · Home');
+    if (page === 'home') brand.setAttribute('aria-current', 'page');
+    const mark = el('span', '◉', 'brand-mark'); mark.setAttribute('aria-hidden', 'true');
+    const wordmark = el('div'); wordmark.append(el('strong', 'Albums of the Year'), this.subtitle); brand.append(mark, wordmark);
+    this.navigation.id = 'app-navigation'; this.navigation.setAttribute('aria-label', 'Primary navigation');
+    this.navigation.append(this.primary);
+    this.toggle.type = 'button'; this.toggle.setAttribute('aria-controls', this.navigation.id);
+    this.toggle.onclick = () => this.setExpanded(!this.expanded);
+    this.meta.append(this.mode, this.turn, this.fullscreen);
+    this.fullscreen.type = 'button'; this.fullscreen.onclick = () => { void this.toggleFullscreen(); };
+    inner.append(brand, this.meta, this.toggle, this.navigation); this.element.append(skip, inner);
+    this.element.dataset.header = 'shared';
+    this.element.addEventListener('keydown', this.keydown);
+    this.navigation.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target.closest('a') : null;
+      if (!target) return;
+      // Close the same responsive menu on every page after a navigation choice.
+      this.setExpanded(false);
+    });
+    document.addEventListener('pointerdown', this.outside);
+    document.addEventListener('fullscreenchange', this.fullscreenChanged);
+    this.media.addEventListener('change', this.layoutChanged);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resize = new ResizeObserver(() => document.documentElement.style.setProperty('--app-header-height', `${this.element.getBoundingClientRect().height}px`));
+      this.resize.observe(this.element);
+    }
+    this.update({});
+  }
+  update(state: HeaderState) {
+    const model = headerModel(this.page, state);
+    if (this.subtitle.textContent !== model.subtitle) this.subtitle.textContent = model.subtitle;
+    this.mode.hidden = !model.modeText; this.mode.textContent = model.modeText;
+    this.turn.hidden = !model.turn;
+    this.turn.textContent = model.turn?.text ?? ''; this.turn.title = model.turn?.title ?? '';
+    this.turn.classList.toggle('is-mine', model.turn?.mine ?? false);
+    for (const item of model.primary) {
+      let anchor = this.links.get(item.id);
+      if (!anchor) { anchor = link('', item.href, 'header-nav-link'); const li = el('li'); li.append(anchor); this.primary.append(li); this.links.set(item.id, anchor); }
+      this.updateLink(anchor, item);
+    }
+    this.updateLayout(); this.updateFullscreen();
+  }
+  private updateLink(anchor: HTMLAnchorElement, item: NavigationItem) {
+    if (anchor.textContent !== item.text) anchor.textContent = item.text;
+    anchor.setAttribute('href', item.href);
+    if (item.current) anchor.setAttribute('aria-current', 'page'); else anchor.removeAttribute('aria-current');
+  }
+  private get collapsed() { return this.media.matches; }
+  private setExpanded(value: boolean, restoreFocus = false) {
+    this.expanded = value; this.updateLayout();
+    if (restoreFocus && !this.toggle.hidden) this.toggle.focus({ preventScroll: true });
+  }
+  private updateLayout() {
+    this.element.classList.toggle('has-collapsed-navigation', this.collapsed);
+    this.toggle.hidden = !this.collapsed; this.toggle.setAttribute('aria-expanded', String(this.expanded));
+    this.toggle.textContent = this.expanded ? 'Close' : 'Menu';
+    this.navigation.hidden = this.collapsed && !this.expanded;
+  }
+  private layoutChanged = () => {
+    const focused = this.navigation.contains(document.activeElement);
+    this.setExpanded(false, focused && this.collapsed);
+  };
+  private keydown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    if (this.expanded) { this.setExpanded(false, true); event.preventDefault(); }
+  };
+  private outside = (event: PointerEvent) => {
+    if (!this.element.contains(event.target as Node)) this.setExpanded(false);
+  };
+  private fullscreenChanged = () => this.updateFullscreen();
+  private updateFullscreen() {
+    this.fullscreen.hidden = this.page !== 'display' || !document.fullscreenEnabled || !document.documentElement.requestFullscreen;
+    this.fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+    this.fullscreen.setAttribute('aria-pressed', String(Boolean(document.fullscreenElement)));
+    this.fullscreen.disabled = this.fullscreenPending;
+    this.meta.hidden = this.mode.hidden && this.turn.hidden && this.fullscreen.hidden;
+  }
+  private async toggleFullscreen() {
+    if (this.fullscreenPending) return;
+    this.fullscreenPending = true; this.updateFullscreen();
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
+    catch { this.failed('Full screen could not be changed. Try your browser’s full-screen control.'); }
+    finally { this.fullscreenPending = false; this.updateFullscreen(); }
+  }
+  destroy() {
+    this.resize?.disconnect(); this.media.removeEventListener('change', this.layoutChanged);
+    document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);
+  }
+}

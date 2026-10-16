@@ -1,0 +1,72 @@
+import { expect } from '@playwright/test';
+import { test } from './app-fixture';
+
+test('QR invitation, direct joining without startup, mobile controls, private reveal, late arrival, and refresh', async ({ browser, page: host }) => {
+  await host.goto('/host');
+  await expect(host.getByText('Open host controls:')).toHaveCount(0);
+  await expect(host.getByRole('button', { name: 'Create a session' })).toHaveCount(0);
+  const joinUrl = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
+  const displayUrl = await host.getByRole('link', { name: 'Open public display' }).getAttribute('href');
+  expect(new URL(joinUrl!).pathname).toBe('/join'); expect(new URL(joinUrl!).hash).toBe('');
+  const alexContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const samContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const tvContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const lateContext = await browser.newContext();
+  const alex = await alexContext.newPage(); const sam = await samContext.newPage(); const tv = await tvContext.newPage();
+  try {
+    await alex.goto(joinUrl!); await alex.getByLabel('What should we call you?').fill('Alex');
+    await alex.getByRole('button', { name: 'Join room' }).click();
+    await expect(alex).toHaveURL(/\/participant$/);
+    await sam.goto(joinUrl!); await sam.getByLabel('What should we call you?').fill('Sam'); await sam.getByRole('button', { name: 'Join room' }).click();
+    await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);
+    await expect(host.getByRole('button', { name: 'Start listening' })).toHaveCount(0);
+    await expect(host.getByRole('heading', { name: 'Waiting to join', exact: true })).toHaveCount(0);
+    await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
+    await expect(sam.getByRole('heading', { name: 'Alex is sharing.' })).toBeVisible();
+    const requests: string[] = []; tv.on('request', request => requests.push(request.url()));
+    const payloads: string[] = [];
+    tv.on('response', response => {
+      if (response.url().includes('/api/display/') && !response.url().endsWith('/events')) void response.text().then(text => payloads.push(text)).catch(() => {});
+    });
+    await tv.goto(displayUrl!); await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
+    await expect(tv.getByAltText('Scan to join the listening room')).toBeVisible();
+    await alex.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern');
+    await alex.getByRole('button', { name: 'Search', exact: true }).click(); await alex.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(alex.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
+    await expect(alex.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
+    await expect(alex.getByRole('button', { name: 'Reveal on the display' })).toBeInViewport();
+    await expect(alex.getByRole('button', { name: 'Finish my turn' })).toBeInViewport();
+    await alex.getByRole('button', { name: 'Pause', exact: true }).click();
+    await alexContext.setOffline(true);
+    await expect(alex.getByRole('button', { name: 'Finish my turn' })).toBeDisabled();
+    await alexContext.setOffline(false);
+    await expect(alex.getByRole('button', { name: 'Finish my turn' })).toBeEnabled();
+    await alex.screenshot({ path: 'test-results/participant-playing.png', fullPage: true });
+    await expect(alex.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
+    await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
+    await expect(sam.getByText('Northern Lights')).toHaveCount(0);
+    expect(payloads.join('')).not.toContain('Northern Lights'); expect(payloads.join('')).not.toContain('The Paper Satellites');
+    expect(requests.some(url => url.includes('demo-cover.svg'))).toBe(false);
+    await alex.getByRole('button', { name: 'Reveal on the display' }).click();
+    await expect(tv.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
+    await expect(tv.getByText('The Paper Satellites')).toBeVisible();
+    await expect(sam.getByText('Northern Lights')).toHaveCount(0);
+    await tv.screenshot({ path: 'test-results/display-revealed.png' });
+    await alex.reload(); await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
+    await expect(alex.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
+    const late = await lateContext.newPage(); await late.goto(joinUrl!);
+    await late.getByLabel('What should we call you?').fill('Jordan <img src=x>'); await late.getByRole('button', { name: 'Join room' }).click();
+    await expect(host.getByText('Jordan <img src=x>', { exact: true })).toBeVisible();
+    await expect(host.locator('img[src="x"]')).toHaveCount(0);
+    await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);
+    await expect(late.getByRole('heading', { name: 'Seat 3 of 3', exact: true })).toBeVisible();
+    await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
+    await alex.getByRole('button', { name: 'Finish my turn' }).click();
+    await expect(sam.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
+    await expect(alex.getByText('Northern Lights')).toHaveCount(0);
+    await expect(host.getByRole('heading', { name: 'Sam', exact: true })).toBeVisible();
+  } finally {
+    await alexContext.close(); await samContext.close(); await tvContext.close(); await lateContext.close();
+  }
+});

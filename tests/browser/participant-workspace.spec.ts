@@ -1,0 +1,112 @@
+import { randomUUID } from 'node:crypto';
+import { expect, type Browser, type Page } from '@playwright/test';
+import { test } from './app-fixture';
+import type { DemoAdapter } from '../../src/playback';
+
+async function workspace(browser: Browser, host: Page, origin: string, demo: DemoAdapter, count = 24) {
+  const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: origin } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  const joined = await context.request.post(origin + '/api/participant/join', { data: { nickname: 'Workspace listener' }, headers: { Origin: origin } });
+  expect(joined.ok()).toBe(true);
+  const request = async (path: string, data: unknown) => context.request.post(origin + '/api/participant/preparations' + path, { data, headers: { Origin: origin } });
+  let library = await (await request('/init', {})).json();
+  for (let index = 0; index < count; index++) {
+    const track = { id: `demo:workspace-${index}`, title: `Workspace selection ${String(index + 1).padStart(2, '0')}${index === 0 ? ' — a long title that still needs to be readable and kept' : ''}`, artist: 'An artist with a deliberately long name', album: 'A very long album name for a narrow sidebar', duration: 60 };
+    demo.catalogue.push(track);
+    const response = await request('/add', { trackId: track.id, operation: { id: randomUUID(), issuedAt: Date.now(), revision: library.revision } });
+    expect(response.ok()).toBe(true); library = (await response.json()).view;
+  }
+  const page = await context.newPage(); await page.goto(origin + '/participant');
+  await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
+  return { page, context, post, request, async close() { await context.close(); } };
+}
+
+test('search and one private list share desktop/phone layouts, including long metadata and short viewports', async ({ browser, page: host, isolatedApp }) => {
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo);
+  const page = r.page;
+  try {
+    await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Workspace'); await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.locator('.catalogue-results .track-row')).toHaveCount(24);
+    for (const [width, height] of [[1440, 1000], [1000, 800], [999, 800], [390, 844], [320, 700], [390, 440]]) {
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+      await page.setViewportSize({ width: width!, height: height! });
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      await expect(page.locator('.preparation-list')).toHaveCount(1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+      const layout = await page.evaluate(() => {
+        const search = document.querySelector('.catalogue-panel')!.getBoundingClientRect(); const list = document.querySelector('.preparation-list')!.getBoundingClientRect();
+        return { sideBySide: list.left >= search.right, previewRows: [...document.querySelectorAll('.saved-tracks[aria-label="Your prepared tracks"] > li')].filter(node => getComputedStyle(node).display !== 'none').length };
+      });
+      expect(layout.sideBySide).toBe(width! >= 1000);
+      expect(layout.previewRows).toBe(width! >= 1000 ? 24 : width! <= 360 || height! < 600 ? 1 : 2);
+      await page.screenshot({ path: `test-results/participant-workspace-${width}x${height}-initial.png` });
+      if (width! < 1000) {
+        await page.getByRole('button', { name: 'View all', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Show less', exact: true })).toHaveAttribute('aria-expanded', 'true');
+        expect(await page.locator('.list-body').evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+        await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
+        await page.getByRole('button', { name: 'Show less', exact: true }).click();
+      }
+      // Keyboard focus must not be obscured by either sticky surface.
+      const add = page.locator('.catalogue-results .track-row').nth(12).getByRole('button', { name: 'Add to my list', exact: true });
+      await add.focus();
+      await expect.poll(() => add.evaluate(node => {
+        const rect = node.getBoundingClientRect(); const list = document.querySelector('.preparation-list')!.getBoundingClientRect();
+        const header = document.querySelector('header')!.getBoundingClientRect();
+        return rect.top >= (innerWidth < 1000 ? list.bottom : header.bottom) && rect.bottom <= innerHeight;
+      }), { message: `Focused result is unobscured at ${width}×${height}` }).toBe(true);
+      await expect(page.locator('.preparation-list')).toBeInViewport();
+      await page.screenshot({ path: `test-results/participant-workspace-${width}x${height}.png` });
+    }
+    expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeFalsy();
+  } finally { await r.close(); }
+});
+
+test('owner and room updates preserve search/caret, expanded list scroll, and the shared header', async ({ browser, page: host, isolatedApp }) => {
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo); const page = r.page;
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: 'View all', exact: true }).click();
+    await page.locator('.list-body').evaluate(node => { node.scrollTop = 260; });
+    const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Still searching');
+    await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 7));
+    await page.locator('header').evaluate(node => { (node as HTMLElement).dataset.sameNode = 'yes'; });
+    const before = await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }));
+    const saved = await (await page.request.get('/api/participant/preparations/state')).json();
+    expect((await r.request('/add', { trackId: 'demo:aurora', operation: { id: randomUUID(), issuedAt: Date.now(), revision: saved.revision } })).ok()).toBe(true);
+    await expect(page.locator('.list-count')).toHaveText(' · 25');
+    let session = await (await host.request.get('/api/host/state')).json();
+    session = await (await r.post('/api/host/reorder', { ids: session.active.map((person: { id: string }) => person.id), revision: session.revision })).json();
+    await expect(input).toBeFocused(); await expect(input).toHaveValue('Still searching');
+    expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 7]);
+    expect(await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }))).toEqual(before);
+    await expect(page.getByRole('button', { name: 'Show less', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('header')).toHaveAttribute('data-same-node', 'yes');
+    await r.post('/api/host/remove', { id: session.current.id, revision: session.revision });
+    await expect(page.getByRole('heading', { name: 'Removed from the room.' })).toBeVisible();
+    await expect(page.locator('.music-workspace')).toHaveClass(/is-list-only/);
+    await expect(page.locator('.list-count')).toHaveText(' · 25');
+    await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveCount(0);
+  } finally { await r.close(); }
+});
+
+test('adding from results keeps compact list, query, focus and scroll without starting audio', async ({ browser, page: host, isolatedApp }) => {
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 1); const page = r.page;
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Summer');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    const add = page.getByRole('button', { name: 'Add to my list', exact: true }); await add.focus(); await expect(add).toBeFocused();
+    const before = await page.evaluate(() => scrollY); const buttonTop = (await add.boundingBox())!.y; await add.press('Enter');
+    const added = page.getByRole('button', { name: 'Added ✓', exact: true }); await expect(added).toBeFocused();
+    await expect(added).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.locator('.list-count')).toHaveText(' · 2'); await expect(input).toHaveValue('Summer');
+    await expect(page.getByRole('button', { name: 'View all', exact: true })).toHaveAttribute('aria-expanded', 'false');
+    expect(await page.evaluate(() => scrollY)).toBe(before);
+    expect(Math.abs((await added.boundingBox())!.y - buttonTop)).toBeLessThanOrEqual(1);
+    await expect(page.getByRole('status').filter({ hasText: 'Added Late Summer to your list.' })).toHaveCount(1);
+    await added.press('Enter');
+    expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(2);
+    expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeFalsy();
+  } finally { await r.close(); }
+});
