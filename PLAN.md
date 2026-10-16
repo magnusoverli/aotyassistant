@@ -2,6 +2,8 @@
 
 ## Status
 
+**HAOS release acceptance — 2026-10-16:** 0.2.2 is installed and healthy at `10.69.6.39`. Live discovery, Open web UI/Ingress and Supervisor hot backup passed; packaged upload/backup restore checks passed. GitHub checks and public amd64/aarch64 image publication passed, with anonymous pulling verified. The store now uses prebuilt images. Interactive MA sign-in, Reconnect and media verification await corrected HA login credentials.
+
 **Automatic HA setup — implemented 2026-10-16:** Supervisor/mDNS discovery, automatic guest/media candidates, MA browser Connect/Reconnect, dedicated host Ingress, backup write coordination, startup/watchdog support and multi-architecture publishing workflow are implemented. Typecheck/build, 168 backend tests and 39 browser workflows pass. Real discovery was checked against the replacement HAOS at `10.69.6.39` (Core 2026.10.1, Supervisor 2026.10.2, MA 2.10.6/schema 65); it correctly identifies the guest port, internal media addresses and MA. MA initially reports incomplete onboarding. Deployment and live sign-in/Ingress verification are in progress. See [setup research/status](docs/home-assistant-setup-research.md).
 
 **Home Assistant repository preparation — 2026-10-16:** created the public `magnusoverli/aotyassistant` GitHub repository and prepared Supervisor repository metadata, installation documentation, and application CI. The existing root add-on configuration and Dockerfile remain the source-build context. Local typecheck, all 160 tests, and production build pass. GitHub CI results and real HAOS installation must be verified separately; no VM deployment or speaker operation is implied by repository setup.

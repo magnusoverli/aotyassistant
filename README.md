@@ -157,7 +157,7 @@ Data persists in a dedicated volume. Startup prepares that directory and then dr
 
 ### Install from GitHub
 
-Add `https://github.com/magnusoverli/aotyassistant` to the HA app store's **Repositories**, then install **Albums of the Year (development)**. Open the host interface through Ingress, connect the detected MA server and select a speaker. See [installation](DOCS.md) and [prebuilt-image releases](docs/home-assistant-releases.md). The current source manifest stays installable until the first prebuilt image is published.
+Add `https://github.com/magnusoverli/aotyassistant` to the HA app store's **Repositories**, then install **Albums of the Year (development)**. Supervisor downloads a public prebuilt image for amd64 or aarch64. Open the host interface through Ingress, connect the detected MA server and select a speaker. See [installation](DOCS.md) and [prebuilt-image releases](docs/home-assistant-releases.md).
 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
@@ -165,7 +165,7 @@ Add `https://github.com/magnusoverli/aotyassistant` to the HA app store's **Repo
 
 Packaging is provided for testing; installation on a real Supervisor instance remains unverified. It never starts audio automatically; a saved connection/speaker becomes available for an explicit participant Play action, just as outside the add-on.
 
-1. On a Home Assistant OS/Supervised host, place this project under `/addons/albums_of_the_year/` (the local add-on directory), including `config.yaml`, `Dockerfile`, lockfile, source, web assets, and entrypoint.
+1. On a Home Assistant OS/Supervised host, place this project under `/addons/albums_of_the_year/` (the local add-on directory), including `config.yaml`, `Dockerfile`, lockfile, source, web assets, and entrypoint. Remove the `image` line from this local copy of `config.yaml` to build your changed source instead of downloading the published release.
 2. Reload local add-ons in the add-on store, select **Albums of the Year (development)**, and build/install it.
 3. Keep the guest port published. Supervisor supplies its effective port and LAN-address candidates; `guest_url` is an optional override.
 4. Start it and open the host desk through Ingress. Guests use the direct QR/display links.

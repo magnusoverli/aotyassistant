@@ -8,7 +8,7 @@ Researched **2026-10-16** against this application's source, **Home Assistant Co
 - Implemented Connect/Reconnect, one-time browser-bound callback state, app-specific tokens, expiry display, same-server source/destination retention, and token/separate-login-address fallback (`src/ma-authorization.ts`, `web/settings.ts`).
 - Implemented dedicated Supervisor-only Ingress, prefixed assets/navigation/API/SSE, iframe policy, scoped login cookies and canonical guest links (`src/ingress.ts`, `src/http.ts`, `web/paths.ts`).
 - Added automatic startup, readiness watchdog support, coordinated hot backups, labels/translations, icon and installation button.
-- Added two-architecture GHCR release automation. The source manifest remains active until a public image exists; the workflow produces the prebuilt manifest after publishing. See [releasing](home-assistant-releases.md).
+- Added two-architecture GHCR release automation. Public version 0.2.2 images and the prebuilt store manifest are now published. See [releasing](home-assistant-releases.md).
 - Retained direct MA integration: Core-only credential handoff, unsupported Services API registration, private HA storage and a redundant custom integration are not used.
 
 See [current installation instructions](../DOCS.md). Future-tense wording below records the original investigation. Real HAOS testing uses the owner's replacement installation at `10.69.6.39`; its Core 2026.10.1, Supervisor 2026.10.2 and MA 2.10.6/schema 65 were confirmed, with MA onboarding initially incomplete.
@@ -20,7 +20,8 @@ See [current installation instructions](../DOCS.md). Future-tense wording below 
 - MA's `onboard_done: false` does not prevent authentication; music sources and players can be added later. Removed the unnecessary application-side sign-in block.
 - A real Supervisor partial hot backup of 0.2.1 completed (`4bbf2b54`), and the app returned healthy with writes resumed. A pre-upgrade backup is also available (`6c51869a`).
 - Packaged-container checks passed, including audio uploads, backup write coordination and private-list/cover recovery from a restored data volume.
-- Browser Connect reaches HA's authorization page. Successful live sign-in, Reconnect and MA media fetching remain pending valid interactive login credentials. Public prebuilt-image publication is also pending.
+- Updated the live app to **0.2.2** and verified health. GitHub typecheck, all 168 backend tests and build passed; both architecture images published successfully and an anonymous amd64 pull passed.
+- Browser Connect reaches HA's authorization page. Successful live sign-in, Reconnect and MA media fetching remain pending valid interactive login credentials.
 
 ## Conclusion
 

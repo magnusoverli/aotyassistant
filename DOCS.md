@@ -7,7 +7,7 @@ Requires **Home Assistant 2026.10.0 or later** with Supervisor, amd64 or aarch64
 ## Install and connect
 
 1. Use the button above, or add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
-2. Install **Albums of the Year (development)** and start it. Source builds can take several minutes; published-image releases download a prebuilt image instead.
+2. Install **Albums of the Year (development)** and start it. Supervisor downloads the public prebuilt image for your architecture.
 3. Select **Open web UI**. The host interface opens through Home Assistant Ingress. Enable its sidebar entry in the app's Info page if desired.
 4. Open **Connections & settings**, choose a detected server, and select **Connect Music Assistant**. Complete MA sign-in in the new tab. If discovery misses an external server, enter its direct API address (normally port 8095).
 5. Choose a speaker/group and **Save destination**, then share the host desk's guest QR or display link.

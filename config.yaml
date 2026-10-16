@@ -38,3 +38,5 @@ schema:
   guest_url: url?
   playback_mode: list(demo)?
   demo_track_seconds: int(1,3600)
+
+image: ghcr.io/magnusoverli/aotyassistant
