@@ -13,6 +13,15 @@ Researched **2026-10-16** against this application's source, **Home Assistant Co
 
 See [current installation instructions](../DOCS.md). Future-tense wording below records the original investigation. Real HAOS testing uses the owner's replacement installation at `10.69.6.39`; its Core 2026.10.1, Supervisor 2026.10.2 and MA 2.10.6/schema 65 were confirmed, with MA onboarding initially incomplete.
 
+### Live acceptance so far
+
+- Installed version **0.2.1** on HAOS. Default-role discovery returns the correct published guest port, internal media candidates and MA server identity. The existing guest origin is preserved.
+- **Open web UI** now returns the host desk through real Supervisor Ingress. The settings page loads its prefixed assets and API calls. Supervisor requires `ingress_entry: host`, without a leading slash.
+- MA's `onboard_done: false` does not prevent authentication; music sources and players can be added later. Removed the unnecessary application-side sign-in block.
+- A real Supervisor partial hot backup of 0.2.1 completed (`4bbf2b54`), and the app returned healthy with writes resumed. A pre-upgrade backup is also available (`6c51869a`).
+- Packaged-container checks passed, including audio uploads, backup write coordination and private-list/cover recovery from a restored data volume.
+- Browser Connect reaches HA's authorization page. Successful live sign-in, Reconnect and MA media fetching remain pending valid interactive login credentials. Public prebuilt-image publication is also pending.
+
 ## Conclusion
 
 The realistic target is **install → open inside Home Assistant → connect the discovered Music Assistant server → choose a speaker → share the QR code**. Supervisor can eliminate most address/configuration work. Music Assistant's browser login can eliminate manual token creation and copying. A supported, completely silent credential handoff to this separate app was not found.

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Record live HAOS 0.2.1 discovery, Ingress and hot-backup verification, with interactive MA sign-in still pending.
 - Fix Home Assistant's Open web UI entry path and allow MA sign-in before music sources and players are configured.
 - Add automatic Home Assistant/MA discovery and addresses, browser sign-in/reconnect, host Ingress, coordinated backups, startup/watchdog support, and prebuilt-image release automation.
 - Document opportunities for automatic Home Assistant setup, Music Assistant browser login, and Ingress integration.
