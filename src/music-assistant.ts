@@ -8,7 +8,7 @@ export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData } from '
 export type Destination = { id: string; name: string; available: boolean };
 export type ConnectionReport = {
   checkedAt: number; serverVersion: string; schemaVersion: number;
-  docsAvailable: boolean; players: Destination[];
+  docsAvailable: boolean; players: Destination[]; serverId?: string;
 };
 export interface MusicAssistantReader {
   inspect(): Promise<ConnectionReport>;
@@ -112,7 +112,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   async inspect(): Promise<ConnectionReport> {
     try {
-      const info = z.object({ server_version: z.string().max(80), schema_version: z.number().int(), min_supported_schema_version: z.number().int() }).parse(await this.read('/info'));
+      const info = z.object({ server_id: z.string().min(1).max(200).optional(), server_version: z.string().max(80), schema_version: z.number().int(), min_supported_schema_version: z.number().int() }).parse(await this.read('/info'));
       if (info.schema_version < 28 || info.min_supported_schema_version > 46) throw new AppError(422, 'This Music Assistant API schema is not supported by the read-only setup check. Update the app or server.');
       // HTTP /api returns the command result directly, not the WebSocket result envelope.
       const players = z.array(z.object({ player_id: z.string().min(1).max(500), name: z.string().min(1).max(200), available: z.boolean() })).max(500)
@@ -123,7 +123,8 @@ export class MusicAssistantClient implements MusicAssistantReader {
         });
       let docsAvailable = false;
       try { await this.read('/api-docs'); docsAvailable = true; } catch { /* Read-only authentication still succeeded. */ }
-      return { checkedAt: Date.now(), serverVersion: info.server_version.replaceAll(this.token, '[redacted]'), schemaVersion: info.schema_version, docsAvailable, players };
+      return { checkedAt: Date.now(), serverVersion: info.server_version.replaceAll(this.token, '[redacted]'), schemaVersion: info.schema_version, docsAvailable, players,
+        ...(info.server_id && !info.server_id.includes(this.token) ? { serverId: info.server_id } : {}) };
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(502, 'Music Assistant returned an incompatible API response. Review the deployed API documentation.');

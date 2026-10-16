@@ -1,5 +1,6 @@
 import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
+import { navigationHref, inIngress } from './paths';
 
 /** One persistent header for every route. Page renderers never replace it or reach into its DOM. */
 export class AppHeader {
@@ -17,6 +18,7 @@ export class AppHeader {
   private media = matchMedia('(max-width: 1200px)');
   private resize?: ResizeObserver;
   private fullscreenPending = false;
+  private lastState: HeaderState = {};
 
   constructor(private page: Page, private failed: (message: string) => void) {
     const skip = link('Skip to content', '#main-content', 'skip-link');
@@ -48,6 +50,7 @@ export class AppHeader {
     });
     document.addEventListener('pointerdown', this.outside);
     document.addEventListener('fullscreenchange', this.fullscreenChanged);
+    document.addEventListener('aoty-address-changed', this.addressChanged);
     this.media.addEventListener('change', this.layoutChanged);
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => document.documentElement.style.setProperty('--app-header-height', `${this.element.getBoundingClientRect().height}px`));
@@ -56,6 +59,7 @@ export class AppHeader {
     this.update({});
   }
   update(state: HeaderState) {
+    this.lastState = state;
     const model = headerModel(this.page, state);
     if (this.subtitle.textContent !== model.subtitle) this.subtitle.textContent = model.subtitle;
     this.mode.hidden = !model.modeText; this.mode.textContent = model.modeText;
@@ -71,7 +75,8 @@ export class AppHeader {
   }
   private updateLink(anchor: HTMLAnchorElement, item: NavigationItem) {
     if (anchor.textContent !== item.text) anchor.textContent = item.text;
-    anchor.setAttribute('href', item.href);
+    anchor.setAttribute('href', navigationHref(item.href));
+    if (inIngress() && ['participant', 'display'].includes(item.id)) { anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; }
     if (item.current) anchor.setAttribute('aria-current', 'page'); else anchor.removeAttribute('aria-current');
   }
   private get collapsed() { return this.media.matches; }
@@ -97,6 +102,7 @@ export class AppHeader {
     if (!this.element.contains(event.target as Node)) this.setExpanded(false);
   };
   private fullscreenChanged = () => this.updateFullscreen();
+  private addressChanged = () => this.update(this.lastState);
   private updateFullscreen() {
     this.fullscreen.hidden = this.page !== 'display' || !document.fullscreenEnabled || !document.documentElement.requestFullscreen;
     this.fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
@@ -114,5 +120,6 @@ export class AppHeader {
   destroy() {
     this.resize?.disconnect(); this.media.removeEventListener('change', this.layoutChanged);
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);
+    document.removeEventListener('aoty-address-changed', this.addressChanged);
   }
 }

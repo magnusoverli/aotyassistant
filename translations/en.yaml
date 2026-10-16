@@ -1,0 +1,12 @@
+configuration:
+  guest_url:
+    name: Guest address override (optional)
+    description: Normally detected from Supervisor. Use a stable LAN HTTP(S) origin only if guests need another address. Do not enter a Home Assistant or Ingress URL.
+  playback_mode:
+    name: Legacy demo fallback
+    description: Compatibility with older saved options. Connecting Music Assistant in the web UI automatically makes real playback available.
+  demo_track_seconds:
+    name: Demo track length
+    description: Simulated track length before Music Assistant is connected. This setting does not affect real music.
+network:
+  3000/tcp: Guest phones, public display, uploaded media, and intentionally open LAN host controls

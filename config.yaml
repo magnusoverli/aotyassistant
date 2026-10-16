@@ -1,5 +1,5 @@
 name: Albums of the Year (development)
-version: "0.1.0"
+version: "0.2.0"
 slug: albums_of_the_year
 url: https://github.com/magnusoverli/aotyassistant
 description: Private listening circle with artist/album browsing and turn-controlled experimental Music Assistant playback.
@@ -7,10 +7,24 @@ arch:
   - amd64
   - aarch64
 startup: application
-boot: manual
+homeassistant: "2026.10.0"
+hassio_api: true
+hassio_role: default
+boot: auto
 init: false
-ingress: false
+ingress: true
+ingress_port: 8099
+ingress_entry: /host
+ingress_stream: true
+panel_icon: mdi:album
+panel_title: Albums of the Year
+panel_admin: true
+stage: experimental
 host_network: false
+watchdog: "http://[HOST]:[PORT:3000]/api/health"
+backup: hot
+backup_pre: "node /app/dist/server/backup-hook.js freeze"
+backup_post: "node /app/dist/server/backup-hook.js thaw"
 ports:
   3000/tcp: 3000
 ports_description:
@@ -19,10 +33,8 @@ webui: "http://[HOST]:[PORT:3000]/host"
 environment:
   HA_ADDON: "1"
 options:
-  guest_url: "http://homeassistant.local:3000"
-  playback_mode: demo
   demo_track_seconds: 30
 schema:
-  guest_url: url
-  playback_mode: list(demo)
+  guest_url: url?
+  playback_mode: list(demo)?
   demo_track_seconds: int(1,3600)

@@ -6,6 +6,8 @@ A listening circle: participants take turns sharing one song from a favourite al
 
 Music Assistant **connection setup is available in the host frontend**. No environment-file editing or separate playback enablement is needed for integrations.
 
+**Home Assistant 2026.10+:** Supervisor-assisted server/address discovery, MA browser sign-in, and host Ingress are implemented. Install → Connect Music Assistant → choose a speaker → share the guest QR. See [installation](DOCS.md).
+
 ## Try it locally
 
 Requires Node.js 24+.
@@ -100,8 +102,8 @@ Private-list JSON snapshots have a 32 MiB read/write bound. A change that would 
 ## Connect Music Assistant from the host browser
 
 1. Open `/host` and choose **Connections & settings**, or go directly to `/host/settings`.
-2. Enter the Music Assistant server origin, such as `http://192.168.1.20:8095`. Use its direct LAN API URL, not a Home Assistant Ingress URL or a URL containing credentials, a path, or a token.
-3. Create a long-lived token in **Music Assistant → Settings → Profile**, then paste it into the masked token field and choose **Save connection**. The token field clears after submission; saved tokens cannot be retrieved from the app.
+2. Choose a detected MA server or enter its direct API origin, such as `http://192.168.1.20:8095`.
+3. Choose **Connect Music Assistant** and sign in in the new tab. The app creates its own token. **Advanced: token or separate login address** provides manual token entry and an alternate browser login origin when internal DNS is not reachable by the browser.
 4. Once saved, the form is replaced by **Music Assistant is configured** and **Disconnect**. Speakers are discovered automatically after saving and when opening/reloading settings; there is no separate connection-check button. Use **Reload saved settings** to retry discovery after a failure. The backend reads server info, authenticated inventory, and documentation availability. No queue metadata or song titles are returned.
 5. Select an available speaker/group and choose **Save destination**. The backend refreshes inventory and validates that destination’s active Music Assistant queue before saving. It does not play, pause, stop, regroup speakers, change volume, or edit a queue.
 
@@ -109,11 +111,11 @@ Private-list JSON snapshots have a 32 MiB read/write bound. A change that would 
 
 Saving is possible before the new Music Assistant instance is online; automatic speaker discovery shows a clear error if it is unavailable, without affecting the demo or its turn rotation. If the saved destination disappears, a successful inventory read still lets you choose a replacement. An invalid token clears the discovered inventory until you disconnect and configure the connection with a valid token.
 
-To change the server or token, choose **Disconnect**, confirm removal of the saved token/destination, then enter the new connection in the cleared setup form. Disconnecting removes credentials only from this app and returns to the demo catalogue; revoke the token in Music Assistant separately if needed. Stop or finish any app-owned track before disconnecting. Concurrent settings edits are version-checked instead of silently overwriting one another.
+Use **Reconnect Music Assistant** to renew the same server's authorization while retaining its destination and private-list source identity. MA 2.10.6 long-lived tokens expire after one year. To replace the server, Disconnect explicitly and connect the new instance. Disconnecting removes credentials only from this app; revoke tokens in MA separately if needed. Stop or finish owned playback before changing the connection. Concurrent edits are version-checked.
 
 Connection targets are limited to private IPv4 LAN addresses, IPv6 unique-local addresses, and loopback. DNS results are validated and pinned to each request; public/cloud-metadata/link-local addresses and HTTP redirects are blocked. Requests have time/size limits, and TLS certificates must be trusted. Firewall rules remain important: open host controls still permit read-only requests to allowed LAN targets. In a container, `localhost` refers to that container, **not** the Home Assistant host—use a reachable LAN address/name. DNS/mDNS resolution must work in the application’s network environment.
 
-Home Assistant itself is the deployment platform; no direct HA account/API connection is required. Future external integrations must also use the host frontend for configuration. Saving a connection, selecting a speaker, and discovering speakers never start audio or change speaker volume.
+The HA app uses Supervisor's injected token for default-role information reads and Ingress for host access; users do not create an HA token. Standalone installs use the same frontend and direct MA connection. Saving a connection, selecting a speaker and discovery never start audio or change speaker volume.
 
 ## Play through Music Assistant
 
@@ -155,7 +157,9 @@ Data persists in a dedicated volume. Startup prepares that directory and then dr
 
 ### Install from GitHub
 
-Add `https://github.com/magnusoverli/aotyassistant` to the Home Assistant app/add-on store's **Repositories**, then install **Albums of the Year (development)**. Supervisor builds the application from source. See [Home Assistant installation and lab checks](DOCS.md) for configuration, network access, backups, and update behaviour. HAOS installation remains unverified until the lab acceptance checks pass.
+Add `https://github.com/magnusoverli/aotyassistant` to the HA app store's **Repositories**, then install **Albums of the Year (development)**. Open the host interface through Ingress, connect the detected MA server and select a speaker. See [installation](DOCS.md) and [prebuilt-image releases](docs/home-assistant-releases.md). The current source manifest stays installable until the first prebuilt image is published.
+
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
 ### Local development installation
 
@@ -163,11 +167,11 @@ Packaging is provided for testing; installation on a real Supervisor instance re
 
 1. On a Home Assistant OS/Supervised host, place this project under `/addons/albums_of_the_year/` (the local add-on directory), including `config.yaml`, `Dockerfile`, lockfile, source, web assets, and entrypoint.
 2. Reload local add-ons in the add-on store, select **Albums of the Year (development)**, and build/install it.
-3. Set `guest_url` to the actual LAN-facing origin, such as `http://192.168.1.20:3000`. If you change the published port, include it in this URL.
-4. Start it; open the host desk, then the display link. Guests use the QR invitation, not Home Assistant Ingress.
+3. Keep the guest port published. Supervisor supplies its effective port and LAN-address candidates; `guest_url` is an optional override.
+4. Start it and open the host desk through Ingress. Guests use the direct QR/display links.
 5. Permit guest phones and the TV to reach this port. Isolated guest Wi-Fi may require a targeted firewall rule. This also makes the intentionally open host desk reachable to those guests.
 
-Persistent state and Supervisor options live in the add-on’s own `/data`. No Ingress or Supervisor API permission is requested. Both GitHub repository and local development installation are supported by the packaging; real Supervisor installation remains to be verified. Optional authenticated host Ingress is deferred and would not protect the separately open LAN host endpoint.
+State and options live in `/data`. Default-role Supervisor reads assist setup; a separate Ingress listener serves host controls. Ingress does not protect the intentionally open LAN host endpoint. Hot-backup hooks coordinate persistent writes/uploads, and new installs default to automatic startup.
 
 ## Music Assistant integration work
 

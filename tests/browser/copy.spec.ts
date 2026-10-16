@@ -21,6 +21,7 @@ test('pages use plain functional copy without host banners or slogans while join
     await host.goto('/host'); await expect(host.getByRole('heading', { name: 'Listening room', exact: true })).toBeVisible(); await plainCopy(host);
     await host.goto('/host/settings'); await expect(host.getByLabel('Music Assistant URL', { exact: true })).toBeVisible(); await plainCopy(host);
     // The cleanup removes the repeated open-host notice, not real error/security feedback.
+    await host.getByText('Advanced: token or separate login address', { exact: true }).click();
     await expect(host.getByText('HTTP connection — use HTTPS')).toBeVisible();
     await host.screenshot({ path: 'test-results/settings-plain-copy.png', fullPage: true });
     const listener = await participantContext.newPage(); await listener.goto(isolatedApp.origin + '/participant');

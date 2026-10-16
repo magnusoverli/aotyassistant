@@ -6,5 +6,6 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string,
 }
 export function label(text: string) { return el('p', text, 'eyebrow'); }
 export function link(text: string, href: string, className = 'button secondary') {
-  const a = el('a', text, className); a.href = href; return a;
+  const a = el('a', text, className); a.href = navigationHref(href); return a;
 }
+import { navigationHref } from './paths';

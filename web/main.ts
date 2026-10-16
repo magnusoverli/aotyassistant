@@ -14,8 +14,9 @@ import type { PreparedEntryView, PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
 import './style.css';
+import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
 
-const page = pageForPath(location.pathname);
+const page = pageForPath(pagePath(location.pathname));
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const turnAnnouncement = el('div', undefined, 'sr-only');
 turnAnnouncement.setAttribute('role', 'status'); turnAnnouncement.setAttribute('aria-live', 'polite'); turnAnnouncement.setAttribute('aria-atomic', 'true');
@@ -144,6 +145,7 @@ function accept(next: View) {
   // Position/volume snapshots do not rebuild browsing forms or reload all artwork.
   const telemetryOnly = view && JSON.stringify({ ...view, progress: undefined, volume: [view.volume?.available, view.volume?.revision] }) === JSON.stringify({ ...next, progress: undefined, volume: [next.volume?.available, next.volume?.revision] });
   view = next;
+  if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
   player.observe(next);
   if (page !== 'display' && telemetryOnly && root.querySelector('main')) {
     const shown = player.project(next);
@@ -168,7 +170,7 @@ function accept(next: View) {
   render();
 }
 function subscribe(role: 'host' | 'participant' | 'display') {
-  stream?.close(); const connection = new EventSource(`/api/${role}/events`); stream = connection;
+  stream?.close(); const connection = new EventSource(appPath(`/api/${role}/events`)); stream = connection;
   connection.onopen = () => { /* Wait for the authenticated state snapshot before enabling controls. */ };
   connection.addEventListener('state', event => {
     if (stream !== connection || !navigator.onLine) return;
@@ -192,6 +194,7 @@ async function mutate(path: string, data: unknown) { accept(await api<View>(path
 function qrCard() {
   const card = el('section', undefined, 'qr-card');
   card.append(el('h3', 'Join room'));
+  if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Detect or configure a guest address in Connections & settings before sharing the room.'), link('Configure guest access', '/host/settings')); return card; }
   if (view?.joinUrl) {
     if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; card.append(img); }
     card.append(el('p', 'Scan the QR code to join.', 'muted'));
@@ -426,7 +429,7 @@ function joinForm() {
   form.append(nameLabel, input, submit); form.onsubmit = event => {
     event.preventDefault(); const nickname = input.value;
     void run(async () => {
-      await api('/api/participant/join', { nickname }); location.replace('/participant');
+      await api('/api/participant/join', { nickname }); location.replace(appPath('/participant'));
     });
   }; panel.append(form); main.append(panel); return main;
 }
@@ -485,7 +488,7 @@ async function init() {
     if (page === 'participant') void library.start();
     try {
       accept(await api<View>('/api/participant/state'));
-      if (page === 'join') { location.replace('/participant'); return; }
+      if (page === 'join') { location.replace(appPath('/participant')); return; }
       subscribe('participant');
     } catch { render(); }
   }

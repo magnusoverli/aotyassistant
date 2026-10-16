@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
+import { randomUUID } from 'node:crypto';
 
 /** Synthetic Music Assistant only; it never reaches a real speaker or upstream service. */
 export async function startMusicAssistantFixture(port = 0) {
@@ -21,7 +22,9 @@ export async function startMusicAssistantFixture(port = 0) {
   let volumeReadPending = false;
   let volumeClamp: number | undefined;
   const calls: { command: string; args: Record<string, unknown> }[] = [];
-  const info = { server_version: '2.fixture', schema_version: 65, min_supported_schema_version: 28 };
+  const info = { server_id: randomUUID(), onboard_done: true, server_version: '2.fixture', schema_version: 65, min_supported_schema_version: 28 };
+  const appToken = `fixture.${Buffer.from(JSON.stringify({ jti: 'fixture-app-token', exp: Math.floor(Date.now() / 1000) + 86400 * 365 })).toString('base64url')}.signature`;
+  const authorizations = ['Bearer browser-test-token', 'Bearer fixture-token', 'Bearer browser-login-session', `Bearer ${appToken}`];
   let failed = false;
   const uploads = new Map<string, typeof track>();
   let uploadDuration = 180;
@@ -32,18 +35,23 @@ export async function startMusicAssistantFixture(port = 0) {
   const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/info') { res.end(JSON.stringify(info)); return; }
+    if (req.url?.startsWith('/login?')) {
+      const login = new URL(req.url, 'http://fixture'); const callback = new URL(login.searchParams.get('return_url')!); callback.searchParams.set('code', 'browser-login-session');
+      res.setHeader('Content-Type', 'text/html'); res.setHeader('Referrer-Policy', 'no-referrer');
+      res.end(`<h1>Music Assistant sign-in</h1><a href="${callback.href.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">Authorize Albums of the Year</a>`); return;
+    }
     if (req.url === '/api-docs') { res.setHeader('Content-Type', 'text/html'); res.end('<h1>Fixture docs</h1>'); return; }
     if (req.url?.startsWith('/imageproxy/')) {
       imageCalls.push(req.url);
       if (imageDelay) await new Promise(resolve => setTimeout(resolve, imageDelay));
-      if (!['Bearer browser-test-token', 'Bearer fixture-token'].includes(req.headers.authorization ?? '')) { res.writeHead(401); res.end(); return; }
+      if (!authorizations.includes(req.headers.authorization ?? '')) { res.writeHead(401); res.end(); return; }
       if (imageMode === 'redirect') { res.writeHead(302, { Location: 'http://169.254.169.254/private' }); res.end(); return; }
       if (imageMode === 'svg') { res.setHeader('Content-Type', 'image/svg+xml'); res.end('<svg><script>PRIVATE</script></svg>'); return; }
       if (imageMode === 'oversized') { res.end(Buffer.alloc(3 * 1024 * 1024)); return; }
       res.setHeader('Content-Type', 'image/png'); res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZXkAAAAASUVORK5CYII=', 'base64')); return;
     }
     let raw = ''; for await (const chunk of req) raw += chunk;
-    if (!['Bearer browser-test-token', 'Bearer fixture-token'].includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('PRIVATE unauthorized details'); return; }
+    if (!authorizations.includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('PRIVATE unauthorized details'); return; }
     const { command, args } = JSON.parse(raw); calls.push({ command, args });
     const volumeDelay = command === 'players/get' ? nextVolumeDelay : 0;
     if (volumeDelay) { nextVolumeDelay = 0; volumeReadPending = true; }
@@ -52,7 +60,9 @@ export async function startMusicAssistantFixture(port = 0) {
     if (failed) { res.statusCode = 503; res.end('PRIVATE connection details'); return; }
     if (ignoredControl && command === `player_queues/${ignoredControl}`) { res.end('null'); return; }
     let result: unknown = null;
-    if (command === 'players/all') result = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
+    if (command === 'auth/token/create') result = appToken;
+    else if (command === 'auth/token/revoke') result = null;
+    else if (command === 'players/all') result = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
     else if (command === 'players/get') result = { ...player, player_id: args.player_id };
     else if (command === 'players/cmd/volume_set') player.volume_level = volumeClamp ?? args.volume_level;
     else if (command === 'players/cmd/group_volume') player.group_volume = volumeClamp ?? args.volume_level;

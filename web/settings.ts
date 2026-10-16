@@ -2,8 +2,9 @@ import type { IntegrationView } from '../src/integrations';
 import { el } from './dom';
 import { AddressingPanel } from './addressing-panel';
 import { requestJson, RequestError } from './request';
+import type { SetupView } from '../src/setup';
 
-/** Host-only setup surface. No tokens in URLs, localStorage, returned responses, or SSE. */
+/** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement, modeChanged: (mode: 'demo' | 'music-assistant') => void) {
   const main = el('main', undefined, 'host-page settings-page'); container.append(main);
   let settings: IntegrationView | undefined;
@@ -15,6 +16,19 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
   let error = '';
   let notice = '';
   let helpExpanded = false;
+  let manualExpanded = false;
+  let editConnection = false;
+  let browserDraft = '';
+  let setup: SetupView | undefined;
+  let loginUrl = '';
+  let authPending = false;
+  const authResult = new URL(location.href).searchParams.get('ma_auth');
+  if (authResult) {
+    history.replaceState(null, '', location.pathname);
+    if (authResult === 'connected') notice = 'Music Assistant connected. You can close this tab after choosing a speaker.';
+    else if (authResult === 'cancelled') error = 'Music Assistant sign-in was cancelled. Your saved connection was kept.';
+    else error = 'Music Assistant sign-in could not finish. It may have expired, settings changed, or this browser blocked the return. Try Connect again or use advanced token setup.';
+  }
   const addresses = new AddressingPanel(() => render(), revision => {
     if (settings && settings.tokenConfigured === addresses.view?.configured) settings = { ...settings, revision };
   }, () => busy);
@@ -31,7 +45,29 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
   function apply(next: IntegrationView, updateDraft = false) {
     settings = next;
     modeChanged(next.tokenConfigured ? 'music-assistant' : 'demo');
-    if (updateDraft) { urlDraft = next.url ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
+    if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
+  }
+  async function loadSetup(refresh = false) {
+    setup = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
+    if (!settings?.tokenConfigured && !urlDraft && setup.servers.length === 1) {
+      urlDraft = setup.servers[0]!.url; browserDraft = setup.servers[0]!.browserUrl ?? '';
+    }
+  }
+  function connectButton(text: string) {
+    const button = el('button', text); button.type = 'button'; button.disabled = busy || addresses.busy || !online || !urlDraft.trim();
+    button.onclick = () => {
+      const popup = window.open('about:blank', '_blank'); if (popup) popup.opener = null;
+      void run(async () => {
+        try {
+          const result = await requestJson<{ loginUrl: string }>('/api/host/auth/start', { url: urlDraft.trim(),
+            ...(browserDraft.trim() ? { browserUrl: browserDraft.trim() } : {}), revision: settings!.revision }, 30_000);
+          loginUrl = result.loginUrl; authPending = true;
+          if (popup) popup.location.replace(loginUrl);
+          notice = popup ? 'Complete Music Assistant sign-in in the opened tab. Return here to refresh your connection.' : 'Your browser blocked the sign-in tab. Open the sign-in link below.';
+        } catch (error) { popup?.close(); throw error; }
+      });
+    };
+    return button;
   }
   async function discover() {
     if (!settings?.tokenConfigured) return;
@@ -46,7 +82,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       error = cause instanceof Error ? cause.message : 'The settings request failed.';
       // Read back only. Never automatically retry a settings mutation.
       try { apply(await request('')); } catch { online = false; }
-    } finally { busy = false; await addresses.load(); render(); }
+    } finally { busy = false; await addresses.load(!authPending); render(); }
   }
   function action(text: string, work: () => Promise<void>, secondary = false, allowOffline = false) {
     const b = el('button', text, secondary ? 'secondary' : ''); b.type = 'button';
@@ -74,7 +110,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     const workspace = el('div', undefined, 'host-workspace settings-workspace');
     const heading = el('div', undefined, 'workspace-heading'); const title = el('div');
     title.append(el('h1', 'Connections & settings.'));
-    const reload = action('Reload saved settings', async () => { apply(await request(''), true); await discover(); }, true, true);
+    const reload = action('Reload saved settings', async () => { authPending = false; loginUrl = ''; apply(await request(''), true); await loadSetup(); await discover(); }, true, true);
     heading.append(title, reload); workspace.append(heading);
     const failure = error || (settings?.status === 'error' ? settings.message : '');
     if (failure) { const message = el('div', failure, 'error settings-notice'); message.setAttribute('role', 'alert'); workspace.append(message); }
@@ -84,15 +120,42 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     const connection = panel('connection', 'Music Assistant', state);
     if (settings?.tokenConfigured) {
       connection.append(el('p', 'Music Assistant is configured.', 'configured-connection'));
+      connection.append(connectButton('Reconnect Music Assistant'));
+      if (settings.tokenExpiresAt) connection.append(el('p', `Authorization expires ${new Date(settings.tokenExpiresAt).toLocaleDateString()}. Reconnect to renew it.`, 'muted small'));
+      connection.append(action(editConnection ? 'Hide advanced connection' : 'Advanced connection', async () => { editConnection = !editConnection; manualExpanded = editConnection; }, true));
       connection.append(action('Disconnect', async () => {
         if (!confirm('Disconnect Music Assistant and remove the saved token and destination? This does not revoke the token in Music Assistant.')) return;
-        apply(await request('/clear', { revision: settings!.revision }), true);
+        apply(await request('/clear', { revision: settings!.revision }), true); editConnection = false; authPending = false; loginUrl = '';
         notice = 'Music Assistant disconnected. You can set up a new connection.';
       }, true));
-    } else if (settings) {
+    }
+    if (settings && (!settings.tokenConfigured || editConnection)) {
+      if (!settings.tokenConfigured) {
+        connection.append(el('p', setup?.message ?? 'Looking for Music Assistant…', 'muted small'));
+        connection.append(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
+        if (setup?.servers.length) {
+          const label = el('label', 'Detected Music Assistant server'); label.htmlFor = 'ma-detected';
+          const select = el('select'); select.id = 'ma-detected'; select.disabled = busy || addresses.busy;
+          const manual = el('option', 'Enter another address'); manual.value = ''; select.append(manual);
+          for (const server of setup.servers) {
+            const option = el('option', `${server.name} · ${server.version}${server.ready ? '' : ' · finish MA setup'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
+            option.value = server.url; select.append(option);
+          }
+          select.value = setup.servers.some(s => s.url === urlDraft) ? urlDraft : '';
+          select.onchange = () => { const server = setup?.servers.find(s => s.url === select.value); urlDraft = server?.url ?? ''; browserDraft = server?.browserUrl ?? ''; render(); };
+          connection.append(label, select);
+        }
+      }
       const form = el('form', undefined, 'integration-form');
-      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; });
+      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || addresses.busy || !online; });
       url.input.required = true; url.input.maxLength = 2048; url.input.placeholder = 'http://homeassistant.local:8095';
+      connection.append(url.group);
+      if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); connect.id = 'ma-connect'; connection.append(connect); }
+      const advanced = el('details', undefined, 'settings-advanced'); advanced.open = manualExpanded;
+      advanced.append(el('summary', 'Advanced: token or separate login address'));
+      advanced.ontoggle = () => { if (advanced.isConnected) manualExpanded = advanced.open; };
+      const login = field('Browser login address', 'ma-browser-url', 'url', browserDraft, value => { browserDraft = value; });
+      login.input.placeholder = 'Same as Music Assistant URL'; advanced.append(login.group);
       const token = field('Music Assistant access token', 'ma-token', 'password', tokenDraft, value => { tokenDraft = value; });
       token.input.autocomplete = 'off'; token.input.maxLength = 8192; token.input.placeholder = 'Paste a long-lived access token';
       token.input.setAttribute('spellcheck', 'false'); token.input.required = true;
@@ -101,7 +164,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       if (location.protocol !== 'https:') token.group.append(el('p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
       const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || addresses.busy || !online; save.id = 'ma-save';
       const controls = el('div', undefined, 'actions settings-form-actions'); controls.append(save);
-      form.append(url.group, token.group, controls);
+      form.append(token.group, controls);
       form.onsubmit = event => {
         event.preventDefault(); const submittedUrl = urlDraft.trim(); const submittedToken = tokenDraft.trim();
         // Clear the secret immediately after submission; it is never persisted in browser storage.
@@ -110,7 +173,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
           apply(await request('/save', { url: submittedUrl, accessToken: submittedToken, revision: settings!.revision }), true);
           await discover(); notice = 'Connection saved. Speakers are discovered automatically.';
         });
-      }; connection.append(form);
+      }; advanced.append(form); connection.append(advanced);
       connection.append(el('p', 'Saving a connection does not start audio.', 'muted settings-safe-note'));
       const help = el('details', undefined, 'settings-help'); help.open = helpExpanded;
       const summary = el('summary', 'Setup help'); summary.id = 'settings-help-toggle'; help.append(summary);
@@ -119,8 +182,20 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       help.append(el('p', 'Tokens stay on the server and cannot be displayed again. Home Assistant can host the app as an add-on; no separate Home Assistant account connection is needed.', 'muted small'));
       connection.append(help);
     }
+    if (loginUrl) {
+      const login = el('a', 'Open Music Assistant sign-in', 'button secondary'); login.href = loginUrl; login.target = '_blank'; login.rel = 'noopener noreferrer'; connection.append(login);
+    }
     grid.append(connection);
     const output = el('div', undefined, 'settings-output');
+    if (setup?.supervisor.enabled) {
+      const detected = panel('detected', 'Home Assistant setup', setup.supervisor.available ? 'Detected' : 'Unavailable');
+      detected.append(el('p', setup.supervisor.message, 'muted small'));
+      if (setup.supervisor.versions.core) detected.append(el('p', `Core ${setup.supervisor.versions.core} · Supervisor ${setup.supervisor.versions.supervisor ?? 'unknown'}`, 'muted small'));
+      for (const origin of setup.supervisor.guestOrigins) if (origin !== addresses.view?.guestOrigin) detected.append(action(`Use ${origin} for guests`, async () => {
+        await requestJson('/api/host/addressing/guest', { origin, revision: settings!.revision }); notice = 'Guest address saved.';
+      }, true));
+      output.append(detected);
+    }
     const destination = panel('destination', 'Speaker or group');
     if (settings?.destination) destination.append(el('p', `Saved destination: ${settings.destination.name}`, 'saved-destination'));
     if (settings?.report) {
@@ -166,7 +241,19 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     window.scrollTo(0, scrollY);
   }
   render();
-  try { apply(await request(''), true); if (settings!.tokenConfigured) { render(); await run(discover); } else await addresses.load(); }
+  try { apply(await request(''), true); await loadSetup(); if (settings!.tokenConfigured) { render(); await run(discover); } else await addresses.load(); }
   catch (cause) { error = cause instanceof Error ? cause.message : 'Cannot load integration settings.'; }
   render();
+  let polls = 0;
+  const poll = setInterval(() => {
+    if (!main.isConnected || ++polls > 60 || setup?.status !== 'checking' && setup?.status !== 'idle') { clearInterval(poll); return; }
+    if (!busy && !addresses.busy) void loadSetup().then(() => render()).catch(() => {});
+  }, 2000);
+  window.addEventListener('pagehide', () => clearInterval(poll), { once: true });
+  window.addEventListener('focus', () => {
+    if (authPending && !busy && !addresses.busy) void run(async () => {
+      const next = await request('');
+      if (next.revision !== settings?.revision) { authPending = false; loginUrl = ''; apply(next, true); await discover(); notice = 'Saved connection refreshed.'; }
+    });
+  });
 }

@@ -2,6 +2,7 @@ import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { stateSchema, type State } from './model.js';
+import { durability } from './backup.js';
 
 export interface Store { load(): Promise<State>; save(state: State): Promise<void> }
 
@@ -27,6 +28,9 @@ export class FileStore implements Store {
 
 /** Shared atomic persistence for application-owned files, including integration secrets. */
 export async function writePrivateJson(directory: string, filename: string, data: unknown, maxBytes = Infinity): Promise<void> {
+  return durability.run(() => commitPrivateJson(directory, filename, data, maxBytes));
+}
+async function commitPrivateJson(directory: string, filename: string, data: unknown, maxBytes: number): Promise<void> {
   const json = JSON.stringify(data);
   if (Buffer.byteLength(json) > maxBytes) throw new Error('Persistent record exceeds its readable size limit.');
   await mkdir(directory, { recursive: true, mode: 0o700 });

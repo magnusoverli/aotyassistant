@@ -37,6 +37,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await expect(page.getByRole('button', { name: 'Disconnect', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Check connection/ })).toHaveCount(0);
   await expect(page.locator('.settings-help')).toHaveJSProperty('open', false);
+  await page.getByText('Advanced: token or separate login address', { exact: true }).click();
   await page.locator('.settings-help > summary').click();
   await page.getByRole('button', { name: 'Reload saved settings', exact: true }).click();
   await expect(page.locator('.settings-help')).toHaveJSProperty('open', true);
@@ -94,6 +95,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   const disconnected: IntegrationView = await (await page.request.get('/api/host/integrations')).json();
   expect(disconnected.tokenConfigured).toBe(false); expect(disconnected.destination).toBeNull(); expect(disconnected.playbackAvailable).toBe(false);
   await page.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
+  await page.getByText('Advanced: token or separate login address', { exact: true }).click();
   await page.getByLabel('Music Assistant access token', { exact: true }).fill('wrong-token');
   await page.getByRole('button', { name: 'Save connection', exact: true }).click();
   await expect(page.getByText('Connection saved. Speakers are discovered automatically.', { exact: true })).toBeVisible();

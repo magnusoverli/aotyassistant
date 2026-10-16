@@ -5,11 +5,18 @@ import type { IntegrationManager } from './integrations.js';
 import { musicAssistantUrl, maToken } from './music-assistant.js';
 import { applicationOrigin } from './addressing.js';
 import { body } from './http-utils.js';
+import type { SetupManager } from './setup.js';
+import { emptyHints } from './supervisor.js';
 
 const revision = z.number().int().nonnegative();
 
 /** Host integration/addressing routes. Global HTTP origin/content-type policy is mounted first. */
-export function mountIntegrations(app: Express, engine: Engine, integrations: IntegrationManager) {
+export function mountIntegrations(app: Express, engine: Engine, integrations: IntegrationManager, setup?: SetupManager) {
+  app.get('/api/host/setup', (_req, res) => res.json(setup?.view() ?? { status: 'idle', message: 'Enter the Music Assistant address below.', supervisor: emptyHints(), servers: [] }));
+  app.post('/api/host/setup/refresh', async (req, res) => {
+    body(req, z.object({}).strict());
+    res.json(setup ? await setup.refresh() : { status: 'idle', message: 'Enter the Music Assistant address below.', supervisor: emptyHints(), servers: [] });
+  });
   app.get('/api/host/addressing', (_req, res) => res.json(integrations.addressing()));
   app.post('/api/host/addressing/guest', async (req, res) => {
     const input = body(req, z.object({ origin: applicationOrigin, revision }).strict());
@@ -17,7 +24,7 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
     engine.setGuestOrigin(view.guestOrigin); res.json(view);
   });
   app.post('/api/host/addressing/test', async (req, res) => {
-    const input = body(req, z.object({ origins: z.array(applicationOrigin).min(1).max(3), revision, automatic: z.boolean().default(false) }).strict());
+    const input = body(req, z.object({ origins: z.array(applicationOrigin).min(1).max(6), revision, automatic: z.boolean().default(false) }).strict());
     res.json(await integrations.checkMediaOrigins(input.origins, input.revision, input.automatic));
   });
   app.get('/api/host/integrations', (_req, res) => res.json(integrations.view()));

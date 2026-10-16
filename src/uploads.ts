@@ -11,6 +11,7 @@ import { writePrivateJson } from './store.js';
 import { PreparationFileStore, type SavedSelection } from './preparations.js';
 import { KeyedSerialQueue } from './serial.js';
 import { mediaRange } from './http-utils.js';
+import { durability } from './backup.js';
 
 export const uploadExtensions = ['mp3', 'm4a', 'flac', 'wav', 'aif', 'aiff', 'ogg', 'oga', 'opus'] as const;
 export const uploadTextSchema = z.object({ title: z.string().trim().min(1).max(1000), artist: z.string().trim().max(1000), album: z.string().trim().max(1000) }).strict()
@@ -69,7 +70,7 @@ export class UploadAssets {
   constructor(dataDirectory: string, private analyze = analyzeUpload, private now = Date.now) { this.directory = join(dataDirectory, 'uploads'); this.preparations = new PreparationFileStore(dataDirectory); }
   private path(assetId: string) { return join(this.directory, id.parse(assetId)); }
   private async serial<T>(assetId: string, work: () => Promise<T>) {
-    return this.queue.run(assetId, work);
+    return this.queue.run(assetId, () => durability.run(work));
   }
   private async load(assetId: string, ownerId?: string): Promise<Manifest> {
     try {

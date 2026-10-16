@@ -13,9 +13,10 @@ import { PreparationFileStore, PreparationManager } from '../../src/preparations
 import { startMusicAssistantFixture } from '../fixtures/music-assistant.js';
 import { UploadAssets } from '../../src/uploads.js';
 import { fixtureUploadAnalysis } from '../fixtures/uploads.js';
+import type { Express } from 'express';
 
 // Each workflow has its own room, simulated speakers and join-rate limit; no lifecycle reset endpoint is needed.
-export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantOrigin: string; demo: DemoAdapter } }>({
+export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantOrigin: string; demo: DemoAdapter; app: Express; manager: IntegrationManager; calls: { command: string; args: Record<string, unknown> }[] } }>({
   isolatedApp: async ({}, use) => {
     const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-browser-isolated-');
     const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
@@ -28,7 +29,7 @@ export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantO
     const uploads = new UploadAssets(dir, fixtureUploadAnalysis);
     const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, mode: 'demo', demoSeconds: 60 }, 'dist/web', manager, preparations, uploads);
     server.on('request', http.app);
-    try { await use({ origin, musicAssistantOrigin: remote.origin, demo }); }
+    try { await use({ origin, musicAssistantOrigin: remote.origin, demo, app: http.app, manager, calls: remote.calls }); }
     finally { http.close(); adapter.close(); remote.close(); server.closeAllConnections(); server.close(); }
   },
   baseURL: async ({ isolatedApp }, use) => { await use(isolatedApp.origin); },

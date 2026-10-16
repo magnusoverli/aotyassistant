@@ -9,10 +9,14 @@ import { docker, image, availablePort } from './container-fixture.js';
 /** Real packaged FFprobe/tag/image validation, never a real Music Assistant or speaker. Own temporary container/volume only. */
 const port = await availablePort();
 const origin = `http://127.0.0.1:${port}`; const volume = `aoty-upload-smoke-${randomUUID()}`;
+const restoredVolume = `aoty-backup-restore-${randomUUID()}`;
 let container = '';
 try {
   await docker('volume', 'create', volume);
-  container = await docker('run', '--detach', '--rm', '--publish', `127.0.0.1:${port}:3000`, '--volume', `${volume}:/data`, '--env', `GUEST_URL=${origin}`, image);
+  await docker('volume', 'create', restoredVolume);
+  await docker('run', '--rm', '--network', 'none', '--volume', `${volume}:/data`, '--entrypoint', 'node', image, '-e', "require('fs').writeFileSync('/data/options.json', JSON.stringify({demo_track_seconds:30}))");
+  const launch = (data: string) => docker('run', '--detach', '--rm', '--publish', `127.0.0.1:${port}:3000`, '--volume', `${data}:/data`, '--env', 'HA_ADDON=1', '--env', `GUEST_URL=${origin}`, image);
+  container = await launch(volume);
   const ready = async () => {
     for (let i = 0; i < 80; i++) {
       try { if ((await fetch(origin + '/api/health', { signal: AbortSignal.timeout(1000) })).ok) return; } catch { /* Test container starting. */ }
@@ -72,7 +76,15 @@ try {
   assert.equal(library.upcoming.length, formats.length);
   const recovery = await post('/api/participant/preparations/recovery-key', { revision: library.revision }, libraryCookie); assert.equal(recovery.status, 200);
   const saved = await recovery.json() as { recoveryKey: string; view: PreparationView };
-  await docker('restart', container); await ready();
+  await docker('exec', container, 'node', '/app/dist/server/backup-hook.js', 'freeze');
+  try {
+    assert.equal((await (await fetch(origin + '/api/health')).json()).backupPaused, true);
+    assert.equal((await post('/api/participant/join', { nickname: 'Not committed during backup' })).status, 503);
+    await docker('run', '--rm', '--network', 'none', '--read-only', '--volume', `${volume}:/source:ro`, '--volume', `${restoredVolume}:/data`, '--entrypoint', 'sh', image,
+      '-e', '-o', 'pipefail', '-c', 'tar -C /source -cf - . | tar -C /data -xpf -');
+  } finally { await docker('exec', container, 'node', '/app/dist/server/backup-hook.js', 'thaw'); }
+  assert.equal((await (await fetch(origin + '/api/health')).json()).backupPaused, false);
+  await docker('stop', '--time', '5', container); container = await launch(restoredVolume); await ready();
   const restored = await fetch(origin + '/api/participant/preparations/state', { headers: { Cookie: libraryCookie } }); assert.equal(restored.status, 200);
   const restoredLibrary = await restored.json() as PreparationView; assert.equal(restoredLibrary.upcoming.length, formats.length);
   assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.title), saved.view.upcoming.map(entry => entry.title));
@@ -81,8 +93,9 @@ try {
   const recovered = await post('/api/participant/preparations/recover', { recoveryKey: saved.recoveryKey }); assert.equal(recovered.status, 200);
   assert.equal((await recovered.json() as PreparationView).ownerId, library.ownerId);
   assert.equal((await (await fetch(origin + '/api/participant/state', { headers: { Cookie: membership } })).json() as View).ownPlayback, null);
-  console.info('Upload container smoke passed: real packaged MP3 CBR/VBR, M4A AAC/ALAC, FLAC, WAV, AIFF, Vorbis and Opus; text/raw AAC rejected; originals, covers and recovery survive restart; no audio commands.');
+  console.info('Upload container smoke passed: packaged audio formats, HA backup write coordination, private-list/cover recovery from a restored volume; no audio commands.');
 } finally {
   if (container) await docker('stop', '--time', '5', container).catch(() => {});
   await docker('volume', 'rm', volume).catch(() => {});
+  await docker('volume', 'rm', restoredVolume).catch(() => {});
 }

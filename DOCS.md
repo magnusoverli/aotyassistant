@@ -1,38 +1,40 @@
-# Albums of the Year — Home Assistant lab installation
+# Albums of the Year — Home Assistant installation
 
-This development add-on is built from source by Home Assistant Supervisor. It supports amd64 and aarch64; installation and runtime acceptance on HAOS are still pending. The application does not require a Home Assistant API token.
+Requires **Home Assistant 2026.10.0 or later** with Supervisor, amd64 or aarch64, and an installed/onboarded Music Assistant server. Real playback currently supports MA API schema 65. Core, Supervisor and MA have independent versions.
 
-## Install
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
-1. In Home Assistant, open **Settings → Apps → App store** (called **Add-ons** on older versions).
-2. Open the store's menu, select **Repositories**, and add:
-   `https://github.com/magnusoverli/aotyassistant`
-3. Find **Albums of the Year (development)** and select **Install**. The initial source build can take several minutes and requires internet access.
-4. In **Configuration**, set `guest_url` to the VM's LAN-facing application origin, for example `http://192.168.1.20:3000`. Do not use the Home Assistant port `8123` or an Ingress URL.
-5. Check the **Network** section: publish container port `3000/tcp` on an unused host port. If you choose another port, include it in `guest_url`.
-6. Start the add-on, inspect **Logs**, and select **Open web UI**.
+## Install and connect
 
-The add-on does not start automatically at boot by default. Enable **Start on boot** after verifying startup and persistence. Music never starts automatically.
+1. Use the button above, or add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
+2. Install **Albums of the Year (development)** and start it. Source builds can take several minutes; published-image releases download a prebuilt image instead.
+3. Select **Open web UI**. The host interface opens through Home Assistant Ingress. Enable its sidebar entry in the app's Info page if desired.
+4. Open **Connections & settings**, choose a detected server, and select **Connect Music Assistant**. Complete MA sign-in in the new tab. If discovery misses an external server, enter its direct API address (normally port 8095).
+5. Choose a speaker/group and **Save destination**, then share the host desk's guest QR or display link.
 
-## Use
+Guest addresses are derived from Supervisor's LAN interface and effective published port. MA-facing media addresses are checked automatically by fetching a protected synthetic file; setup never starts audio. For multiple interfaces, choose a guest address in **Home Assistant setup**. If port `3000/tcp` is disabled, publish it under **Network**, or configure a reachable reverse-proxy origin.
 
-- `/host`: manage the listening order.
-- `/host/settings`: configure Music Assistant and application addresses.
-- `/join`: participant phone interface.
-- `/display`: permanent public display.
+New installs default to **Start on boot**. MA startup is retried in the background; **Find Music Assistant** retries manually. The host UI remains available while MA is offline. Supervisor's optional **Watchdog** monitors this app, not MA availability.
 
-Without a configured Music Assistant connection, the app offers its demo catalogue. For real playback, enter Music Assistant's direct LAN origin (normally port `8095`) and a long-lived token in the app's settings, then select a speaker. No speaker test is required just to install the app.
+## Addresses and sign-in fallback
 
-Phones, the display, and Music Assistant need access to the published application port. Music Assistant must also be able to fetch uploaded media; verify this in **Application addresses**. The app itself does not require host networking or multicast discovery: Music Assistant handles speaker discovery.
+- `/host` and `/host/settings`: host controls, through Ingress or the LAN port.
+- `/join`, `/participant`, `/display`: guests and display, using the separate LAN origin without HA accounts.
+- Existing guest addresses are preserved. `guest_url` is an optional advanced override; normal installation needs no Configuration-tab edits.
+- **Advanced: token or separate login address** supports a browser-reachable MA address when the backend uses internal DNS, or manual token entry from **MA → Settings → Profile**.
+- **Reconnect Music Assistant** renews authorization while retaining the same server's speaker and private-list source identity. MA 2.10.6 long-lived tokens expire after one year. Replacing the server requires an explicit Disconnect.
+- Cancelled/expired login or blocked browser/webview callbacks keep saved settings intact. Retry Connect or use the token fallback.
 
-## Security and storage
+Phones need access to the guest port; HA remote access does not publish it. MA can fetch media over Supervisor's internal network when installed on the same host. Manual media overrides take precedence. Keep a stable guest address because changing browser origins affects cookies and private-list recovery.
 
-**The host controls are intentionally unauthenticated.** Anyone who can reach this application can manage the room and integration settings. Keep it on a trusted lab LAN; do not forward the port to the internet. Home Assistant login does not protect this separate port. Ingress is not enabled.
+## Access and backups
 
-State, private lists, uploads, and integration settings persist in the add-on's `/data`. Include the add-on in Home Assistant backups and protect those backups: the Music Assistant token is stored server-side in plaintext. Uninstalling the add-on can delete its data.
+The app uses the injected Supervisor token for **default-role information reads**; users do not create an HA token. Best-effort mDNS helps find external MA servers. Host networking, Docker access, Core database access and shared-media mounts are unnecessary.
 
-## Updates and lab acceptance
+**LAN host controls remain intentionally unauthenticated.** HA login protects Ingress, not the published LAN port. Keep that port on a trusted LAN. The MA token stays in the protected `/data/integrations.json` and is not returned to the UI. The dedicated MA login callback consumes its credential and immediately redirects to a clean URL.
 
-Supervisor uses `version` in `config.yaml` to offer updates; pushing source changes alone is not an add-on release. For each release, update the version and changelog, push the commit, then check the store for updates. Back up before updating. Restarts clear playback ownership and reveal state; Music Assistant may continue playing independently.
+Include all of `/data` in HA backups: room state, settings, private lists and uploads. Hot-backup hooks wait for active filesystem writes and pause new writes during the archive. Read-only pages and existing audio streams remain available. Long uploads can make the pre-backup hook fail; retry after they finish. The post-backup hook resumes writes. Restart the app if a failed Supervisor backup leaves writes paused. Protect backups because they contain credentials; uninstalling can delete app data.
 
-Before calling the HAOS deployment verified, check installation logs, all four interfaces, restart persistence, backup/restore, and a versioned update. Speaker playback and natural-end/recovery tests are separate acceptance checks.
+## Releases
+
+Supervisor uses `version` in `config.yaml` to offer updates. Restart restores lists/settings/order but clears playback ownership and reveal; MA may continue independently. See [image publishing](docs/home-assistant-releases.md) and [setup implementation/research](docs/home-assistant-setup-research.md).

@@ -1,6 +1,7 @@
 import type { AddressingView } from '../src/addressing';
 import { el } from './dom';
 import { requestJson } from './request';
+import { inIngress, setGuestOrigin } from './paths';
 
 /** Suggestions are not trusted until explicit guest selection or an observed MA fetch. */
 export class AddressingPanel {
@@ -17,6 +18,7 @@ export class AddressingPanel {
   }
   private accept(view: AddressingView, drafts = false) {
     this.view = view; this.saved(view.revision);
+    setGuestOrigin(view.guestOrigin);
     if (drafts) { this.guestDraft = view.guestOrigin; this.mediaDraft = view.mediaOrigin ?? ''; }
   }
   private async run(work: () => Promise<void>) {
@@ -40,7 +42,7 @@ export class AddressingPanel {
   }
   private async check() {
     const view = this.view!;
-    const candidates = view.mediaOrigin ? [view.mediaOrigin] : [...new Set([location.origin, view.automaticMediaOrigin, view.guestOrigin].filter((value): value is string => Boolean(value)))].slice(0, 3);
+    const candidates = view.mediaOrigin ? [view.mediaOrigin] : [...new Set([inIngress() ? undefined : location.origin, view.automaticMediaOrigin, view.guestOrigin].filter((value): value is string => Boolean(value)))].slice(0, 3);
     if (view.mediaCheck.status === 'verified' && view.mediaCheck.origin === candidates[0]) return;
     this.accept(await this.request('/test', { origins: candidates, revision: view.revision, automatic: !view.mediaOrigin }));
   }
@@ -65,11 +67,12 @@ export class AddressingPanel {
       }
       panel.append(el('p', 'Changing hostname or IP changes the browser’s cookie scope. Keep private-list recovery keys; people may need to rejoin or recover their list at the new address.', 'muted small'));
       if (new URL(location.origin).hostname === 'localhost' || /^127\./.test(new URL(location.origin).hostname)) panel.append(el('p', 'Loopback addresses work only on this device. Open the app through a LAN hostname or address before sharing guest links.', 'muted small'));
-      panel.append(this.button('Use the address I opened for guest links', async () => {
+      if (!inIngress()) panel.append(this.button('Use the address I opened for guest links', async () => {
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
         this.notice = 'Guest address saved. Existing participant and private-list credentials were not changed.';
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
       }));
+      else panel.append(el('p', 'The Home Assistant address is for host controls. Guest links use the separate LAN address below.', 'muted small'));
       const guestForm = el('form', undefined, 'integration-form');
       const guest = this.field('Guest address', 'app-guest-origin', this.guestDraft, value => { this.guestDraft = value; }); guest.input.required = true;
       const save = el('button', 'Save guest address'); save.type = 'submit'; save.disabled = this.busy || this.blocked() || !navigator.onLine;

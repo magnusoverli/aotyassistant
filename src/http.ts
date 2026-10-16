@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { AppError, type Role } from './model.js';
 import type { Engine } from './engine.js';
@@ -12,6 +13,10 @@ import { MediaChecks, setupHostAllowed } from './addressing.js';
 import { body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { mountIntegrations } from './integration-http.js';
+import { ingressContext, requestBase } from './ingress.js';
+import { mountAuthorization } from './ma-authorization.js';
+import type { SetupManager } from './setup.js';
+import { durability } from './backup.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -21,7 +26,7 @@ const cookie = (request: Request, name: string): string => {
 };
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
-  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir)) {
+  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager) {
   integrations?.attachUploads(uploads, config.guestUrl);
   const checks = new MediaChecks(); integrations?.attachMediaChecks(checks);
   const defaults = config;
@@ -38,27 +43,43 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   cleanup.unref();
 
   app.use((req, res, next) => {
+    const ingress = ingressContext(req);
     res.set({
       'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
-      'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
-      'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+      'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': ingress ? 'SAMEORIGIN' : 'DENY',
+      'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors ${ingress ? "'self'" : "'none'"}; form-action 'self'`,
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
+    // Readiness is independent of MA and guest Host configuration; Supervisor uses the internal IP.
+    if (req.path === '/api/health' && ['GET', 'HEAD'].includes(req.method)) {
+      res.status(engine.ready ? 200 : 503).json({ ok: engine.ready, mode: engine.adapter.mode, backupPaused: durability.paused }); return;
+    }
+    if (ingress) {
+      if (['/', '/join', '/participant', '/display'].includes(req.path) && ['GET', 'HEAD'].includes(req.method)) {
+        res.redirect(req.path === '/' ? `${ingress.base}/host` : /^(localhost|127\.|\[::1\])/.test(new URL(config.guestUrl).hostname)
+          ? `${ingress.base}/host/settings` : `${config.guestUrl}${req.path}`); return;
+      }
+      if (!(req.path === '/host' || req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/'))) {
+        return next(new AppError(404, 'Use the guest address for participant and display access.'));
+      }
+    }
     const mediaRead = ['GET', 'HEAD'].includes(req.method) && /^\/api\/media\/uploads\/[^/]+\/[^/]+\/track\.[a-z0-9]+$/.test(req.path);
     const host = req.headers.host ?? '';
-    const known = [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host);
+    const known = Boolean(ingress) || [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host);
     const setup = integrations && setupHostAllowed(host, req.socket.remoteAddress ?? '');
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
-    const setupRoute = req.path.startsWith('/api/host/addressing') || (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations'));
+    const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
+      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
     // The synthetic diagnostic handler performs its own exact Host/capability/expiry checks, including revocation/404.
     if (!known && !(setup && setupRoute) && !diagnosticRead && !(mediaRead && integrations?.mediaHostAllowed(host))) return next(new AppError(403, 'Unconfigured host. Open /host/settings through a local LAN IP or .local hostname to configure the guest address.'));
     if (req.method !== 'GET' && req.method !== 'HEAD') {
+      if (durability.paused) return next(new AppError(503, 'A Home Assistant backup is in progress. Try again when it finishes.'));
       const origin = req.headers.origin;
       const localOrigin = `http://${req.headers.host}`;
       const setupOrigin = setup && setupRoute && origin && [localOrigin, `https://${host}`].includes(origin);
-      if (!origin || (origin !== config.guestUrl && origin !== localOrigin && !setupOrigin)) return next(new AppError(403, 'Cross-origin controls are not allowed.'));
+      if (!origin || (ingress ? origin !== ingress.origin : origin !== config.guestUrl && origin !== localOrigin && !setupOrigin)) return next(new AppError(403, 'Cross-origin controls are not allowed.'));
       if (req.headers['sec-fetch-site'] === 'cross-site') return next(new AppError(403, 'Cross-site controls are not allowed.'));
       const fileUpload = req.method === 'POST' && /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(req.path) && req.is('application/octet-stream');
       if (!req.is('application/json') && !fileUpload) return next(new AppError(415, 'Send an application/json request, or one audio file to the upload endpoint.'));
@@ -84,9 +105,12 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const participant = (req: Request): Role => ({ kind: 'participant', credential: cookie(req, 'aoty_participant') });
   const participantCredential = (req: Request) => cookie(req, 'aoty_participant');
 
-  app.get('/api/health', (_req, res) => res.json({ ok: engine.ready, mode: engine.adapter.mode }));
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
-  if (integrations) mountIntegrations(app, engine, integrations);
+  let closeAuthorization = () => {};
+  if (integrations) {
+    mountIntegrations(app, engine, integrations, setupManager);
+    closeAuthorization = mountAuthorization(app, integrations, () => { engine.emit('change'); });
+  }
   app.post('/api/host/volume', async (req, res) => {
     const input = body(req, z.object({ turnId: turn.nullable(), level: z.number().int().min(0).max(100), volumeRevision: z.string().min(1).max(200) }).strict());
     await engine.setVolume(input.level, input.turnId, undefined, undefined, input.volumeRevision); res.json(engine.view({ kind: 'host' }));
@@ -179,9 +203,16 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.get('/api/display/events', (_req, res) => events(res, { kind: 'display' }));
 
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'Unknown API endpoint.')));
-  app.use(express.static(webDirectory, { etag: false, lastModified: false }));
+  app.use(express.static(webDirectory, { index: false, etag: false, lastModified: false }));
   for (const path of ['/', '/join', '/participant', '/display', '/host', '/host/settings']) {
-    app.get(path, (_req, res) => res.sendFile(resolve(webDirectory, 'index.html')));
+    app.get(path, async (req, res) => {
+      const base = requestBase(req);
+      const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+      let html = await readFile(resolve(webDirectory, 'index.html'), 'utf8');
+      html = html.replace('</head>', `<meta name="aoty-base" content="${escape(base)}"><meta name="aoty-guest" content="${escape(config.guestUrl)}"></head>`);
+      html = html.replace(/(src|href)="(?:\.\/|\/)(?!\/)/g, `$1="${base}/`);
+      res.type('html').send(html);
+    });
   }
   app.use((_req, _res, next) => next(new AppError(404, 'Page not found.')));
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -192,5 +223,5 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, close: () => { closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, close: () => { closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
 }

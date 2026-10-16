@@ -13,6 +13,7 @@ const schema = z.object({
   }),
   dataDir: z.string().min(1), mode: z.literal('demo'),
   demoSeconds: z.coerce.number().int().min(1).max(3600),
+  addon: z.boolean().optional(), guestOverride: z.boolean().optional(), ingressPort: z.number().int().min(1).max(65535).optional(),
 });
 export type Config = z.infer<typeof schema>;
 export function configFromEnv(): Config {
@@ -22,9 +23,11 @@ export function configFromEnv(): Config {
   return schema.parse({
     port: process.env.PORT ?? 3000,
     listenHost: process.env.LISTEN_HOST ?? '127.0.0.1',
-    guestUrl: options.guest_url ?? process.env.GUEST_URL ?? 'http://localhost:3000',
+    guestUrl: options.guest_url || process.env.GUEST_URL || 'http://localhost:3000',
     dataDir: process.env.DATA_DIR ?? './data',
     mode: options.playback_mode ?? process.env.PLAYBACK_MODE ?? 'demo',
     demoSeconds: options.demo_track_seconds ?? process.env.DEMO_TRACK_SECONDS ?? 30,
+    addon: process.env.HA_ADDON === '1', guestOverride: Boolean(options.guest_url || process.env.GUEST_URL),
+    ...(process.env.HA_ADDON === '1' ? { ingressPort: 8099 } : {}),
   });
 }

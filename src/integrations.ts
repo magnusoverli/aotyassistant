@@ -16,6 +16,7 @@ export const integrationSchema = z.object({
   guestOrigin: applicationOrigin.optional(), automaticMediaOrigin: applicationOrigin.optional(),
   musicAssistant: z.object({ url: musicAssistantUrl, accessToken: maToken,
     sourceBindingId: z.string().uuid().optional(),
+    serverId: z.string().min(1).max(200).optional(), browserUrl: musicAssistantUrl.optional(), tokenExpiresAt: z.number().int().positive().optional(),
     destination: z.object({ id: z.string(), name: z.string() }).strict().nullable(),
   }).strict().nullable(),
 }).strict();
@@ -26,6 +27,7 @@ export type IntegrationView = {
   status: 'not-configured' | 'not-checked' | 'checked' | 'error';
   message: string; report: ConnectionReport | null; playbackAvailable: boolean; playbackIssue: string;
   mediaOrigin?: string | null;
+  browserUrl?: string; tokenExpiresAt?: number;
 };
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
@@ -58,6 +60,7 @@ export class IntegrationManager implements CatalogueProvider {
   private uploads?: UploadAssets;
   private defaultMediaOrigin = '';
   private checks?: MediaChecks;
+  private environmentMediaOrigins: string[] = [];
   private checking = false;
   private inspection?: { revision: number; pending: Promise<IntegrationView> };
   private mediaCheck: MediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Not checked since startup. No audio has been started.' };
@@ -74,11 +77,27 @@ export class IntegrationManager implements CatalogueProvider {
   /** Catalogue identity changes only with credentials/origin (or a new process), never with speaker routing. */
   get catalogueRevision(): string { return this.catalogueEpoch; }
   get sourceBindingId(): string | null { return this.state.musicAssistant?.sourceBindingId ?? null; }
+  get serverId(): string | undefined { return this.state.musicAssistant?.serverId; }
+  assertSetupRevision(revision: number) {
+    this.expected(revision);
+    if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
+  }
   get playbackAvailable(): boolean { return Boolean(this.state.musicAssistant?.destination && this.playback); }
   get uploadPlaybackAvailable(): boolean { return Boolean(this.uploads && this.playbackAvailable); }
   attachUploads(uploads: UploadAssets, guestUrl: string) { this.uploads = uploads; this.defaultMediaOrigin = guestUrl; }
   attachMediaChecks(checks: MediaChecks) { this.checks = checks; }
   get guestOrigin() { return this.state.guestOrigin || this.defaultMediaOrigin; }
+  setEnvironmentMediaOrigins(origins: string[]) { this.environmentMediaOrigins = origins.map(value => applicationOrigin.parse(value)).slice(0, 4); }
+  async initializeGuestOrigin(origin: string) {
+    return this.serial(async () => {
+      if (!this.state.guestOrigin && !this.playback?.ownsPlayback) await this.commit({ ...this.state, guestOrigin: applicationOrigin.parse(origin), revision: this.state.revision + 1 });
+      return this.guestOrigin;
+    });
+  }
+  mediaCandidates(browserOrigin?: string): string[] {
+    if (this.state.mediaOrigin) return [this.state.mediaOrigin];
+    return [...new Set([...this.environmentMediaOrigins, browserOrigin, this.state.automaticMediaOrigin, this.guestOrigin].filter((value): value is string => Boolean(value)))].slice(0, 6);
+  }
   private get effectiveMediaOrigin() { return this.state.mediaOrigin || this.state.automaticMediaOrigin || this.guestOrigin; }
   mediaHostAllowed(host: string) { const origin = this.effectiveMediaOrigin; return Boolean(origin && new URL(origin).host === host); }
   addressing(): AddressingView {
@@ -98,7 +117,8 @@ export class IntegrationManager implements CatalogueProvider {
     this.expected(revision);
     if (!this.configured || !this.checks) throw new AppError(409, 'Save a Music Assistant connection before testing file access.');
     if (this.checking) throw new AppError(429, 'A file connection check is already running.');
-    const candidates = z.array(applicationOrigin).min(1).max(3).parse(origins);
+    const supplied = z.array(applicationOrigin).min(1).max(6).parse(origins);
+    const candidates = automatic ? this.state.mediaOrigin ? [this.state.mediaOrigin] : [...new Set([...this.environmentMediaOrigins, ...supplied])].slice(0, 6) : supplied;
     const setup = this.configurationRevision; const api = this.getApi(); this.checking = true;
     this.mediaCheck = { status: 'checking', origin: null, checkedAt: null, message: 'Music Assistant is fetching a protected diagnostic file. No audio is played.' };
     try {
@@ -290,7 +310,8 @@ export class IntegrationManager implements CatalogueProvider {
       message: !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (this.report
         ? 'Music Assistant is configured. Music starts only when the current participant presses Play.'
         : 'Music Assistant is configured. Speakers are discovered automatically when settings open.'),
-      report: structuredClone(this.report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null };
+      report: structuredClone(this.report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
+      ...(ma?.browserUrl ? { browserUrl: ma.browserUrl } : {}), ...(ma?.tokenExpiresAt ? { tokenExpiresAt: ma.tokenExpiresAt } : {}) };
   }
   async save(url: string, accessToken: string | undefined, revision: number): Promise<IntegrationView> {
     return this.serial(async () => {
@@ -303,8 +324,34 @@ export class IntegrationManager implements CatalogueProvider {
       await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: {
         url, accessToken: nextToken, destination: previous?.url === url ? previous.destination : null,
         sourceBindingId: previous?.url === url ? previous.sourceBindingId ?? randomUUID() : randomUUID(),
+        ...(previous?.url === url && previous.serverId ? { serverId: previous.serverId } : {}),
       } });
       return this.view();
+    });
+  }
+  /** Authorization validated the new endpoint/token. Identity, not IP, preserves preparations. */
+  async saveAuthorized(url: string, accessToken: string, serverId: string, browserUrl: string, revision: number, tokenExpiresAt?: number) {
+    return this.serial(async () => {
+      this.assertSetupRevision(revision); url = musicAssistantUrl.parse(url); accessToken = maToken.parse(accessToken);
+      const previous = this.state.musicAssistant;
+      const same = previous && (previous.serverId ? previous.serverId === serverId : previous.url === url);
+      if (previous && !same) throw new AppError(409, 'This is a different Music Assistant server. Disconnect explicitly before replacing the catalogue. Your saved lists were kept.');
+      await this.commit({ ...this.state, revision: revision + 1, musicAssistant: { url, accessToken, serverId,
+        browserUrl: musicAssistantUrl.parse(browserUrl), ...(tokenExpiresAt ? { tokenExpiresAt } : {}),
+        sourceBindingId: same ? previous.sourceBindingId ?? randomUUID() : randomUUID(), destination: same ? previous.destination : null } });
+      return this.view();
+    });
+  }
+  /** Only Supervisor/mDNS-verified candidates matching a persisted server ID reach here. */
+  async relocate(url: string, serverId: string, revision: number) {
+    this.assertSetupRevision(revision); const previous = this.state.musicAssistant;
+    if (!previous?.serverId || previous.serverId !== serverId || previous.url === url) return;
+    url = musicAssistantUrl.parse(url);
+    const report = await this.reader(url, previous.accessToken).inspect();
+    if (report.serverId !== serverId) throw new AppError(409, 'The discovered Music Assistant identity changed.');
+    return this.serial(async () => {
+      this.assertSetupRevision(revision);
+      await this.commit({ ...this.state, revision: revision + 1, musicAssistant: { ...previous, url } });
     });
   }
   async clear(revision: number): Promise<IntegrationView> {
@@ -326,16 +373,24 @@ export class IntegrationManager implements CatalogueProvider {
     let report: ConnectionReport | null = null; let failure = '';
     try {
       const reader = this.reader(ma.url, ma.accessToken); report = await reader.inspect();
+      if (ma.serverId && report.serverId !== ma.serverId) { report = null; throw new AppError(409, 'Music Assistant server identity changed. Disconnect explicitly before replacing the catalogue.'); }
       if (ma.destination) {
         if (!report.players.some(p => p.id === ma.destination!.id && p.available)) throw new AppError(422, 'The saved destination is unavailable. Check Music Assistant and select an available destination.');
         await reader.activeQueue(ma.destination.id);
       }
     } catch (error) {
-      failure = error instanceof AppError ? error.message : 'Could not load Music Assistant speakers. Reload saved settings to retry, or disconnect and set up the connection again.';
+      failure = error instanceof AppError ? error.message : 'Could not load Music Assistant speakers. Reload saved settings or reconnect Music Assistant.';
     }
     // Discovery is read-only and may be slow. Only publication shares the playback
     // lane; a stale inspection cannot overwrite a newly saved connection's status.
-    return this.serial(async () => { this.expected(revision); this.report = report; this.failure = failure; return this.view(); });
+    return this.serial(async () => {
+      this.expected(revision);
+      if (!ma.serverId && report?.serverId) {
+        const next = { ...this.state, musicAssistant: { ...ma, serverId: report.serverId } };
+        await this.store.save(next); this.state = next; // Identity enrichment does not alter routing/revision.
+      }
+      this.report = report; this.failure = failure; return this.view();
+    });
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
     this.expected(revision); const ma = this.state.musicAssistant;

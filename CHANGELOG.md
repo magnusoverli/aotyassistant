@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Add automatic Home Assistant/MA discovery and addresses, browser sign-in/reconnect, host Ingress, coordinated backups, startup/watchdog support, and prebuilt-image release automation.
+- Document opportunities for automatic Home Assistant setup, Music Assistant browser login, and Ingress integration.
 - Add a public Home Assistant source repository, lab installation guidance, and automated application checks.
 - Deploy the audit fixes and restart the development app with saved data/settings retained; refresh open pages.
 - Harden playback, private-list recovery, uploads and live updates against stale requests; fix startup errors and consolidate shared infrastructure without changing the feature set.
