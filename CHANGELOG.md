@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Reject queued pause/resume commands when background polling has already revoked playback ownership.
 - Create the test scratch directory on GitHub runners and bound check jobs so image publishing cannot hang indefinitely.
 - Record live HAOS 0.2.1 discovery, Ingress and hot-backup verification, with interactive MA sign-in still pending.
 - Fix Home Assistant's Open web UI entry path and allow MA sign-in before music sources and players are configured.

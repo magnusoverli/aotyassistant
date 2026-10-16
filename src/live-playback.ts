@@ -270,7 +270,8 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     }
     if (!this.own) { if (action === 'stop') return; throw new AppError(409, 'There is no application-owned playback to control.'); }
     await this.integrations.withPlayback(async () => {
-      const own = this.own; if (!own) return;
+      const own = this.own;
+      if (!own) { if (action === 'stop') return; throw new AppError(409, 'There is no application-owned playback to control.'); }
       try {
         const q = await own.api.queue(own.destination);
         if (this.closed) throw new Error();
