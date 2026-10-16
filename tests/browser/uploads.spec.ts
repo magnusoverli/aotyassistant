@@ -127,7 +127,8 @@ test('an uploaded file uses the normal explicit player and never exposes Music A
     const state = await (await page.request.get('/api/participant/state')).json();
     expect(state.ownPlayback.track.title).toBe('Uploaded song'); expect(JSON.stringify(state)).not.toContain('/api/media/'); expect(JSON.stringify(state)).not.toContain('UPSTREAM SECRET');
     expect((await list(page)).played).toHaveLength(1);
-    await page.getByRole('button', { name: 'Stop', exact: true }).click();
+    await page.getByRole('button', { name: 'Finish my turn', exact: true }).click();
+    await expect(page.locator('.playback-card')).toHaveCount(0);
   } finally { await r.context.close(); }
 });
 

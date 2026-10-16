@@ -8,7 +8,6 @@ import { UploadPanel } from './upload-panel';
 type Options = { getView(): View | undefined; starting(): boolean; canPlay(): boolean; play(entry: PreparedEntryView): void; changed(): void };
 export class PreparationPanel {
   private expanded = false;
-  private entryExpanded = false;
   private editing = false;
   private dragging?: string;
   private recoveryDraft = '';
@@ -51,44 +50,44 @@ export class PreparationPanel {
     button.disabled ||= Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading || (!this.library.view && !this.library.missing);
     return button;
   }
-  renderEntry() { return this.render(undefined, undefined, true); }
-
-  render(search?: HTMLElement, results?: HTMLElement, entry = false) {
-    const library = this.library; const snapshot = library.view;
-    const uploadPanel = this.uploads.render(!entry);
-    const upload = () => {
-      const section = el('section', undefined, `music-upload${search ? '' : ' panel'}`); section.setAttribute('aria-label', 'Upload a private track');
-      if (entry) section.append(el('p', 'Your unfinished upload is kept. Join the room to finish adding it.', 'muted small'));
-      section.append(uploadPanel); return section;
-    };
-    if (entry && !snapshot) {
-      const access = el('section', undefined, 'entry-library-access'); access.setAttribute('aria-label', 'Saved music access');
-      if (library.loading) { const status = el('p', 'Checking your saved music…', 'muted small'); status.setAttribute('role', 'status'); access.append(status); }
-      if (library.error) {
-        const notice = el('div', undefined, 'list-notice'); notice.setAttribute('role', 'alert'); notice.append(el('p', library.error));
-        notice.append(this.button('Retry saved music', () => library.start(), true, 'entry-refresh-library')); access.append(notice);
-      }
-      access.append(this.recovery(true));
-      if (this.uploads.hasWork) { access.classList.add('panel'); access.append(upload()); }
-      return access;
+  renderEntry() {
+    const library = this.library;
+    const access = el('section', undefined, 'entry-library-access'); access.setAttribute('aria-label', 'Saved music access');
+    if (library.loading) { const status = el('p', 'Checking your saved music…', 'muted small'); status.setAttribute('role', 'status'); access.append(status); }
+    if (library.pending) {
+      const notice = el('p', 'Your unsynced list change is kept. Join the room to review it.', 'muted small'); notice.setAttribute('role', 'status'); access.append(notice);
+    } else if (library.error) {
+      const notice = el('div', undefined, 'list-notice'); notice.setAttribute('role', 'alert'); notice.append(el('p', library.error));
+      notice.append(this.button('Retry saved music', () => library.start(), true, 'entry-refresh-library')); access.append(notice);
     }
-    const panel = el('section', undefined, `music-workspace${search ? '' : ' is-list-only'}${entry ? ' is-entry-music' : ''}`); panel.setAttribute('aria-label', 'Your private music'); panel.append(this.feedback);
+    access.append(this.recovery(true));
+    const uploadPanel = this.uploads.render(false);
+    if (this.uploads.hasWork) {
+      const upload = el('section', undefined, 'music-upload'); upload.setAttribute('aria-label', 'Upload a private track');
+      upload.append(el('p', 'Your unfinished upload is kept. Join the room to finish adding it.', 'muted small'), uploadPanel); access.append(upload);
+    }
+    return access;
+  }
+
+  render(search?: HTMLElement, results?: HTMLElement) {
+    const library = this.library; const snapshot = library.view;
+    const uploadPanel = this.uploads.render();
+    const panel = el('section', undefined, `music-workspace${search ? '' : ' is-list-only'}`); panel.setAttribute('aria-label', 'Your private music'); panel.append(this.feedback);
     if (search) { search.id = 'music-find'; search.classList.add('panel'); panel.append(search); }
-    const expanded = entry ? this.entryExpanded || this.editing || this.open.has('recovery') : this.expanded || !search;
-    const list = el('aside', undefined, `panel preparation-list${expanded ? ' is-expanded' : ''}${entry ? ' entry-list' : ''}`); list.id = 'music-list'; list.setAttribute('aria-labelledby', 'music-list-title');
+    const expanded = this.expanded || !search;
+    const list = el('aside', undefined, `panel preparation-list${expanded ? ' is-expanded' : ''}`); list.id = 'music-list'; list.setAttribute('aria-labelledby', 'music-list-title');
     list.dataset.myTurn = String(Boolean(this.options.getView()?.myTurn));
     const heading = el('div', undefined, 'list-heading'); const title = el('h2', 'My list'); title.id = 'music-list-title';
     title.append(el('span', ` · ${snapshot?.upcoming.length ?? 0}`, 'list-count')); heading.append(title);
     const expand = el('button', expanded ? 'Show less' : 'View all', 'secondary list-expand'); expand.type = 'button'; expand.id = 'music-list-expand';
     expand.setAttribute('aria-expanded', String(expanded)); expand.setAttribute('aria-controls', 'music-list-body');
     expand.onclick = () => {
-      if (entry) { this.entryExpanded = !expanded; if (expanded) this.open.delete('recovery'); } else this.expanded = !expanded;
+      this.expanded = !expanded;
       if (expanded) this.editing = false; this.options.changed();
     };
-    if (search || entry) heading.append(expand);
+    if (search) heading.append(expand);
     const status = el('p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Not synced · draft retained' : !navigator.onLine ? 'Offline · saved list retained' : this.uploads.pending ? 'Private · upload not yet added' : snapshot ? 'Private · Saved ✓' : 'Private · saved when you add a track', 'list-save-status'); status.setAttribute('role', 'status');
     list.append(heading, status);
-    if (entry) list.append(el('p', 'Join the room to play or add music. Your saved list stays private.', 'muted small entry-list-hint'));
     const body = el('div', undefined, 'list-body'); body.id = 'music-list-body'; body.dataset.scrollKey = 'private-list';
     if (library.error) {
       const notice = el('div', undefined, 'list-notice'); notice.setAttribute('role', 'alert'); notice.append(el('p', library.error));
@@ -132,10 +131,8 @@ export class PreparationPanel {
     const actions = el('div', undefined, 'list-actions');
     const next = snapshot?.upcoming[0];
     if (next) {
-      if (!entry) {
-        const play = this.button('Play next', () => this.options.play(next), false, `play-next-${next.id}`); play.classList.add('list-play'); play.setAttribute('aria-label', 'Play next prepared track');
-        play.disabled ||= !this.options.canPlay() || next.sourceAvailable === false || Boolean(library.pending || snapshot?.reviewEntryId) || this.options.starting(); actions.append(play);
-      }
+      const play = this.button('Play next', () => this.options.play(next), false, `play-next-${next.id}`); play.classList.add('list-play'); play.setAttribute('aria-label', 'Play next prepared track');
+      play.disabled ||= !this.options.canPlay() || next.sourceAvailable === false || Boolean(library.pending || snapshot?.reviewEntryId) || this.options.starting(); actions.append(play);
       const edit = this.button(this.editing ? 'Done' : 'Edit order', () => { this.editing = !this.editing; this.options.changed(); }, true, 'list-edit'); edit.classList.add('list-edit'); edit.setAttribute('aria-pressed', String(this.editing)); actions.append(edit);
     }
     body.append(actions, ordered);
@@ -156,7 +153,8 @@ export class PreparationPanel {
     }
     tools.append(this.recovery()); body.append(tools); list.append(body); panel.append(list);
     if (results) panel.append(results);
-    if (search) search.append(upload()); else if (!entry || this.uploads.hasWork) panel.append(upload());
+    const uploads = el('section', undefined, `music-upload${search ? '' : ' panel'}`); uploads.setAttribute('aria-label', 'Upload a private track'); uploads.append(uploadPanel);
+    if (search) search.append(uploads); else panel.append(uploads);
     return panel;
   }
 

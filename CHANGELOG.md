@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Release 0.2.7 with a simpler participant entry, in-player turn finishing, artist-first search, and matching player/list surfaces.
+- Put Search artists first and select it by default, and match My list’s surface to the participant player on desktop and mobile.
+- Replace the participant player’s Stop button with Finish my turn, removing the separate action below the player while retaining Pause/Resume.
+- Hide My list until participants join, keeping recovery available and saved music, unsynced changes, and unfinished uploads intact.
 - Release 0.2.6 with a compact shared header on every page and a redesigned participant entry screen that preserves saved music, recovery, and unfinished work.
 - Replace the unjoined participant fallback with a shared join form, compact saved-music access, recovery, and distinct loading/offline/error states while preserving private drafts.
 - Use the listening room’s compact, reusable Menu and Full screen header on every page, preserving contextual status and keyboard navigation.

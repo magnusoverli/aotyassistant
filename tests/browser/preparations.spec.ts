@@ -64,11 +64,13 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
     const phone = await context.newPage(); await phone.goto(isolatedApp.origin + '/participant');
     await phone.locator('#list-recovery').click(); await phone.getByLabel('Recover with a private key').fill(key);
     await phone.getByRole('button', { name: 'Recover my list', exact: true }).click();
-    await expect(titles(phone)).toHaveText(['Late Summer', 'Northern Lights']);
+    await expect.poll(async () => (await state(phone)).ownerId).toBe((await state(second)).ownerId);
+    await expect(titles(phone)).toHaveCount(0);
     await expect(phone.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
     expect(phone.url()).not.toContain(key); expect(await phone.evaluate(() => JSON.stringify(localStorage))).not.toContain(key);
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });
-    await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
+    await expect(second.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
+    await expect(titles(second)).toHaveCount(0);
     await second.goto(isolatedApp.origin + '/join'); await second.getByLabel('What should we call you?').fill('Second again'); await second.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(second).toHaveURL(/\/participant$/); await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
     expect((await state(phone)).ownerId).toBe((await state(second)).ownerId);

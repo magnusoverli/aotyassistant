@@ -252,7 +252,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .participant-page h2 { font-size:1.45rem; }
 .privacy-tag { color:var(--muted); font-size:11px; line-height:1.5; text-align:right; }
 .participant-page .section-heading .eyebrow { font-size:9px; }
-.participant-page .playback-card { background:linear-gradient(145deg,#2c3a29,#1b2a20); border-color:#61704c; }
+.participant-page .playback-card,.participant-page .preparation-list { background:linear-gradient(145deg,#2c3a29,#1b2a20); border-color:#61704c; }
 .private-now-playing { display:flex; align-items:center; gap:18px; margin:20px 0 10px; }
 .private-now-playing > div:last-child { min-width:0; }
 .private-now-playing h2 { font-size:clamp(1.25rem,3vw,1.7rem); margin:7px 0 8px; overflow-wrap:anywhere; }
@@ -511,7 +511,7 @@ input,select { min-width:0; min-height:46px; padding:12px; background:var(--bg);
   .music-workspace .catalogue-panel .section-heading { margin-bottom:12px; }
   .music-workspace .catalogue-panel .search-tabs { margin:10px 0; }
   .music-workspace .catalogue-panel .search-form { margin-bottom:0; }
-  .music-workspace .preparation-list { top:calc(var(--app-header-height,90px) + 8px); z-index:10; background:#1b281d; box-shadow:0 8px 20px #0002; max-height:calc((var(--music-viewport-height,100dvh) - var(--app-header-height,90px) - 24px)*.65); }
+  .music-workspace .preparation-list { top:calc(var(--app-header-height,90px) + 8px); z-index:10; box-shadow:0 8px 20px #0002; max-height:calc((var(--music-viewport-height,100dvh) - var(--app-header-height,90px) - 24px)*.65); }
   .list-heading { min-height:44px; }
   .list-heading h2 { font-size:1.45rem; }
   .list-heading .list-expand { display:inline-flex; }
@@ -550,34 +550,16 @@ body[data-short-viewport='true'] .preparation-list:not(.is-expanded) .list-empty
 
 /* A deliberate entry screen, not a disabled participant workspace. */
 .participant-entry { max-width:660px; padding:34px 22px 50px; }
-.participant-entry.has-saved-music { max-width:1120px; }
 .entry-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:24px; align-items:start; }
-.participant-entry.has-saved-music .entry-layout { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
 .entry-layout > .panel { margin:0; }
 .entry-status > p { font-size:13px; margin:18px 0 0; overflow-wrap:anywhere; }
 .entry-status > button { margin-top:20px; }
 .entry-library-access { margin-top:20px; border-top:1px solid var(--line); min-width:0; }
-.entry-library-access.panel { margin:0; }
 .entry-library-access > .list-disclosure { border:0; margin:0; }
 .entry-library-access > .list-disclosure > summary { font-size:12px; }
 .entry-library-access .music-upload { margin-top:20px; }
-.participant-entry .entry-list { position:static; max-height:none; margin:0; }
-.participant-entry .entry-list .list-expand { display:inline-flex; }
-.entry-list-hint { margin:0 0 14px; font-size:12px; }
-.participant-entry .entry-list .list-body { max-height:min(60dvh,600px); overflow-y:auto; }
-.participant-entry .entry-list:not(.is-expanded) .list-body { max-height:none; overflow:visible; }
-.participant-entry .entry-list:not(.is-expanded) .list-actions,
-.participant-entry .entry-list:not(.is-expanded) .saved-actions,
-.participant-entry .entry-list:not(.is-expanded) .saved-source,
-.participant-entry .entry-list:not(.is-expanded) .list-tools { display:none; }
-.participant-entry .is-entry-music .entry-list:not(.is-expanded) .saved-tracks > .saved-track { display:flex; flex-wrap:nowrap; padding:12px 0; }
-.participant-entry .is-entry-music .entry-list:not(.is-expanded) .saved-tracks > .saved-track:nth-child(n+4) { display:none; }
-.participant-entry .entry-list:not(.is-expanded) .saved-track .result-identity { flex:1; }
-.participant-entry .entry-list:not(.is-expanded) .saved-track strong { display:-webkit-box; white-space:normal; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.participant-entry .entry-list:not(.is-expanded) .list-empty { min-height:0; }
 @media(max-width:999px) {
-  .participant-entry,.participant-entry.has-saved-music { max-width:660px; padding:20px 18px 35px; }
-  .participant-entry.has-saved-music .entry-layout { grid-template-columns:minmax(0,1fr); }
+  .participant-entry { padding:20px 18px 35px; }
 }
 
 .upload-panel { min-width:0; }

@@ -3,6 +3,7 @@ import { expect, type Browser, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 import type { DemoAdapter } from '../../src/playback';
 import { uploadBytes } from '../fixtures/uploads';
+import { showList } from './preparation-helpers';
 
 async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, count = 8) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -20,7 +21,6 @@ async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, c
   return { page, context, post, library };
 }
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-const visibleRows = (page: Page) => page.locator('.entry-list .saved-tracks[aria-label="Your prepared tracks"] > li').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node).display !== 'none').length);
 
 test('a first visit offers the shared inline join form and optional recovery, without a fake empty workspace or automatic writes', async ({ page }) => {
   const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
@@ -76,27 +76,33 @@ test('offline entry retains the nickname and returns to the join form after reco
   await expect(page.locator('.participant-hero')).toHaveCount(0);
 });
 
-test('returning visitors get a three-track preview and retain explicit list management without membership or playback controls', async ({ browser, isolatedApp }) => {
-  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo);
+for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks see no My list until they explicitly join`, async ({ browser, isolatedApp }) => {
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, count);
   try {
+    const writes: string[] = []; r.page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
-    await expect(r.page.locator('.list-count')).toHaveText(' · 8');
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
+    await expect(r.page.locator('.preparation-list, .saved-track, .music-workspace')).toHaveCount(0);
     await expect(r.page.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
     await expect(r.page.getByRole('button', { name: 'Upload a track', exact: true })).toHaveCount(0);
     for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
       await r.page.setViewportSize({ width: width!, height: height! }); await noOverflow(r.page);
-      expect(await visibleRows(r.page)).toBe(3);
-      if (width === 1440 || width === 390 && height === 844) await r.page.screenshot({ path: `test-results/participant-entry-saved-${width}.png`, fullPage: true });
+      await expect(r.page.getByRole('button', { name: 'Join room', exact: true })).toBeInViewport();
+      if (width === 1440 || width === 390 && height === 844) await r.page.screenshot({ path: `test-results/participant-entry-saved-${count}-${width}.png`, fullPage: true });
     }
-    await r.page.getByRole('button', { name: 'View all', exact: true }).click(); expect(await visibleRows(r.page)).toBe(8);
-    await r.page.getByRole('button', { name: 'Edit order', exact: true }).click();
-    await r.page.getByRole('button', { name: 'Move Saved selection 2 up', exact: true }).click();
-    await expect(r.page.locator('.saved-track.is-next strong')).toHaveText('Saved selection 2');
-    await r.page.getByRole('button', { name: 'Done', exact: true }).click();
-    await r.page.getByRole('button', { name: 'Show less', exact: true }).click(); expect(await visibleRows(r.page)).toBe(3);
+    await r.page.reload(); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
+    await expect(r.page.locator('.preparation-list')).toHaveCount(0);
+    await r.context.setOffline(true); await expect(r.page.getByRole('heading', { name: 'You’re offline.' })).toBeVisible();
+    await expect(r.page.locator('.preparation-list')).toHaveCount(0);
+    await r.context.setOffline(false); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
+    expect(writes).toEqual([]);
+    await r.page.getByLabel('What should we call you?').fill('Returning listener');
+    await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await expect(r.page.locator('.participant-hero')).toBeVisible();
+    await showList(r.page); await expect(r.page.locator('.list-count')).toHaveText(` · ${count}`);
+    await expect(r.page.locator('.saved-tracks[aria-label="Your prepared tracks"] > li')).toHaveCount(count);
     const library = await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
-    expect(library.ownerId).toBe(r.library.ownerId); expect(library.upcoming[0].title).toBe('Saved selection 2');
+    expect(library.ownerId).toBe(r.library.ownerId); expect(library.upcoming).toEqual(r.library.upcoming);
   } finally { await r.context.close(); }
 });
 
@@ -109,11 +115,13 @@ test('recovering a saved list does not join the room and inline joining retains 
     await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await page.getByText('Recover a saved list', { exact: true }).click();
     await page.getByLabel('Recover with a private key').fill(key.recoveryKey); await page.getByRole('button', { name: 'Recover my list', exact: true }).click();
-    await expect(page.locator('.list-count')).toHaveText(' · 2');
+    await expect.poll(async () => (await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
+    await expect(page.locator('.preparation-list')).toHaveCount(0);
     expect((await page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
     expect(page.url()).not.toContain(key.recoveryKey); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(key.recoveryKey);
     await page.getByLabel('What should we call you?').fill('Recovered listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(page.locator('.participant-hero')).toBeVisible();
+    await expect(page.locator('.list-count')).toHaveText(' · 2');
     const library = await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
     expect(library.ownerId).toBe(r.library.ownerId); expect(library.upcoming).toHaveLength(2);
     expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeUndefined();
@@ -128,32 +136,36 @@ test('revocation shows one calm entry notice, and saved music survives refresh a
     const removed = await host.request.post('/api/host/remove', { headers: { Origin: isolatedApp.origin }, data: { id: state.current.id, revision: state.revision } }); expect(removed.ok()).toBe(true);
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toHaveCount(1);
-    await expect(r.page.getByRole('alert')).toHaveCount(0); await expect(r.page.locator('.list-count')).toHaveText(' · 2');
-    await r.page.reload(); await expect(r.page.locator('.list-count')).toHaveText(' · 2');
+    await expect(r.page.getByRole('alert')).toHaveCount(0); await expect(r.page.locator('.preparation-list')).toHaveCount(0);
+    await r.page.reload(); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
+    await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     await r.page.getByLabel('What should we call you?').fill('Back again'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
+    await expect(r.page.locator('.list-count')).toHaveText(' · 2');
     expect((await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
   } finally { await r.context.close(); }
 });
 
-test('an unconfirmed private-list edit stays visible across an unjoined reload and retries only by explicit choice', async ({ browser, isolatedApp }) => {
+test('an unconfirmed private-list edit survives an unjoined reload and can be retried explicitly after joining', async ({ browser, isolatedApp }) => {
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 3);
   try {
-    await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
-    await r.page.getByRole('button', { name: 'View all', exact: true }).click();
+    await r.page.goto(isolatedApp.origin + '/participant'); await showList(r.page);
     await r.page.getByRole('button', { name: 'Edit order', exact: true }).click();
     let moves = 0;
     await r.page.route('**/api/participant/preparations/move', async route => { moves++; await route.fetch(); await route.abort('failed'); });
     await r.page.getByRole('button', { name: 'Move Saved selection 2 up', exact: true }).click();
     await expect(r.page.locator('.list-save-status')).toHaveText('Not synced · draft retained');
-    await r.page.reload(); await expect(r.page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
+    await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.reload();
+    await expect(r.page.getByRole('status').filter({ hasText: 'Your unsynced list change is kept.' })).toBeVisible();
+    await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     expect(moves).toBe(1); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await r.page.unroute('**/api/participant/preparations/move');
+    await r.page.getByLabel('What should we call you?').fill('Retained draft'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await showList(r.page); await expect(r.page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
     await r.page.getByRole('button', { name: 'Retry save', exact: true }).click();
     await expect(r.page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     const library = await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
     expect(library.upcoming.map((entry: { title: string }) => entry.title)).toEqual(['Saved selection 2', 'Saved selection 1', 'Saved selection 3']);
-    expect((await r.page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
   } finally { await r.context.close(); }
 });
 

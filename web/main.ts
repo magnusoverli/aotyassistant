@@ -34,7 +34,7 @@ let results: CatalogueTrack[] = [];
 let searchText = '';
 let searchDone = false;
 let searching = false;
-let searchMode: 'tracks' | 'artists' = 'tracks';
+let searchMode: 'tracks' | 'artists' = 'artists';
 let artists: CatalogueArtist[] = [];
 let albums: CatalogueAlbum[] = [];
 let chosenArtist: CatalogueArtist | undefined;
@@ -155,7 +155,7 @@ function accept(next: View) {
     catalogue.cancel();
     results = []; searchText = ''; searchDone = false;
     artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
-    if (next.catalogue?.source !== 'music-assistant') searchMode = 'tracks';
+    searchMode = next.catalogue?.source === 'music-assistant' ? 'artists' : 'tracks';
     if (page === 'participant') void library.refresh();
   }
   // Position/volume snapshots do not rebuild browsing forms or reload all artwork.
@@ -306,6 +306,9 @@ function participant() {
   circle.addEventListener('toggle', () => { if (circle.isConnected && circle instanceof HTMLDetailsElement) circleExpanded = circle.open; });
   main.append(hero, circle);
   const shown = player.project(view); const playback = shown.ownPlayback;
+  const turnId = view.turnId;
+  const finish = view.myTurn ? button('Finish my turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId }); }, true) : undefined;
+  if (finish) { finish.id = 'finish-my-turn'; finish.disabled ||= player.starting; }
   if (view.myTurn && playback) {
     const card = el('section', undefined, 'panel playback-card');
     const cardHeading = el('div', undefined, 'section-heading'); cardHeading.append(label('YOUR TRACK'), el('span', playback.revealed ? view.ownPlayback?.revealed ? 'Revealed' : 'Revealing…' : 'Hidden from the room', 'privacy-tag'));
@@ -320,8 +323,8 @@ function participant() {
     if (playback.status !== 'stopped') {
       const action = playback.status === 'playing' ? 'pause' : 'resume';
       controls.append(playerButton(action === 'pause' ? 'Pause' : 'Resume', () => player.control(action), true));
-      controls.append(playerButton('Stop', () => player.control('stop'), true));
     }
+    if (finish) controls.append(finish);
     card.append(controls);
     card.append(volumeControl(shown.volume, (level, commit) => player.volume(level, commit), !realtime || !view.connected || playback.status === 'stopped' || player.starting));
     if (!playback.revealed) {
@@ -340,7 +343,7 @@ function participant() {
   }
   if (realCatalogue) {
     const modes = el('div', undefined, 'actions search-tabs');
-    for (const mode of ['tracks', 'artists'] as const) {
+    for (const mode of ['artists', 'tracks'] as const) {
       const tab = button(mode === 'tracks' ? 'Search tracks' : 'Search artists', () => {
         searchMode = mode; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
       }, searchMode !== mode); tab.id = `catalogue-mode-${mode}`; tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
@@ -429,16 +432,10 @@ function participant() {
     row.append(info, controls);
     found.append(row);
   }
-  let finish: HTMLElement | undefined;
   const musicPanel = music.render(search, found);
-  if (view.myTurn) {
-    finish = el('section', undefined, 'finish-turn'); finish.append(button('Finish my turn →', () => { player.cancel(); return mutate('/api/participant/finish', { turnId: view!.turnId }); }, true));
-  }
-  if (view.myTurn && playback) {
-    if (finish) main.append(finish);
-    main.append(musicPanel);
-  } else {
-    main.append(musicPanel); if (finish) main.append(finish);
+  main.append(musicPanel);
+  if (finish && !playback) {
+    const idleFinish = el('section', undefined, 'finish-turn'); idleFinish.append(finish); main.append(idleFinish);
   }
   return main;
 }
@@ -472,10 +469,7 @@ function participantEntry() {
     layout.append(status);
   }
   if (page === 'participant') {
-    const savedMusic = music.renderEntry();
-    const hasMusic = Boolean(library.view || music.uploads.hasWork);
-    main.classList.toggle('has-saved-music', hasMusic);
-    if (hasMusic) layout.append(savedMusic); else layout.firstElementChild!.append(savedMusic);
+    layout.firstElementChild!.append(music.renderEntry());
   }
   main.append(layout); return main;
 }

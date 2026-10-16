@@ -28,8 +28,20 @@ test('participant searches privately with empty/errors but cannot play until a s
     await expect(alice.getByText('Choose a speaker in host settings before playing. You can still prepare tracks.', { exact: true })).toBeVisible();
     await expect(alice.locator('.catalogue-panel').getByRole('link', { name: 'host settings', exact: true })).toHaveAttribute('href', '/host/settings');
     await expect(alice.getByRole('button', { name: 'Search artists', exact: true })).toBeVisible();
+    await expect(alice.getByRole('button', { name: 'Search artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(alice.locator('.search-tabs button')).toHaveText(['Search artists', 'Search tracks']);
+    for (const width of [1440, 390, 320]) {
+      await alice.setViewportSize({ width, height: 844 });
+      const artist = (await alice.getByRole('button', { name: 'Search artists', exact: true }).boundingBox())!;
+      const tracks = (await alice.getByRole('button', { name: 'Search tracks', exact: true }).boundingBox())!;
+      expect(artist.x + artist.width).toBeLessThanOrEqual(tracks.x);
+    }
+    await alice.setViewportSize({ width: 390, height: 844 });
     await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toBeInViewport();
     await alice.screenshot({ path: 'test-results/participant-catalogue.png', fullPage: true });
+    await alice.getByRole('button', { name: 'Search tracks', exact: true }).click();
+    await expect(alice.getByRole('button', { name: 'Search tracks', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Track, artist, or album');
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('fixture'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toBeVisible();
     await expect(alice.getByText('Fixture artist · Fixture album · Original recording · spotify')).toBeVisible();

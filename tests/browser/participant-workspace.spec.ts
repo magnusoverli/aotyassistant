@@ -29,7 +29,7 @@ test('participant typography, surfaces and desktop alignment match the host page
   };
   const surface = (node: Element) => {
     const style = getComputedStyle(node);
-    return { background: style.backgroundColor, border: style.borderColor, radius: style.borderRadius, padding: style.padding };
+    return { background: style.backgroundColor, image: style.backgroundImage, border: style.borderColor, radius: style.borderRadius, padding: style.padding };
   };
   try {
     await host.setViewportSize({ width: 1440, height: 1000 }); await host.goto('/host/settings');
@@ -59,6 +59,18 @@ test('participant typography, surfaces and desktop alignment match the host page
     await expect(page.locator('.playback-card')).toBeVisible();
     expect((await page.locator('.playback-card').boundingBox())!.width).toBe((await page.locator('.catalogue-panel').boundingBox())!.width);
     await page.screenshot({ path: 'test-results/participant-coherent-playing-desktop.png', fullPage: true });
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: 1000 });
+      expect(await page.locator('.preparation-list').evaluate(surface)).toEqual(await page.locator('.playback-card').evaluate(surface));
+      if (width < 1000) {
+        await page.getByRole('button', { name: 'View all', exact: true }).click();
+        expect(await page.locator('.preparation-list').evaluate(surface)).toEqual(await page.locator('.playback-card').evaluate(surface));
+        await page.getByRole('button', { name: 'Show less', exact: true }).click();
+      }
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); window.scrollTo({ top: 0, behavior: 'instant' }); });
+    await page.screenshot({ path: 'test-results/participant-coherent-playing-mobile.png', fullPage: true });
   } finally { await r.close(); }
 });
 
@@ -144,8 +156,8 @@ test('owner and room updates preserve search/caret, expanded list scroll, and th
     await expect(page.locator('header')).toHaveAttribute('data-same-node', 'yes');
     await r.post('/api/host/remove', { id: session.current.id, revision: session.revision });
     await expect(page.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
-    await expect(page.locator('.music-workspace')).toHaveClass(/is-list-only/);
-    await expect(page.locator('.list-count')).toHaveText(' · 25');
+    await expect(page.locator('.music-workspace, .preparation-list')).toHaveCount(0);
+    expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(25);
     await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveCount(0);
   } finally { await r.close(); }
 });

@@ -130,7 +130,8 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     for (const person of state.active) { const current = await (await host.request.get('/api/host/state')).json(); await post('/api/host/remove', { id: person.id, revision: current.revision }); }
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await expect(tv.getByRole('list', { name: 'Participant rotation' })).toHaveCount(0);
-    await expect(jordan.getByText('Northern Lights', { exact: true })).toBeVisible();
+    await expect(jordan.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
+    await expect(jordan.locator('.preparation-list')).toHaveCount(0);
     await expect(jordan.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
   } finally {
     for (const context of contexts) await context.close(); await tvContext.close();
