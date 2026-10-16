@@ -7,15 +7,17 @@ export const trackSchema = z.object({
 export type Track = z.infer<typeof trackSchema>;
 
 export type CatalogueSource = 'demo' | 'music-assistant';
+export type CatalogueMatchKind = 'identity' | 'metadata';
 export type CatalogueTrack = {
   id: string; title: string; artist: string; album: string; version: string;
   provider: string; duration: number | null; available: boolean; artwork?: string; artistArtwork?: string;
   sources?: CatalogueTrack[];
+  matchKind?: CatalogueMatchKind;
 };
-export const catalogueSearchNotice = 'Music Assistant does not report individual source failures; search coverage is unconfirmed.';
+export { catalogueSearchNotice } from './catalogue-messages.js';
 export type CatalogueSearch = { source: CatalogueSource; playbackAvailable: boolean; tracks: CatalogueTrack[]; notices?: string[] };
-export type CatalogueArtist = { id: string; name: string; provider: string; artwork?: string; sources?: CatalogueArtist[] };
-export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[] };
+export type CatalogueArtist = { id: string; name: string; provider: string; artwork?: string; sources?: CatalogueArtist[]; matchKind?: CatalogueMatchKind };
+export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[]; matchKind?: CatalogueMatchKind };
 export type CataloguePage<T> = { items: T[]; notices?: string[] };
 export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueAlbum[]; tracks?: CatalogueTrack[]; notices?: string[]; playbackAvailable: boolean };
 export interface CatalogueProvider {

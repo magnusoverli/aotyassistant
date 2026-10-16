@@ -3,7 +3,7 @@ export type IdentityMedia = {
   item_id: string; provider: string; name: string; version: string;
   external_ids?: [string, string][];
   provider_mappings?: { item_id?: string; provider_instance?: string; provider_domain?: string }[];
-  year?: number | null; album_type?: string; duration?: number;
+  year?: number | null; album_type?: string; artist_type?: string; duration?: number;
   disc_number?: number; track_number?: number;
   artists?: { name: string; external_ids?: [string, string][] }[];
   album?: { name: string; version?: string; year?: number | null; external_ids?: [string, string][] } | null;
@@ -13,11 +13,11 @@ type Kind = 'artist' | 'album' | 'track';
 const text = (value: string) => value.normalize('NFC').trim().toLowerCase();
 function ids(media: { external_ids?: [string, string][] }, type: string) {
   return new Set((media.external_ids ?? []).filter(([key, value]) => key === type &&
-    (type.startsWith('musicbrainz_') ? /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value)
-      : type === 'isrc' && /^[a-z]{2}[a-z0-9]{3}\d{7}$/i.test(value))).map(([, value]) => value.toLowerCase()));
+    (type.startsWith('musicbrainz_') || type === 'acoustid' ? /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value)
+      : type === 'isrc' ? /^[a-z]{2}[a-z0-9]{3}\d{7}$/i.test(value) : type === 'barcode' && /^\d{12,14}$/.test(value))).map(([, value]) => value.toLowerCase()));
 }
 function overlap(a: Set<string>, b: Set<string>) { return [...a].some(id => b.has(id)); }
-function conflicts(a: IdentityMedia, b: IdentityMedia, types: string[]) {
+function conflicts(a: { external_ids?: [string, string][] }, b: { external_ids?: [string, string][] }, types: string[]) {
   return types.some(type => { const left = ids(a, type); const right = ids(b, type); return left.size && right.size && !overlap(left, right); });
 }
 function mappings(media: IdentityMedia) {
@@ -28,6 +28,10 @@ function mappings(media: IdentityMedia) {
 export function sameCatalogueItem(kind: Kind, a: IdentityMedia, b: IdentityMedia): boolean {
   const unique = kind === 'artist' ? ['musicbrainz_artistid'] : kind === 'album' ? ['musicbrainz_albumid'] : ['musicbrainz_recordingid', 'isrc'];
   if (conflicts(a, b, unique)) return false;
+  if (kind !== 'artist' && !compatibleMetadata(kind, a, b)) return false;
+  return overlap(mappings(a), mappings(b)) || unique.some(type => overlap(ids(a, type), ids(b, type)));
+}
+function compatibleMetadata(kind: Kind, a: IdentityMedia, b: IdentityMedia): boolean {
   if (kind !== 'artist') {
     // Strong IDs do not erase editions, clean/explicit variants or different album appearances.
     if (text(a.name) !== text(b.name) || text(a.version) !== text(b.version)) return false;
@@ -45,11 +49,10 @@ export function sameCatalogueItem(kind: Kind, a: IdentityMedia, b: IdentityMedia
       if (a.track_number && b.track_number && a.track_number !== b.track_number) return false;
       if (Boolean(a.album) !== Boolean(b.album)) return false;
       if (a.album && b.album && (text(a.album.name) !== text(b.album.name) || text(a.album.version ?? '') !== text(b.album.version ?? '') ||
-        (a.album.year && b.album.year && a.album.year !== b.album.year) || conflicts(
-          { ...a.album, item_id: '', provider: '', version: '' }, { ...b.album, item_id: '', provider: '', version: '' }, ['musicbrainz_albumid']))) return false;
+        (a.album.year && b.album.year && a.album.year !== b.album.year) || conflicts(a.album, b.album, ['musicbrainz_albumid']))) return false;
     }
   }
-  return overlap(mappings(a), mappings(b)) || unique.some(type => overlap(ids(a, type), ids(b, type)));
+  return true;
 }
 
 /** Complete-link grouping: an ambiguous bridge cannot join two conflicting identities. */
@@ -71,4 +74,73 @@ export function groupCatalogueItems<T extends IdentityMedia>(kind: Kind, items: 
     for (const key of keys) { if (!index.has(key)) index.set(key, new Set()); index.get(key)!.add(group); }
   }
   return groups;
+}
+
+/** Presentation compatibility is NOT identity evidence and must never authorize a union browse. */
+export function sameMetadataPresentation(kind: Kind, a: IdentityMedia, b: IdentityMedia): boolean {
+  if (!text(a.name) || text(a.name) !== text(b.name) || text(a.version) !== text(b.version)) return false;
+  // Release-group/barcode/track IDs are vetoes here, never positive evidence of recording equality.
+  const unique = kind === 'artist' ? ['musicbrainz_artistid'] : kind === 'album' ? ['musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode']
+    : ['musicbrainz_recordingid', 'musicbrainz_trackid', 'isrc', 'acoustid'];
+  if (conflicts(a, b, unique) || !compatibleMetadata(kind, a, b)) return false;
+  if (kind === 'track' && a.album && b.album && conflicts(a.album, b.album, ['musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode'])) return false;
+  if (kind === 'artist') return !a.artist_type || !b.artist_type || a.artist_type === 'unknown' || b.artist_type === 'unknown' || a.artist_type === b.artist_type;
+  if (!a.artists?.length || !b.artists?.length || a.artists.some(artist => !text(artist.name))) return false;
+  // Tracks without a meaningful duration/album do not have enough context for this display shortcut.
+  return kind !== 'track' || Boolean(a.duration && b.duration && a.album && b.album && text(a.album.name) && text(b.album.name));
+}
+
+function metadataKey(kind: Kind, item: IdentityMedia): string {
+  return JSON.stringify([text(item.name), text(item.version), kind === 'artist' ? [] : item.artists?.map(a => text(a.name)),
+    kind === 'track' ? [item.album && text(item.album.name), text(item.album?.version ?? ''), item.duration] : []]);
+}
+function evidenceProfile(item: IdentityMedia): string {
+  const external = (media: { external_ids?: [string, string][] }) => ['musicbrainz_artistid', 'musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode', 'musicbrainz_recordingid', 'musicbrainz_trackid', 'isrc', 'acoustid']
+    .map(type => [...ids(media, type)].sort());
+  return JSON.stringify([external(item), item.year ?? null, item.album_type ?? 'unknown', item.artist_type ?? 'unknown',
+    item.metadata?.explicit ?? null, item.disc_number ?? null, item.track_number ?? null,
+    item.artists?.map(external), item.album && [external(item.album), item.album.year ?? null]]);
+}
+
+export type CataloguePresentation<T> = { items: T[]; matchKind: 'identity' | 'metadata' };
+/** Identity groups first; metadata buckets only flatten choices for a clearly unverified display row. */
+export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items: T[]): CataloguePresentation<T>[] {
+  const identities = groupCatalogueItems(kind, items);
+  const order = new Map(items.map((item, index) => [item, index]));
+  const buckets = new Map<string, T[][]>();
+  for (const group of identities) {
+    const mappedUnion = group.some(item => {
+      const sources = new Set(item.provider === 'library' ? [] : [JSON.stringify([item.provider, item.item_id])]);
+      for (const mapping of item.provider_mappings ?? []) if (mapping.item_id && (mapping.provider_instance || mapping.provider_domain)) {
+        const own = mapping.item_id === item.item_id && (mapping.provider_instance === item.provider || mapping.provider_domain === item.provider);
+        sources.add(JSON.stringify(own ? [item.provider, item.item_id] : [mapping.provider_instance ?? mapping.provider_domain, mapping.item_id]));
+      }
+      return sources.size > 1;
+    });
+    // Do not downgrade a verified multi-source union or an alias group to a metadata-only display bucket.
+    const keys = new Set(group.map(item => metadataKey(kind, item)));
+    const key = group.length === 1 && !mappedUnion && keys.size === 1 ? [...keys][0]! : `identity:${order.get(group[0]!)}`;
+    if (!buckets.has(key)) buckets.set(key, []); buckets.get(key)!.push(group);
+  }
+  const result: CataloguePresentation<T>[] = [];
+  const complete = (groups: T[][]) => groups.every((group, index) => groups.slice(index + 1)
+    .every(other => group.every(a => other.every(b => sameMetadataPresentation(kind, a, b)))));
+  const emit = (groups: T[][]) => {
+    const members = groups.flat();
+    if (groups.length > 1 && new Set(members.map(item => item.provider)).size > 1 && complete(groups)) {
+      result.push({ items: members, matchKind: 'metadata' });
+    } else for (const group of groups) result.push({ items: group, matchKind: 'identity' });
+  };
+  for (const groups of buckets.values()) {
+    if (complete(groups)) { emit(groups); continue; }
+    // An unknown bridge must not be assigned arbitrarily to one of two conflicting artists/editions.
+    // Keep those known identities separate; only equally evidenced unknown matches may share a display row.
+    const profiles = new Map<string, T[][]>();
+    for (const group of groups) {
+      const key = JSON.stringify([...new Set(group.map(evidenceProfile))].sort());
+      if (!profiles.has(key)) profiles.set(key, []); profiles.get(key)!.push(group);
+    }
+    for (const profile of profiles.values()) emit(profile);
+  }
+  return result.sort((a, b) => Math.min(...a.items.map(item => order.get(item)!)) - Math.min(...b.items.map(item => order.get(item)!)));
 }

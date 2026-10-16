@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, catalogueSearchNotice, type CatalogueTrack, type CatalogueArtist, type CatalogueAlbum, type CataloguePage, type Track, type VolumeState } from './model.js';
-import { groupCatalogueItems } from './catalogue-grouping.js';
+import { presentCatalogueItems } from './catalogue-grouping.js';
 import type { SavedSelection } from './preparations.js';
 import { MusicAssistantTransport, type ArtworkData } from './music-assistant-transport.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData } from './music-assistant-transport.js';
@@ -35,7 +35,7 @@ const searchTrackSchema = z.object({
   disc_number: z.number().int().nonnegative().optional(), track_number: z.number().int().nonnegative().optional(),
 });
 const mediaSchema = z.object({ item_id: z.string().min(1).max(2048), provider: z.string().min(1).max(200),
-  name: z.string().min(1).max(1000), uri: z.string().max(4096).nullable().optional(), version: z.string().max(500).default(''), ...imageFields, ...identityFields });
+  name: z.string().min(1).max(1000), uri: z.string().max(4096).nullable().optional(), version: z.string().max(500).default(''), artist_type: z.string().max(100).optional(), ...imageFields, ...identityFields });
 const albumSchema = mediaSchema.extend({ year: z.number().int().nullable().optional(), artists: searchTrackSchema.shape.artists, album_type: z.string().max(100).optional() });
 type MediaRef = { kind: 'artist' | 'album' | 'track'; itemId: string; provider: string; sourceLabel: string; uri: string; version: string; expires: number; artwork?: string; artistArtwork?: string };
 type BrowseGroup = { kind: MediaRef['kind']; sources: string[]; expires: number };
@@ -105,7 +105,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     return id;
   }
   private reference(id: string, kind: MediaRef['kind']): MediaRef {
-    if (kind === 'track' && id.startsWith('group:')) throw new AppError(422, 'Choose an exact music source before saving or playing this track.');
+    if (kind === 'track' && (id.startsWith('group:') || id.startsWith('display:'))) throw new AppError(422, 'Choose an exact music source before saving or playing this track.');
     const ref = this.references.get(id);
     if (!ref || ref.kind !== kind || ref.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search or browse again.');
     return ref;
@@ -122,6 +122,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     return id;
   }
   private browseSources(id: string, kind: 'artist' | 'album'): MediaRef[] {
+    if (id.startsWith('display:')) throw new AppError(422, 'These are metadata-only matches, not a verified identity. Choose an exact source before browsing.');
     if (!id.startsWith('group:')) return [this.reference(id, kind)];
     const group = this.groups.get(id);
     if (!group || group.kind !== kind || group.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search or browse again.');
@@ -150,7 +151,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   private grouped<T extends Media, R extends { id: string; provider: string }>(kind: MediaRef['kind'], items: T[], convert: (item: T) => R): R[] {
     let count = 0;
-    return groupCatalogueItems(kind, items).map(group => {
+    return presentCatalogueItems(kind, items).map(({ items: group, matchKind }) => {
       const variants = new Map<string, R>();
       // Prefer real provider rows to metadata inherited from a library mapping.
       const real = new Map<string, T>();
@@ -175,8 +176,10 @@ export class MusicAssistantClient implements MusicAssistantReader {
       }
       const sources = [...variants.values()].sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id));
       const first = sources[0]!;
-      return sources.length === 1 ? first : { ...first, id: this.rememberGroup(kind, sources.map(x => x.id)),
-        provider: [...new Set(sources.map(x => x.provider))].join(' + '), sources,
+      const sourceIds = sources.map(x => x.id);
+      return sources.length === 1 ? first : { ...first, id: matchKind === 'metadata'
+        ? `display:${createHash('sha256').update(JSON.stringify([kind, [...sourceIds].sort()])).digest('hex')}` : this.rememberGroup(kind, sourceIds),
+        provider: [...new Set(sources.map(x => x.provider))].join(' + '), sources, matchKind,
         ...('available' in first ? { available: sources.some(source => 'available' in source && source.available === true) } : {}) };
     });
   }

@@ -3,6 +3,12 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
 
+/** Actual deployed search shape: no cross-provider identity, only each result's own mapping. */
+export function metadataOnly<T extends { item_id: string; provider: string; provider_mappings?: { available: boolean }[] }>(item: T) {
+  return { ...item, external_ids: [], provider_mappings: [{ item_id: item.item_id, provider_domain: item.provider,
+    provider_instance: `${item.provider}--private-instance`, available: item.provider_mappings?.[0]?.available ?? true }] };
+}
+
 /** Synthetic Music Assistant only; it never reaches a real speaker or upstream service. */
 export async function startMusicAssistantFixture(port = 0) {
   const track = { item_id: 'catalogue-result', provider: 'spotify', name: 'Real catalogue fixture', version: 'Original recording', media_type: 'track',
@@ -20,6 +26,7 @@ export async function startMusicAssistantFixture(port = 0) {
     external_ids: [['musicbrainz_recordingid', '33333333-3333-4333-8333-333333333333']],
     provider_mappings: [{ item_id: `${provider}-private-track`, provider_domain: provider, available: provider === 'tidal' }] }));
   let catalogueMode = '';
+  let metadataArtistName = 'Metallica';
   let itemNumber = 0;
   const queue = { queue_id: 'fixture-queue', available: true, active: true, items: 0, state: 'idle', ended: false,
     repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: typeof track }, next_item: null as unknown };
@@ -78,10 +85,15 @@ export async function startMusicAssistantFixture(port = 0) {
     else if (command === 'players/cmd/group_volume') player.group_volume = volumeClamp ?? args.volume_level;
     else if (command === 'music/search') {
       if (args.search_query === 'failure') { res.statusCode = 503; res.end('PRIVATE FIXTURE ERROR'); return; }
-      catalogueMode = args.search_query.startsWith('multi-provider') ? args.search_query : '';
-      if (catalogueMode) result = args.media_types[0] === 'artist'
-        ? { artists: [...multiArtists, { ...multiArtists[1], item_id: 'private-other-artist', uri: 'tidal://artist/private-other-artist', external_ids: [['musicbrainz_artistid', '44444444-4444-4444-8444-444444444444']] }] }
-        : { tracks: [...multiTracks, { ...multiTracks[0], item_id: 'private-live-track', uri: 'spotify://track/private-live-track', version: 'Live' }] };
+      const actualNames = ['Metallica', 'Iron Maiden', 'Megadeth', 'Slayer'];
+      catalogueMode = actualNames.includes(args.search_query) ? 'multi-provider-metadata' : args.search_query.startsWith('multi-provider') ? args.search_query : '';
+      metadataArtistName = actualNames.includes(args.search_query) ? args.search_query : 'Metallica';
+      if (catalogueMode) {
+        const artists = catalogueMode === 'multi-provider-metadata' ? multiArtists.map(a => metadataOnly({ ...a, name: metadataArtistName }))
+          : [...multiArtists, { ...multiArtists[1], item_id: 'private-other-artist', uri: 'tidal://artist/private-other-artist', external_ids: [['musicbrainz_artistid', '44444444-4444-4444-8444-444444444444']] }];
+        const tracks = [...multiTracks, { ...multiTracks[0]!, item_id: 'private-live-track', uri: 'spotify://track/private-live-track', version: 'Live' }];
+        result = args.media_types[0] === 'artist' ? { artists } : { tracks: catalogueMode === 'multi-provider-metadata' ? tracks.map(metadataOnly) : tracks };
+      }
       else result = args.media_types[0] === 'artist' ? { artists: args.search_query === 'empty' ? [] : [artist] } : { tracks: args.search_query === 'empty' ? [] : [track] };
     } else if (command === 'music/artists/artist_albums') {
       if (catalogueMode === 'multi-provider-failure' || (catalogueMode === 'multi-provider-partial' && args.provider_instance_id_or_domain === 'tidal')) {
@@ -89,9 +101,13 @@ export async function startMusicAssistantFixture(port = 0) {
       }
       const provider = args.provider_instance_id_or_domain;
       const selected = multiAlbums.find(a => a.provider === provider)!;
-      result = catalogueMode ? [selected, { ...selected, item_id: `${provider}-private-exclusive`, uri: `${provider}://album/private-exclusive`, name: `${provider} exclusive`, external_ids: [] }] : [album];
+      const albums = [selected, { ...selected, item_id: `${provider}-private-exclusive`, uri: `${provider}://album/private-exclusive`, name: `${provider} exclusive`, external_ids: [] }];
+      result = catalogueMode ? catalogueMode.startsWith('multi-provider-metadata') ? albums.map(metadataOnly) : albums : [album];
     }
-    else if (command === 'music/albums/album_tracks') result = catalogueMode ? multiTracks.filter(t => t.provider === args.provider_instance_id_or_domain) : [track];
+    else if (command === 'music/albums/album_tracks') {
+      const tracks = multiTracks.filter(t => t.provider === args.provider_instance_id_or_domain);
+      result = catalogueMode ? catalogueMode.startsWith('multi-provider-metadata') ? tracks.map(metadataOnly) : tracks : [track];
+    }
     else if (command === 'music/item_by_uri' && typeof args.uri === 'string' && args.uri.startsWith('builtin://track/')) {
       const url = args.uri.slice('builtin://track/'.length);
       try {
