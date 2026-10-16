@@ -29,7 +29,6 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     integrations.assertSetupRevision(input.revision); prune();
     if (transactions.size >= 32) throw new AppError(429, 'Too many pending connections. Wait a few minutes and try again.');
     const info = await readInfo(input.url).catch(() => { throw new AppError(502, 'Cannot reach Music Assistant. Check its address and try again.'); });
-    if (info.onboard_done === false) throw new AppError(409, 'Finish Music Assistant onboarding before connecting.');
     if (info.schema_version < 28) throw new AppError(422, 'This Music Assistant version does not support browser authorization. Use advanced setup.');
     if (integrations.serverId && integrations.serverId !== info.server_id) throw new AppError(409, 'This is a different server. Disconnect explicitly before replacing the catalogue.');
     const browserUrl = input.browserUrl ?? input.url;

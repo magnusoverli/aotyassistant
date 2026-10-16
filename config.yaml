@@ -1,5 +1,5 @@
 name: Albums of the Year (development)
-version: "0.2.0"
+version: "0.2.1"
 slug: albums_of_the_year
 url: https://github.com/magnusoverli/aotyassistant
 description: Private listening circle with artist/album browsing and turn-controlled experimental Music Assistant playback.
@@ -14,7 +14,7 @@ boot: auto
 init: false
 ingress: true
 ingress_port: 8099
-ingress_entry: /host
+ingress_entry: host
 ingress_stream: true
 panel_icon: mdi:album
 panel_title: Albums of the Year

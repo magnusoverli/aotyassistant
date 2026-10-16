@@ -138,7 +138,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
           const select = el('select'); select.id = 'ma-detected'; select.disabled = busy || addresses.busy;
           const manual = el('option', 'Enter another address'); manual.value = ''; select.append(manual);
           for (const server of setup.servers) {
-            const option = el('option', `${server.name} · ${server.version}${server.ready ? '' : ' · finish MA setup'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
+            const option = el('option', `${server.name} · ${server.version}${server.ready ? '' : ' · sources/players setup pending'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
             option.value = server.url; select.append(option);
           }
           select.value = setup.servers.some(s => s.url === urlDraft) ? urlDraft : '';

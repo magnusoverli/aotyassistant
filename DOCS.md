@@ -1,6 +1,6 @@
 # Albums of the Year — Home Assistant installation
 
-Requires **Home Assistant 2026.10.0 or later** with Supervisor, amd64 or aarch64, and an installed/onboarded Music Assistant server. Real playback currently supports MA API schema 65. Core, Supervisor and MA have independent versions.
+Requires **Home Assistant 2026.10.0 or later** with Supervisor, amd64 or aarch64, and an installed Music Assistant server with a working login. Real playback currently supports MA API schema 65. Core, Supervisor and MA have independent versions. Music sources and players can be configured after connecting.
 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 

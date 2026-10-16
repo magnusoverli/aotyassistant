@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Fix Home Assistant's Open web UI entry path and allow MA sign-in before music sources and players are configured.
 - Add automatic Home Assistant/MA discovery and addresses, browser sign-in/reconnect, host Ingress, coordinated backups, startup/watchdog support, and prebuilt-image release automation.
 - Document opportunities for automatic Home Assistant setup, Music Assistant browser login, and Ingress integration.
 - Add a public Home Assistant source repository, lab installation guidance, and automated application checks.
