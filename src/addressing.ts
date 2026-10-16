@@ -31,6 +31,17 @@ export function setupHostAllowed(host: string, remote: string) {
   } catch { return false; }
 }
 
+/** Browser recovery for a LAN address that has not been configured or verified by Supervisor. */
+export function guestAddressHelp(origin: string, path: string) {
+  const escape = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Open the listening room</title></head><body><main>
+<h1>This address needs setup</h1>
+<p>The listening room is using a different guest address. Your saved room and lists are still available.</p>
+<p><a href="${escape(origin + path)}">Continue at the saved address (${escape(origin)})</a></p>
+<p>If that address no longer works, the host can <a href="/host/settings">open address settings</a> and choose <strong>Use the address I opened for guest links</strong>.</p>
+</main></body></html>`;
+}
+
 // A short finite PCM WAV, generated without FFmpeg/filesystem/library imports. It is never queued or played.
 export const diagnosticDuration = 3;
 const audio = Buffer.alloc(44 + 8000 * 2 * diagnosticDuration);

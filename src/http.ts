@@ -9,7 +9,7 @@ import type { IntegrationManager } from './integrations.js';
 import { PreparationManager, PreparationFileStore } from './preparations.js';
 import { mountPreparations } from './preparation-http.js';
 import { UploadAssets } from './uploads.js';
-import { MediaChecks, setupHostAllowed } from './addressing.js';
+import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
 import { body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { mountIntegrations } from './integration-http.js';
@@ -65,13 +65,17 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     }
     const mediaRead = ['GET', 'HEAD'].includes(req.method) && /^\/api\/media\/uploads\/[^/]+\/[^/]+\/track\.[a-z0-9]+$/.test(req.path);
     const host = req.headers.host ?? '';
-    const known = Boolean(ingress) || [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host);
     const setup = integrations && setupHostAllowed(host, req.socket.remoteAddress ?? '');
+    const known = Boolean(ingress) || [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host) ||
+      Boolean(setup && setupManager?.allowsGuestHost(host));
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
     const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
       (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
+    if (!known && setup && read && ['/display', '/join', '/participant'].includes(req.path)) {
+      res.status(403).type('html').send(guestAddressHelp(config.guestUrl, req.path)); return;
+    }
     // The synthetic diagnostic handler performs its own exact Host/capability/expiry checks, including revocation/404.
     if (!known && !(setup && setupRoute) && !diagnosticRead && !(mediaRead && integrations?.mediaHostAllowed(host))) return next(new AppError(403, 'Unconfigured host. Open /host/settings through a local LAN IP or .local hostname to configure the guest address.'));
     if (req.method !== 'GET' && req.method !== 'HEAD') {

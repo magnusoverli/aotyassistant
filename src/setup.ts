@@ -18,6 +18,9 @@ export class SetupManager {
     this.state = { status: 'idle', message: 'Looking for Music Assistant does not start audio.', supervisor: emptyHints(Boolean(config.addon)), servers: [] };
   }
   view(): SetupView { return structuredClone(this.state); }
+  allowsGuestHost(host: string): boolean {
+    return this.state.supervisor.available && this.state.supervisor.guestOrigins.some(origin => new URL(origin).host === host);
+  }
   async refresh(): Promise<SetupView> {
     if (this.pending) return this.pending;
     if (this.closed || Date.now() - this.lastAttempt < 2500) return this.view();
@@ -30,6 +33,8 @@ export class SetupManager {
       this.supervisor ? supervisorHints(this.supervisor, this.config.port).catch(() => emptyHints(true)) : Promise.resolve(emptyHints(Boolean(this.config.addon))),
       this.browse().catch(() => [] as string[]),
     ]);
+    // Address access must not wait for MA discovery, authentication or media checks.
+    this.state.supervisor = hints;
     const saved = this.integrations.view().url;
     const servers = await this.discover([...(saved ? [saved] : []), ...hints.maOrigins, ...mdns]);
     if (this.closed) return this.view();

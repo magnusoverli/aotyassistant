@@ -21,6 +21,7 @@ New installs default to **Start on boot**. MA startup is retried in the backgrou
 - `/host` and `/host/settings`: host controls, through Ingress or the LAN port.
 - `/join`, `/participant`, `/display`: guests and display, using the separate LAN origin without HA accounts.
 - Existing guest addresses are preserved. `guest_url` is an optional advanced override; normal installation needs no Configuration-tab edits.
+- Supervisor-verified LAN addresses also open the display and guest pages, even when the saved address uses a hostname. Other LAN address mismatches show a recovery page with links to the saved address and settings. Guest QR links continue to use your chosen saved address.
 - **Advanced: token or separate login address** supports a browser-reachable MA address when the backend uses internal DNS, or manual token entry from **MA → Settings → Profile**.
 - **Reconnect Music Assistant** renews authorization while retaining the same server's speaker and private-list source identity. MA 2.10.6 long-lived tokens expire after one year. Replacing the server requires an explicit Disconnect.
 - Cancelled/expired login or blocked browser/webview callbacks keep saved settings intact. Retry Connect or use the token fallback.

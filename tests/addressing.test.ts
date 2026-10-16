@@ -46,6 +46,12 @@ test('unknown LAN hosts get scoped setup only; explicit guest selection updates 
   const joined = f.engine.view({ kind: 'host' });
   assert.equal((await f.request('/api/host/state', undefined, f.alternate)).status, 403);
   assert.equal((await f.request('/host', undefined, f.alternate)).url, f.alternate + '/host/settings');
+  for (const path of ['/display', '/join', '/participant']) {
+    const help = await f.request(path, undefined, f.alternate);
+    assert.equal(help.status, 403); assert.match(help.headers.get('content-type')!, /text\/html/);
+    const html = await help.text(); assert.ok(html.includes(`href="http://obsolete.local:3000${path}"`));
+    assert.ok(html.includes('href="/host/settings"')); assert.ok(html.includes('Use the address I opened for guest links'));
+  }
   assert.equal((await f.request('/api/host/addressing', undefined, f.alternate)).status, 200);
   assert.equal((await f.request('/api/host/create', {}, f.alternate)).status, 403);
   assert.equal((await f.request('/api/host/addressing/guest', { origin: f.alternate, revision: 0 }, f.alternate, { Origin: 'https://evil.example' })).status, 403);

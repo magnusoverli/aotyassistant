@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type RequestListener } from 'node:http';
+import { createServer, request, type RequestListener } from 'node:http';
 import { once } from 'node:events';
 import { mkdtemp, readFile, rm, cp } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -72,6 +72,29 @@ test('first-run addresses persist once; subsequent Supervisor IP changes and exp
   const restored = new IntegrationManager(new IntegrationFileStore(dir)); await restored.init(); assert.equal(restored.guestOrigin, guest);
   const explicit = new SetupManager({ ...config, guestOverride: true }, restored, () => assert.fail('Explicit address replaced'), client, async () => [], async () => []);
   t.after(() => explicit.close()); await explicit.refresh();
+  assert.equal(explicit.allowsGuestHost('192.168.1.8:4000'), true);
+  assert.equal(explicit.allowsGuestHost('192.168.1.8:3000'), false);
+  assert.equal(explicit.allowsGuestHost('other.local:4000'), false);
+  const savedHostname = 'http://homeassistant.local:4000';
+  await restored.saveGuestOrigin(savedHostname, restored.view().revision);
+  const local = await listen(t); const adapter = new DemoAdapter();
+  const engine = new Engine(new FileStore(dir), adapter, guest, restored); await engine.init();
+  const http = createApp(engine, { ...config, port: local.port }, 'web', restored, undefined, undefined, explicit);
+  local.server.on('request', http.app); t.after(() => { http.close(); adapter.close(); });
+  const status = (path: string, headers: Record<string, string>, data?: unknown) => new Promise<number>((resolve, reject) => {
+    const req = request(local.origin + path, { method: data ? 'POST' : 'GET', headers }, res => {
+      res.resume(); res.on('end', () => resolve(res.statusCode!)); res.on('error', reject);
+    });
+    req.on('error', reject); req.end(data ? JSON.stringify(data) : undefined);
+  });
+  for (const path of ['/display', '/join', '/participant', '/api/display/state']) {
+    assert.equal(await status(path, { Host: '192.168.1.8:4000' }), 200);
+  }
+  assert.equal(await status('/api/display/state', { Host: '192.168.1.8:3000' }), 403);
+  assert.equal(await status('/api/display/state', { Host: 'other.local:4000', 'X-Forwarded-Host': '192.168.1.8:4000' }), 403);
+  assert.equal(await status('/api/participant/join', { Host: '192.168.1.8:4000', Origin: 'http://192.168.1.8:4000', 'Content-Type': 'application/json' }, { nickname: 'LAN guest' }), 200);
+  assert.equal(restored.guestOrigin, savedHostname);
+  assert.equal(await status('/api/participant/join', { Host: '192.168.1.8:4000', Origin: 'https://evil.example', 'Content-Type': 'application/json' }, { nickname: 'Rejected' }), 403);
 });
 
 async function authorizationFixture(t: TestContext) {

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Accept Home Assistant-verified LAN addresses alongside saved guest URLs, with a helpful setup page for other guest-address mismatches.
 - Publish public amd64/aarch64 0.2.2 images and enable download-based Home Assistant installation.
 - Reject queued pause/resume commands when background polling has already revoked playback ownership.
 - Create the test scratch directory on GitHub runners and bound check jobs so image publishing cannot hang indefinitely.
