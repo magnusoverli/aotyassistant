@@ -10,6 +10,16 @@ export async function startMusicAssistantFixture(port = 0) {
     provider_mappings: [{ item_id: 'catalogue-result', provider_domain: 'spotify', available: true }], metadata: { images: [{ type: 'thumb', proxy_id: 'a'.repeat(64), path: 'http://private.example/secret-search-art' }] } };
   const artist = { item_id: 'artist-1', provider: 'spotify', name: 'Fixture artist', uri: 'spotify://artist/private-fixture-artist', metadata: { images: [{ type: 'thumb', proxy_id: 'b'.repeat(64) }] } };
   const album = { item_id: 'album-1', provider: 'spotify', name: 'Fixture album', uri: 'spotify://album/private-fixture-album', year: 2025, version: 'Original album', artists: [{ name: artist.name }], metadata: { images: [{ type: 'thumb', proxy_id: 'a'.repeat(64) }] } };
+  const artistIdentity = [['musicbrainz_artistid', '11111111-1111-4111-8111-111111111111']];
+  const multiArtists = ['spotify', 'tidal'].map(provider => ({ ...artist, provider, item_id: `${provider}-private-artist`, uri: `${provider}://artist/private-multi-artist`,
+    name: 'Metallica', external_ids: artistIdentity }));
+  const multiAlbums = ['spotify', 'tidal'].map(provider => ({ ...album, provider, item_id: `${provider}-private-album`, uri: `${provider}://album/private-multi-album`,
+    name: 'The same release', artists: [{ name: 'Metallica' }], external_ids: [['musicbrainz_albumid', '22222222-2222-4222-8222-222222222222']] }));
+  const multiTracks = ['spotify', 'tidal'].map(provider => ({ ...track, provider, item_id: `${provider}-private-track`, uri: `${provider}://track/private-multi-track`,
+    name: 'The same recording', artists: [{ ...track.artists[0]!, name: 'Metallica' }], album: { name: 'The same release' }, version: '',
+    external_ids: [['musicbrainz_recordingid', '33333333-3333-4333-8333-333333333333']],
+    provider_mappings: [{ item_id: `${provider}-private-track`, provider_domain: provider, available: provider === 'tidal' }] }));
+  let catalogueMode = '';
   let itemNumber = 0;
   const queue = { queue_id: 'fixture-queue', available: true, active: true, items: 0, state: 'idle', ended: false,
     repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: typeof track }, next_item: null as unknown };
@@ -68,9 +78,20 @@ export async function startMusicAssistantFixture(port = 0) {
     else if (command === 'players/cmd/group_volume') player.group_volume = volumeClamp ?? args.volume_level;
     else if (command === 'music/search') {
       if (args.search_query === 'failure') { res.statusCode = 503; res.end('PRIVATE FIXTURE ERROR'); return; }
-      result = args.media_types[0] === 'artist' ? { artists: args.search_query === 'empty' ? [] : [artist] } : { tracks: args.search_query === 'empty' ? [] : [track] };
-    } else if (command === 'music/artists/artist_albums') result = [album];
-    else if (command === 'music/albums/album_tracks') result = [track];
+      catalogueMode = args.search_query.startsWith('multi-provider') ? args.search_query : '';
+      if (catalogueMode) result = args.media_types[0] === 'artist'
+        ? { artists: [...multiArtists, { ...multiArtists[1], item_id: 'private-other-artist', uri: 'tidal://artist/private-other-artist', external_ids: [['musicbrainz_artistid', '44444444-4444-4444-8444-444444444444']] }] }
+        : { tracks: [...multiTracks, { ...multiTracks[0], item_id: 'private-live-track', uri: 'spotify://track/private-live-track', version: 'Live' }] };
+      else result = args.media_types[0] === 'artist' ? { artists: args.search_query === 'empty' ? [] : [artist] } : { tracks: args.search_query === 'empty' ? [] : [track] };
+    } else if (command === 'music/artists/artist_albums') {
+      if (catalogueMode === 'multi-provider-failure' || (catalogueMode === 'multi-provider-partial' && args.provider_instance_id_or_domain === 'tidal')) {
+        res.statusCode = 503; res.end('PRIVATE SOURCE FAILURE'); return;
+      }
+      const provider = args.provider_instance_id_or_domain;
+      const selected = multiAlbums.find(a => a.provider === provider)!;
+      result = catalogueMode ? [selected, { ...selected, item_id: `${provider}-private-exclusive`, uri: `${provider}://album/private-exclusive`, name: `${provider} exclusive`, external_ids: [] }] : [album];
+    }
+    else if (command === 'music/albums/album_tracks') result = catalogueMode ? multiTracks.filter(t => t.provider === args.provider_instance_id_or_domain) : [track];
     else if (command === 'music/item_by_uri' && typeof args.uri === 'string' && args.uri.startsWith('builtin://track/')) {
       const url = args.uri.slice('builtin://track/'.length);
       try {
@@ -83,14 +104,14 @@ export async function startMusicAssistantFixture(port = 0) {
         uploads.set(args.uri, uploaded); result = uploaded;
       } catch { res.statusCode = 400; res.end(`PRIVATE unreachable source ${url}`); return; }
     }
-    else if (command === 'music/item_by_uri') result = track;
+    else if (command === 'music/item_by_uri') result = multiTracks.find(t => t.uri === args.uri) ?? track;
     else if (command === 'player_queues/get_active_queue') result = queue;
     else if (command === 'player_queues/items') result = queue.current_item ? [queue.current_item] : [];
     else if (command === 'player_queues/autoplay') queue.autoplay_enabled = args.autoplay_enabled;
     else if (command === 'player_queues/repeat') queue.repeat_mode = args.repeat_mode;
     else if (command === 'player_queues/shuffle') queue.shuffle_enabled = args.shuffle_enabled;
     else if (command === 'player_queues/play_media') {
-      const selected = args.media?.[0] === track.uri ? track : uploads.get(args.media?.[0]);
+      const selected = args.media?.[0] === track.uri ? track : multiTracks.find(t => t.uri === args.media?.[0]) ?? uploads.get(args.media?.[0]);
       if (!selected || args.option !== 'replace' || args.media.length !== 1) { res.statusCode = 400; res.end('Wrong recording or queue option'); return; }
       queue.items = 1; queue.current_item = { queue_item_id: `fixture-item-${++itemNumber}`, media_item: { ...selected } };
       queue.state = 'playing'; queue.active = true; queue.ended = false; queue.next_item = null;

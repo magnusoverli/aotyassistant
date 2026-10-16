@@ -1,0 +1,221 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { MusicAssistantClient } from '../src/music-assistant.js';
+import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
+import { AppError } from '../src/model.js';
+import { groupCatalogueItems, sameCatalogueItem, type IdentityMedia } from '../src/catalogue-grouping.js';
+
+const mbArtist = '11111111-1111-4111-8111-111111111111';
+const mbRelease = '22222222-2222-4222-8222-222222222222';
+const mbRecording = '33333333-3333-4333-8333-333333333333';
+const other = '44444444-4444-4444-8444-444444444444';
+function media(provider: string, kind: string, name: string, external: [string, string][] = []) {
+  return { item_id: `${provider}-${kind}-PRIVATE`, provider, name, version: '', uri: `${provider}://${kind}/${provider}-${kind}-PRIVATE`,
+    external_ids: external, provider_mappings: [{ item_id: `${provider}-${kind}-PRIVATE`, provider_domain: provider, provider_instance: provider, available: true }] };
+}
+const artist = (provider: string) => media(provider, 'artist', 'Metallica', [['musicbrainz_artistid', mbArtist]]);
+const album = (provider: string, name = 'Black album') => ({ ...media(provider, 'album', name, [['musicbrainz_albumid', mbRelease]]),
+  artists: [{ name: 'Metallica' }], year: 1991 });
+const track = (provider: string) => ({ ...media(provider, 'track', 'Enter Sandman', [['musicbrainz_recordingid', mbRecording], ['isrc', 'USABC9100001']]),
+  artists: [{ name: 'Metallica' }], album: { name: 'Black album', version: '', external_ids: [['musicbrainz_albumid', mbRelease]] as [string, string][] }, duration: 331, track_number: 1, disc_number: 1 });
+
+function fixture() {
+  const calls: { command?: string; args: Record<string, unknown> }[] = [];
+  let failed = new Set<string>(); let empty = false; let sources = ['spotify', 'tidal'];
+  let current = track('tidal');
+  let pending = 0; let maxPending = 0;
+  const client = new MusicAssistantClient('http://localhost:8095', 'PRIVATE-TOKEN', 8000, { async read(_path, command, args = {}) {
+    const data = args as Record<string, unknown>; calls.push({ command, args: data });
+    if (command === 'music/search') return (data.media_types as string[])[0] === 'artist'
+      ? { artists: sources.map(artist) } : { tracks: sources.map(track) };
+    if (command === 'music/item_by_uri') return current;
+    const provider = data.provider_instance_id_or_domain as string;
+    pending++; maxPending = Math.max(maxPending, pending);
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      if (failed.has(provider)) throw new Error('PRIVATE upstream failure');
+      if (empty) return [];
+      if (command === 'music/artists/artist_albums') return [album(provider), { ...album(provider, `${provider} exclusive`), item_id: `${provider}-exclusive-PRIVATE`, uri: `${provider}://album/exclusive-PRIVATE`, external_ids: [] }];
+      if (command === 'music/albums/album_tracks') return [track(provider)];
+      throw new Error('Unexpected command');
+    } finally { pending--; }
+  } });
+  return { client, calls, fail(providers: string[]) { failed = new Set(providers); }, empty() { empty = true; },
+    sources(providers: string[]) { sources = providers; }, current(item: typeof current) { current = item; }, get maxPending() { return maxPending; } };
+}
+
+test('strong identities group artists across sources, not names or malformed/unsupported IDs', () => {
+  const a = artist('spotify'); const b = artist('tidal');
+  assert.equal(sameCatalogueItem('artist', a, b), true);
+  assert.equal(sameCatalogueItem('artist', a, { ...b, external_ids: [] }), false);
+  assert.equal(sameCatalogueItem('artist', a, { ...b, external_ids: [['musicbrainz_artistid', other]] }), false);
+  assert.equal(sameCatalogueItem('artist', { ...a, external_ids: [['musicbrainz_artistid', 'bad']] }, { ...b, external_ids: [['musicbrainz_artistid', 'bad']] }), false);
+  assert.equal(sameCatalogueItem('artist', { ...a, external_ids: [['unknown', 'same']] }, { ...b, external_ids: [['unknown', 'same']] }), false);
+  assert.equal(sameCatalogueItem('artist', a, { ...b, name: 'Authoritative alias' }), true);
+});
+
+test('provider mappings are evidence, but domain-only collisions and conflicting bridge identities cannot over-merge', () => {
+  const a = { ...artist('spotify'), external_ids: [] };
+  const b = { ...artist('tidal'), external_ids: [], provider_mappings: [...a.provider_mappings, ...artist('tidal').provider_mappings] };
+  assert.equal(sameCatalogueItem('artist', a, b), true);
+  const local = { ...a, provider: 'local-A', item_id: 'same-path', provider_mappings: [{ item_id: 'same-path', provider_domain: 'filesystem_local', provider_instance: 'local-A', available: true }] };
+  assert.equal(sameCatalogueItem('artist', local, { ...local, provider: 'local-B', provider_mappings: [{ ...local.provider_mappings[0]!, provider_instance: 'local-B' }] }), false);
+  const first = artist('spotify'); const bridge = { ...b, provider_mappings: first.provider_mappings };
+  const different = { ...artist('tidal'), external_ids: [['musicbrainz_artistid', other]] as [string, string][], provider_mappings: first.provider_mappings };
+  assert.deepEqual(groupCatalogueItems('artist', [first, bridge, different]).map(group => group.length), [2, 1]);
+});
+
+test('album groups preserve release, year, edition, artist and explicit identity; release-group/barcode alone is insufficient', () => {
+  const a = album('spotify'); const b = album('tidal');
+  assert.equal(sameCatalogueItem('album', a, b), true);
+  const alternatives: IdentityMedia[] = [{ ...b, version: 'Deluxe' }, { ...b, year: 2001 }, { ...b, external_ids: [['musicbrainz_albumid', other]] },
+    { ...b, artists: [{ name: 'Another artist' }] }, { ...b, external_ids: [['musicbrainz_releasegroupid', mbRelease], ['barcode', '1234567890123']] }];
+  for (const modified of alternatives) {
+    assert.equal(sameCatalogueItem('album', a, modified), false);
+  }
+});
+
+test('recording groups require exact edition/context guards even with matching ISRC or MB recording', () => {
+  const a = track('spotify'); const b = track('tidal');
+  assert.equal(sameCatalogueItem('track', a, b), true);
+  const alternatives: IdentityMedia[] = [{ ...b, version: 'Live' }, { ...b, duration: 330 }, { ...b, track_number: 2 }, { ...b, disc_number: 2 },
+    { ...b, album: { ...b.album, version: 'Remastered' } }, { ...b, album: { ...b.album, external_ids: [['musicbrainz_albumid', other]] } },
+    { ...b, external_ids: [['musicbrainz_recordingid', other], ['isrc', 'USABC9100001']] }];
+  for (const modified of alternatives) {
+    assert.equal(sameCatalogueItem('track', a, modified), false);
+  }
+  assert.equal(sameCatalogueItem('track', { ...a, metadata: { explicit: true } }, { ...b, metadata: { explicit: false } }), false);
+});
+
+test('grouped artist and release browse unions all known catalogues including provider-exclusive albums', async () => {
+  const f = fixture(); const artists = await f.client.artists('Metallica');
+  assert.equal(artists.items.length, 1); const group = artists.items[0]!;
+  assert.deepEqual(group.sources!.map(s => s.provider), ['spotify', 'tidal']);
+  const albums = await f.client.albums(group.id);
+  assert.deepEqual(albums.items.map(a => a.name), ['Black album', 'spotify exclusive', 'tidal exclusive']);
+  const release = albums.items[0]!; assert.equal(release.sources!.length, 2);
+  const tracks = await f.client.tracks(release.id); assert.equal(tracks.items.length, 1); assert.equal(tracks.items[0]!.sources!.length, 2);
+  const tidal = group.sources!.find(s => s.provider === 'tidal')!;
+  f.calls.length = 0; const exact = await f.client.albums(tidal.id);
+  assert.equal(exact.items.length, 2); assert.equal(f.calls.length, 1); assert.equal(f.calls[0]!.args.provider_instance_id_or_domain, 'tidal');
+  assert.ok(f.calls.every(call => !call.command?.startsWith('player')));
+});
+
+test('grouped browse exposes partial/empty failures, fails full failure and bounds concurrency/fanout without silent omissions', async () => {
+  const f = fixture(); f.sources(Array.from({ length: 10 }, (_, i) => `provider${i}`));
+  const group = (await f.client.artists('Metallica')).items[0]!;
+  f.fail(['provider0']); f.empty();
+  const page = await f.client.albums(group.id);
+  assert.deepEqual(page.items, []); assert.equal(page.notices!.length, 2);
+  assert.match(page.notices!.join(' '), /incomplete/); assert.match(page.notices!.join(' '), /first 8/);
+  assert.equal(f.calls.filter(call => call.command === 'music/artists/artist_albums').length, 8); assert.equal(f.maxPending, 2);
+  f.fail(Array.from({ length: 10 }, (_, i) => `provider${i}`));
+  await assert.rejects(f.client.albums(group.id), error => error instanceof AppError && error.status === 502 && !error.message.includes('PRIVATE'));
+  f.fail([]); f.calls.length = 0; await f.client.albums(group.sources![9]!.id); assert.equal(f.calls.length, 1);
+});
+
+test('display groups cannot be saved/played; chosen sources keep exact capture and never fall back', async () => {
+  const f = fixture(); const group = (await f.client.search('Sandman'))[0]!;
+  assert.equal(group.sources!.length, 2);
+  await assert.rejects(f.client.resolveTrack(group.id), /Choose an exact music source/);
+  await assert.rejects(f.client.captureTrack(group.id), /Choose an exact music source/);
+  const tidal = group.sources!.find(source => source.provider === 'tidal')!;
+  const saved = await f.client.captureTrack(tidal.id);
+  assert.equal(saved.recording.provider, 'tidal'); assert.equal(saved.recording.uri, track('tidal').uri);
+  const resolved = await f.client.resolveTrack(tidal.id); assert.equal(resolved.provider, 'tidal');
+  f.current(track('spotify'));
+  const count = f.calls.length; await assert.rejects(f.client.resolveTrack(tidal.id), /No alternative recording was substituted/);
+  assert.equal(f.calls.length, count + 1);
+});
+
+test('nested source references/artwork remain participant-bound, opaque and revoked with credentials', async () => {
+  const f = fixture();
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-multi-provider-')), () => f.client);
+  await manager.init(); await manager.save('http://localhost:8095', 'PRIVATE-TOKEN', 0);
+  const artists = await manager.browse('artists', 'Metallica', 'alice');
+  const group = artists.artists![0]!;
+  const json = JSON.stringify(artists);
+  for (const privateValue of ['PRIVATE', mbArtist, 'spotify://', 'group:', 'ma:', 'external_ids', 'provider_mappings']) assert.ok(!json.includes(privateValue));
+  assert.ok(group.sources!.every(s => s.id.startsWith('ref:')));
+  await assert.rejects(manager.browse('albums', group.sources![0]!.id, 'bob'), /another participant/);
+  const tracks = await manager.search('Sandman', 'alice');
+  await assert.rejects(manager.captureSaved(tracks[0]!.id, 'alice'), /Choose an exact music source/);
+  const tidal = tracks[0]!.sources!.find(s => s.provider === 'tidal')!;
+  const saved = await manager.captureSaved(tidal.id, 'alice'); assert.equal(saved.source, 'music-assistant');
+  const oldBinding = manager.sourceBindingId;
+  await manager.save('http://localhost:8095', 'replacement-secret', 1);
+  assert.equal(manager.sourceBindingId, oldBinding);
+  await assert.rejects(manager.browse('albums', group.id, 'alice'), /expired/);
+  await assert.rejects(manager.captureSaved(tidal.id, 'alice'), /expired/);
+});
+
+test('library provider mappings expose exact source choices, not a library fallback or duplicate mapping aliases', async () => {
+  const spotify = track('spotify'); const tidal = track('tidal');
+  const library = { ...spotify, provider: 'library', item_id: 'library-PRIVATE', uri: 'library://track/library-PRIVATE', provider_mappings: [...spotify.provider_mappings, ...tidal.provider_mappings] };
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read() { return { tracks: [library, spotify, tidal] }; } });
+  const result = await client.search('Sandman'); assert.equal(result.length, 1);
+  assert.deepEqual(result[0]!.sources!.map(s => s.provider), ['spotify', 'tidal']);
+});
+
+test('private provider-instance aliases do not leak or duplicate real source rows', async () => {
+  const spotify = track('spotify'); spotify.provider_mappings[0]!.provider_instance = 'spotify--PRIVATE-ACCOUNT';
+  const library = { ...spotify, provider: 'library', item_id: 'library-PRIVATE', uri: 'library://track/library-PRIVATE' };
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read() { return { tracks: [library, spotify] }; } });
+  const result = await client.search('Sandman'); assert.equal(result.length, 1); assert.equal(result[0]!.sources, undefined);
+  assert.equal(result[0]!.provider, 'spotify'); assert.ok(!JSON.stringify(result).includes('PRIVATE'));
+});
+
+test('mapping-only selections resolve exactly, while library URI fallback stays unavailable', async () => {
+  const spotify = track('spotify'); const tidal = track('tidal');
+  const mappings = [spotify.provider_mappings[0]!, tidal.provider_mappings[0]!].map(p => ({ ...p, provider_instance: `${p.provider_domain}--PRIVATE-ACCOUNT` }));
+  const library = { ...spotify, provider: 'library', item_id: 'library-PRIVATE', uri: 'library://track/library-PRIVATE', provider_mappings: mappings };
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command, args = {}) {
+    if (command === 'music/search') return { tracks: [library] };
+    const uri = (args as { uri: string }).uri;
+    const mapping = mappings.find(p => uri.startsWith(`${p.provider_instance}://`))!;
+    return { ...tidal, provider: mapping.provider_instance, item_id: mapping.item_id, uri, provider_mappings: [mapping] };
+  } });
+  const group = (await client.search('Sandman'))[0]!;
+  assert.deepEqual(group.sources!.map(s => s.provider), ['spotify', 'tidal']);
+  assert.ok(!JSON.stringify(group).includes('PRIVATE'));
+  const source = group.sources!.find(s => s.provider === 'tidal')!;
+  const captured = await client.captureTrack(source.id); assert.equal(captured.recording.provider, mappings[1]!.provider_instance);
+  assert.equal((await client.resolveTrack(source.id)).uri, captured.recording.uri);
+  await assert.rejects(client.resolveRecording({ itemId: library.item_id, provider: 'library', uri: library.uri, version: '' }), /no exact source selection/);
+});
+
+test('stable source ordering survives upstream order changes, and items after the old early slice remain reachable', async () => {
+  let reverse = false;
+  const tracks = Array.from({ length: 24 }, (_, i) => ({ ...track(i % 2 ? 'tidal' : 'spotify'),
+    item_id: `private-${i}`, uri: `${i % 2 ? 'tidal' : 'spotify'}://track/private-${i}`, provider_mappings: [],
+    name: `Track ${Math.floor(i / 2)}`, external_ids: [['isrc', `USABC91${String(Math.floor(i / 2)).padStart(5, '0')}`]] }));
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read() { return { tracks: reverse ? [...tracks].reverse() : tracks }; } });
+  const first = await client.search('query'); assert.equal(first.length, 12); assert.equal(first[11]!.title, 'Track 11');
+  reverse = true; const second = await client.search('query');
+  assert.deepEqual(first[0]!.sources!.map(s => s.id), second.find(t => t.title === 'Track 0')!.sources!.map(s => s.id));
+});
+
+test('raw/result bounds fail explicitly instead of silently discarding provider choices', async () => {
+  let oversized = false;
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read() {
+    if (oversized) return { tracks: Array.from({ length: 501 }, () => track('spotify')) };
+    return { tracks: Array.from({ length: 11 }, (_, i) => ({ ...track('spotify'), item_id: `library-${i}`, provider: 'library', uri: `library://track/${i}`, external_ids: [],
+      provider_mappings: Array.from({ length: 100 }, (_, j) => ({ item_id: `${i}-${j}`, provider_instance: `source-${j}`, provider_domain: 'spotify', available: true })) })) };
+  } });
+  await assert.rejects(client.search('query'), /too many source choices/);
+  oversized = true; await assert.rejects(client.search('query'), /incompatible search response/);
+});
+
+test('same-name artist portraits cannot be copied by name into an unrelated album or track', async () => {
+  const first = { ...artist('spotify'), image: { proxy_id: 'a'.repeat(64) } };
+  const second = { ...first, item_id: 'other-private-artist', uri: 'spotify://artist/other-private-artist', external_ids: [['musicbrainz_artistid', other]], image: { proxy_id: 'b'.repeat(64) } };
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command) {
+    if (command === 'music/search') return { artists: [first, second] };
+    if (command === 'music/artists/artist_albums') return [album('spotify')];
+    return [track('spotify')];
+  } });
+  const artists = await client.artists('Metallica'); assert.equal(artists.items.length, 2);
+  const albums = await client.albums(artists.items[0]!.id); assert.equal(albums.items[0]!.artistArtwork, undefined);
+  const tracks = await client.tracks(albums.items[0]!.id); assert.equal(tracks.items[0]!.artistArtwork, undefined);
+});

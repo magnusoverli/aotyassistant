@@ -13,6 +13,7 @@ import { PreparationPanel } from './preparation-panel';
 import type { PreparedEntryView, PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
+import { catalogueSourceChoice } from './catalogue-sources';
 import './style.css';
 import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
 import { joinPanel } from './join-panel';
@@ -39,6 +40,10 @@ let artists: CatalogueArtist[] = [];
 let albums: CatalogueAlbum[] = [];
 let chosenArtist: CatalogueArtist | undefined;
 let chosenAlbum: CatalogueAlbum | undefined;
+const sourceChoices = new Map<string, string>();
+let artistNotices: string[] = [];
+let albumNotices: string[] = [];
+let trackNotices: string[] = [];
 let stream: EventSource | undefined;
 let qrUrl = '';
 let qrImage = '';
@@ -91,6 +96,7 @@ const participantAccess = new ParticipantAccess(
   () => {
     view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel();
     results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
+    sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
     searchAnnouncement.textContent = '';
   }, render,
 );
@@ -155,6 +161,7 @@ function accept(next: View) {
     catalogue.cancel();
     results = []; searchText = ''; searchDone = false;
     artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
+    sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
     searchMode = next.catalogue?.source === 'music-assistant' ? 'artists' : 'tracks';
     if (page === 'participant') void library.refresh();
   }
@@ -346,9 +353,12 @@ function participant() {
     for (const mode of ['artists', 'tracks'] as const) {
       const tab = button(mode === 'tracks' ? 'Search tracks' : 'Search artists', () => {
         searchMode = mode; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
+        sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
       }, searchMode !== mode); tab.id = `catalogue-mode-${mode}`; tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
     }
     search.append(modes);
+    const sources = el('details', undefined, 'catalogue-help'); sources.append(el('summary', 'Sources and matching'),
+      el('p', 'Only Music Assistant identities and mappings group results; matching names alone stay separate. Browse all listed sources or choose one. A track needs an exact source before saving or playing. Music Assistant may omit source failures from search, so search results are not a complete catalogue check.', 'muted small')); search.append(sources);
   }
   const form = el('form', undefined, 'search-form');
   const input = el('input'); input.type = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Track, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
@@ -361,15 +371,16 @@ function participant() {
     const query = input.value.trim();
     if (!query) { error = 'Enter a track title, artist, or album to search.'; render(); return; }
     searching = true; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
+    sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
     void run(async () => {
       try {
         if (realCatalogue && searchMode === 'artists') {
           const response = await catalogue.browse('artists', query);
-          if (response) { artists = response.artists ?? []; searchDone = true; }
+          if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; }
         } else {
           const response = await catalogue.search(query);
           if (response && view?.catalogue?.source === response.source) {
-            results = response.tracks; searchDone = true;
+            results = response.tracks; trackNotices = response.notices ?? []; searchDone = true;
           }
         }
       } finally { searching = false; }
@@ -382,10 +393,12 @@ function participant() {
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
   const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
   if (searchDone && !searching) resultsHeading.append(el('span', resultSummary, 'count-tag'));
-  const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} found.` : '';
+  const notices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
+  const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.${notices.length ? ' Results may be incomplete.' : ''}` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (!searchDone && !searching) found.append(el('p', 'Search for music to add to your private list.', 'muted small'));
   if (searching) { const status = el('p', 'Searching…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
+  for (const notice of notices) { const status = el('p', notice, 'catalogue-notice'); status.setAttribute('role', 'status'); found.append(status); }
   if (chosenArtist) {
     const crumbs = el('div', undefined, 'actions browse-crumbs');
     const backToArtists = button('← Artists', () => { chosenArtist = undefined; chosenAlbum = undefined; albums = []; results = []; }, true); backToArtists.id = 'browse-artists'; crumbs.append(backToArtists);
@@ -393,41 +406,48 @@ function participant() {
     found.append(crumbs, el('h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`));
   }
   for (const artist of !chosenArtist ? artists : []) {
+    const source = catalogueSourceChoice(artist, artist.name, sourceChoices, render, true);
     const row = el('div', undefined, 'track-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', artist.name), el('p', artist.provider, 'muted')); info.append(artwork(artist.artwork, 'Artist image', 'result-artwork artist-portrait'), copy);
+    if (source.control) copy.append(source.control);
     row.append(info, button('View albums', async () => {
-      const response = await catalogue.browse('albums', artist.id);
-      if (response) { chosenArtist = artist; chosenAlbum = undefined; albums = response.albums ?? []; results = []; }
+      const response = await catalogue.browse('albums', source.item!.id);
+      if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; }
     }, true)); found.append(row);
   }
   for (const album of chosenArtist && !chosenAlbum ? albums : []) {
+    const source = catalogueSourceChoice(album, album.name, sourceChoices, render, true);
     const row = el('div', undefined, 'track-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', album.name),
       el('p', [album.year, album.version, album.provider].filter(Boolean).join(' · '), 'muted'));
     info.append(artwork(album.artwork, 'Album artwork', 'result-artwork'), copy);
+    if (source.control) copy.append(source.control);
     row.append(info, button('View tracks', async () => {
-      const response = await catalogue.browse('tracks', album.id);
-      if (response) { chosenAlbum = album; results = response.tracks ?? []; }
+      const response = await catalogue.browse('tracks', source.item!.id);
+      if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; }
     }, true)); found.append(row);
   }
   const emptyBrowse = searchDone && searchMode === 'artists' && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
-  if (emptyBrowse) found.append(el('p', chosenArtist && !chosenAlbum
+  if (emptyBrowse) found.append(el('p', notices.length ? 'No results returned. Source coverage could not be confirmed; review the source notice above.' : chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist. This provider may not support artist albums; try another provider result or search tracks.'
-    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name.', 'muted'));
+    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name; Music Assistant may omit unavailable sources.', 'muted'));
   if (searchDone && searchMode === 'tracks' && !results.length) {
     const empty = el('p', realCatalogue
-      ? 'No tracks found. Try a different title or artist, or check that a music source is enabled in Music Assistant.'
+      ? 'No tracks found. Try a different title or artist, or check that a music source is enabled in Music Assistant. Unavailable sources may be omitted.'
       : 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
     empty.setAttribute('role', 'status'); found.append(empty);
   }
-  for (const track of results) {
+  for (const group of results) {
+    const source = catalogueSourceChoice(group, group.title, sourceChoices, render);
+    const track = source.item ?? group;
     const row = el('div', undefined, `track-row${library.added.has(track.id) ? ' is-prepared' : ''}`); const info = el('div', undefined, 'result-identity'); const copy = el('div');
     copy.append(el('strong', track.title), el('p', [track.artist, track.album, track.version, track.provider].filter(Boolean).join(' · '), 'muted'));
     info.append(artwork(track.artwork, 'Album artwork', 'result-artwork'), copy);
-    if (!track.available) info.append(el('p', 'Unavailable through connected sources', 'muted small'));
+    if (source.control) copy.append(source.control);
+    if (source.item && !track.available) info.append(el('p', 'Unavailable through this source', 'muted small'));
     const controls = el('div', undefined, 'row-actions');
-    controls.append(music.addButton(track));
+    const add = music.addButton(track); add.disabled ||= !source.item; controls.append(add);
     if (view.myTurn) {
-      const play = playerButton(!track.available ? 'Unavailable' : !view.catalogue?.playbackAvailable ? 'Choose a speaker' : 'Play', () => playTrack(track));
-      play.disabled ||= !track.available || !view.catalogue?.playbackAvailable || player.starting; controls.append(play);
+      const play = playerButton(!source.item ? 'Choose a source' : !track.available ? 'Unavailable' : !view.catalogue?.playbackAvailable ? 'Choose a speaker' : 'Play', () => playTrack(track));
+      play.disabled ||= !source.item || !track.available || !view.catalogue?.playbackAvailable || player.starting; controls.append(play);
     }
     row.append(info, controls);
     found.append(row);

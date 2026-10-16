@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track } from './model.js';
+import { AppError, roomSchema, catalogueSearchNotice, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
@@ -221,7 +221,7 @@ export class Engine extends EventEmitter {
     if (`${latest.id}:${member.id}` !== context) throw new AppError(401, 'Room membership changed. Join again.');
     const currentCatalogue = this.catalogueState;
     if (catalogue.source !== currentCatalogue.source || catalogue.revision !== currentCatalogue.revision) throw new AppError(409, 'The catalogue connection changed. Search again.');
-    return { ...currentCatalogue, tracks };
+    return { ...currentCatalogue, tracks, ...(catalogue.source === 'music-assistant' ? { notices: [catalogueSearchNotice] } : {}) };
   }
   async browse(credential: string, kind: 'artists' | 'albums' | 'tracks', value: string): Promise<CatalogueBrowse> {
     if (!this.ready) throw new AppError(503, 'Playback connectivity is uncertain.');

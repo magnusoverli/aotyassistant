@@ -175,6 +175,10 @@ export class IntegrationManager implements CatalogueProvider {
     const url = (id?: string) => id && /^image:[a-f0-9]{64}$/.test(id) ? `/api/participant/artwork/${encodeURIComponent(this.seal(id, 'image', context))}` : undefined;
     return { ...item, artwork: url(item.artwork), artistArtwork: url(item.artistArtwork) };
   }
+  private catalogueItem<T extends { id: string; artwork?: string; artistArtwork?: string; sources?: T[] }>(item: T, kind: string, context: string): T {
+    return this.withArtwork({ ...item, id: this.seal(item.id, kind, context),
+      ...(item.sources ? { sources: item.sources.map(source => this.catalogueItem(source, kind, context)) } : {}) }, context);
+  }
   async artwork(reference: string, context: string) {
     const revision = this.catalogueRevision;
     const data = reference.startsWith('upload:') && this.uploads
@@ -188,17 +192,21 @@ export class IntegrationManager implements CatalogueProvider {
     if (!ma) throw new AppError(409, 'The catalogue connection changed. Search again.');
     const tracks = await this.getReader().search(query);
     if (this.catalogueRevision !== revision) throw new AppError(409, 'The catalogue connection changed during search. Search again.');
-    return tracks.map(t => this.withArtwork({ ...t, id: this.seal(t.id, 'track', context) }, context));
+    return tracks.map(t => this.catalogueItem(t, 'track', context));
   }
   async browse(kind: 'artists' | 'albums' | 'tracks', value: string, context: string): Promise<CatalogueBrowse> {
     const revision = this.catalogueRevision; const api = this.getApi();
     let result: CatalogueBrowse;
-    if (kind === 'artists') result = { playbackAvailable: this.playbackAvailable,
-      artists: (await api.artists(value)).map(a => this.withArtwork({ ...a, id: this.seal(a.id, 'artist', context) }, context)) };
-    else if (kind === 'albums') result = { playbackAvailable: this.playbackAvailable,
-      albums: (await api.albums(this.unseal(value, 'artist', context))).map(a => this.withArtwork({ ...a, id: this.seal(a.id, 'album', context) }, context)) };
-    else result = { playbackAvailable: this.playbackAvailable,
-      tracks: (await api.tracks(this.unseal(value, 'album', context))).map(t => this.withArtwork({ ...t, id: this.seal(t.id, 'track', context) }, context)) };
+    if (kind === 'artists') {
+      const page = await api.artists(value);
+      result = { playbackAvailable: this.playbackAvailable, notices: page.notices, artists: page.items.map(a => this.catalogueItem(a, 'artist', context)) };
+    } else if (kind === 'albums') {
+      const page = await api.albums(this.unseal(value, 'artist', context));
+      result = { playbackAvailable: this.playbackAvailable, notices: page.notices, albums: page.items.map(a => this.catalogueItem(a, 'album', context)) };
+    } else {
+      const page = await api.tracks(this.unseal(value, 'album', context));
+      result = { playbackAvailable: this.playbackAvailable, notices: page.notices, tracks: page.items.map(t => this.catalogueItem(t, 'track', context)) };
+    }
     if (revision !== this.catalogueRevision) throw new AppError(409, 'The catalogue connection changed. Browse again.');
     return result;
   }

@@ -10,11 +10,14 @@ export type CatalogueSource = 'demo' | 'music-assistant';
 export type CatalogueTrack = {
   id: string; title: string; artist: string; album: string; version: string;
   provider: string; duration: number | null; available: boolean; artwork?: string; artistArtwork?: string;
+  sources?: CatalogueTrack[];
 };
-export type CatalogueSearch = { source: CatalogueSource; playbackAvailable: boolean; tracks: CatalogueTrack[] };
-export type CatalogueArtist = { id: string; name: string; provider: string; artwork?: string };
-export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string };
-export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueAlbum[]; tracks?: CatalogueTrack[]; playbackAvailable: boolean };
+export const catalogueSearchNotice = 'Music Assistant does not report individual source failures; search coverage is unconfirmed.';
+export type CatalogueSearch = { source: CatalogueSource; playbackAvailable: boolean; tracks: CatalogueTrack[]; notices?: string[] };
+export type CatalogueArtist = { id: string; name: string; provider: string; artwork?: string; sources?: CatalogueArtist[] };
+export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[] };
+export type CataloguePage<T> = { items: T[]; notices?: string[] };
+export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueAlbum[]; tracks?: CatalogueTrack[]; notices?: string[]; playbackAvailable: boolean };
 export interface CatalogueProvider {
   readonly configured: boolean;
   readonly playbackAvailable?: boolean;

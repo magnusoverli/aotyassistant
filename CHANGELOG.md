@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Group Music Assistant duplicates by explicit identity, browse listed sources, and require exact track-source choices with clear incomplete-result notices.
 - Release 0.2.7 with a simpler participant entry, in-player turn finishing, artist-first search, and matching player/list surfaces.
 - Put Search artists first and select it by default, and match My list’s surface to the participant player on desktop and mobile.
 - Replace the participant player’s Stop button with Finish my turn, removing the separate action below the player while retaining Pause/Resume.

@@ -574,3 +574,8 @@ body[data-short-viewport='true'] .preparation-list:not(.is-expanded) .list-empty
   html { scroll-behavior:auto; }
   *,*:before,*:after { transition:none!important; animation:none!important; }
 }
+.catalogue-source { display: block; margin-top: .55rem; max-width: 100%; }
+.catalogue-source select { max-width: 100%; min-height: 44px; }
+.catalogue-help { margin-block: .75rem; }
+.catalogue-help summary { cursor: pointer; font-size: .85rem; }
+.catalogue-notice { padding: .8rem; border-left: 3px solid var(--accent); background: #ffffff08; color: var(--muted); font-size: .82rem; line-height: 1.5; }
