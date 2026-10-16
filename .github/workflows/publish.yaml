@@ -17,6 +17,7 @@ concurrency:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
       image: ${{ steps.version.outputs.image }}
@@ -27,6 +28,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: mkdir -p /tmp/opencode
       - run: npm run typecheck && npm test && npm run build
       - id: version
         shell: bash
