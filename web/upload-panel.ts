@@ -137,8 +137,8 @@ export class UploadPanel {
       const progress = el('progress'); progress.max = 100; progress.value = this.progress; progress.setAttribute('aria-label', 'File upload progress');
       nodes.push(message, progress, this.button('Cancel upload', () => this.stop(true)));
     } else if (allowSelection) {
-      const formats = el('details'); formats.append(el('summary', 'Supported formats'), el('p', 'MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small'));
-      nodes.push(el('p', 'Choose one audio file, then review it before adding.', 'muted small'), formats, this.button(this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled));
+      const formats = el('p', 'Supported formats: MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small');
+      nodes.push(el('p', 'Choose one audio file, then review it before adding.', 'muted small'), this.button(this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled), formats);
     }
     if (this.recovering) nodes.push(el('p', 'Checking the completed upload…', 'muted small'));
     if (this.error) { const error = el('p', this.error, 'error small'); error.setAttribute('role', 'alert'); nodes.push(error); }

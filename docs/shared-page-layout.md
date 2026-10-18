@@ -115,6 +115,14 @@ Verification:
 - Menu cleanup verification: build/typecheck, three navigation unit tests and all 15 targeted header/search/settings/ingress/listening-order workflows pass after removing obsolete settings-badge expectations. Logs: `/tmp/opencode/aoty-menu-cleanup-browser.log`, `/tmp/opencode/aoty-menu-cleanup-settings.log`.
 - Release 0.3.5 verification reran the production build, typecheck, all **192 unit/controller tests** and all **93 Chromium workflows** successfully. Release logs: `/tmp/opencode/aoty-0.3.5-unit.log` and `/tmp/opencode/aoty-0.3.5-browser.log`. Publication uses the `v0.3.5` image workflow, with anonymous amd64/arm64 verification before pushing the versioned store manifest to `main`.
 
+## Listening-order readability follow-up
+
+- Increase the bar from 61px to 89px minimum height, with 64px seats, larger avatars, 14px names and 11px status text.
+- Give the current seat a green leading marker and explicit current-turn label; distinguish the next seat with a gold surface/border and arrow. Show “You’re next” when the next seat belongs to the participant.
+- Keep stable seat numbering, horizontal scrolling, live-update persistence and host management.
+- Build/typecheck and all **93 Chromium workflows** passed. Reviewed desktop host and phone participant captures; screenshots remain ignored. Log: `/tmp/opencode/aoty-order-readability-browser.log`.
+- Release 0.3.6 verification reran the production build, typecheck, all **192 unit/controller tests** and all **93 Chromium workflows** successfully. Release logs: `/tmp/opencode/aoty-0.3.6-unit.log` and `/tmp/opencode/aoty-0.3.6-browser.log`. Publication uses the `v0.3.6` image workflow, with anonymous amd64/arm64 verification before pushing the versioned store manifest to `main`.
+
 ## Completion criterion
 
 A shared layout/component change updates every consumer. Intentional differences are named variants, and cross-page browser checks catch drift. Playback, private-list, exact-source, ingress and uncertain-write behavior retain their existing controllers and contracts.

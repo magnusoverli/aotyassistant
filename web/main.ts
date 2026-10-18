@@ -356,7 +356,7 @@ function closedRoom() {
 function host() {
   const main = pageFrame('workspace', 'host-page');
   main.setAttribute('aria-label', 'Host desk');
-  main.append(pageHeading('Host desk', link('Invite people', '#room-invitation')));
+  main.append(pageHeading('Host desk'));
   const grid = workspaceGrid('sidebar');
   const workspace = slot(el('div', undefined, 'host-workspace stack'), 'primary'); workspace.id = 'overview';
   const aside = slot(el('aside', undefined, 'host-invitations'), 'secondary'); aside.id = 'room-invitation'; aside.append(qrCard());

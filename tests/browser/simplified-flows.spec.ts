@@ -14,7 +14,7 @@ test('compact phone workspace keeps results visible, expands the list inline and
     await expect(page.locator('.turn-chip')).toHaveCount(0);
     await expect(page.locator('.catalogue-results')).toHaveCount(0);
     expect((await page.locator('.header-inner').boundingBox())!.height).toBeLessThanOrEqual(72);
-    expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(145);
+    expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(169);
     await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     const add = page.getByRole('button', { name: 'Add to my list', exact: true });
     await expect(add).toBeInViewport();
@@ -96,7 +96,7 @@ test('upload review, nearby undo and recovery-key copy fallback keep saved music
   expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });
 
-test('host invitations remain one action away with thirty people and consequential actions are guarded', async ({ page, isolatedApp }) => {
+test('host invitations remain available with thirty people and consequential actions are guarded', async ({ page, isolatedApp }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/host');
   await expect(page.locator('.host-invitations')).toBeInViewport();
   await expect(page.getByRole('button', { name: 'Skip turn' })).toHaveCount(0);
@@ -104,7 +104,7 @@ test('host invitations remain one action away with thirty people and consequenti
   for (let i = 1; i < 30; i++) await isolatedApp.engine.join(`Guest ${i}`);
   await expect(page.locator('.rotation-seat')).toHaveCount(30);
   await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
-  await page.locator('.workspace-heading').getByRole('link', { name: 'Invite people' }).click();
+  await page.getByRole('button', { name: 'Copy join link' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Copy join link' })).toBeInViewport();
   const state = await (await page.request.get('/api/participant/state')).json();
   await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });

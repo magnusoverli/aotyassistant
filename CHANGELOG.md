@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.3.6] — 2026-10-18
+
+- Remove the redundant Invite people shortcut from the host page heading.
+- Show supported upload formats as small, muted helper text below the file-selection button instead of a disclosure.
+- Give the listening-order bar more breathing room, larger names and clearer current/next markers, including “You’re next” on your own upcoming seat.
+
 ## [0.3.5] — 2026-10-18
 
 - Keep the shared listening order always visible as a compact horizontal bar beneath the header.

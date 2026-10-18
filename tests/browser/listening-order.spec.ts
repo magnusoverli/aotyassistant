@@ -23,7 +23,7 @@ test('every application route has one matching live listening order directly und
         const bar = (await current.locator('.header-inner').boundingBox())!;
         const order = (await current.locator('.order-bar').boundingBox())!;
         expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
-        expect(order.height).toBeLessThanOrEqual(76);
+        expect(order.height).toBeLessThanOrEqual(104);
         await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
         await expect(current.locator('.rotation-list')).toBeVisible();
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();

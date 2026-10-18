@@ -2,6 +2,8 @@
 
 ## Status
 
+**0.3.6 release — 2026-10-18:** improve listening-order readability with more vertical space, larger names/avatars and distinct current/next markers. Show upload formats as muted helper text and remove the redundant host invitation shortcut. Release build/typecheck, 192 unit/controller tests and all 93 Chromium workflows pass. Publication uses the `v0.3.6` workflow, with anonymous amd64/arm64 image verification before updating the store branch. See the [shared-layout follow-up](docs/shared-page-layout.md). Screenshots remain local/ignored.
+
 **0.3.5 release — 2026-10-18:** the shared listening order is an always-visible compact bar beneath the header. Remove the participant My list player shortcut and simplify navigation to page links. Release build/typecheck, 192 unit/controller tests and all 93 Chromium workflows pass. Publication uses the `v0.3.5` workflow, with anonymous amd64/arm64 image verification before updating the store branch. See the [shared-layout follow-up](docs/shared-page-layout.md). Screenshots remain local/ignored.
 
 **0.3.4 release — 2026-10-18:** one shared participant-style listening-order disclosure beneath the header across all six application routes, with host management and names-only live updates on entry/settings pages. Previous host, participant-body and display lists are replaced. Release build/typecheck, 193 unit/controller tests and all 93 Chromium workflows pass. Publication uses the `v0.3.4` workflow, with anonymous amd64/arm64 image verification before updating the store branch. See the [shared-layout follow-up](docs/shared-page-layout.md). Screenshots remain local/ignored.

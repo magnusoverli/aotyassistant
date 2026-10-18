@@ -89,7 +89,7 @@ export class ListeningOrder {
         row.dataset.personId = person.id; if (current) row.setAttribute('aria-current', 'step');
         const name = el('strong', person.nickname); name.title = person.nickname;
         row.append(el('span', String(index + 1).padStart(2, '0'), 'seat-number'), avatar(person), name,
-          el('span', current && me ? 'Your turn' : current ? 'Current turn' : me ? 'You' : next ? 'Up next' : 'Listening', 'seat-state'));
+          el('span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'));
         if (this.managing && this.management) {
           const actions = el('div', undefined, 'order-actions');
           const action = (text: string, key: string, label: string, work: () => void) => {
