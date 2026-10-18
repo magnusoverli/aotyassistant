@@ -454,7 +454,7 @@ function participant() {
   hero.append(title, el('p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance'));
   const circle = rotation(view, false, circleExpanded);
   circle.addEventListener('toggle', () => { if (circle.isConnected && circle instanceof HTMLDetailsElement) circleExpanded = circle.open; });
-  main.append(hero, circle, participantPlayer(view));
+  main.append(hero, circle);
   const search = el('section', undefined, 'catalogue-panel');
   search.setAttribute('aria-labelledby', 'music-find-title');
   const searchHeading = el('div', undefined, 'section-heading'); const searchTitle = el('h2', 'Find music'); searchTitle.id = 'music-find-title'; searchHeading.append(searchTitle, el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
@@ -586,6 +586,7 @@ function participant() {
     found.append(row);
   }
   const musicPanel = music.render(search, searchDone || catalogueBusy || catalogueError ? found : undefined);
+  musicPanel.prepend(participantPlayer(view));
   main.append(musicPanel);
   return main;
 }

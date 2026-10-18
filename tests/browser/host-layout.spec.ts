@@ -18,7 +18,7 @@ test('host desk prioritizes the current turn with a slim volume panel and respon
     const workspace = (await page.locator('.host-workspace').boundingBox())!;
     const sidebar = (await page.locator('.host-invitations').boundingBox())!;
     const audio = (await page.locator('.host-audio').boundingBox())!;
-    if (width > 700) {
+    if (width >= 1100) {
       expect(sidebar.x).toBeGreaterThanOrEqual(workspace.x + workspace.width);
       expect(Math.abs(sidebar.y - workspace.y)).toBeLessThan(1);
     } else {

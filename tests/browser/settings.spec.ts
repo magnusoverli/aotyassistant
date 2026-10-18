@@ -26,6 +26,11 @@ test('host configures Music Assistant entirely in the browser without receiving 
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/host');
+  await expect(page.locator('.host-invitations')).toBeVisible();
+  const columns = (selectors: string[]) => selectors.map(selector => {
+    const rect = document.querySelector(selector)!.getBoundingClientRect(); return { x: rect.x, width: rect.width };
+  });
+  const hostColumns = await page.evaluate(columns, ['.host-workspace', '.host-invitations']);
   const palette = await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)));
   await openNavigation(page);
   await page.getByRole('link', { name: 'Settings', exact: true }).click();
@@ -36,7 +41,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   expect(await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)))).toEqual(palette);
   await expect(page.getByRole('region', { name: '1. Music connection', exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '2. Speaker', exact: true })).toBeVisible();
-  expect((await page.locator('.settings-workspace').boundingBox())!.width).toBeLessThan(900);
+  expect(await page.evaluate(columns, ['.settings-connection', '.settings-output'])).toEqual(hostColumns);
   await expect(page.getByRole('button', { name: 'Reload saved settings', exact: true })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Live playback', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);

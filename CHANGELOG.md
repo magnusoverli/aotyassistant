@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-10-18
+
+- Unify host, settings and participant workspace widths, desktop columns, gutters and mobile stacking; align host/settings card spacing and headings.
+- Top-align the participant's desktop list with the player in the shared two-column workspace.
+
 ## [0.3.1] — 2026-10-18
 
 - Keep the participant player visible at a stable size while idle, playing, paused and waiting for a turn; update playback locally without rebuilding search and list content.

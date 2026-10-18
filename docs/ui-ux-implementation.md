@@ -221,6 +221,13 @@ Physical phone keyboards, touch behaviour and across-room TV readability remain 
 - Playback-only updates preserve the existing search/list DOM. Long titles, artist artwork and track replacement do not shift the workspace; starting feedback uses the existing status line.
 - Release verification: build/typecheck, **195 unit/controller tests**, **86 Chromium workflows**, and `git diff --check` pass. Seven new browser cases cover list/history scrolling and player geometry at desktop, phone and short-height sizes. Screenshots remain ignored local artifacts.
 
+### Layout consistency follow-up — 0.3.2, 18 October 2026
+
+- Top-align the participant's private list with the persistent player in the same desktop grid.
+- Share workspace dimensions between host, settings and participant pages: 1320px desktop container, 360px sidebar, 22px gaps; below 1100px, use a single column capped at 720px with 18px side padding and 14px gaps.
+- Align interactive-page headers, host/settings headings, card surfaces and spacing; remove conflicting per-page width and breakpoint overrides.
+- Release verification: build/typecheck, **195 unit/controller tests**, **86 Chromium workflows**, and `git diff --check` pass. Reviewed desktop/mobile captures; existing layout checks now verify matching host/settings column geometry and the shared responsive breakpoint. Screenshots remain ignored.
+
 ## Explicitly deferred or excluded
 
 - **New product capabilities:** self-leave/rename and duplicate-name management (J05–J06), album search (S12), discussion hold/changed natural ending (P08), display wake lock (D05).
