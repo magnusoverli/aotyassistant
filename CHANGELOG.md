@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.3.9] — 2026-10-18
+
+- Separate Music Assistant connection health from saved-speaker availability and queue errors in Settings. Speaker failures no longer suggest reconnecting a healthy Music Assistant server; an unreachable server leaves speaker health unconfirmed rather than declaring the speaker disconnected.
+- Keep failed speaker selections in the Speaker card, preserve confirmed server health across speaker/address-only changes, and treat explicitly unavailable queues as speaker issues without changing the saved destination.
+
 ## [0.3.8] — 2026-10-18
 
 - Advance the player time/progress smoothly between confirmed playback updates, with immediate pause/offline freezing, bounded stale estimates and authoritative correction—without more Music Assistant polling or timer-based turn advancement.

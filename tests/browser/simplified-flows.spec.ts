@@ -122,6 +122,7 @@ test('host invitations remain available with thirty people and consequential act
 test('setup retries preserve drafts, healthy summaries need no save, and returning reads respect playback blocks', async ({ page, isolatedApp }) => {
   const settings: IntegrationView = { revision: 1, url: isolatedApp.musicAssistantOrigin, tokenConfigured: true,
     destination: { id: 'room', name: 'A long speaker group name for the listening room' }, status: 'checked', message: '',
+    destinationStatus: 'checked', destinationMessage: '',
     report: null, playbackAvailable: true, playbackIssue: '', settingsChangesBlocked: false };
   let fail = true; const writes: string[] = [];
   await page.route('**/api/host/integrations**', async route => {
@@ -178,6 +179,7 @@ test('initial settings failure can retry and an empty speaker inventory never en
   let unavailable = true; const writes: string[] = [];
   const settings: IntegrationView = { revision: 1, url: 'http://music.local:8095', tokenConfigured: true, destination: null,
     status: 'checked', message: '', playbackAvailable: false, playbackIssue: '',
+    destinationStatus: 'not-selected', destinationMessage: 'Choose a speaker or group before playing.',
     report: { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true, players: [] } };
   await page.route('**/api/host/integrations**', async route => {
     if (route.request().method() === 'POST') writes.push(route.request().url());

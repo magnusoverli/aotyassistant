@@ -14,6 +14,7 @@ export async function mountSettings(container: HTMLElement) {
   let tokenDraft = '';
   let destinationDraft = '';
   let busy = false;
+  let busyScope: 'connection' | 'speaker' = 'connection';
   let online = false;
   let error = '';
   let notice = '';
@@ -51,7 +52,7 @@ export async function mountSettings(container: HTMLElement) {
   }
   function apply(next: IntegrationView, updateDraft = false) {
     settings = next;
-    if (!next.tokenConfigured) speakerError = '';
+    if (!next.tokenConfigured || next.status === 'error') speakerError = '';
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
   }
   async function loadSetup(refresh = false) {
@@ -81,24 +82,27 @@ export async function mountSettings(container: HTMLElement) {
   async function discover() {
     if (!settings?.tokenConfigured) return;
     speakerError = '';
-    try { apply(await request('/destinations')); if (settings!.status === 'error') speakerError = settings!.message; }
+    try { apply(await request('/destinations')); }
     catch (cause) { speakerError = cause instanceof Error ? cause.message : 'Speakers could not be loaded.'; }
   }
-  async function run(work: () => Promise<void>) {
+  async function run(work: () => Promise<void>, scope: 'connection' | 'speaker' = 'connection') {
     if (busy) return;
     const revision = settings?.revision;
-    busy = true; error = ''; notice = ''; render();
+    busy = true; busyScope = scope; error = ''; notice = ''; if (scope === 'speaker') speakerError = ''; render();
     try { await work(); }
     catch (cause) {
-      error = cause instanceof Error ? cause.message : 'The settings request failed.';
+      const message = cause instanceof Error ? cause.message : 'The settings request failed.';
       // Read back only. Never automatically retry a settings mutation.
       try { apply(await request('')); } catch { online = false; }
+      if (!online) error = 'Cannot reach the application. Check your connection and try again.';
+      else if (scope === 'speaker') { if (settings?.status !== 'error') speakerError = message; }
+      else error = message;
     } finally { busy = false; render(); if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending); }
   }
-  function action(text: string, work: () => Promise<void>, secondary = false) {
+  function action(text: string, work: () => Promise<void>, secondary = false, scope: 'connection' | 'speaker' = 'connection') {
     const b = el('button', text, secondary ? 'secondary' : ''); b.type = 'button';
     b.dataset.focusKey = text;
-    b.disabled = busy || !online; b.onclick = () => { void run(work); }; return b;
+    b.disabled = busy || !online; b.onclick = () => { void run(work, scope); }; return b;
   }
   function field(text: string, id: string, type: string, value: string, change: (value: string) => void) {
     const { group, input } = fieldControl(text, id, type); input.value = value; input.disabled = busy;
@@ -122,11 +126,12 @@ export async function mountSettings(container: HTMLElement) {
     if (notice) { const message = uiNotice(notice, 'success'); message.classList.add('settings-notice'); workspace.append(message); }
     if (!online && error) { const retry = el('button', 'Retry connection', 'secondary'); retry.onclick = () => { void run(async () => { apply(await request(''), !settings); await loadSetup(); await discover(); }); }; workspace.append(retry); }
     const grid = workspaceGrid('sidebar', 'settings-grid');
-    const state = busy ? 'Working…' : !settings ? 'Loading…' : !settings.tokenConfigured ? 'Not connected' : settings.status === 'checked' ? 'Connected' : settings.status === 'error' ? 'Needs attention' : 'Not checked';
+    const state = busy && busyScope === 'connection' ? 'Working…' : !settings ? 'Loading…' : !settings.tokenConfigured ? 'Not connected' : settings.status === 'checked' ? 'Connected' : settings.status === 'error' ? 'Needs attention' : 'Not checked';
     const connection = panel('connection', '1. Music connection', state);
     if (settings?.tokenConfigured) {
       connection.append(el('p', settings.url ?? 'Music Assistant', 'saved-address'));
-      if (settings.status !== 'checked') connection.append(el('p', settings.status === 'error' ? settings.message : 'Connection saved. Checking availability…', 'muted small'));
+      if (settings.status === 'error') { const failure = el('p', settings.message, 'error'); failure.setAttribute('role', 'alert'); connection.append(failure); }
+      else if (settings.status !== 'checked') connection.append(el('p', 'Connection saved. Checking Music Assistant…', 'muted small'));
       const change = action(editConnection ? 'Close connection settings' : 'Change connection', async () => { editConnection = !editConnection; }, true);
       change.disabled ||= Boolean(settings.settingsChangesBlocked); connection.append(change);
       const actions = actionGroup(); actions.classList.add('settings-connection-actions');
@@ -210,10 +215,12 @@ export async function mountSettings(container: HTMLElement) {
       for (const control of detected.querySelectorAll('button')) control.disabled ||= Boolean(settings?.settingsChangesBlocked);
       output.append(detected);
     }
-    const destination = panel('destination', '2. Speaker');
+    const speakerState = busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !settings.destination ? 'Not selected'
+      : settings.destinationStatus === 'checked' ? 'Available' : settings.destinationStatus === 'error' ? 'Needs attention' : 'Not checked';
+    const destination = panel('destination', '2. Speaker', speakerState);
     if (settings?.destination) {
       destination.append(el('p', `Speaker: ${settings.destination.name}`, 'saved-destination'));
-      const change = action(editSpeaker ? 'Cancel speaker change' : 'Change speaker', async () => { editSpeaker = !editSpeaker; destinationDraft = settings!.destination?.id ?? ''; if (editSpeaker && !settings?.report) await discover(); }, true);
+      const change = action(editSpeaker ? 'Cancel speaker change' : 'Change speaker', async () => { editSpeaker = !editSpeaker; destinationDraft = settings!.destination?.id ?? ''; if (editSpeaker && !settings?.report) await discover(); }, true, 'speaker');
       change.disabled ||= Boolean(settings.settingsChangesBlocked); destination.append(change);
     }
     if (settings?.report && (!settings.destination || editSpeaker || !settings.report.players.some(p => p.id === settings!.destination?.id && p.available))) {
@@ -229,16 +236,19 @@ export async function mountSettings(container: HTMLElement) {
       const choose = action('Save speaker', async () => {
         if (!destinationDraft) throw new Error('Choose an available speaker or group first.');
         apply(await request('/destination', { id: destinationDraft, revision: settings!.revision })); editSpeaker = false; notice = 'Speaker saved.';
-      });
+      }, false, 'speaker');
       choose.disabled ||= !select.value || select.value === settings.destination?.id || Boolean(settings.settingsChangesBlocked);
       select.onchange = () => { destinationDraft = select.value; choose.disabled = select.disabled || !select.value || select.value === settings?.destination?.id; };
       const group = el('div', undefined, 'field'); group.append(destinationLabel, select, choose); destination.append(group);
       if (!report.players.length) destination.append(el('p', 'No speakers found. Add one in Music Assistant, then try again.', 'muted small'));
     } else if (!settings?.destination) {
-      destination.append(el('div', settings?.tokenConfigured ? busy ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.' : 'Connect Music Assistant to choose a speaker.', 'empty-state'));
+      destination.append(el('div', !settings?.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant to choose a speaker.'
+        : busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.', 'empty-state'));
     }
-    if (speakerError) { const failure = el('p', speakerError, 'error'); failure.setAttribute('role', 'alert'); destination.append(failure); }
-    if (settings?.tokenConfigured) destination.append(action('Find speakers again', discover, true));
+    const speakerFailure = speakerError || (settings?.destinationStatus === 'error' ? settings.destinationMessage : '');
+    if (speakerFailure) { const failure = el('p', speakerFailure, 'error'); failure.setAttribute('role', 'alert'); destination.append(failure); }
+    else if (settings?.destination && settings.destinationStatus === 'not-checked') destination.append(el('p', settings.destinationMessage, 'muted small'));
+    if (settings?.tokenConfigured) destination.append(action('Find speakers again', discover, true, 'speaker'));
     if (settings?.settingsChangesBlocked) destination.append(el('p', 'Finish the current song before changing speakers.', 'muted small'));
     if (settings?.destination) destination.append(el('p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
     output.append(destination);
@@ -248,7 +258,7 @@ export async function mountSettings(container: HTMLElement) {
       playback.append(el('p', 'The speaker may still be playing. Recovery stops only the song this app still controls; other audio is left alone. It does not start music or pass the turn.', 'warning'), action('Recover playback controls', async () => {
         if (!confirm('Recover playback controls? This stops the recording only if the app still owns that exact queue item. Externally replaced audio is left untouched. The turn will not advance.')) return;
         apply(await request('/recover', { revision: settings!.revision })); notice = 'Playback controls recovered. Select a track to start again.';
-      }, true));
+      }, true, 'speaker'));
       const details = el('details'); details.append(el('summary', 'Details'), el('p', settings.playbackIssue, 'muted small')); playback.append(details);
       output.append(playback);
     }
@@ -265,7 +275,7 @@ export async function mountSettings(container: HTMLElement) {
   render();
   try {
     apply(await request(''), true); render();
-    await Promise.all([loadSetup().then(render), settings!.tokenConfigured ? run(discover) : addresses.load()]);
+    await Promise.all([loadSetup().then(render), settings!.tokenConfigured ? run(discover, 'speaker') : addresses.load()]);
   }
   catch (cause) { error = cause instanceof Error ? cause.message : 'Cannot load integration settings.'; }
   render();

@@ -254,7 +254,9 @@ export class MusicAssistantClient implements MusicAssistantReader {
     try {
       const result = await this.read('/api', 'player_queues/get_active_queue', { player_id: playerId });
       if (!result) throw new AppError(422, 'This destination has no active Music Assistant queue. Configure it in Music Assistant and check again.');
-      return z.object({ queue_id: z.string().min(1).max(500) }).parse(result).queue_id;
+      const queue = z.object({ queue_id: z.string().min(1).max(500), available: z.boolean().optional() }).parse(result);
+      if (queue.available === false) throw new AppError(422, 'The speaker’s Music Assistant queue is unavailable. Check that speaker and try again.');
+      return queue.queue_id;
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(502, 'The destination queue response is incompatible. Review the deployed API documentation.');

@@ -26,6 +26,8 @@ export type IntegrationView = {
   revision: number; url: string | null; tokenConfigured: boolean;
   destination: { id: string; name: string } | null;
   status: 'not-configured' | 'not-checked' | 'checked' | 'error';
+  destinationStatus: 'not-selected' | 'not-checked' | 'checked' | 'error';
+  destinationMessage: string;
   message: string; report: ConnectionReport | null; playbackAvailable: boolean; playbackIssue: string;
   mediaOrigin?: string | null;
   browserUrl?: string; tokenExpiresAt?: number;
@@ -53,6 +55,7 @@ export class IntegrationManager implements CatalogueProvider {
   private state: IntegrationState = { schema: 1, revision: 0, musicAssistant: null };
   private report: ConnectionReport | null = null;
   private failure = '';
+  private destinationFailure: string | null = null;
   private queue = new SerialQueue();
   private cachedReader?: MusicAssistantReader;
   private referenceKey = randomBytes(32);
@@ -306,8 +309,11 @@ export class IntegrationManager implements CatalogueProvider {
   private async commit(next: IntegrationState) {
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
     const connectionChanged = this.state.musicAssistant?.url !== next.musicAssistant?.url || this.state.musicAssistant?.accessToken !== next.musicAssistant?.accessToken;
+    const destinationChanged = this.state.musicAssistant?.destination?.id !== next.musicAssistant?.destination?.id;
     try { await this.store.save(next); } catch { throw new AppError(503, 'Integration settings could not be saved. Check the application data directory.'); }
-    this.state = next; this.report = null; this.failure = '';
+    this.state = next;
+    if (connectionChanged) { this.report = null; this.failure = ''; }
+    if (connectionChanged || destinationChanged) this.destinationFailure = null;
     this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Addresses or settings changed. Check file access again; no audio has been started.' };
     if (connectionChanged) {
       this.close();
@@ -320,13 +326,20 @@ export class IntegrationManager implements CatalogueProvider {
   /** Explicit allowlist. Tokens, queue payloads, and internal exceptions never enter the view. */
   view(): IntegrationView {
     const ma = this.state.musicAssistant;
+    const missingSpeaker = ma?.destination && this.report && !this.failure && !this.report.players.some(player => player.id === ma.destination!.id && player.available);
+    const destinationStatus = !ma?.destination ? 'not-selected' : !this.report || this.failure ? 'not-checked'
+      : missingSpeaker || this.destinationFailure ? 'error' : this.destinationFailure === null ? 'not-checked' : 'checked';
+    const destinationMessage = destinationStatus === 'not-selected' ? 'Choose a speaker or group before playing.'
+      : destinationStatus === 'not-checked' ? this.failure ? 'Speaker status cannot be checked until Music Assistant is connected.' : 'The saved speaker has not been checked.'
+      : missingSpeaker ? this.unavailableSpeaker : this.destinationFailure || 'Music Assistant reports the saved speaker and its queue as available.';
     return { revision: this.state.revision, url: ma?.url ?? null, tokenConfigured: Boolean(ma?.accessToken),
       settingsChangesBlocked: Boolean(this.playback?.ownsPlayback),
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
       status: !ma ? 'not-configured' : this.failure ? 'error' : this.report ? 'checked' : 'not-checked',
+      destinationStatus, destinationMessage,
       message: !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (this.report
-        ? 'Music Assistant is configured. Music starts only when the current participant presses Play.'
-        : 'Music Assistant is configured. Speakers are discovered automatically when settings open.'),
+        ? 'Music Assistant is connected and authorized.'
+        : 'Music Assistant is configured. Its connection has not been checked.'),
       report: structuredClone(this.report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
       ...(ma?.browserUrl ? { browserUrl: ma.browserUrl } : {}), ...(ma?.tokenExpiresAt ? { tokenExpiresAt: ma.tokenExpiresAt } : {}) };
   }
@@ -386,19 +399,33 @@ export class IntegrationManager implements CatalogueProvider {
     try { return await pending; }
     finally { if (this.inspection?.pending === pending) this.inspection = undefined; }
   }
+  private get unavailableSpeaker() { return 'The saved speaker is unavailable in Music Assistant. Check that speaker or choose another destination.'; }
+  private connectionFailure(error: unknown) {
+    return error instanceof AppError ? error.message : 'Could not connect to Music Assistant. Check the saved server and authorization.';
+  }
+  private queueFailure(error: unknown) {
+    return `The speaker’s queue could not be checked. ${error instanceof AppError ? error.message : 'Check the speaker in Music Assistant and try again.'}`;
+  }
+  private async inspectConnection(reader: MusicAssistantReader, ma: NonNullable<IntegrationState['musicAssistant']>) {
+    const report = await reader.inspect({ documentation: false });
+    if (ma.serverId && report.serverId !== ma.serverId) throw new AppError(409, 'Music Assistant server identity changed. Disconnect explicitly before replacing the catalogue.');
+    return report;
+  }
   private async inspectSettings(revision: number): Promise<IntegrationView> {
     const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(400, 'Save a Music Assistant connection first.');
-    let report: ConnectionReport | null = null; let failure = '';
+    let report: ConnectionReport | null = null; let failure = ''; let destinationFailure: string | null = null;
+    let reader: MusicAssistantReader | undefined;
     try {
-      const reader = this.getReader(); report = await reader.inspect({ documentation: false });
-      if (ma.serverId && report.serverId !== ma.serverId) { report = null; throw new AppError(409, 'Music Assistant server identity changed. Disconnect explicitly before replacing the catalogue.'); }
-      if (ma.destination) {
-        if (!report.players.some(p => p.id === ma.destination!.id && p.available)) throw new AppError(422, 'The saved destination is unavailable. Check Music Assistant and select an available destination.');
-        await reader.activeQueue(ma.destination.id);
+      reader = this.getReader();
+      report = await this.inspectConnection(reader, ma);
+    } catch (error) { failure = this.connectionFailure(error); }
+    if (report && reader && ma.destination) {
+      if (!report.players.some(p => p.id === ma.destination!.id && p.available)) destinationFailure = this.unavailableSpeaker;
+      else {
+        try { await reader.activeQueue(ma.destination.id); destinationFailure = ''; }
+        catch (error) { destinationFailure = this.queueFailure(error); }
       }
-    } catch (error) {
-      failure = error instanceof AppError ? error.message : 'Could not load Music Assistant speakers. Refresh this page or reconnect Music Assistant.';
     }
     // Discovery is read-only and may be slow. Only publication shares the playback
     // lane; a stale inspection cannot overwrite a newly saved connection's status.
@@ -408,7 +435,7 @@ export class IntegrationManager implements CatalogueProvider {
         const next = { ...this.state, musicAssistant: { ...ma, serverId: report.serverId } };
         await this.store.save(next); this.state = next; // Identity enrichment does not alter routing/revision.
       }
-      this.report = report; this.failure = failure; return this.view();
+      this.report = report; this.failure = failure; this.destinationFailure = destinationFailure; return this.view();
     });
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
@@ -416,21 +443,31 @@ export class IntegrationManager implements CatalogueProvider {
     if (!ma) throw new AppError(409, 'Refresh this page and select an available destination.');
     // Discovery must not delay Stop or other playback controls. Revalidate settings
     // and playback ownership only when committing the selected destination.
-    const reader = this.getReader(); const report = await reader.inspect({ documentation: false });
-    const player = report.players.find(p => p.id === id && p.available);
-    if (!player) throw new AppError(409, 'Refresh this page and select an available destination.');
-    try { await reader.activeQueue(id); }
+    const reader = this.getReader(); let report: ConnectionReport;
+    try { report = await this.inspectConnection(reader, ma); }
     catch (error) {
       return this.serial(async () => {
-        this.expected(revision); this.report = report;
-        this.failure = error instanceof AppError ? error.message : 'The destination could not be loaded. Refresh this page to try again.';
-        throw new AppError(502, this.failure);
+        this.expected(revision); this.report = null; this.failure = this.connectionFailure(error); this.destinationFailure = null;
+        throw new AppError(error instanceof AppError ? error.status : 502, this.failure);
+      });
+    }
+    const publish = <T>(work: () => T) => this.serial(async () => {
+      this.expected(revision); this.report = report; this.failure = ''; return work();
+    });
+    const player = report.players.find(p => p.id === id && p.available);
+    if (!player) return publish(() => { throw new AppError(409, 'This speaker is unavailable in Music Assistant. Choose an available speaker or group.'); });
+    try { await reader.activeQueue(id); }
+    catch (error) {
+      return publish(() => {
+        const message = this.queueFailure(error);
+        if (ma.destination?.id === id) this.destinationFailure = message;
+        throw new AppError(502, message);
       });
     }
     return this.serial(async () => {
       this.expected(revision);
       await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...ma, destination: { id: player.id, name: player.name } } });
-      this.report = report; return this.view();
+      this.report = report; this.failure = ''; this.destinationFailure = ''; return this.view();
     });
   }
 }

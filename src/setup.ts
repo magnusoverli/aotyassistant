@@ -64,7 +64,7 @@ export class SetupManager {
     const delays = [3000, 10_000, 30_000, 60_000];
     const attempt = async (index: number) => {
       try { await this.refresh(); } catch { this.state.status = 'waiting'; }
-      if (!this.closed && index < delays.length && (this.state.status !== 'ready' || this.integrations.view().status === 'error' || this.integrations.addressing().mediaCheck.status === 'failed')) {
+      if (!this.closed && index < delays.length && (this.state.status !== 'ready' || this.integrations.view().status === 'error' || this.integrations.view().destinationStatus === 'error' || this.integrations.addressing().mediaCheck.status === 'failed')) {
         this.timer = setTimeout(() => { void attempt(index + 1); }, delays[index]); this.timer.unref();
       }
     };

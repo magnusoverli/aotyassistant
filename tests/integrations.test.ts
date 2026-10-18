@@ -18,7 +18,7 @@ const privateTrack = 'Never disclose this current song';
 const privateArtwork = 'http://private-art.invalid/secret.jpg';
 async function mockMusicAssistant() {
   const calls: { command: string; args: Record<string, unknown>; authorization: string }[] = [];
-  let mode: 'normal' | 'redirect' | 'bad-shape' | 'old-schema' | 'huge' | 'slow' | 'offline-player' | 'no-queue' | 'echo-token' | 'search-empty' | 'multi-provider' = 'normal';
+  let mode: 'normal' | 'redirect' | 'bad-shape' | 'old-schema' | 'huge' | 'slow' | 'offline-player' | 'missing-player' | 'no-queue' | 'unavailable-queue' | 'echo-token' | 'search-empty' | 'multi-provider' = 'normal';
   const server = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (mode === 'slow') return;
@@ -35,9 +35,9 @@ async function mockMusicAssistant() {
         { player_id: 'sonos:living', name: mode === 'echo-token' ? 'fixture-token' : 'Living room', available: mode !== 'offline-player', current_media: { title: privateTrack, artwork: privateArtwork } },
         { player_id: 'sonos:group', name: 'Whole house', available: true },
         { player_id: 'sonos:offline', name: 'Offline speaker', available: false },
-      ]));
+      ].filter(player => mode !== 'missing-player' || player.player_id !== 'sonos:living')));
     } else if (body.command === 'player_queues/get_active_queue') {
-      res.end(JSON.stringify(mode === 'no-queue' ? null : { queue_id: 'group-queue', current_item: { name: privateTrack, image: privateArtwork }, next_item: { name: 'Secret next song' } }));
+      res.end(JSON.stringify(mode === 'no-queue' ? null : { queue_id: 'group-queue', available: mode !== 'unavailable-queue', current_item: { name: privateTrack, image: privateArtwork }, next_item: { name: 'Secret next song' } }));
     } else if (body.command === 'music/search') {
       const base = { item_id: 'same-recording', provider: 'spotify', name: 'Search result', uri: 'spotify://track/private-original-uri', artists: [{ name: 'Search artist' }],
         album: { name: 'Search album' }, provider_mappings: [{ available: true }], metadata: { images: [{ path: privateArtwork }] } };
@@ -93,16 +93,20 @@ test('frontend settings persist privately, never return tokens, and require a ne
   const directory = await mkdtemp('/tmp/opencode/aoty-integrations-'); const store = new IntegrationFileStore(directory);
   const manager = new IntegrationManager(store); await manager.init();
   assert.equal(manager.view().status, 'not-configured');
+  assert.equal(manager.view().destinationStatus, 'not-selected');
   await manager.save(mock.origin, 'fixture-token', 0);
   assert.equal(manager.view().status, 'not-checked'); assert.equal(manager.view().tokenConfigured, true); assert.equal(mock.calls.length, 0);
   let view = await manager.check(manager.view().revision);
   assert.equal(view.status, 'checked'); assert.equal(view.playbackAvailable, false);
+  assert.equal(view.destinationStatus, 'not-selected');
   view = await manager.selectDestination('sonos:group', view.revision);
   assert.deepEqual(view.destination, { id: 'sonos:group', name: 'Whole house' });
+  assert.equal(view.destinationStatus, 'checked');
   for (const secret of ['fixture-token', privateTrack, privateArtwork, 'group-queue']) assert.ok(!JSON.stringify(view).includes(secret));
   assert.equal((await stat(join(directory, 'integrations.json'))).mode & 0o777, 0o600);
   const restored = new IntegrationManager(store); await restored.init();
   assert.deepEqual(restored.view().destination, view.destination); assert.equal(restored.view().status, 'not-checked');
+  assert.equal(restored.view().destinationStatus, 'not-checked');
   await assert.rejects(restored.save('http://localhost:8095', undefined, view.revision), error => error instanceof AppError && error.status === 400);
   await restored.save(mock.origin, undefined, view.revision);
   assert.equal(restored.view().tokenConfigured, true);
@@ -121,11 +125,61 @@ test('failed saved destination can be replaced without discarding a valid token;
   await assert.rejects(manager.selectDestination('sonos:offline', manager.view().revision));
   await manager.selectDestination('sonos:living', manager.view().revision);
   mock.setMode('offline-player'); let view = await manager.check(manager.view().revision);
-  assert.equal(view.status, 'error'); assert.ok(view.report);
+  assert.equal(view.status, 'checked'); assert.equal(view.destinationStatus, 'error'); assert.ok(view.report);
+  assert.match(view.destinationMessage, /speaker is unavailable/); assert.doesNotMatch(view.message, /speaker|unavailable/);
   view = await manager.selectDestination('sonos:group', view.revision); assert.equal(view.status, 'checked');
   await manager.save(mock.origin, 'bad-token', view.revision); view = await manager.check(manager.view().revision);
-  assert.equal(view.status, 'error'); assert.equal(view.report, null);
+  assert.equal(view.status, 'error'); assert.equal(view.report, null); assert.equal(view.destinationStatus, 'not-checked');
   assert.ok(!JSON.stringify(view).includes('bad-token'));
+});
+
+test('missing speakers and failed queue checks cannot mark a healthy Music Assistant connection as broken, and checks recover independently', async t => {
+  const mock = await mockMusicAssistant(); t.after(mock.close);
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-speaker-health-'))); await manager.init();
+  t.after(() => manager.close());
+  await manager.save(mock.origin, 'fixture-token', 0); await manager.selectDestination('sonos:living', 1);
+  const revision = manager.view().revision;
+  for (const mode of ['missing-player', 'no-queue', 'unavailable-queue', 'normal'] as const) {
+    mock.setMode(mode); const view = await manager.check(revision);
+    assert.equal(view.status, 'checked'); assert.equal(view.destinationStatus, mode === 'normal' ? 'checked' : 'error');
+    assert.doesNotMatch(view.message, /speaker|queue/);
+    if (mode !== 'normal') assert.match(view.destinationMessage, mode === 'missing-player' ? /speaker is unavailable/ : /queue could not be checked/);
+  }
+  mock.setMode('no-queue'); await assert.rejects(manager.selectDestination('sonos:group', revision), /speaker’s queue/);
+  assert.equal(manager.view().status, 'checked'); assert.equal(manager.view().destinationStatus, 'checked');
+  assert.equal(manager.view().destination!.id, 'sonos:living', 'A failed candidate must not replace the saved speaker.');
+  await assert.rejects(manager.selectDestination('sonos:living', revision), /speaker’s queue/);
+  assert.equal(manager.view().status, 'checked'); assert.equal(manager.view().destinationStatus, 'error');
+  mock.setMode('normal'); await manager.check(revision);
+  await manager.saveGuestOrigin('http://localhost:4000', revision);
+  assert.equal(manager.view().status, 'checked'); assert.equal(manager.view().destinationStatus, 'checked');
+  assert.ok(mock.calls.every(call => ['players/all', 'player_queues/get_active_queue'].includes(call.command)));
+});
+
+test('a Music Assistant authentication failure while selecting a speaker stays a connection error, never a speaker diagnosis', async t => {
+  const mock = await mockMusicAssistant(); t.after(mock.close);
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-connection-health-'))); await manager.init();
+  t.after(() => manager.close());
+  await manager.save(mock.origin, 'fixture-token', 0); await manager.selectDestination('sonos:living', 1);
+  await manager.save(mock.origin, 'bad-token', manager.view().revision);
+  await assert.rejects(manager.selectDestination('sonos:group', manager.view().revision), /rejected the token/);
+  const view = manager.view(); assert.equal(view.status, 'error'); assert.equal(view.destinationStatus, 'not-checked');
+  assert.equal(view.report, null); assert.match(view.destinationMessage, /cannot be checked/); assert.doesNotMatch(JSON.stringify(view), /bad-token/);
+});
+
+test('a delayed speaker-check failure cannot mark a replacement connection or its speaker as unhealthy', async t => {
+  let enter!: () => void; let release!: () => void; let held = false;
+  const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-speaker-health-race-')), () => ({
+    async inspect() { return { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true, players: [{ id: 'speaker', name: 'Speaker', available: true }] }; },
+    async activeQueue() { if (held) { enter(); await gate; throw new Error('PRIVATE obsolete speaker error'); } return 'queue'; },
+    async search() { return []; },
+  }));
+  await manager.init(); await manager.save('http://localhost:8095', 'old-token', 0); await manager.selectDestination('speaker', 1);
+  held = true; const checking = assert.rejects(manager.check(2), error => error instanceof AppError && error.status === 409); await entered;
+  await manager.save('http://localhost:8095', 'new-token', 2); release(); await checking;
+  const view = manager.view(); assert.equal(view.status, 'not-checked'); assert.equal(view.destinationStatus, 'not-checked');
+  assert.equal(view.report, null); assert.doesNotMatch(JSON.stringify(view), /PRIVATE|obsolete/);
 });
 
 test('malformed integration files fail startup without losing stored data', async () => {
