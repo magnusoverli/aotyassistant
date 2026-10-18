@@ -8,7 +8,7 @@ test('host desk prioritizes the current turn with a slim volume panel and respon
   await expect(page.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Room display', exact: true })).toHaveCount(0);
   expect(await page.locator('.host-workspace').evaluate(node => Array.from(node.children).map(child => child.className))).toEqual([
-    'panel host-live', 'panel host-audio', 'panel host-people',
+    'panel host-live', 'panel host-audio',
   ]);
   await expect(page.getByRole('button', { name: 'Skip turn' })).toBeEnabled();
   await expect(page.locator('.host-invitations img')).toBeVisible();

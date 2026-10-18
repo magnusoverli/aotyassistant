@@ -18,8 +18,8 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
     const titleStyle = await host.getByRole('heading', { level: 1 }).evaluate(typography);
     const labelStyle = await host.locator('label[for="ma-url"]').evaluate(typography);
     await isolatedApp.engine.join('Layout host');
-    await host.goto('/host'); await expect(host.locator('.host-people')).toBeVisible();
-    const cardStyle = await host.locator('.host-people').evaluate(surface);
+    await host.goto('/host'); await expect(host.locator('.qr-card')).toBeVisible();
+    const cardStyle = await host.locator('.qr-card').evaluate(surface);
     const background = await host.locator('body').evaluate(node => ({ color: getComputedStyle(node).backgroundColor, image: getComputedStyle(node).backgroundImage }));
     await page.goto(isolatedApp.origin + '/join');
     const title = page.getByRole('heading', { name: 'Join room', exact: true });

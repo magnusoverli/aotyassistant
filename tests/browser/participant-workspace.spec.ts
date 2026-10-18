@@ -39,8 +39,8 @@ test('participant typography, surfaces and desktop alignment match the host page
     expect((await page.locator('.participant-hero h1').evaluate(typography)).size).toBe('28px');
     expect(await page.locator('.catalogue-panel h2').evaluate(typography)).toEqual(sectionStyle);
     expect(await page.locator('.preparation-list h2').evaluate(typography)).toEqual(sectionStyle);
-    await host.goto('/host'); await expect(host.locator('.host-people')).toBeVisible();
-    expect(await page.locator('.catalogue-panel').evaluate(surface)).toEqual(await host.locator('.host-people').evaluate(surface));
+    await host.goto('/host'); await expect(host.locator('.qr-card')).toBeVisible();
+    expect(await page.locator('.catalogue-panel').evaluate(surface)).toEqual(await host.locator('.qr-card').evaluate(surface));
     await page.locator('#list-upload').click();
     await expect(page.locator('.catalogue-panel').getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
     await expect(page.locator('.music-upload')).toHaveCount(1);

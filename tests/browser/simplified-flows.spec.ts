@@ -13,7 +13,8 @@ test('compact phone workspace keeps results visible, expands the list inline and
     await expect(page.locator('.turn-distance')).toHaveText('You’re next');
     await expect(page.locator('.turn-chip')).toHaveCount(0);
     await expect(page.locator('.catalogue-results')).toHaveCount(0);
-    expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(72);
+    expect((await page.locator('.header-inner').boundingBox())!.height).toBeLessThanOrEqual(72);
+    expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(113);
     await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     const add = page.getByRole('button', { name: 'Add to my list', exact: true });
     await expect(add).toBeInViewport();
@@ -101,7 +102,7 @@ test('host invitations remain one action away with thirty people and consequenti
   await expect(page.getByRole('button', { name: 'Skip turn' })).toHaveCount(0);
   await page.request.post('/api/participant/join', { data: { nickname: 'Current' }, headers: { Origin: isolatedApp.origin } });
   for (let i = 1; i < 30; i++) await isolatedApp.engine.join(`Guest ${i}`);
-  await expect(page.locator('.person-row')).toHaveCount(30);
+  await expect(page.locator('.rotation-seat')).toHaveCount(30);
   await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
   await page.locator('.workspace-heading').getByRole('link', { name: 'Invite people' }).click();
   await expect(page.getByRole('button', { name: 'Copy join link' })).toBeInViewport();
@@ -111,9 +112,10 @@ test('host invitations remain one action away with thirty people and consequenti
   await expect(page.locator('main')).not.toContainText('Northern Lights');
   page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Skip turn' }).click();
   expect((await (await page.request.get('/api/host/state')).json()).turnId).toBe(state.turnId);
+  await page.locator('.circle-panel > summary').click();
   await page.getByRole('button', { name: 'Manage people' }).click();
-  page.once('dialog', dialog => dialog.dismiss()); await page.locator('.person-row.is-current').getByRole('button', { name: 'Remove' }).click();
-  await expect(page.locator('.person-row')).toHaveCount(30);
+  page.once('dialog', dialog => dialog.dismiss()); await page.locator('.rotation-seat.is-current').getByRole('button', { name: /^Remove/ }).click();
+  await expect(page.locator('.rotation-seat')).toHaveCount(30);
   page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Skip turn' }).click();
   await expect(page.locator('.host-playback-status')).toContainText('Choosing a song');
 });

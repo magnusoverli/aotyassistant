@@ -28,7 +28,7 @@ async function fits(tv: Page) {
   expect(size.contentHeight).toBeLessThanOrEqual(size.height + 2);
 }
 
-test('the airy display has one turn heading, a quiet invitation and a truthful, responsive current-first order strip', async ({ browser, page: host, isolatedApp }) => {
+test('the display uses the shared numbered listening order and retains it across playback updates', async ({ browser, page: host, isolatedApp }) => {
   const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
   const listeners = [];
   const list = tv.getByRole('list', { name: 'Participant rotation' });
@@ -36,9 +36,10 @@ test('the airy display has one turn heading, a quiet invitation and a truthful, 
     await expect(tv.locator('.room-turn')).toHaveText('Alex’s turn');
     await expect(tv.locator('.room-topline, .room-next, .room-meter, .reveal-label')).toHaveCount(0);
     await expect(tv.getByText('Scan the QR code to join.', { exact: true })).toHaveCount(0);
-    await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Current turn');
-    await expect(tv.locator('.turn-person.is-next')).toHaveCount(0);
-    expect((await tv.locator('.turn-person').boundingBox())!.width).toBeLessThan(240);
+    await expect(tv.locator('.rotation-seat.is-current .seat-state')).toHaveText('Current turn');
+    await expect(tv.locator('.rotation-seat.is-next')).toHaveCount(0);
+    await tv.locator('.circle-panel > summary').click();
+    expect((await tv.locator('.rotation-seat').boundingBox())!.width).toBeLessThan(240);
     await expect(tv.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
     await expect(tv.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
     expect(await tv.locator('.room-invitation').evaluate(node => getComputedStyle(node).borderTopWidth)).toBe('0px');
@@ -46,34 +47,35 @@ test('the airy display has one turn heading, a quiet invitation and a truthful, 
       const context = await browser.newContext(); listeners.push(context);
       const joined = await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname } }); expect(joined.ok()).toBe(true);
     }
-    await expect(list.getByRole('listitem')).toHaveCount(6);
-    await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
-    await expect(list.locator('.seat-number, .seat-state')).toHaveCount(0);
-    await f.play(); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Playing');
+    await expect(list.getByRole('listitem')).toHaveCount(9);
+    await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
+    await expect(list.locator('.seat-number')).toHaveCount(9);
+    await f.play(); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     await expect(tv.getByText('Track details stay private until the reveal.', { exact: true })).toHaveCount(0);
     await list.focus(); await list.evaluate(node => { (window as any).orderList = node; (window as any).currentPerson = node.firstElementChild; });
     await f.reveal(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
     await expect(list).toBeFocused();
     expect(await list.evaluate(node => (window as any).orderList === node && (window as any).currentPerson === node.firstElementChild)).toBe(true);
-    await f.control('pause'); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Paused');
+    await f.control('pause'); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     await f.screen.setOffline(true); await expect(tv.getByRole('heading', { name: 'Playback unavailable.' })).toBeVisible();
-    await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Current turn');
-    await f.screen.setOffline(false); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Paused');
+    await expect(tv.locator('.order-status')).toHaveText('Offline');
+    await f.screen.setOffline(false); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     await f.control('resume');
     await list.evaluate(node => (node as HTMLElement).blur());
+    await tv.locator('.circle-panel > summary').click();
     for (const [width, height] of [[1366, 768], [1920, 1080], [1280, 720], [390, 844], [320, 700]]) {
       await tv.setViewportSize({ width: width!, height: height! });
-      await expect(tv.locator('.turn-person.is-current strong')).toHaveText('Alex');
-      await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
+      await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Alex');
+      await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
       expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       await tv.screenshot({ path: `test-results/display-airy-${width}x${height}.png`, fullPage: true });
       if (width! > 700) await fits(tv);
     }
-    await f.control('stop'); await expect(tv.locator('.turn-person.is-current .turn-person-label')).toHaveText('Current turn');
+    await f.control('stop'); await expect(tv.locator('.rotation-seat.is-current .seat-state')).toHaveText('Current turn');
     await f.finish(); await expect(tv.locator('.room-turn')).toHaveText('Sam’s turn');
-    await expect(tv.locator('.turn-person.is-current strong')).toHaveText('Sam');
-    await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Jordan');
-    expect(await list.locator('strong').evaluateAll(nodes => nodes.map(node => node.textContent))).toEqual(['Sam', 'Jordan']);
+    await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Sam');
+    await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Jordan');
+    expect(await tv.locator('.rotation-list strong').evaluateAll(nodes => nodes.slice(0, 3).map(node => node.textContent))).toEqual(['Alex', 'Sam', 'Jordan']);
   } finally { await f.close(); for (const context of listeners) await context.close(); }
 });
 

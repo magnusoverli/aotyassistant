@@ -31,15 +31,16 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     const before = await (await first.request.get('/api/participant/state')).json();
     const late = await join(2, 'Late'); await expect(late.locator('.turn-distance')).toHaveText('2 turns away');
     const after = await (await first.request.get('/api/participant/state')).json(); expect(after.turnId).toBe(before.turnId); expect(after.ownPlayback.id).toBe(before.ownPlayback.id); expect(after.ownPlayback.status).toBe('playing');
+    await host.locator('.circle-panel > summary').click();
     await host.getByRole('button', { name: 'Manage people' }).click();
-    await host.locator('.host-people .person-row').filter({ hasText: 'Second' }).getByRole('button', { name: 'Remove', exact: true }).click();
+    await host.getByRole('button', { name: 'Remove Second', exact: true }).click();
     await expect(second.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
     await expect(first.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await host.getByRole('button', { name: 'Move Late up', exact: true }).click();
     await expect(late.locator('.turn-distance')).toHaveText('You’re next');
     await expect(host.getByRole('heading', { name: 'First', exact: true })).toBeVisible();
     host.once('dialog', dialog => dialog.accept());
-    await host.locator('.host-people .person-row').filter({ hasText: 'First' }).getByRole('button', { name: 'Remove', exact: true }).click();
+    await host.getByRole('button', { name: 'Remove First', exact: true }).click();
     await expect(late.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     expect((await (await late.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
     for (const path of ['/api/host/admit', '/api/host/start', '/api/host/create', '/api/host/end', '/api/host/invitation', '/api/display/auth']) expect(requests).not.toContain(path);

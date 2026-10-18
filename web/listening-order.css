@@ -1,0 +1,25 @@
+@layer components {
+  .listening-order { max-width:var(--header-width); padding-inline:var(--header-gutter); margin:0 auto; }
+  .circle-panel { min-width:0; margin:0; }
+  .circle-panel > summary { display:flex; align-items:center; gap:12px; list-style:none; cursor:pointer; min-height:40px; border-top:1px solid var(--line); }
+  .circle-panel > summary::-webkit-details-marker { display:none; }
+  .circle-panel h2 { font-size:12px; font-family:inherit; font-weight:500; color:var(--muted); letter-spacing:0; margin:0; }
+  .circle-caption { color:var(--accent); font-size:11px; margin-left:auto; }
+  .circle-panel[open] .circle-caption { transform:rotate(180deg); }
+  .order-status { font-size:11px; color:var(--muted); }
+  .order-empty,.order-feedback { margin:0; padding:0 0 14px; font-size:12px; }
+  .circle-panel > button { font-size:12px; margin-bottom:12px; }
+  .rotation-list { display:flex; gap:8px; list-style:none; margin:0; padding:2px 0 14px; overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  .rotation-list[hidden],.circle-panel > button[hidden] { display:none; }
+  .rotation-seat { flex:0 0 94px; position:relative; display:flex; align-items:center; flex-direction:column; gap:9px; min-width:0; padding:19px 9px 13px; border:1px solid var(--line); border-radius:12px; background:#18251b; }
+  .rotation-seat .seat-number { position:absolute; top:9px; left:10px; font-size:9px; color:var(--muted); }
+  .rotation-seat strong { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; text-align:center; font-size:11px; font-weight:550; overflow-wrap:anywhere; width:100%; }
+  .rotation-seat .avatar { width:34px; height:34px; font-size:11px; }
+  .seat-state { font-size:8px; letter-spacing:.09em; color:var(--muted); font-weight:700; }
+  .rotation-seat.is-current { background:#30432b; border-color:#a3be8c; }
+  .rotation-seat.is-current .seat-state { color:#b9d99f; }
+  .rotation-seat.is-you { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+  .rotation-seat:has(.order-actions) { flex-basis:148px; }
+  .order-actions { display:flex; justify-content:center; flex-wrap:wrap; gap:6px; margin-top:auto; }
+  .order-actions button { min-width:44px; min-height:44px; padding:8px; font-size:12px; }
+}

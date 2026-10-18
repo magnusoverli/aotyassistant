@@ -46,7 +46,7 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
     for (const [page, selectors] of [[settings, ['.settings-connection', '.settings-output']], [participant, ['.playback-card', '.preparation-list']]] as const) {
       expect((await geometry(page, [...selectors])).map(({ x, width }) => ({ x, width }))).toEqual(columns);
     }
-    const card = await appearance(host, '.host-people');
+    const card = await appearance(host, '.qr-card');
     expect(await appearance(settings, '.settings-connection')).toEqual(card);
     expect(await appearance(participant, '.catalogue-panel')).toEqual(card);
     const player = (await participant.locator('.playback-card').boundingBox())!;

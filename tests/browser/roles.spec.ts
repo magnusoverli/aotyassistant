@@ -85,9 +85,10 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await showFind(jordan);
     await expect(tv.getByText('Northern Lights')).toHaveCount(0); await expect(host.getByText('Northern Lights')).toHaveCount(0);
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).focus();
+    await host.locator('.circle-panel > summary').click();
     await host.getByRole('button', { name: 'Manage people' }).click();
     await host.getByRole('button', { name: 'Move Jordan up', exact: true }).click();
-    await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Jordan');
+    await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Jordan');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'next');
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 4 });
     await expect(host.getByRole('heading', { name: 'Alex', exact: true })).toBeVisible();
@@ -96,8 +97,8 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
     await expect(jordan.locator('.circle-panel')).toHaveJSProperty('open', true);
     await host.getByRole('button', { name: 'Skip turn' }).click();
-    await expect(tv.locator('.turn-person.is-current strong')).toHaveText('Jordan');
-    await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
+    await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Jordan');
+    await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');
     await expect(jordan.getByRole('button', { name: 'Play this song', includeHidden: true })).toBeEnabled();
     await expect(sam.getByRole('heading', { name: 'Jordan’s turn.', exact: true })).toBeVisible();
@@ -113,17 +114,16 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 5 });
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     await expect(riley.getByText('2 turns away', { exact: true })).toBeVisible();
-    // Bound the public roster for a larger room without clipping the TV page.
+    // Keep the shared disclosure compact for a larger room without clipping the TV page.
     for (const name of ['A very long listener nickname for TV', 'Taylor', 'Morgan', 'Casey']) {
       const context = await browser.newContext(); contexts.push(context);
       await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: name } });
       state = await (await host.request.get('/api/host/state')).json();
     }
-    await expect(tv.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(6);
-    await expect(tv.getByText('+3 more in the circle', { exact: true })).toBeVisible(); await tvFits(tv);
+    await expect(tv.locator('.rotation-seat')).toHaveCount(9);
+    await tvFits(tv);
     await tv.setViewportSize({ width: 1920, height: 1080 }); await tvFits(tv);
-    await expect(tv.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(7);
-    await expect(tv.getByText('+2 more in the circle', { exact: true })).toBeVisible();
+    await expect(tv.locator('.rotation-seat')).toHaveCount(9);
     await tv.screenshot({ path: 'test-results/display-concealed-1920.png' });
     await noHorizontalOverflow(jordan);
     await host.setViewportSize({ width: 390, height: 844 }); await noHorizontalOverflow(host);

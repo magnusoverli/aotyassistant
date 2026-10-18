@@ -85,6 +85,25 @@ Every application route and server-rendered fallback uses explicit shared layout
 - Release 0.3.3 verification reran the production build, typecheck, all **195 unit/controller tests** and all **90 Chromium workflows** successfully. Release logs: `/tmp/opencode/aoty-0.3.3-unit.log` and `/tmp/opencode/aoty-0.3.3-browser.log`.
 - Publication uses the `v0.3.3` image workflow; anonymously verify amd64/arm64 manifests and image configurations before pushing the versioned Home Assistant store manifest to `main`.
 
+## Shared listening-order follow-up — 18 October 2026
+
+- [x] Extract the participant's numbered-seat disclosure into `web/listening-order.ts` with component-owned styling.
+- [x] Mount one persistent instance below the header bar on all six application routes, sharing its gutters and measured sticky height.
+- [x] Reuse authenticated room snapshots; use a names-only event feed for home, settings and unjoined entry pages, including ingress.
+- [x] Move host reorder/remove controls into the shared disclosure and remove the previous host roster, participant body instance and public turn strip.
+- [x] Preserve disclosure state and horizontal scroll; skip list rebuilds for playback-only updates.
+- [x] Verify cross-route live updates, feed privacy, management, menu overlap, short screens and existing workflows.
+
+The disclosure starts collapsed as on the participant page. All routes use stable numbered seating order, current/next markers and participant-only “You” highlighting. Management is available inside the disclosure on the host page.
+
+Verification:
+- Production build and typecheck passed; **193 unit/controller tests passed** (the two obsolete public-strip window tests were replaced by shared-component browser coverage).
+- Exercised all **93 Chromium workflows**: 88 passed initially; updated five old roster/header expectations, then all 18 workflows in the affected files passed.
+- All five final shared-order/Home Assistant workflows passed, including six routes at six desktop/phone/landscape viewport sizes, live updates, offline recovery, names-only feed privacy, host management and prefixed settings events.
+- Reviewed expanded desktop host and phone participant captures. Screenshots remain in ignored `test-results/`.
+- Logs: `/tmp/opencode/aoty-listening-order-unit.log`, `/tmp/opencode/aoty-listening-order-browser.log`, `/tmp/opencode/aoty-listening-order-recheck.log`, `/tmp/opencode/aoty-listening-order-final-targeted.log`.
+- Release 0.3.4 verification reran the production build, typecheck, all **193 unit/controller tests** and all **93 Chromium workflows** successfully. Release logs: `/tmp/opencode/aoty-0.3.4-unit.log` and `/tmp/opencode/aoty-0.3.4-browser.log`. Publication uses the `v0.3.4` image workflow, with anonymous amd64/arm64 verification before pushing the versioned store manifest to `main`.
+
 ## Completion criterion
 
 A shared layout/component change updates every consumer. Intentional differences are named variants, and cross-page browser checks catch drift. Playback, private-list, exact-source, ingress and uncertain-write behavior retain their existing controllers and contracts.

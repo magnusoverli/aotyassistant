@@ -2,7 +2,7 @@ import express, { type Request, type Response, type NextFunction } from 'express
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { AppError, type Role } from './model.js';
+import { AppError, type Role, type ListeningOrderView } from './model.js';
 import type { Engine } from './engine.js';
 import type { Config } from './config.js';
 import type { IntegrationManager } from './integrations.js';
@@ -60,7 +60,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
         res.redirect(req.path === '/' ? `${ingress.base}/host` : /^(localhost|127\.|\[::1\])/.test(new URL(config.guestUrl).hostname)
           ? `${ingress.base}/host/settings` : `${config.guestUrl}${req.path}`); return;
       }
-      if (!(req.path === '/host' || req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/'))) {
+      if (!(req.path === '/host' || req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path === '/api/listening-order/events')) {
         return next(new AppError(404, 'Use the guest address for participant and display access.'));
       }
     }
@@ -72,7 +72,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
     const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
-      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations'));
+      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/listening-order/events' || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
     if (!known && setup && read && ['/display', '/join', '/participant'].includes(req.path)) {
       res.status(403).type('html').send(guestAddressHelp(config.guestUrl, req.path)); return;
@@ -187,6 +187,22 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
 
   const streams = new EventStreams(500, 'Too many live connections. Close unused tabs and try again.');
+  app.get('/api/listening-order/events', (_req, res) => {
+    const snapshot = (): ListeningOrderView => {
+      const view = engine.view({ kind: 'display' });
+      return { roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [] };
+    };
+    const initial = snapshot(); const stream = streams.reserve(res); if (!stream.open()) return;
+    let previous = '';
+    const send = (view = snapshot()) => {
+      const key = JSON.stringify(view); if (key === previous) return;
+      previous = key; stream.send('state', view);
+    };
+    const changed = () => { send(); };
+    send(initial); engine.on('change', changed);
+    stream.onClose(() => engine.off('change', changed));
+    stream.every(() => { stream.send('state', snapshot()); }, 15_000);
+  });
   const events = (res: Response, role: Role) => {
     const initial = engine.view(role); // Authorize before streaming headers.
     const stream = streams.reserve(res);

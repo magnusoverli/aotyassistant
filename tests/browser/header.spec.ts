@@ -13,6 +13,8 @@ test('tabbing out of the menu exposes the focused join field and Escape works ou
   await page.keyboard.press('Tab');
   await expect(navigation.getByRole('button', { name: 'Full screen' })).toBeFocused();
   await page.keyboard.press('Tab');
+  await expect(page.locator('.circle-panel > summary')).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(page.getByLabel('What should we call you?')).toBeFocused();
   await expect(navigation).toBeHidden(); await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await openNavigation(page);
@@ -74,13 +76,13 @@ test('mobile header supports keyboard menus, stable focus across live updates, o
   await page.keyboard.press('Tab'); const settings = navigation.getByRole('link', { name: 'Settings', exact: true }); await expect(settings).toBeFocused();
   await page.evaluate(() => { (window as any).headerRef = document.querySelector('header'); (window as any).settingsLinkRef = document.querySelector('header a[href="/host/settings"]'); });
   await post('/api/participant/join', { nickname: 'Live listener' });
-  await expect(page.locator('.host-people .person-row')).toHaveCount(1);
+  await expect(page.locator('.rotation-seat')).toHaveCount(1);
   await expect(settings).toBeFocused(); await expect(menu).toHaveAttribute('aria-expanded', 'true');
   expect(await page.evaluate(() => (window as any).headerRef === document.querySelector('header') && (window as any).settingsLinkRef === document.querySelector('header a[href="/host/settings"]'))).toBe(true);
   await page.keyboard.press('Escape'); await expect(navigation).toBeHidden(); await expect(menu).toBeFocused();
   await openNavigation(page); const room = navigation.getByRole('link', { name: 'Room display', exact: true }); await room.focus();
   const updated = await (await page.request.get('/api/host/state')).json(); await post('/api/host/remove', { id: updated.current.id, revision: updated.revision });
-  await expect(page.locator('.host-people .person-row')).toHaveCount(0);
+  await expect(page.locator('.rotation-seat')).toHaveCount(0);
   await expect(room).toBeFocused();
   await page.keyboard.press('Escape'); await expect(menu).toBeFocused();
   await menu.click(); await page.mouse.click(2, 730); await expect(navigation).toBeHidden();

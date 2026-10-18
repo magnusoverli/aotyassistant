@@ -3,7 +3,8 @@ import type { CatalogueTrack, CatalogueArtist, CatalogueAlbum, View } from '../s
 import { catalogueSearchNotice } from '../src/catalogue-messages';
 import { mountSettings } from './settings';
 import { el, label, link } from './dom';
-import { avatar, vinyl, rotation } from './visuals';
+import { avatar, vinyl } from './visuals';
+import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
 import { pageForPath } from './navigation';
 import { artwork, progressBar, updateProgress, volumeControl, updateVolume } from './media';
@@ -73,9 +74,6 @@ let qrImage = '';
 let nicknameDraft = '';
 let joinError = '';
 let accessEnded = false;
-let circleExpanded = false;
-let managingPeople = false;
-let hostFeedback = '';
 let publicRoom: PublicRoom | undefined;
 let settingsMode: View['mode'] | undefined;
 let settingsMounted = false;
@@ -109,9 +107,29 @@ const music = new PreparationPanel(library, { getView: () => view, starting: () 
   },
 });
 const appHeader = new AppHeader(page, message => { error = message; render(); });
+const listeningOrder = new ListeningOrder(page === 'host' ? {
+  disabled: () => busy || !realtime || !view?.connected,
+  move: (id, shift) => { void run(async () => {
+    if (!view) return;
+    const ids = (view.rotation ?? []).map(person => person.id); const index = ids.indexOf(id);
+    if (index < 0 || index + shift < 0 || index + shift >= ids.length) return;
+    const name = view.rotation![index]!.nickname; const revision = view.revision;
+    [ids[index], ids[index + shift]] = [ids[index + shift]!, ids[index]!];
+    await mutate('/api/host/reorder', { ids, revision }); listeningOrder.message(`Moved ${name} ${shift < 0 ? 'up' : 'down'}.`);
+  }); },
+  remove: id => { void run(async () => {
+    const person = view?.rotation?.find(person => person.id === id); if (!view || !person) return;
+    if (id === view.current?.id && !confirm(`Remove ${person.nickname} from the room? This ends their turn and stops any app-owned song.`)) return;
+    await mutate('/api/host/remove', { id, revision: view.revision }); listeningOrder.message(`Removed ${person.nickname}. Their saved music is kept.`);
+  }); },
+} : undefined);
+appHeader.element.append(listeningOrder.element);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(appHeader.element, pageContent);
-const updateHeader = () => appHeader.update({ view, realtime, mode: page === 'settings' ? settingsMode : undefined });
+const updateHeader = () => {
+  appHeader.update({ view, realtime, mode: page === 'settings' ? settingsMode : undefined });
+  listeningOrder.update(view, realtime && navigator.onLine);
+};
 const participantAccess = new ParticipantAccess(
   () => api<View>('/api/participant/state'), () => navigator.onLine,
   next => {
@@ -254,6 +272,7 @@ function accept(next: View) {
   const telemetryOnly = view && JSON.stringify({ ...view, progress: undefined, volume: [view.volume?.available, view.volume?.revision] }) === JSON.stringify({ ...next, progress: undefined, volume: [next.volume?.available, next.volume?.revision] });
   const playerOnly = page === 'participant' && view?.me && participantLayoutKey(view) === participantLayoutKey(next);
   view = next;
+  updateHeader();
   if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
   player.observe(next);
   if (page !== 'display' && telemetryOnly && root.querySelector('main')) {
@@ -317,7 +336,6 @@ function qrCard() {
 }
 function renderDisplay() {
   if (!view) {
-    publicRoom?.destroy();
     publicRoom = undefined;
     const message = notice(error, 'error'); message.hidden = !error;
     pageContent.replaceChildren(message, closedRoom()); return;
@@ -345,7 +363,7 @@ function host() {
   const aside = slot(el('aside', undefined, 'host-invitations'), 'secondary'); aside.id = 'room-invitation'; aside.append(qrCard());
   aside.setAttribute('aria-label', 'Room invitation'); grid.append(workspace, aside); main.append(grid);
   if (!view) return main;
-  const active = view.active ?? []; const turnId = view.turnId; const revision = view.revision;
+  const active = view.active ?? []; const turnId = view.turnId;
   if (!active.length) {
     main.classList.add('is-empty'); workspace.append(el('p', 'Share the room. The first person to join gets the first turn.', 'muted'));
     if (!view.playbackAvailable || view.mode === 'demo') workspace.append(link('Set up music and speaker', '/host/settings'));
@@ -370,35 +388,6 @@ function host() {
     return mutate('/api/host/advance', { turnId });
   }); advance.disabled ||= !view.current; controls.append(advance);
   live.append(controls); workspace.prepend(live);
-  const people = panel('host-people'); people.id = 'rotation'; people.tabIndex = -1;
-  const orderHeading = sectionHeading('Listening order', 'host-order-title');
-  const manage = el('button', managingPeople ? 'Done managing' : 'Manage people', 'secondary'); manage.type = 'button'; manage.id = 'manage-people'; manage.onclick = () => { managingPeople = !managingPeople; hostFeedback = ''; render(); };
-  orderHeading.append(el('span', `${active.length} ${active.length === 1 ? 'listener' : 'listeners'}`, 'count-tag'), manage); people.append(orderHeading);
-  if (hostFeedback) { const feedback = el('p', hostFeedback, 'muted small'); feedback.setAttribute('role', 'status'); people.append(feedback); }
-  active.forEach((person, index) => {
-    const row = el('div', undefined, `person-row${person.id === view?.current?.id ? ' is-current' : ''}`);
-    row.dataset.personId = person.id;
-    const identity = el('div', undefined, 'person-identity'); const name = el('div'); name.append(el('strong', person.nickname),
-      el('span', person.id === view?.current?.id ? 'Current turn' : person.id === view?.next?.id ? 'Up next' : `Seat ${index + 1}`, 'muted small'));
-    identity.append(el('span', String(index + 1).padStart(2, '0'), 'number'), avatar(person), name); row.append(identity);
-    const controls = el('div', undefined, 'row-actions');
-    for (const [shift, text] of [[-1, '↑'], [1, '↓']] as const) {
-      if (index + shift < 0 || index + shift >= active.length) continue;
-      const b = button(text, async () => {
-        const ids = active.map(p => p.id);
-        [ids[index], ids[index + shift]] = [ids[index + shift]!, ids[index]!];
-        await mutate('/api/host/reorder', { ids, revision }); hostFeedback = `Moved ${person.nickname} ${shift === -1 ? 'up' : 'down'}.`;
-      }, true);
-      b.dataset.focusKey = `move-${person.id}-${shift}`;
-      b.setAttribute('aria-label', `Move ${person.nickname} ${shift === -1 ? 'up' : 'down'}`); controls.append(b);
-    }
-    controls.append(button('Remove', async () => {
-      if (person.id === view?.current?.id && !confirm(`Remove ${person.nickname} from the room? This ends their turn and stops any app-owned song.`)) return;
-      await mutate('/api/host/remove', { id: person.id, revision }); hostFeedback = `Removed ${person.nickname}. Their saved music is kept.`;
-    }, true));
-    if (managingPeople) row.append(controls); people.append(row);
-  });
-  workspace.append(people);
   return main;
 }
 function renderParticipantPlayer() {
@@ -454,9 +443,7 @@ function participant() {
   const hero = el('section', undefined, `participant-hero is-${state}`); hero.setAttribute('aria-label', 'Your turn status');
   const title = el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'); title.title = title.textContent!;
   hero.append(title, el('p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance'));
-  const circle = rotation(view, false, circleExpanded);
-  circle.addEventListener('toggle', () => { if (circle.isConnected && circle instanceof HTMLDetailsElement) circleExpanded = circle.open; });
-  main.append(hero, circle);
+  main.append(hero);
   const search = el('section', undefined, 'catalogue-panel');
   search.setAttribute('aria-labelledby', 'music-find-title');
   const searchHeading = sectionHeading('Find music', 'music-find-title'); searchHeading.append(el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
@@ -636,7 +623,6 @@ function render() {
   if (page === 'display') { renderDisplay(); return; }
   const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const selection = focused instanceof HTMLInputElement && ['text', 'search', 'password'].includes(focused.type) ? [focused.selectionStart, focused.selectionEnd] as const : null;
-  const ringScroll = root.querySelector('.rotation-list')?.scrollLeft ?? 0;
   const scrollRegions = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(node => [node.dataset.scrollKey, node.scrollTop] as const);
   const scrollY = window.scrollY;
   const content = document.createDocumentFragment();
@@ -654,7 +640,6 @@ function render() {
     main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.append(main);
   }
   pageContent.replaceChildren(content);
-  const ring = root.querySelector('.rotation-list'); if (ring) ring.scrollLeft = ringScroll;
   for (const [key, top] of scrollRegions) { const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(node => node.dataset.scrollKey === key); if (region) region.scrollTop = top; }
   const replacement = focused?.id ? document.getElementById(focused.id)
     : focused?.dataset.focusKey ? [...root.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey) : null;
@@ -692,9 +677,10 @@ void init();
 window.addEventListener('hashchange', () => {
   if ((page === 'display' && location.hash.startsWith('#access=')) || (page === 'join' && location.hash.startsWith('#invite='))) history.replaceState(null, '', location.pathname);
 });
-window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); library.stop(); music.uploads.stop(); });
+window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.uploads.stop(); });
 window.addEventListener('pageshow', event => { if (event.persisted) void init(); });
 window.addEventListener('offline', () => {
+  listeningOrder.stop(); listeningOrder.update(view, false);
   if (page === 'settings' || page === 'home') return;
   realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); stream = undefined; render();
   if (page === 'participant' || page === 'join') participantAccess.offline();
@@ -702,6 +688,7 @@ window.addEventListener('offline', () => {
   music.uploads.stop();
 });
 window.addEventListener('online', () => {
+  updateHeader();
   if (page === 'participant' && accessEnded) void library.start();
   if (page !== 'settings' && page !== 'home' && !accessEnded) void init();
 });

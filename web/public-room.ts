@@ -3,7 +3,6 @@ import { el, link } from './dom';
 import { vinyl, updateVinylLabel } from './visuals';
 import { artwork, progressBar, updateProgress } from './media';
 import { publicRecordLabels } from './record-labels';
-import { PublicTurnOrder } from './public-turn-order';
 import { pageFrame } from './page-layout';
 
 export function publicPlaybackState(view: View, online: boolean) {
@@ -15,7 +14,6 @@ export function publicPlaybackState(view: View, online: boolean) {
 export class PublicRoom {
   readonly element = pageFrame('display', 'display-page');
   private turn = el('p', undefined, 'room-turn');
-  private order = new PublicTurnOrder();
   private invitation = el('aside', undefined, 'room-invitation');
   private rest = el('section', undefined, 'room-rest');
   private restTitle = el('h1');
@@ -47,7 +45,7 @@ export class PublicRoom {
     this.stage.append(visual, info);
     listening.append(this.turn, this.rest, this.stage);
     this.invitation.setAttribute('aria-label', 'Join room');
-    grid.append(listening, this.invitation); this.element.append(grid, this.order.element);
+    grid.append(listening, this.invitation); this.element.append(grid);
   }
 
   update(view: View, online: boolean, qrImage: string) {
@@ -82,7 +80,6 @@ export class PublicRoom {
     }
     updateProgress(this.progress, active ? view.progress : undefined);
 
-    this.order.update(view, state);
     const invitationKey = JSON.stringify([view.joinUrl, qrImage]);
     if (this.invitationKey !== invitationKey) {
       this.invitationKey = invitationKey;
@@ -95,5 +92,4 @@ export class PublicRoom {
     }
   }
 
-  destroy() { this.order.destroy(); }
 }

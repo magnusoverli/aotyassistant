@@ -57,6 +57,7 @@ export type Room = z.infer<typeof roomSchema>;
 export type Role = { kind: 'host' } | { kind: 'display' } | { kind: 'participant'; credential: string };
 
 export type Person = { id: string; nickname: string };
+export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[] };
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number };

@@ -52,7 +52,10 @@ export class AppHeader {
     document.addEventListener('fullscreenchange', this.fullscreenChanged);
     document.addEventListener('aoty-address-changed', this.addressChanged);
     if (typeof ResizeObserver !== 'undefined') {
-      this.resize = new ResizeObserver(() => document.documentElement.style.setProperty('--app-header-height', `${this.element.getBoundingClientRect().height}px`));
+      this.resize = new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--app-header-height', `${this.element.getBoundingClientRect().height}px`);
+        document.documentElement.style.setProperty('--app-bar-height', `${inner.getBoundingClientRect().height}px`);
+      });
       this.resize.observe(this.element);
     }
     this.update({});

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.3.4] — 2026-10-18
+
+- Use one participant-style listening-order disclosure beneath the header on all application pages; move host management into it and replace the separate host and display lists.
+- Match the header's responsive gutters and menu layering, preserving expansion and horizontal scrolling during live updates.
+- Keep home, settings and unjoined entry pages up to date through a names-only feed, including Home Assistant ingress.
+
 ## [0.3.3] — 2026-10-18
 
 - Introduce shared workspace, compact and display layouts with common cards, forms, headings and notices.
