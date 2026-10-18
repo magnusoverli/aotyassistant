@@ -18,6 +18,7 @@ import { mountAuthorization } from './ma-authorization.js';
 import type { SetupManager } from './setup.js';
 import { durability } from './backup.js';
 import { errorPage, escapeHtml } from './error-page.js';
+import { maOperation } from './ma-operation.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -25,6 +26,15 @@ const cookie = (request: Request, name: string): string => {
   const value = rawCookie(request, name);
   return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : '';
 };
+
+/** Only read-only catalogue work follows browser cancellation; audio mutations finish independently. */
+async function catalogueRead(res: Response, action: string, work: () => Promise<unknown>) {
+  const controller = new AbortController();
+  const close = () => { if (!res.writableFinished) controller.abort(); };
+  res.once('close', close);
+  try { await maOperation(action, work, 12_000, controller.signal); }
+  finally { res.off('close', close); }
+}
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
   preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager) {
@@ -163,11 +173,11 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   app.post('/api/participant/search', async (req, res) => {
     const input = body(req, z.object({ turnId: turn, query: z.string().trim().min(1).max(200) }).strict());
-    res.json(await engine.search(participantCredential(req), input.turnId, input.query));
+    await catalogueRead(res, 'search', async () => res.json(await engine.search(participantCredential(req), input.turnId, input.query)));
   });
   app.post('/api/participant/browse', async (req, res) => {
     const input = body(req, z.object({ kind: z.enum(['artists', 'albums', 'tracks']), value: z.string().trim().min(1).max(1000) }).strict());
-    res.json(await engine.browse(participantCredential(req), input.kind, input.value));
+    await catalogueRead(res, 'browse', async () => res.json(await engine.browse(participantCredential(req), input.kind, input.value)));
   });
   app.post('/api/participant/play', async (req, res) => {
     const input = body(req, z.object({ turnId: turn, previousPlaybackId: turn.nullable(), trackId: z.string().min(1).max(1000) }).strict());

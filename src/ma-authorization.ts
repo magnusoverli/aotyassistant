@@ -69,7 +69,8 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       const code = maToken.parse(req.query.code);
       if ((await readInfo(tx.url)).server_id !== tx.serverId) throw new Error();
       // Authenticated inventory proves the session before a credential is created.
-      const report = await new MusicAssistantClient(tx.url, code).inspect();
+      const client = new MusicAssistantClient(tx.url, code);
+      const report = await client.inspect({ documentation: false }).finally(() => client.close());
       if (report.serverId !== tx.serverId) throw new Error();
       integrations.assertSetupRevision(tx.revision);
       transport = new MusicAssistantTransport(tx.url, code);
@@ -82,7 +83,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       // Never revoke the user's existing MA login token or previously saved connection.
       const id = minted && tokenClaims(minted).jti;
       if (id && transport) await transport.read('/api', 'auth/token/revoke', { token_id: id }).catch(() => {});
-    }
+    } finally { transport?.close(); }
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
     res.redirect(303, `${base}/host/settings?ma_auth=${result}`);
   });

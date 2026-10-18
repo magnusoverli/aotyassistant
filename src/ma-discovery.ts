@@ -10,7 +10,8 @@ export type ServerInfo = z.infer<typeof serverInfoSchema>;
 export type DiscoveredServer = { id: string; name: string; url: string; browserUrl: string | null; version: string;
   ready: boolean; playbackCompatible: boolean };
 export async function readServerInfo(url: string): Promise<ServerInfo> {
-  return serverInfoSchema.parse(await new MusicAssistantTransport(url, '', 3000).read('/info'));
+  const transport = new MusicAssistantTransport(url, '', 3000);
+  try { return serverInfoSchema.parse(await transport.read('/info')); } finally { transport.close(); }
 }
 
 /** Best-effort, bounded LAN discovery. No multicast/host-network permission is required. */

@@ -9,13 +9,14 @@ import { DemoAdapter } from '../src/playback.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
 import { AppError } from '../src/model.js';
+import { maOperation } from '../src/ma-operation.js';
 
-async function fixture() {
+async function fixture(pollMs = 15) {
   const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-live-');
   const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
   await manager.save(remote.origin, 'fixture-token', 0); await manager.check(manager.view().revision);
   await manager.selectDestination('sonos:room', manager.view().revision);
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 15);
+  const adapter = new ManagedPlayback(new DemoAdapter(), manager, pollMs);
   const engine = new Engine(new FileStore(dir), adapter, 'http://localhost:3000', manager); await engine.init();
   await adapter.refresh();
   const host = () => engine.view({ kind: 'host' });
@@ -23,13 +24,112 @@ async function fixture() {
   return { remote, manager, adapter, engine, host, alex, sam, dir,
     participant: (credential: string) => engine.view({ kind: 'participant', credential }),
     display: () => engine.view({ kind: 'display' }),
-    close() { adapter.close(); remote.close(); } };
+    close() { adapter.close(); manager.close(); remote.close(); } };
 }
 async function eventually(check: () => boolean) {
   for (let i = 0; i < 100; i++) { if (check()) return; await delay(10); }
   assert.ok(check(), 'Expected state transition did not occur.');
 }
 const writes = (f: Awaited<ReturnType<typeof fixture>>) => f.remote.calls.filter(c => /player_queues\/(play_media|stop|pause|resume|autoplay|repeat|shuffle)$/.test(c.command));
+
+test('configured Play uses six requests and still freshly validates schema, exact recording and queue contents', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  Object.assign(f.remote.queue, { autoplay_enabled: false, repeat_mode: 'off', shuffle_enabled: false });
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  f.remote.calls.length = 0; f.remote.requests.length = 0;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  assert.equal(f.remote.requests.length, 6);
+  assert.deepEqual(f.remote.calls.map(c => c.command), ['music/item_by_uri', 'player_queues/get_active_queue', 'player_queues/play_media', 'player_queues/get_active_queue', 'player_queues/items']);
+  assert.equal(f.remote.requests.filter(r => r.path === '/info').length, 1);
+  f.remote.info.schema_version = 66;
+  await assert.rejects(f.engine.play(f.alex, f.host().turnId!, f.participant(f.alex).ownPlayback!.id, track.id), /schema 65/);
+  assert.equal(writes(f).filter(c => c.command === 'player_queues/play_media').length, 1);
+});
+
+test('Play changes only incorrect queue policies and verifies them before starting audio', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  Object.assign(f.remote.queue, { autoplay_enabled: false, repeat_mode: 'all', shuffle_enabled: false });
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  f.remote.ignorePolicy('repeat');
+  await assert.rejects(f.engine.play(f.alex, f.host().turnId!, null, track.id), /could not be verified/);
+  assert.deepEqual(writes(f).map(c => c.command), ['player_queues/repeat']);
+  assert.equal(f.adapter.ownsPlayback, true, 'Uncertain policy writes retain the recovery guard.');
+  f.remote.ignorePolicy(undefined); await f.manager.recoverPlayback(f.manager.view().revision);
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  assert.deepEqual(writes(f).map(c => c.command), ['player_queues/repeat', 'player_queues/repeat', 'player_queues/play_media']);
+});
+
+for (const outcome of ['old-playing', 'old-failure', 'old-ended', 'old-unsafe'] as const) {
+  test(`a held background poll cannot delay Pause or apply ${outcome} after it`, async t => {
+    const f = await fixture(60_000); t.after(f.close);
+    const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+    await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+    const id = f.participant(f.alex).ownPlayback!.id; const turn = f.host().turnId!;
+    if (outcome === 'old-ended') f.remote.finish();
+    if (outcome === 'old-unsafe') f.remote.queue.autoplay_enabled = true;
+    const gate = f.remote.holdNextQueueRead(); t.after(() => gate.release());
+    const polling = (f.adapter as unknown as { poll(): Promise<void> }).poll(); await gate.entered;
+    Object.assign(f.remote.queue, { state: 'playing', ended: false, autoplay_enabled: false });
+    // A real deadline makes the old blocking implementation fail instead of hanging.
+    await maOperation('test-pause', () => f.engine.control(f.alex, turn, id, 'pause'), 1000);
+    assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused');
+    gate.release(outcome === 'old-failure'); await polling;
+    assert.equal(f.engine.ready, true); assert.equal(f.host().turnId, turn);
+    assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused');
+    assert.equal(writes(f).filter(c => c.command === 'player_queues/stop').length, 0);
+  });
+}
+
+test('an elapsed confirmation budget retains uncertain playback and never retries the mutation', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const id = f.participant(f.alex).ownPlayback!.id;
+  f.remote.ignoreControl('pause');
+  await assert.rejects(maOperation('test-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 150), /uncertain/);
+  assert.equal(f.engine.ready, false); assert.equal(f.adapter.ownsPlayback, true);
+  assert.equal(writes(f).filter(c => c.command === 'player_queues/pause').length, 1);
+  assert.ok(f.remote.calls.filter(c => c.command === 'player_queues/get_active_queue').length < 10);
+});
+
+test('an expired queued Play is rejected before resolving or writing to Music Assistant', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  let release!: () => void; let enter!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
+  const entered = new Promise<void>(resolve => { enter = resolve; });
+  const blocked = (f.engine as unknown as { serial(work: () => Promise<void>): Promise<void> }).serial(async () => { enter(); await gate; });
+  await entered; f.remote.calls.length = 0;
+  const rejected = assert.rejects(maOperation('queued-play', () => f.engine.play(f.alex, f.host().turnId!, null, track.id), 30), /timed out/);
+  await delay(50); release(); await blocked; await rejected;
+  assert.equal(f.remote.calls.some(c => c.command === 'music/item_by_uri'), false);
+  assert.equal(writes(f).length, 0); assert.equal(f.adapter.ownsPlayback, false);
+});
+
+test('authenticated queue events reconcile natural completion without waiting for the polling interval', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  await eventually(() => f.remote.eventClients === 1);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  f.remote.finish();
+  await eventually(() => f.host().current?.nickname === 'Sam');
+  assert.ok(f.remote.websocketCommands.every(command => command === 'auth'));
+  assert.equal(writes(f).filter(c => c.command === 'player_queues/play_media').length, 1);
+});
+
+test('queue events wake confirmation early but only an HTTP ownership read confirms Pause', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  await eventually(() => f.remote.eventClients === 1);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const id = f.participant(f.alex).ownPlayback!.id;
+  f.remote.ignoreControl('pause');
+  const paused = maOperation('event-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 220);
+  await eventually(() => (f.adapter as unknown as { eventWaiters: Set<unknown> }).eventWaiters.size > 0);
+  f.remote.queue.state = 'paused'; f.remote.notify(); await paused;
+  assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused');
+  assert.equal(writes(f).filter(c => c.command === 'player_queues/pause').length, 1);
+});
 
 test('playback follows configured connection/destination automatically without setup or volume writes', async t => {
   const remote = await startMusicAssistantFixture(); t.after(remote.close);

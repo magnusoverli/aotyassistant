@@ -8,15 +8,18 @@ export function catalogueIdentity(view: View | undefined) {
 
 export class CatalogueController {
   private epoch = 0;
+  private pending?: AbortController;
   constructor(private getView: () => View | undefined, private request = requestJson) {}
 
-  cancel() { this.epoch++; }
+  cancel() { this.epoch++; this.pending?.abort(); this.pending = undefined; }
 
   private async load<T>(path: string, data: unknown): Promise<T | undefined> {
+    this.cancel(); const pending = new AbortController(); this.pending = pending;
     const epoch = this.epoch; const identity = catalogueIdentity(this.getView());
     const current = () => epoch === this.epoch && identity === catalogueIdentity(this.getView());
-    try { const result = await this.request<T>(path, data); return current() ? result : undefined; }
+    try { const result = await this.request<T>(path, data, 15_000, pending.signal); return current() ? result : undefined; }
     catch (error) { if (current()) throw error; return undefined; }
+    finally { if (this.pending === pending) this.pending = undefined; }
   }
 
   search(query: string) {

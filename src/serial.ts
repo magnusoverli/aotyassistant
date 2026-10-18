@@ -1,9 +1,13 @@
+import { performance } from 'node:perf_hooks';
+import { maTiming } from './ma-operation.js';
+
 /** FIFO work lanes. A rejected operation never poisons later work; nothing is retried. */
 export class SerialQueue {
   private tail: Promise<unknown> = Promise.resolve();
 
-  run<T>(work: () => Promise<T>): Promise<T> {
-    const result = this.tail.then(work);
+  run<T>(work: () => Promise<T>, lane = 'serial'): Promise<T> {
+    const queued = performance.now();
+    const result = this.tail.then(() => { maTiming(`${lane}-wait`, queued); return work(); });
     this.tail = result.catch(() => {});
     return result;
   }

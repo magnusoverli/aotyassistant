@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.3.7] — 2026-10-18
+
+- Reduce Music Assistant Play to six HTTP requests when queue settings are already correct; reuse bounded connections with separate control, catalogue and artwork capacity.
+- Keep background queue reads from blocking controls, discard stale observations, and use authenticated Music Assistant events for prompt state reconciliation and playback confirmation.
+- Bound playback/confirmation work by elapsed time, allow longer MA Play/Resume handlers, and add opt-in timing-only diagnostics.
+- Speed up settings discovery and multi-source browsing; cancel superseded read-only catalogue requests.
+
 ## [0.3.6] — 2026-10-18
 
 - Remove the redundant Invite people shortcut from the host page heading.

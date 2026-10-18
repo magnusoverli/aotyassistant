@@ -4,6 +4,7 @@ import { AppError, catalogueSearchNotice, type CatalogueTrack, type CatalogueArt
 import { presentCatalogueItems } from './catalogue-grouping.js';
 import type { SavedSelection } from './preparations.js';
 import { MusicAssistantTransport, type ArtworkData } from './music-assistant-transport.js';
+import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData } from './music-assistant-transport.js';
 
 export type Destination = { id: string; name: string; available: boolean };
@@ -12,7 +13,8 @@ export type ConnectionReport = {
   docsAvailable: boolean; players: Destination[]; serverId?: string;
 };
 export interface MusicAssistantReader {
-  inspect(): Promise<ConnectionReport>;
+  inspect(options?: { documentation?: boolean }): Promise<ConnectionReport>;
+  close?(): void;
   activeQueue(playerId: string): Promise<string>;
   search(query: string): Promise<CatalogueTrack[]>;
 }
@@ -62,13 +64,19 @@ const volumePlayerSchema = z.object({ player_id: z.string(), available: z.boolea
 
 /** Music Assistant domain mapping. Network policy is owned by the transport. */
 export class MusicAssistantClient implements MusicAssistantReader {
+  private events: MusicAssistantEvents;
   private references = new Map<string, MediaRef>();
   private groups = new Map<string, BrowseGroup>();
   private groupedReferences = 0;
   private imageCache = new Map<string, { data: ArtworkData; expires: number }>();
   private imageRequests = new Map<string, Promise<ArtworkData>>();
   constructor(origin: string, private token: string, timeoutMs = 8000,
-    private transport: Pick<MusicAssistantTransport, 'read'> = new MusicAssistantTransport(origin, token, timeoutMs)) {}
+    private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs)) {
+    this.events = new MusicAssistantEvents(origin, token);
+  }
+
+  close() { this.events.close(); this.transport.close?.(); }
+  subscribePlayback(listener: (event: PlaybackEvent) => void) { return this.events.subscribe(listener); }
   private read(path: Parameters<MusicAssistantTransport['read']>[0], command?: Command, args = {}, binary = false) {
     return this.transport.read(path, command, args, binary);
   }
@@ -187,13 +195,19 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const sources = this.browseSources(id, kind); const selected = sources.slice(0, maxBrowseSources);
     const items: T[] = []; const failures: string[] = []; let succeeded = 0;
     // At most two upstream requests at once, eight total; no retries or recursive matching.
-    for (let i = 0; i < selected.length; i += 2) {
-      const results = await Promise.allSettled(selected.slice(i, i + 2).map(load));
-      for (let j = 0; j < results.length; j++) {
-        const result = results[j]!;
-        if (result.status === 'fulfilled') { succeeded++; items.push(...result.value); }
-        else failures.push(selected[i + j]!.sourceLabel);
+    const results: PromiseSettledResult<T[]>[] = []; let next = 0;
+    await Promise.all([0, 1].map(async () => {
+      while (next < selected.length) {
+        const index = next++;
+        try { results[index] = { status: 'fulfilled', value: await load(selected[index]!) }; }
+        catch (reason) { results[index] = { status: 'rejected', reason }; }
       }
+    }));
+    // Preserve source/album order even when a later provider finishes first.
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i]!;
+      if (result.status === 'fulfilled') { succeeded++; items.push(...result.value); }
+      else failures.push(selected[i]!.sourceLabel);
     }
     if (!succeeded) throw new AppError(502, `None of the selected music sources could be loaded. ${sources.length > selected.length
       ? `Only the first ${maxBrowseSources} sources were attempted; remaining sources were not checked. ` : ''}Try a source separately or check Music Assistant.`);
@@ -213,7 +227,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
       duration: media.duration && media.duration > 0 ? media.duration : null,
       available: media.is_playable && (ownMapping.length ? ownMapping : media.provider_mappings).some(p => p.available), artwork: ref.artwork, artistArtwork: ref.artistArtwork };
   }
-  async inspect(): Promise<ConnectionReport> {
+  async inspect(options: { documentation?: boolean } = {}): Promise<ConnectionReport> {
     try {
       const info = z.object({ server_id: z.string().min(1).max(200).optional(), server_version: z.string().max(80), schema_version: z.number().int(), min_supported_schema_version: z.number().int() }).parse(await this.read('/info'));
       if (info.schema_version < 28 || info.min_supported_schema_version > 46) throw new AppError(422, 'This Music Assistant API schema is not supported by the read-only setup check. Update the app or server.');
@@ -225,7 +239,9 @@ export class MusicAssistantClient implements MusicAssistantReader {
           return { id: p.player_id, name: p.name.replaceAll(this.token, '[redacted]'), available: p.available };
         });
       let docsAvailable = false;
-      try { await this.read('/api-docs'); docsAvailable = true; } catch { /* Read-only authentication still succeeded. */ }
+      if (options.documentation !== false) {
+        try { await this.read('/api-docs'); docsAvailable = true; } catch { /* Read-only authentication still succeeded. */ }
+      }
       return { checkedAt: Date.now(), serverVersion: info.server_version.replaceAll(this.token, '[redacted]'), schemaVersion: info.schema_version, docsAvailable, players,
         ...(info.server_id && !info.server_id.includes(this.token) ? { serverId: info.server_id } : {}) };
     } catch (error) {
@@ -336,10 +352,10 @@ export class MusicAssistantClient implements MusicAssistantReader {
     }
     return { uri, itemId: url, provider: 'builtin', version: result.data.version };
   }
-  async playbackCapability(playerId: string): Promise<void> {
+  async playbackCapability(playerId: string): Promise<QueueSnapshot> {
     const info = z.object({ schema_version: z.number() }).parse(await this.read('/info'));
     if (info.schema_version !== 65) throw new AppError(422, 'Live playback currently requires the verified Music Assistant API schema 65. Browsing remains available.');
-    await this.queue(playerId);
+    return this.queue(playerId);
   }
   async queue(playerId: string): Promise<QueueSnapshot> {
     const result = queueSchema.safeParse(await this.read('/api', 'player_queues/get_active_queue', { player_id: playerId }));
@@ -351,10 +367,12 @@ export class MusicAssistantClient implements MusicAssistantReader {
       .safeParse(await this.read('/api', 'player_queues/items', { queue_id: queueId, limit: 2, offset: 0 }));
     if (!result.success) throw new AppError(502, 'The destination queue could not be verified.'); return result.data;
   }
-  async configureSingle(queueId: string): Promise<void> {
-    await this.read('/api', 'player_queues/autoplay', { queue_id: queueId, autoplay_enabled: false });
-    await this.read('/api', 'player_queues/repeat', { queue_id: queueId, repeat_mode: 'off' });
-    await this.read('/api', 'player_queues/shuffle', { queue_id: queueId, shuffle_enabled: false });
+  async configureSingle(queue: QueueSnapshot): Promise<boolean> {
+    const queue_id = queue.queue_id;
+    if (queue.autoplay_enabled) await this.read('/api', 'player_queues/autoplay', { queue_id, autoplay_enabled: false });
+    if (queue.repeat_mode !== 'off') await this.read('/api', 'player_queues/repeat', { queue_id, repeat_mode: 'off' });
+    if (queue.shuffle_enabled) await this.read('/api', 'player_queues/shuffle', { queue_id, shuffle_enabled: false });
+    return queue.autoplay_enabled || queue.repeat_mode !== 'off' || queue.shuffle_enabled;
   }
   async playSingle(queueId: string, uri: string): Promise<void> {
     await this.read('/api', 'player_queues/play_media', { queue_id: queueId, media: [uri], option: 'replace', radio_mode: false, shuffle: false });
@@ -393,7 +411,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
 
 const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'albums', 'tracks', 'resolveTrack',
   'captureTrack', 'resolveRecording', 'resolveUploaded', 'playbackCapability', 'queue', 'queueItems', 'configureSingle',
-  'playSingle', 'controlQueue', 'volume', 'pausedDestination', 'setVolume'] as const satisfies readonly (keyof MusicAssistantClient)[];
+  'playSingle', 'controlQueue', 'volume', 'pausedDestination', 'setVolume', 'subscribePlayback'] as const satisfies readonly (keyof MusicAssistantClient)[];
 
 /** Structural port: integrations depend on capabilities, not one concrete client's prototype. */
 export type MusicAssistantApi = Pick<MusicAssistantClient, typeof apiMethods[number]>;

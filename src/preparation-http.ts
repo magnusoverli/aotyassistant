@@ -9,6 +9,7 @@ import { PreparationManager, preparationOperationSchema } from './preparations.j
 import { UploadAssets, uploadTextSchema } from './uploads.js';
 import { body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
+import { maOperation } from './ma-operation.js';
 
 const prefix = '/api/participant/preparations';
 const uuid = z.string().uuid();
@@ -125,10 +126,10 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     const input = body(req, z.object({ entryId: uuid, revision: z.number().int().nonnegative(), turnId: uuid, previousPlaybackId: uuid.nullable() }).strict());
     const role = { kind: 'participant' as const, credential: member(req) }; const view = engine.view(role);
     if (!view.myTurn || view.turnId !== input.turnId) throw new AppError(403, 'Only the current participant can play their next track.');
-    const result = await manager.playHead(credential(req), input.entryId, input.revision, async selection => {
+    const result = await maOperation('prepared-play', () => manager.playHead(credential(req), input.entryId, input.revision, async selection => {
       const playbackId = await engine.playPrepared(member(req), input.turnId, input.previousPlaybackId, selection, input.entryId);
       return { playbackId, value: engine.view(role) };
-    });
+    }));
     res.json({ view: result.value, preparation: result.preparation, warning: result.warning });
   });
   app.get(`${prefix}/artwork/:entryId/:kind`, async (req, res) => {

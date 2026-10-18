@@ -18,7 +18,7 @@ try {
   const integrations = new IntegrationManager(new IntegrationFileStore(config.dataDir));
   await integrations.init();
   const adapter = new ManagedPlayback(new DemoAdapter(config.demoSeconds), integrations);
-  cleanup = () => adapter.close();
+  cleanup = () => { adapter.close(); integrations.close(); };
   const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl, integrations);
   await engine.init();
   const setup = new SetupManager(config, integrations, origin => engine.setGuestOrigin(origin),
@@ -26,7 +26,7 @@ try {
   const { app, close } = createApp(engine, config, undefined, integrations, undefined, undefined, setup);
   let closeBackup = () => {};
   const servers: ReturnType<typeof createServer>[] = [];
-  cleanup = () => { setup.close(); closeBackup(); adapter.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
+  cleanup = () => { setup.close(); closeBackup(); adapter.close(); integrations.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
   const server = createServer(app); server.listen(config.port, config.listenHost);
   servers.push(server);
   await once(server, 'listening'); // Also rejects asynchronous bind/DNS failures.

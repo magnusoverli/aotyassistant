@@ -21,6 +21,31 @@ const album = (provider: string, name = 'Black album') => ({ ...media(provider, 
 const track = (provider: string) => ({ ...media(provider, 'track', 'Enter Sandman', [['musicbrainz_recordingid', mbRecording], ['isrc', 'USABC9100001']]),
   artists: [{ name: 'Metallica' }], album: { name: 'Black album', version: '', external_ids: [['musicbrainz_albumid', mbRelease]] as [string, string][] }, duration: 331, track_number: 1, disc_number: 1 });
 
+test('group browsing starts the next provider while the first is still pending, retaining source order', async t => {
+  let release!: () => void; let thirdStarted!: () => void;
+  const slow = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
+  const third = new Promise<void>(resolve => { thirdStarted = resolve; });
+  const providers = ['alpha', 'beta', 'gamma']; let pending = 0; let maximum = 0;
+  const client = new MusicAssistantClient('http://localhost:8095', 'SECRET', 8000, { async read(_path, command, args = {}) {
+    if (command === 'music/search') return { artists: providers.map(artist) };
+    const provider = (args as { provider_instance_id_or_domain: string }).provider_instance_id_or_domain;
+    pending++; maximum = Math.max(maximum, pending);
+    try {
+      if (provider === 'alpha') await slow;
+      if (provider === 'gamma') thirdStarted();
+      return [{ ...album(provider, `${provider} release`), external_ids: [] }];
+    } finally { pending--; }
+  } });
+  const group = (await client.artists('query')).items[0]!;
+  const loading = client.albums(group.id);
+  const timeout = setTimeout(() => { release(); }, 1000); t.after(() => clearTimeout(timeout));
+  await third;
+  assert.equal(pending, 1, 'The first provider remains pending when the third starts.');
+  release(); const page = await loading;
+  assert.equal(maximum, 2);
+  assert.deepEqual(page.items.map(item => item.name), providers.map(provider => `${provider} release`));
+});
+
 function fixture() {
   const calls: { command?: string; args: Record<string, unknown> }[] = [];
   let failed = new Set<string>(); let empty = false; let sources = ['spotify', 'tidal'];

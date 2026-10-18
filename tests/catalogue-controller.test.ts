@@ -7,8 +7,8 @@ import type { View } from '../src/model.js';
 function fixture() {
   let view: View = { mode: 'music-assistant', connected: true, roomId: 'room', turnId: 'turn', revision: 1,
     current: null, next: null, me: { id: 'member', nickname: 'Listener' }, catalogue: { source: 'music-assistant', revision: 'catalogue-a', playbackAvailable: true } };
-  const calls: { resolve(value: unknown): void; reject(error: Error): void }[] = [];
-  const request: typeof requestJson = <T>() => new Promise<T>((resolve, reject) => calls.push({ resolve: value => resolve(value as T), reject }));
+  const calls: { resolve(value: unknown): void; reject(error: Error): void; signal?: AbortSignal }[] = [];
+  const request: typeof requestJson = <T>(_path: string, _data?: unknown, _timeout?: number, signal?: AbortSignal) => new Promise<T>((resolve, reject) => calls.push({ resolve: value => resolve(value as T), reject, signal }));
   const controller = new CatalogueController(() => view, request);
   return { controller, calls, get view() { return view; }, set view(value: View) { view = value; } };
 }
@@ -31,5 +31,13 @@ test('turn and speaker changes retain browsing, while lifecycle cancellation dis
   const albums = { albums: [], playbackAvailable: true }; f.calls[0]!.resolve(albums);
   assert.deepEqual(await pending, albums);
   const cancelled = f.controller.search('query'); f.controller.cancel(); f.calls[1]!.resolve({ tracks: [] });
+  assert.equal(f.calls[1]!.signal?.aborted, true);
   assert.equal(await cancelled, undefined);
+});
+
+test('starting a new browse aborts the old request and ignores its late failure', async () => {
+  const f = fixture(); const old = f.controller.search('old'); const current = f.controller.browse('artists', 'new');
+  assert.equal(f.calls[0]!.signal?.aborted, true); assert.equal(f.calls[1]!.signal?.aborted, false);
+  f.calls[0]!.reject(new Error('Aborted')); f.calls[1]!.resolve({ artists: [] });
+  assert.equal(await old, undefined); assert.deepEqual(await current, { artists: [] });
 });

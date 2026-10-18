@@ -9,6 +9,7 @@ import type { SavedSelection } from './preparations.js';
 import type { UploadAssets, UploadSelection } from './uploads.js';
 import { applicationOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
 import { SerialQueue } from './serial.js';
+import { maOperation } from './ma-operation.js';
 
 export const integrationSchema = z.object({
   schema: z.literal(1), revision: z.number().int().nonnegative(),
@@ -147,6 +148,7 @@ export class IntegrationManager implements CatalogueProvider {
     } finally { this.checking = false; }
   }
   attachPlayback(playback: PlaybackController): void { this.playback = playback; }
+  close() { this.cachedReader?.close?.(); this.cachedReader = undefined; }
   private getReader(): MusicAssistantReader {
     const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(409, 'The catalogue connection changed. Search again.');
@@ -182,11 +184,13 @@ export class IntegrationManager implements CatalogueProvider {
   }
   async artwork(reference: string, context: string) {
     const revision = this.catalogueRevision;
-    const data = reference.startsWith('upload:') && this.uploads
-      ? await this.uploads.artwork(this.unseal(reference.slice(7), 'upload-image', context))
-      : await this.getApi().artwork(this.unseal(reference, 'image', context));
-    if (revision !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');
-    return data;
+    try {
+      return reference.startsWith('upload:') && this.uploads
+        ? await this.uploads.artwork(this.unseal(reference.slice(7), 'upload-image', context))
+        : await this.getApi().artwork(this.unseal(reference, 'image', context));
+    } finally {
+      if (revision !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');
+    }
   }
   async search(query: string, context = ''): Promise<CatalogueTrack[]> {
     const ma = this.state.musicAssistant; const revision = this.catalogueRevision;
@@ -240,8 +244,11 @@ export class IntegrationManager implements CatalogueProvider {
     const saved = this.savedSource(selection); const epoch = this.catalogueRevision;
     const image = kind === 'artwork' ? saved.metadata.artworkId : saved.metadata.artistArtworkId;
     if (!image) throw new AppError(404, 'Artwork unavailable.');
-    const data = await this.getApi().artwork(image); this.savedSource(saved);
-    if (epoch !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.'); return data;
+    try { return await this.getApi().artwork(image); }
+    finally {
+      this.savedSource(saved);
+      if (epoch !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');
+    }
   }
   async resolveUpload(selection: UploadSelection, context: string, trackId: string) {
     if (!this.uploads || !this.playbackAvailable) throw new AppError(409, 'Configure Music Assistant and a speaker before playing an uploaded file.');
@@ -288,10 +295,10 @@ export class IntegrationManager implements CatalogueProvider {
     });
   }
   async recoverPlayback(revision: number): Promise<IntegrationView> {
-    return this.withPlayback(async () => { this.expected(revision); await this.playback?.recover(); return this.view(); });
+    return maOperation('recover', () => this.withPlayback(async () => { this.expected(revision); await this.playback?.recover(); return this.view(); }));
   }
   private serial<T>(work: () => Promise<T>): Promise<T> {
-    return this.queue.run(work);
+    return this.queue.run(work, 'integration');
   }
   private expected(revision: number) {
     if (revision !== this.state.revision) throw new AppError(409, 'Integration settings changed in another browser. Reload them before trying again.');
@@ -303,7 +310,7 @@ export class IntegrationManager implements CatalogueProvider {
     this.state = next; this.report = null; this.failure = '';
     this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Addresses or settings changed. Check file access again; no audio has been started.' };
     if (connectionChanged) {
-      this.cachedReader = undefined;
+      this.close();
       this.catalogueEpoch = randomBytes(16).toString('base64url');
       this.referenceKey = randomBytes(32);
     }
@@ -357,7 +364,9 @@ export class IntegrationManager implements CatalogueProvider {
     this.assertSetupRevision(revision); const previous = this.state.musicAssistant;
     if (!previous?.serverId || previous.serverId !== serverId || previous.url === url) return;
     url = musicAssistantUrl.parse(url);
-    const report = await this.reader(url, previous.accessToken).inspect();
+    const reader = this.reader(url, previous.accessToken);
+    let report: ConnectionReport;
+    try { report = await reader.inspect({ documentation: false }); } finally { reader.close?.(); }
     if (report.serverId !== serverId) throw new AppError(409, 'The discovered Music Assistant identity changed.');
     return this.serial(async () => {
       this.assertSetupRevision(revision);
@@ -372,7 +381,7 @@ export class IntegrationManager implements CatalogueProvider {
   async check(revision: number): Promise<IntegrationView> {
     this.expected(revision);
     if (this.inspection?.revision === revision) return this.inspection.pending;
-    const pending = this.inspectSettings(revision);
+    const pending = maOperation('settings-discovery', () => this.inspectSettings(revision));
     this.inspection = { revision, pending };
     try { return await pending; }
     finally { if (this.inspection?.pending === pending) this.inspection = undefined; }
@@ -382,7 +391,7 @@ export class IntegrationManager implements CatalogueProvider {
     if (!ma) throw new AppError(400, 'Save a Music Assistant connection first.');
     let report: ConnectionReport | null = null; let failure = '';
     try {
-      const reader = this.reader(ma.url, ma.accessToken); report = await reader.inspect();
+      const reader = this.getReader(); report = await reader.inspect({ documentation: false });
       if (ma.serverId && report.serverId !== ma.serverId) { report = null; throw new AppError(409, 'Music Assistant server identity changed. Disconnect explicitly before replacing the catalogue.'); }
       if (ma.destination) {
         if (!report.players.some(p => p.id === ma.destination!.id && p.available)) throw new AppError(422, 'The saved destination is unavailable. Check Music Assistant and select an available destination.');
@@ -407,7 +416,7 @@ export class IntegrationManager implements CatalogueProvider {
     if (!ma) throw new AppError(409, 'Refresh this page and select an available destination.');
     // Discovery must not delay Stop or other playback controls. Revalidate settings
     // and playback ownership only when committing the selected destination.
-    const reader = this.reader(ma.url, ma.accessToken); const report = await reader.inspect();
+    const reader = this.getReader(); const report = await reader.inspect({ documentation: false });
     const player = report.players.find(p => p.id === id && p.available);
     if (!player) throw new AppError(409, 'Refresh this page and select an available destination.');
     try { await reader.activeQueue(id); }

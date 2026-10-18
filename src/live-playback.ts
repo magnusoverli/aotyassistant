@@ -1,12 +1,12 @@
-import { setTimeout as delay } from 'node:timers/promises';
 import { AppError, type Track, type VolumeState } from './model.js';
 import { DemoAdapter, type PlaybackAdapter } from './playback.js';
 import { type IntegrationManager, type PlaybackController } from './integrations.js';
 import type { MusicAssistantApi, QueueSnapshot } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
+import { maBackground, maBudget, maOperation, maRemaining, maStage } from './ma-operation.js';
 
 type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?: () => void; suspend?: () => void; uploaded?: boolean };
-type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination'>;
+type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback'>;
 type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
   position?: { elapsed: number; duration: number; at: number } };
 
@@ -19,6 +19,15 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   private own?: Ownership;
   private pending?: Selection;
   private timer?: NodeJS.Timeout;
+  private commandGeneration = 0;
+  private polling = false;
+  private commanding = false;
+  private unsubscribeEvents?: () => void;
+  private eventRevision?: string;
+  private eventsConnected = false;
+  private eventGeneration = 0;
+  private eventPollPending = false;
+  private eventWaiters = new Set<() => void>();
   private demoId?: string;
   private demoSelections = new WeakMap<Track, string>();
   onComplete: (id: string) => void = () => {};
@@ -48,6 +57,38 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     own.position = { elapsed: queue.elapsed_time + correction, duration: own.track.duration, at: Date.now() };
   }
   private get available() { return !this.closed && this.integrations.playbackAvailable; }
+  private command<T>(action: string, work: (api: MusicAssistantApi, destination: string, revision: number) => Promise<T>): Promise<T> {
+    return maOperation(action, () => this.integrations.withPlayback(async (api, destination, revision) => {
+      maRemaining(Infinity);
+      this.commandGeneration++; this.commanding = true; clearTimeout(this.timer);
+      try { return await work(api, destination, revision); }
+      finally { this.commanding = false; if (this.own && !this.failed) this.schedule(); }
+    }));
+  }
+  private watchEvents(api: PlaybackApi, destination: string) {
+    const revision = this.integrations.configurationRevision;
+    if (this.eventRevision === revision) return;
+    this.unsubscribeEvents?.(); this.eventRevision = revision;
+    this.unsubscribeEvents = maBackground(() => api.subscribePlayback(event => {
+      if (this.closed || revision !== this.integrations.configurationRevision) return;
+      this.eventsConnected = event.connected;
+      if (event.objectId && event.objectId !== destination && event.objectId !== this.own?.queueId) return;
+      this.eventGeneration++; for (const wake of this.eventWaiters) wake();
+      if (this.commanding || this.failed) return;
+      if (this.own) {
+        if (this.polling) this.eventPollPending = true;
+        else this.schedule(50); // Coalesce bursts; hints never become authoritative snapshots.
+      } else if (event.connected) maBackground(() => { void this.refreshVolume(api, destination); });
+    }));
+  }
+  private waitForUpdate(generation: number): Promise<void> {
+    const timeout = maRemaining(250);
+    if (generation !== this.eventGeneration || this.closed) return Promise.resolve();
+    return new Promise(resolve => {
+      const wake = () => { clearTimeout(timer); this.eventWaiters.delete(wake); resolve(); };
+      const timer = setTimeout(wake, timeout); this.eventWaiters.add(wake);
+    });
+  }
   private async verifyCapability(api: PlaybackApi, destination: string) {
     const revision = this.integrations.configurationRevision;
     if (this.capabilityRevision === revision) return;
@@ -78,19 +119,21 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     if (!this.available || this.failed) return;
     try {
       const setup = await this.integrations.withPlayback(async (api, destination) => ({ api, destination, revision: this.integrations.configurationRevision }));
-      if (setup.revision === this.integrations.configurationRevision) await this.refreshVolume(setup.api, setup.destination);
+      if (setup.revision === this.integrations.configurationRevision && !this.closed) {
+        this.watchEvents(setup.api, setup.destination); await this.refreshVolume(setup.api, setup.destination);
+      }
     } catch { /* Missing/changed setup leaves volume unavailable; explicit Play still validates capability. */ }
   }
   private scheduleVolumeConfirmation(api: PlaybackApi, destination: string) {
     clearTimeout(this.volumeConfirmation);
-    this.volumeConfirmation = setTimeout(() => { void this.refreshVolume(api, destination); }, 300); this.volumeConfirmation.unref();
+    this.volumeConfirmation = setTimeout(() => { maBackground(() => { void this.refreshVolume(api, destination); }); }, 300); this.volumeConfirmation.unref();
   }
   async setVolume(level: number, playbackId?: string) {
     if (!this.integrations.configured) { await this.demo.setVolume(level); return; }
     if (!this.available || this.failed) throw new AppError(409, 'Choose a playback destination and recover connectivity before changing volume.');
     this.volumeEpoch++;
     const revision = this.integrations.configurationRevision;
-    await this.integrations.withPlayback(async (api, destination) => {
+    await this.command('volume', async (api, destination) => {
       if (!this.available || this.failed || revision !== this.integrations.configurationRevision) throw new AppError(409, 'The volume destination changed. Refresh before trying again.');
       await this.verifyCapability(api, destination);
       if (playbackId) {
@@ -128,13 +171,15 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   search(query: string) { return this.demo.search(query); }
   configurationChanged(): void {
+    this.commandGeneration++;
+    this.unsubscribeEvents?.(); this.unsubscribeEvents = undefined; this.eventRevision = undefined; this.eventsConnected = false;
     this.demoSelections = new WeakMap();
     this.pending?.release?.(); this.pending = undefined; this.failed = false; this.issue = ''; this.capabilityRevision = undefined;
     this.volumeEpoch++; this.volumeGeneration++; this.volumeTarget = undefined; clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
     this.volumeState = { available: false, level: null };
     if (this.available) {
-      void this.refresh();
-      this.volumeTimer = setInterval(() => { if (!this.own) void this.refresh(); }, 5000); this.volumeTimer.unref();
+      maBackground(() => { void this.refresh(); });
+      this.volumeTimer = setInterval(() => { maBackground(() => { if (!this.own) void this.refresh(); }); }, 5000); this.volumeTimer.unref();
     }
     this.onProgress();
   }
@@ -189,23 +234,28 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   /** Command acceptance is not a transport acknowledgement. Read back, never retry the write. */
   private async confirmTransport(own: Ownership, action: 'pause' | 'resume' | 'stop') {
-    for (let attempt = 0; attempt < 20; attempt++) {
-      if (this.closed) throw new Error('Playback controller closed.');
-      const queue = await own.api.queue(own.destination);
-      if (action === 'stop' && queue.queue_id === own.queueId && queue.state === 'idle' &&
-        (!queue.current_item || this.sameQueueItem(queue, own))) return queue;
-      if (!this.sameQueueItem(queue, own)) {
-        this.invalidate('Another source changed playback. Its audio was left untouched.', false);
-        throw new AppError(409, this.issue);
+    return maBudget(5000, async () => {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        maRemaining(Infinity);
+        if (this.closed) throw new Error('Playback controller closed.');
+        const generation = this.eventGeneration;
+        const queue = await own.api.queue(own.destination);
+        if (action === 'stop' && queue.queue_id === own.queueId && queue.state === 'idle' &&
+          (!queue.current_item || this.sameQueueItem(queue, own))) return queue;
+        if (!this.sameQueueItem(queue, own)) {
+          this.invalidate('Another source changed playback. Its audio was left untouched.', false);
+          throw new AppError(409, this.issue);
+        }
+        if (action !== 'stop' && (!this.safeQueue(queue) || queue.ended)) throw new Error('Unsafe queue state.');
+        if (action === 'pause' && await this.isParkedPause(queue, { ...own, status: 'paused' })) return queue;
+        if (action === 'resume' && queue.active && queue.state === 'playing') return queue;
+        if (attempt < 19) await this.waitForUpdate(generation);
       }
-      if (action !== 'stop' && (!this.safeQueue(queue) || queue.ended)) throw new Error('Unsafe queue state.');
-      if (action === 'pause' && await this.isParkedPause(queue, { ...own, status: 'paused' })) return queue;
-      if (action === 'resume' && queue.active && queue.state === 'playing') return queue;
-      if (attempt < 19) await delay(250);
-    }
-    throw new Error('Transport change was not confirmed.');
+      throw new Error('Transport change was not confirmed.');
+    });
   }
   private invalidate(message: string, fatal: boolean): void {
+    this.commandGeneration++;
     const id = this.own?.appId;
     this.issue = message; this.failed = fatal; clearTimeout(this.timer);
     if (fatal && this.own?.suspend) this.own.suspend(); else this.own?.release?.();
@@ -221,12 +271,12 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       });
       return;
     }
-    await this.integrations.withPlayback(async (api, destination, revision) => {
+    await this.command('play', async (api, destination, revision) => {
       const pending = this.pending; this.pending = undefined;
       if (!this.available || this.failed || !pending || pending.revision !== revision || pending.track.id !== track.id) { pending?.release?.(); throw new AppError(409, 'Playback setup changed. Select the recording again.'); }
       let initial: QueueSnapshot;
       try {
-        await api.playbackCapability(destination); initial = await api.queue(destination);
+        initial = await maStage('preflight', () => api.playbackCapability(destination));
         if (this.closed) throw new AppError(503, 'Playback is shutting down.');
       }
       catch (error) { pending.release?.(); throw error; }
@@ -234,25 +284,28 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       this.own?.release?.();
       this.own = { ...pending, api, destination, queueId: initial.queue_id, queueItemId: null, appId, status: 'playing', seenPlaying: false };
       try {
-        await api.configureSingle(initial.queue_id);
-        const configured = await api.queue(destination);
+        const changed = await maStage('queue-policy', () => api.configureSingle(initial));
+        const configured = changed ? await api.queue(destination) : initial;
         if (this.closed || configured.queue_id !== initial.queue_id || configured.autoplay_enabled || configured.repeat_mode !== 'off' || configured.shuffle_enabled) throw new Error();
-        await api.playSingle(initial.queue_id, pending.uri);
+        await maStage('play-command', () => api.playSingle(initial.queue_id, pending.uri));
         // Verify the exact queue item and observed PLAYING state, not just command acceptance.
-        let verified = false;
-        for (let attempt = 0; attempt < 20; attempt++) {
-          const q = await api.queue(destination);
-          if (this.closed || !this.own) throw new Error();
-          if (this.isOwned(q, this.own) && this.safeQueue(q) && q.state === 'playing' && !q.ended) {
-            const items = await api.queueItems(q.queue_id);
-            if (!this.closed && this.own && items.length === 1 && items[0]!.queue_item_id === q.current_item!.queue_item_id &&
-              this.sameRecording(items[0]!.media_item, pending)) {
-              this.own.queueItemId = q.current_item!.queue_item_id; this.own.seenPlaying = true; this.observe(this.own, q); verified = true; break;
+        await maStage('play-confirmation', () => maBudget(5000, async () => {
+          for (let attempt = 0; attempt < 20; attempt++) {
+            maRemaining(Infinity);
+            const generation = this.eventGeneration;
+            const q = await api.queue(destination);
+            if (this.closed || !this.own) throw new Error();
+            if (this.isOwned(q, this.own) && this.safeQueue(q) && q.state === 'playing' && !q.ended) {
+              const items = await api.queueItems(q.queue_id);
+              if (!this.closed && this.own && items.length === 1 && items[0]!.queue_item_id === q.current_item!.queue_item_id &&
+                this.sameRecording(items[0]!.media_item, pending)) {
+                this.own.queueItemId = q.current_item!.queue_item_id; this.own.seenPlaying = true; this.observe(this.own, q); return;
+              }
             }
+            await this.waitForUpdate(generation);
           }
-          await delay(250);
-        }
-        if (!verified) throw new Error();
+          throw new Error('Playback was not confirmed.');
+        }));
         this.issue = ''; this.schedule();
       } catch {
         // A timed-out command may already have started audio. Stop only an exact owned item.
@@ -269,7 +322,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       await this.demo.control(action); return;
     }
     if (!this.own) { if (action === 'stop') return; throw new AppError(409, 'There is no application-owned playback to control.'); }
-    await this.integrations.withPlayback(async () => {
+    await this.command(action, async () => {
       const own = this.own;
       if (!own) { if (action === 'stop') return; throw new AppError(409, 'There is no application-owned playback to control.'); }
       try {
@@ -301,23 +354,44 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       }
     });
   }
-  private schedule(): void {
+  private schedule(ms = this.eventsConnected && this.pollMs === 1500 ? 3000 : this.pollMs): void {
     clearTimeout(this.timer);
     if (this.closed) return;
-    this.timer = setTimeout(() => { void this.poll(); }, this.pollMs); this.timer.unref();
+    this.timer = setTimeout(() => { maBackground(() => { void this.poll(); }); }, ms); this.timer.unref();
   }
   private async poll(): Promise<void> {
+    if (this.polling || this.closed) return;
+    this.polling = true;
+    this.eventPollPending = false;
+    let generation = this.commandGeneration; let observed = this.own;
     try {
+      const snapshot = await this.integrations.withPlayback(async () => ({ own: this.own, generation: this.commandGeneration, revision: this.integrations.configurationRevision }));
+      generation = snapshot.generation; observed = snapshot.own;
+      const own = snapshot.own; if (!own || this.failed || this.closed) return;
+      const current = () => !this.closed && !this.failed && this.own === own && snapshot.generation === this.commandGeneration && snapshot.revision === this.integrations.configurationRevision;
+      let q: QueueSnapshot; let parked: boolean;
+      try {
+        q = await own.api.queue(own.destination);
+        if (!current()) return;
+        parked = await this.isParkedPause(q, own);
+      } catch {
+        // Both stale successes and failures are discarded after any intervening command.
+        await this.integrations.withPlayback(async () => { if (current()) this.invalidate('Playback connection was lost. Controls are disabled until host recovery.', true); });
+        return;
+      }
       await this.integrations.withPlayback(async () => {
-        const own = this.own; if (!own || this.failed || this.closed) return;
-        const q = await own.api.queue(own.destination);
-        if (this.closed) return;
-        if (await this.isParkedPause(q, own)) {
+        if (!current()) return;
+        if (parked) {
           // MA releases paused streams after ~30s. Retain the exact selection and frozen position, with no pause expiry and no auto-resume.
-          void this.refreshVolume(own.api, own.destination); this.onProgress(); return;
+          maBackground(() => { void this.refreshVolume(own.api, own.destination); }); this.onProgress(); return;
         }
         if (!this.isOwned(q, own)) { this.invalidate('Playback changed outside this app. Its audio was left untouched.', false); return; }
         if (!this.safeQueue(q)) {
+          // A background snapshot may be old. Revalidate immediately before a write.
+          q = await own.api.queue(own.destination);
+          if (!current()) return;
+          if (!this.isOwned(q, own)) { this.invalidate('Playback changed outside this app. Its audio was left untouched.', false); return; }
+          if (this.safeQueue(q)) return;
           await own.api.controlQueue(own.queueId, 'stop');
           this.invalidate('The single-track queue policy changed. Playback was stopped; host recovery is required.', true); return;
         }
@@ -327,13 +401,14 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         if (q.state === 'idle' || q.state === 'unknown') { this.invalidate('Playback stopped outside the app without a verified natural end. The turn was not advanced.', false); return; }
         if (q.state !== own.status) { own.status = q.state; this.onStatus(own.appId, own.status); }
         this.observe(own, q);
-        void this.refreshVolume(own.api, own.destination); // Optional volume reads cannot delay queue-ownership polling.
+        maBackground(() => { void this.refreshVolume(own.api, own.destination); });
         this.onProgress();
       });
-    } catch { this.invalidate('Playback connection was lost. Controls are disabled until host recovery.', true); }
-    if (this.own && !this.failed) this.schedule();
+    } catch { if (!this.closed && this.own && this.own === observed && generation === this.commandGeneration && !this.failed) this.invalidate('Playback connection was lost. Controls are disabled until host recovery.', true); }
+    finally { this.polling = false; if (this.own && !this.failed) { if (this.eventPollPending) this.schedule(50); else this.schedule(); } }
   }
   async recover(): Promise<void> {
+    this.commandGeneration++;
     const own = this.own;
     if (own) {
       const q = await own.api.queue(own.destination);
@@ -349,5 +424,5 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     }
     this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.failed = false; this.issue = ''; clearTimeout(this.timer);
   }
-  close(): void { this.closed = true; clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer); this.volumeEpoch++; this.volumeTarget = undefined; this.demo.close(); this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.demoId = undefined; }
+  close(): void { this.closed = true; this.unsubscribeEvents?.(); for (const wake of this.eventWaiters) wake(); clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer); this.volumeEpoch++; this.volumeTarget = undefined; this.demo.close(); this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.demoId = undefined; }
 }

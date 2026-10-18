@@ -5,6 +5,7 @@ import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
 import { SerialQueue } from './serial.js';
+import { maOperation, maRemaining, maStage } from './ma-operation.js';
 
 const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -63,10 +64,11 @@ export class Engine extends EventEmitter {
     await this.store.save(this.state);
   }
   private serial<T>(work: () => Promise<T>): Promise<T> {
-    return this.queue.run(work);
+    return this.queue.run(work, 'engine');
   }
   private async transaction<T>(work: (state: State) => Promise<T>): Promise<T> {
     return this.serial(async () => {
+      maRemaining(Infinity);
       if (!this.ready) throw new AppError(503, 'Playback or storage connectivity is uncertain. Controls are disabled.');
       const state = structuredClone(this.state); const result = await work(state);
       const room = this.room(state); room.revision++; roomSchema.parse(room);
@@ -162,7 +164,7 @@ export class Engine extends EventEmitter {
     return { reference: decodeURIComponent(url.slice('/api/participant/artwork/'.length)), context: `${room.id}:${room.currentId}` };
   }
   async setVolume(level: number, turnId: string | null, credential?: string, playbackId?: string, volumeRevision?: string) {
-    return this.serial(async () => {
+    return maOperation('volume', () => this.serial(async () => {
       if (!this.ready) throw new AppError(503, 'Playback connectivity is uncertain.');
       if (!Number.isInteger(level) || level < 0 || level > 100) throw new AppError(400, 'Choose a volume from 0 to 100.');
       if ((this.state.room?.turnId ?? null) !== turnId) throw new AppError(409, 'The turn changed. Review the current volume.');
@@ -173,7 +175,7 @@ export class Engine extends EventEmitter {
       }
       if (!this.adapter.setVolume || !this.adapter.volume?.available) throw new AppError(422, 'Volume control is unavailable for this destination.');
       await this.adapter.setVolume(level, credential !== undefined ? playbackId : undefined); this.emit('change');
-    });
+    }));
   }
   async join(nickname: string, existingCredential?: string): Promise<string> {
     return this.transaction(async state => {
@@ -196,21 +198,21 @@ export class Engine extends EventEmitter {
     });
   }
   async advance(turnId: string, credential?: string): Promise<void> {
-    return this.transaction(async state => {
+    return maOperation('finish', () => this.transaction(async state => {
       const room = this.room(state);
       if (credential !== undefined) this.current(credential, turnId, room);
       if (room.turnId !== turnId) throw new AppError(409, 'The turn changed. Refresh your view and try again.');
       if (!room.currentId) throw new AppError(409, 'No participants have joined yet.');
       await this.stopAndRotate(room);
-    });
+    }));
   }
   async remove(id: string, revision: number): Promise<void> {
-    return this.transaction(async state => {
+    return maOperation('remove', () => this.transaction(async state => {
       const room = this.room(state); this.expected(room, revision);
       if (!room.participants.some(p => p.id === id)) throw new AppError(404, 'Participant not found.');
       if (room.currentId === id) { await this.stopAndRotate(room); if (room.currentId === id) room.currentId = null; }
       room.active = room.active.filter(p => p !== id); room.participants = room.participants.filter(p => p.id !== id);
-    });
+    }));
   }
   async search(credential: string, _turnId: string, query: string): Promise<CatalogueSearch> {
     if (!this.ready) throw new AppError(503, 'Playback connectivity is uncertain.');
@@ -237,18 +239,18 @@ export class Engine extends EventEmitter {
     return { ...result, playbackAvailable: this.catalogueState.playbackAvailable };
   }
   async play(credential: string, turnId: string, previousPlaybackId: string | null, trackId: string): Promise<void> {
-    await this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolve(trackId, context));
+    await maOperation('play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolve(trackId, context)));
   }
   async playPrepared(credential: string, turnId: string, previousPlaybackId: string | null, selection: SavedSelection, entryId: string): Promise<string> {
     if (!this.adapter.resolveSaved) throw new AppError(422, 'Saved-track playback is unavailable.');
-    return this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolveSaved!(selection, context, `prepared:${entryId}`));
+    return maOperation('prepared-play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolveSaved!(selection, context, `prepared:${entryId}`)));
   }
   private async playSelection(credential: string, turnId: string, previousPlaybackId: string | null, resolve: (context: string) => Promise<Track>): Promise<string> {
     let playbackId = '';
     await this.transaction(async state => {
       const room = this.room(state); this.current(credential, turnId, room); this.expectedPlayback(room, previousPlaybackId);
       if (this.catalogue?.configured && !this.catalogue.playbackAvailable) throw new AppError(422, 'Choose a playback destination in host settings first.');
-      const member = this.participant(credential, room); const track = await resolve(`${room.id}:${member.id}`); const id = randomUUID(); playbackId = id;
+      const member = this.participant(credential, room); const track = await maStage('resolve', () => resolve(`${room.id}:${member.id}`)); const id = randomUUID(); playbackId = id;
       this.startingPlayback = { id, previousId: room.playback?.id ?? null, turnId: room.turnId };
       const concealed = this.concealPlayback; const epoch = this.invalidationEpoch;
       this.concealPlayback = true; this.emit('change');
@@ -264,12 +266,12 @@ export class Engine extends EventEmitter {
     this.concealPlayback = false; this.emit('change'); return playbackId;
   }
   async control(credential: string, turnId: string, playbackId: string, action: 'pause' | 'resume' | 'stop'): Promise<void> {
-    return this.transaction(async state => {
+    return maOperation(action, () => this.transaction(async state => {
       const room = this.room(state); this.current(credential, turnId, room); this.expectedPlayback(room, playbackId);
       if (!room.playback || (action !== 'stop' && room.playback.status === 'stopped')) throw new AppError(409, 'Select and play a track first.');
       await this.adapter.control(action); this.controlEpoch++;
       room.playback.status = action === 'pause' ? 'paused' : action === 'resume' ? 'playing' : 'stopped';
-    });
+    }));
   }
   async reveal(credential: string, turnId: string, playbackId: string): Promise<void> {
     return this.transaction(async state => {

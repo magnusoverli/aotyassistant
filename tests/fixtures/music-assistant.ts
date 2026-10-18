@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { WebSocketServer, WebSocket } from 'ws';
 
 /** Actual deployed search shape: no cross-provider identity, only each result's own mapping. */
 export function metadataOnly<T extends { item_id: string; provider: string; provider_mappings?: { available: boolean }[] }>(item: T) {
@@ -49,7 +50,18 @@ export async function startMusicAssistantFixture(port = 0) {
   let uploadDelay = 0;
   let failAfterPlay = false;
   let ignoredControl: 'pause' | 'resume' | 'stop' | undefined;
+  let ignoredPolicy: 'autoplay' | 'repeat' | 'shuffle' | undefined;
+  let queueGate: { entered(): void; result: Promise<boolean> } | undefined;
+  let connections = 0;
+  const requests: { path: string; port: number | undefined }[] = [];
+  const events = new WebSocketServer({ noServer: true });
+  const authenticated = new Set<WebSocket>();
+  const websocketCommands: string[] = [];
+  const notify = (event = 'queue_updated', object_id = queue.queue_id) => {
+    for (const socket of authenticated) if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event, object_id, data: queue }));
+  };
   const server = createServer(async (req, res) => {
+    requests.push({ path: req.url ?? '', port: req.socket.remotePort });
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/info') { res.end(JSON.stringify(info)); return; }
     if (req.url?.startsWith('/login?')) {
@@ -70,12 +82,18 @@ export async function startMusicAssistantFixture(port = 0) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     if (!authorizations.includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('PRIVATE unauthorized details'); return; }
     const { command, args } = JSON.parse(raw); calls.push({ command, args });
+    if (command === 'player_queues/get_active_queue' && queueGate) {
+      const gate = queueGate; queueGate = undefined;
+      const snapshot = JSON.stringify(queue); gate.entered();
+      res.statusCode = await gate.result ? 503 : 200; res.end(snapshot); return;
+    }
     const volumeDelay = command === 'players/get' ? nextVolumeDelay : 0;
     if (volumeDelay) { nextVolumeDelay = 0; volumeReadPending = true; }
     if (queue.state === 'playing') queue.elapsed_time += Math.max(0, Date.now() / 1000 - queue.elapsed_time_last_updated);
     queue.elapsed_time_last_updated = Date.now() / 1000;
     if (failed) { res.statusCode = 503; res.end('PRIVATE connection details'); return; }
     if (ignoredControl && command === `player_queues/${ignoredControl}`) { res.end('null'); return; }
+    if (ignoredPolicy && command === `player_queues/${ignoredPolicy}`) { res.end('null'); return; }
     let result: unknown = null;
     if (command === 'auth/token/create') result = appToken;
     else if (command === 'auth/token/revoke') result = null;
@@ -140,20 +158,45 @@ export async function startMusicAssistantFixture(port = 0) {
     else { res.statusCode = 400; res.end('Unexpected command'); return; }
     if (volumeDelay) { await new Promise(resolve => setTimeout(resolve, volumeDelay)); volumeReadPending = false; }
     res.end(JSON.stringify(result));
+    if (/^player_queues\/(play_media|pause|resume|stop|autoplay|repeat|shuffle)$/.test(command)) notify();
+    if (command.startsWith('players/cmd/')) notify('player_updated', player.player_id);
   });
+  server.on('upgrade', (request, socket, head) => {
+    if (request.url !== '/ws') { socket.destroy(); return; }
+    events.handleUpgrade(request, socket, head, client => {
+      client.send(JSON.stringify(info));
+      client.on('message', raw => {
+        const message = JSON.parse(raw.toString()); websocketCommands.push(message.command);
+        if (message.command !== 'auth' || !authorizations.includes(`Bearer ${message.args?.token}`)) { client.close(); return; }
+        authenticated.add(client); client.send(JSON.stringify({ message_id: message.message_id, result: { authenticated: true } }));
+      });
+      client.on('close', () => authenticated.delete(client));
+    });
+  });
+  server.on('connection', () => { connections++; });
   server.listen(port, '127.0.0.1'); await once(server, 'listening');
   return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, calls, info, queue, track, player, imageCalls,
+    requests, get connections() { return connections; },
+    websocketCommands, get eventClients() { return authenticated.size; },
+    notify, disconnectEvents() { for (const client of events.clients) client.terminate(); },
+    holdNextQueueRead() {
+      let enter!: () => void; let release!: (failed?: boolean) => void;
+      const entered = new Promise<void>(resolve => { enter = resolve; });
+      const result = new Promise<boolean>(resolve => { release = (failed = false) => resolve(failed); });
+      queueGate = { entered: enter, result }; return { entered, release };
+    },
     imageMode(mode: typeof imageMode) { imageMode = mode; },
     delayImages(ms: number) { imageDelay = ms; },
     delayNextVolumeRead(ms: number) { nextVolumeDelay = ms; },
     get volumeReadPending() { return volumeReadPending; },
     clampVolume(level: number) { volumeClamp = level; },
     parkPaused() { queue.state = 'idle'; queue.active = false; queue.ended = false; queue.elapsed_time = 0; player.playback_state = 'idle'; player.active_source = null; },
-    finish() { queue.state = 'idle'; queue.ended = true; }, fail(value: boolean) { failed = value; },
+    finish() { queue.state = 'idle'; queue.ended = true; notify(); }, fail(value: boolean) { failed = value; },
     failNextPlaybackVerification() { failAfterPlay = true; },
     ignoreControl(action: typeof ignoredControl) { ignoredControl = action; },
+    ignorePolicy(action: typeof ignoredPolicy) { ignoredPolicy = action; },
     uploadedDuration(duration: number) { uploadDuration = duration; },
     uploadedMode(mode: typeof uploadMode) { uploadMode = mode; },
     delayUploads(ms: number) { uploadDelay = ms; },
-    close() { server.closeAllConnections(); server.close(); } };
+    close() { for (const client of events.clients) client.terminate(); events.close(); server.closeAllConnections(); server.close(); } };
 }
