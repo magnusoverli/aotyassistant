@@ -5,6 +5,7 @@ import { artwork } from './media';
 import { PreparationController } from './preparation-controller';
 import { UploadPanel } from './upload-panel';
 import { copyButton } from './copy-text';
+import { workspaceGrid, slot } from './page-layout';
 
 type Options = { getView(): View | undefined; starting(): boolean; canPlay(): boolean; play(entry: PreparedEntryView): void; changed(): void };
 export class PreparationPanel {
@@ -76,8 +77,8 @@ export class PreparationPanel {
   render(search?: HTMLElement, results?: HTMLElement) {
     const library = this.library; const snapshot = library.view;
     const uploadPanel = this.uploads.render();
-    const panel = el('section', undefined, `music-workspace${search ? '' : ' is-list-only'}`); panel.setAttribute('aria-label', 'Your private music'); panel.append(this.feedback);
-    if (search) { search.id = 'music-find'; search.classList.add('panel'); panel.append(search); }
+    const panel = workspaceGrid('music', `music-workspace${search ? '' : ' is-list-only'}`); panel.setAttribute('role', 'region'); panel.setAttribute('aria-label', 'Your private music'); panel.append(this.feedback);
+    if (search) { search.id = 'music-find'; search.classList.add('panel'); panel.append(slot(search, 'find')); }
     const expanded = this.expanded || !search;
     const list = el('aside', undefined, `panel preparation-list${expanded ? ' is-expanded' : ''}`); list.id = 'music-list'; list.setAttribute('aria-labelledby', 'music-list-title');
     list.dataset.myTurn = String(Boolean(this.options.getView()?.myTurn));
@@ -170,8 +171,8 @@ export class PreparationPanel {
       } history.append(rows);
     }
     if (snapshot?.played.length || snapshot?.removed.length) tools.append(history);
-    tools.append(this.recovery()); list.append(body, tools); panel.append(list);
-    if (results) panel.append(results);
+    tools.append(this.recovery()); list.append(body, tools); panel.append(slot(list, 'list'));
+    if (results) panel.append(slot(results, 'results'));
     const uploads = this.details('upload', 'Upload a song'); uploads.classList.add('music-upload');
     uploads.setAttribute('aria-label', 'Upload a private track'); uploads.open ||= this.uploads.hasWork; uploads.append(uploadPanel);
     if (search) search.append(uploads); else panel.append(uploads);

@@ -10,6 +10,8 @@ Release checks rerun at version 0.2.9: build/typecheck, 194 unit/controller test
 
 ## Delivery plan
 
+**Subsequent owner-requested scope:** the [shared page-layout plan and progress tracker](shared-page-layout.md) extends the original batches with a common layout/component foundation. Its explicit shared-layout work supersedes the earlier restriction against a stylesheet-organisation project for this follow-up.
+
 This sequence supersedes the audit's four implementation phases and the earlier estimate of 7–9 remaining batches. The audit remains supporting evidence, not a requirement to implement all 90 recommendations. Scope below is deliberate; related audit IDs do not imply every sub-suggestion will be implemented.
 
 | Batch | Status | Outcome |

@@ -1,0 +1,42 @@
+@layer layouts {
+  :root {
+    --workspace-width:1320px; --compact-width:660px; --workspace-columns:minmax(0,1fr) 360px;
+    --workspace-gap:22px; --workspace-gutter:3.5vw; --workspace-padding:34px var(--workspace-gutter) 50px;
+    --workspace-panel-padding:24px; --layout-stacked:0;
+  }
+  .page { width:100%; margin:0 auto; min-width:0; padding:var(--workspace-padding); }
+  .page[data-layout='workspace'] { max-width:var(--workspace-width); }
+  .page[data-layout='compact'] { max-width:var(--compact-width); padding-inline:22px; }
+  .page[data-layout='display'] { max-width:none; min-height:calc(100dvh - var(--app-header-height,90px)); padding:36px 4vw 28px; }
+  .workspace-grid { display:grid; grid-template-columns:var(--workspace-columns); gap:var(--workspace-gap); align-items:start; min-width:0; }
+  .workspace-grid > * { min-width:0; }
+  .workspace-grid[data-composition='sidebar'] { grid-template-areas:'primary secondary'; }
+  [data-composition='sidebar'] > [data-slot='primary'] { grid-area:primary; }
+  [data-composition='sidebar'] > [data-slot='secondary'] { grid-area:secondary; }
+  .workspace-grid[data-composition='music'] { grid-template-rows:auto auto minmax(0,1fr); grid-template-areas:'player list' 'find list' 'results list'; overflow-anchor:none; }
+  [data-composition='music'] > [data-slot='player'] { grid-area:player; }
+  [data-composition='music'] > [data-slot='find'] { grid-area:find; }
+  [data-composition='music'] > [data-slot='list'] { grid-area:list; }
+  [data-composition='music'] > [data-slot='results'] { grid-area:results; }
+  .stack { display:flex; flex-direction:column; gap:var(--workspace-gap); min-width:0; }
+  .stack > * { margin-block:0; }
+  .app-content > .notice { width:calc(100% - 2 * var(--workspace-gutter)); max-width:calc(var(--workspace-width) - 2 * var(--workspace-gutter)); margin:var(--workspace-gap) auto 0; }
+  .fallback-content { overflow-wrap:anywhere; }
+  .fallback-content > p { color:var(--muted); }
+  @media(max-width:1099px) {
+    :root { --workspace-width:720px; --workspace-columns:minmax(0,1fr); --workspace-gap:14px; --workspace-gutter:18px; --workspace-padding:20px var(--workspace-gutter) 35px; --workspace-panel-padding:16px; --layout-stacked:1; }
+    .page[data-layout='compact'] { padding-inline:var(--workspace-gutter); }
+    .workspace-grid[data-composition='sidebar'] { grid-template-areas:'primary' 'secondary'; }
+    .workspace-grid[data-composition='music'] { display:flex; flex-direction:column; }
+    .workspace-grid[data-composition='music'] > :not(.sr-only) { width:100%; }
+  }
+  @media(max-width:700px) {
+    .page[data-layout='display'] { padding:28px 20px; }
+  }
+  @media(min-width:1700px) {
+    .page[data-layout='display'] { padding-top:44px; padding-bottom:32px; }
+  }
+  @media(max-height:800px) and (min-width:1001px) {
+    .page[data-layout='display'] { padding-top:24px; padding-bottom:22px; }
+  }
+}

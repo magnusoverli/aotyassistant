@@ -72,5 +72,16 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     expect(escaped.filter(path => path !== '/favicon.ico')).toEqual([]);
     expect(isolatedApp.calls.some(c => /play_media|cmd\/|\/stop$/.test(c.command))).toBe(false);
     await login.close();
+    const fallbackContext = await page.context().browser()!.newContext({ javaScriptEnabled: false, viewport: { width: 390, height: 844 } });
+    try {
+      const fallback = await fallbackContext.newPage(); const assets: string[] = [];
+      fallback.on('response', response => { if (response.url().endsWith('.css') && response.status() === 200) assets.push(new URL(response.url()).pathname); });
+      const response = await fallback.goto(`${origin}${prefix}/missing-page`); expect(response?.status()).toBe(404);
+      await expect(fallback.locator('h1')).toHaveText('Page not found');
+      expect(await fallback.locator('.panel').evaluate(node => getComputedStyle(node).padding)).toBe('16px');
+      expect(await fallback.locator('html').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(16, 23, 19)');
+      expect(assets.sort()).toEqual(['ui-components.css', 'ui-foundation.css', 'ui-layouts.css'].map(name => `${prefix}/assets/${name}`).sort());
+      expect(escaped.filter(path => path !== '/favicon.ico')).toEqual([]);
+    } finally { await fallbackContext.close(); }
   } finally { proxy.closeAllConnections(); proxy.close(); ingress.closeAllConnections(); ingress.close(); }
 });

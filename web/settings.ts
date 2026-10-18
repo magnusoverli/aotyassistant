@@ -3,10 +3,12 @@ import { el, link } from './dom';
 import { AddressingPanel } from './addressing-panel';
 import { requestJson, RequestError } from './request';
 import type { SetupView } from '../src/setup';
+import { pageFrame, workspaceGrid, slot } from './page-layout';
+import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement, modeChanged: (mode: 'demo' | 'music-assistant') => void) {
-  const main = el('main', undefined, 'host-page settings-page'); container.append(main);
+  const main = pageFrame('workspace', 'settings-page'); container.append(main);
   let settings: IntegrationView | undefined;
   let urlDraft = '';
   let tokenDraft = '';
@@ -97,15 +99,13 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     b.disabled = busy || addresses.busy || !online; b.onclick = () => { void run(work); }; return b;
   }
   function field(text: string, id: string, type: string, value: string, change: (value: string) => void) {
-    const group = el('div', undefined, 'field'); const label = el('label', text); label.htmlFor = id;
-    const input = el('input'); input.id = id; input.type = type; input.value = value; input.disabled = busy;
+    const { group, input } = fieldControl(text, id, type); input.value = value; input.disabled = busy;
     input.disabled ||= addresses.busy;
-    input.oninput = () => change(input.value); group.append(label, input); return { group, input };
+    input.oninput = () => change(input.value); return { group, input };
   }
   function panel(id: string, title: string, state?: string) {
-    const section = el('section', undefined, `panel settings-card settings-${id}`); section.setAttribute('aria-labelledby', `settings-${id}-title`);
-    const heading = el('div', undefined, 'section-heading'); const text = el('div');
-    const h2 = el('h2', title); h2.id = `settings-${id}-title`; text.append(h2); heading.append(text);
+    const section = createPanel(`settings-card settings-${id}`); section.setAttribute('aria-labelledby', `settings-${id}-title`);
+    const heading = sectionHeading(title, `settings-${id}-title`);
     if (state) { const badge = el('span', state, 'badge settings-state'); badge.setAttribute('role', 'status'); heading.append(badge); }
     section.append(heading); return section;
   }
@@ -114,15 +114,13 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     const focusId = focused?.id;
     const selection = focused instanceof HTMLInputElement && ['text', 'password', 'search'].includes(focused.type) ? [focused.selectionStart, focused.selectionEnd] as const : null;
     const scrollY = window.scrollY;
-    const workspace = el('div', undefined, 'host-workspace settings-workspace');
-    const heading = el('div', undefined, 'workspace-heading'); const title = el('div');
-    title.append(el('h1', 'Settings'));
-    heading.append(title); workspace.append(heading);
+    const workspace = el('div', undefined, 'settings-workspace');
+    workspace.append(pageHeading('Settings'));
     const failure = error;
-    if (failure) { const message = el('div', failure, 'error settings-notice'); message.setAttribute('role', 'alert'); workspace.append(message); }
-    if (notice) { const message = el('p', notice, 'success settings-notice'); message.setAttribute('role', 'status'); workspace.append(message); }
+    if (failure) { const message = uiNotice(failure, 'error'); message.classList.add('settings-notice'); workspace.append(message); }
+    if (notice) { const message = uiNotice(notice, 'success'); message.classList.add('settings-notice'); workspace.append(message); }
     if (!online && error) { const retry = el('button', 'Retry connection', 'secondary'); retry.onclick = () => { void run(async () => { apply(await request(''), !settings); await loadSetup(); await discover(); }); }; workspace.append(retry); }
-    const grid = el('div', undefined, 'settings-grid');
+    const grid = workspaceGrid('sidebar', 'settings-grid');
     const state = busy ? 'Working…' : !settings ? 'Loading…' : !settings.tokenConfigured ? 'Not connected' : settings.status === 'checked' ? 'Connected' : settings.status === 'error' ? 'Needs attention' : 'Not checked';
     const connection = panel('connection', '1. Music connection', state);
     if (settings?.tokenConfigured) {
@@ -130,7 +128,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       if (settings.status !== 'checked') connection.append(el('p', settings.status === 'error' ? settings.message : 'Connection saved. Checking availability…', 'muted small'));
       const change = action(editConnection ? 'Close connection settings' : 'Change connection', async () => { editConnection = !editConnection; }, true);
       change.disabled ||= Boolean(settings.settingsChangesBlocked); connection.append(change);
-      const actions = el('div', undefined, 'settings-connection-actions');
+      const actions = actionGroup(); actions.classList.add('settings-connection-actions');
       actions.append(connectButton('Reconnect Music Assistant'));
       actions.append(action('Disconnect', async () => {
         if (!confirm('Disconnect Music Assistant and remove the saved token and destination? This does not revoke the token in Music Assistant.')) return;
@@ -158,7 +156,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
           connection.append(label, select);
         }
       }
-      const form = el('form', undefined, 'integration-form');
+      const form = el('form', undefined, 'form-stack integration-form');
       const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || addresses.busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
       url.input.required = true; url.input.maxLength = 2048; url.input.placeholder = 'http://homeassistant.local:8095';
       connection.append(url.group);
@@ -175,7 +173,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       token.input.setAttribute('aria-describedby', tokenHelp.id); token.group.append(tokenHelp);
       if (location.protocol !== 'https:') token.group.append(el('p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
       const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || addresses.busy || !online || Boolean(settings.settingsChangesBlocked); save.id = 'ma-save';
-      const controls = el('div', undefined, 'actions settings-form-actions'); controls.append(save);
+      const controls = actionGroup('form'); controls.append(save);
       form.append(token.group, controls);
       form.onsubmit = event => {
         event.preventDefault(); const submittedUrl = urlDraft.trim(); const submittedToken = tokenDraft.trim();
@@ -199,8 +197,8 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       connection.append(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = 'Sign-in cancelled. Your saved connection was kept.'; }, true));
     }
     if (settings?.settingsChangesBlocked) { const blocked = el('p', undefined, 'muted small'); blocked.append('Finish the current song before changing setup. ', link('Return to host', '/host', 'inline-link')); connection.append(blocked); }
-    grid.append(connection);
-    const output = el('div', undefined, 'settings-output');
+    grid.append(slot(connection, 'primary'));
+    const output = slot(el('div', undefined, 'settings-output stack'), 'secondary');
     if (setup?.supervisor.enabled && (!setup.supervisor.available || setup.supervisor.guestOrigins.some(origin => origin !== addresses.view?.guestOrigin))) {
       const detected = panel('detected', 'Home Assistant setup', setup.supervisor.available ? 'Detected' : 'Unavailable');
       detected.append(el('p', setup.supervisor.message, 'muted small'));

@@ -4,6 +4,7 @@ import { vinyl, updateVinylLabel } from './visuals';
 import { artwork, progressBar, updateProgress } from './media';
 import { publicRecordLabels } from './record-labels';
 import { PublicTurnOrder } from './public-turn-order';
+import { pageFrame } from './page-layout';
 
 export function publicPlaybackState(view: View, online: boolean) {
   if (!online || !view.connected) return 'unavailable';
@@ -12,7 +13,7 @@ export function publicPlaybackState(view: View, online: boolean) {
 
 /** Keep motion on persistent nodes: revealing metadata must never restart or change its rhythm. */
 export class PublicRoom {
-  readonly element = el('main', undefined, 'display-page');
+  readonly element = pageFrame('display', 'display-page');
   private turn = el('p', undefined, 'room-turn');
   private order = new PublicTurnOrder();
   private invitation = el('aside', undefined, 'room-invitation');

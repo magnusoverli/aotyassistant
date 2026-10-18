@@ -103,7 +103,7 @@ test('host invitations remain one action away with thirty people and consequenti
   for (let i = 1; i < 30; i++) await isolatedApp.engine.join(`Guest ${i}`);
   await expect(page.locator('.person-row')).toHaveCount(30);
   await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
-  await page.locator('.host-heading').getByRole('link', { name: 'Invite people' }).click();
+  await page.locator('.workspace-heading').getByRole('link', { name: 'Invite people' }).click();
   await expect(page.getByRole('button', { name: 'Copy join link' })).toBeInViewport();
   const state = await (await page.request.get('/api/participant/state')).json();
   await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });

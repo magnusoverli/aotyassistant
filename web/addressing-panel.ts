@@ -1,5 +1,6 @@
 import type { AddressingView } from '../src/addressing';
 import { el } from './dom';
+import { fieldControl, panel as createPanel, sectionHeading } from './ui-components';
 import { requestJson } from './request';
 import { inIngress, setGuestOrigin } from './paths';
 
@@ -57,13 +58,12 @@ export class AddressingPanel {
     button.dataset.focusKey = text; button.onclick = () => { void this.run(work); }; return button;
   }
   private field(text: string, id: string, value: string, change: (text: string) => void) {
-    const group = el('div', undefined, 'field'); const label = el('label', text); label.htmlFor = id;
-    const input = el('input'); input.id = id; input.type = 'url'; input.value = value; input.maxLength = 2048; input.disabled = this.busy || this.blocked() || this.playbackBlocked();
-    input.oninput = () => change(input.value); group.append(label, input); return { group, input };
+    const { group, input } = fieldControl(text, id, 'url'); input.value = value; input.maxLength = 2048; input.disabled = this.busy || this.blocked() || this.playbackBlocked();
+    input.oninput = () => change(input.value); return { group, input };
   }
   render() {
-    const panel = el('section', undefined, 'panel settings-card settings-addressing'); panel.setAttribute('aria-labelledby', 'settings-addressing-title');
-    const title = el('h2', '3. Guest access'); title.id = 'settings-addressing-title'; panel.append(title);
+    const panel = createPanel('settings-card settings-addressing'); panel.setAttribute('aria-labelledby', 'settings-addressing-title');
+    panel.append(sectionHeading('3. Guest access', 'settings-addressing-title'));
     if (!this.view) panel.append(el('p', 'Loading address settings…', 'muted'));
     else {
       const view = this.view;
@@ -84,7 +84,7 @@ export class AddressingPanel {
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
       }, true));
       else guestSettings.append(el('p', 'Guests need a LAN address, not the Home Assistant host interface.', 'muted small'));
-      const guestForm = el('form', undefined, 'integration-form');
+      const guestForm = el('form', undefined, 'form-stack integration-form');
       const guest = this.field('Guest address', 'app-guest-origin', this.guestDraft, value => { this.guestDraft = value; }); guest.input.required = true;
       const save = el('button', 'Save guest address'); save.type = 'submit'; save.disabled = this.busy || this.blocked() || !navigator.onLine || this.playbackBlocked();
       guestForm.append(guest.group, save);
@@ -110,7 +110,7 @@ export class AddressingPanel {
       advanced.append(el('p', `File access: ${view.effectiveMediaOrigin}${view.mediaOrigin ? ' (manual)' : ' (automatic)'}`, 'saved-address'));
       if (view.mediaCheck.origin) advanced.append(el('p', `Last tested: ${view.mediaCheck.origin}`, 'muted small'));
       advanced.append(el('p', 'File checks use Music Assistant and never play audio.', 'muted small'));
-      const form = el('form', undefined, 'integration-form');
+      const form = el('form', undefined, 'form-stack integration-form');
       const media = this.field('Application address reachable from Music Assistant', 'upload-media-origin', this.mediaDraft, value => { this.mediaDraft = value; }); media.input.placeholder = 'Automatic';
       const saveMedia = el('button', 'Save file playback address'); saveMedia.type = 'submit'; saveMedia.disabled = this.busy || this.blocked() || !navigator.onLine || !view.configured || this.playbackBlocked();
       form.append(media.group, el('p', 'Only needed if Music Assistant uses a different address. Overrides must pass a file check; leave empty for automatic selection.', 'muted small'), saveMedia);

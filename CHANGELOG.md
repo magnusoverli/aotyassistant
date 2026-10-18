@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-10-18
+
+- Introduce shared workspace, compact and display layouts with common cards, forms, headings and notices.
+- Unify join and participant entry screens, responsive spacing and header/menu alignment.
+- Share the CSS foundation with JavaScript-free server error pages, including Home Assistant ingress.
+- Make participant scrolling follow the active CSS layout and add cross-page layout regression checks.
+
 ## [0.3.2] — 2026-10-18
 
 - Unify host, settings and participant workspace widths, desktop columns, gutters and mobile stacking; align host/settings card spacing and headings.

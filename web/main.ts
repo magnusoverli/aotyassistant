@@ -21,6 +21,8 @@ import './style.css';
 import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
 import { joinPanel } from './join-panel';
 import { ParticipantAccess } from './participant-access';
+import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
+import { panel, pageHeading, sectionHeading, notice } from './ui-components';
 
 const page = pageForPath(pagePath(location.pathname));
 document.title = `${({ home: 'Home', join: 'Join room', participant: 'My music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · Albums of the Year`;
@@ -132,7 +134,7 @@ function keepMusicFocusVisible() {
   if (!(focused instanceof HTMLElement) || !focused.closest('.music-workspace')) return;
   const headerBottom = Math.max(0, appHeader.element.getBoundingClientRect().bottom) + 12;
   const list = root.querySelector<HTMLElement>('.preparation-list');
-  const obstruction = innerWidth < 1100 && focused.closest('.catalogue-results') && list && getComputedStyle(list).position === 'sticky' ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
+  const obstruction = stackedLayout() && focused.closest('.catalogue-results') && list && getComputedStyle(list).position === 'sticky' ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
   const rect = focused.getBoundingClientRect();
   if (rect.top < obstruction) window.scrollBy({ top: rect.top - obstruction, behavior: 'instant' });
 }
@@ -143,7 +145,7 @@ root.addEventListener('focusin', () => {
 function updateMusicViewport() {
   const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
   document.documentElement.style.setProperty('--music-viewport-height', `${height}px`);
-  document.body.dataset.shortViewport = String(innerWidth < 1100 && height < 600);
+  document.body.dataset.shortViewport = String(height < 600);
   requestAnimationFrame(keepMusicFocusVisible);
 }
 if (page === 'participant') {
@@ -190,7 +192,7 @@ function showCatalogueStart() {
   const header = appHeader.element;
   let top = getComputedStyle(header).position === 'sticky' ? header.getBoundingClientRect().bottom + 12 : 12;
   const list = root.querySelector<HTMLElement>('.preparation-list');
-  if (innerWidth < 1100 && list && getComputedStyle(list).position === 'sticky') {
+  if (stackedLayout() && list && getComputedStyle(list).position === 'sticky') {
     // Use the companion's eventual sticky position, not its position before scrolling.
     top = Math.max(top, parseFloat(getComputedStyle(list).top) + list.getBoundingClientRect().height + 12);
   }
@@ -298,7 +300,7 @@ function subscribe(role: 'host' | 'participant' | 'display') {
 async function mutate(path: string, data: unknown) { accept(await api<View>(path, data)); }
 
 function qrCard() {
-  const card = el('section', undefined, 'qr-card');
+  const card = panel('qr-card');
   card.append(el('h2', 'Invite people'));
   if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Choose a guest address in Settings before sharing the room.'), link('Configure guest access', '/host/settings')); return card; }
   if (view?.joinUrl) {
@@ -317,31 +319,31 @@ function renderDisplay() {
   if (!view) {
     publicRoom?.destroy();
     publicRoom = undefined;
-    const notice = el('div', error, 'error'); notice.hidden = !error; notice.setAttribute('role', 'alert');
-    pageContent.replaceChildren(notice, closedRoom()); return;
+    const message = notice(error, 'error'); message.hidden = !error;
+    pageContent.replaceChildren(message, closedRoom()); return;
   }
   if (!publicRoom?.element.isConnected) {
     publicRoom = new PublicRoom();
-    const notice = el('div', undefined, 'error'); notice.id = 'display-notice'; notice.setAttribute('role', 'alert');
-    pageContent.replaceChildren(notice, publicRoom.element);
+    const message = notice('', 'error'); message.id = 'display-notice';
+    pageContent.replaceChildren(message, publicRoom.element);
   }
-  const notice = document.getElementById('display-notice')!; notice.textContent = error; notice.hidden = !error;
+  const message = document.getElementById('display-notice')!; message.textContent = error; message.hidden = !error;
   publicRoom.update(view, realtime, qrImage);
 }
 function closedRoom() {
-  const main = el('main', undefined, 'room-closed');
+  const main = pageFrame('display', 'room-closed');
   const record = el('div', undefined, 'welcome-record'); record.append(vinyl());
   main.append(record, el('h1', 'Listening room'), el('p', 'Connecting to the room…', 'muted'));
   return main;
 }
 function host() {
-  const main = el('main', undefined, 'host-page');
+  const main = pageFrame('workspace', 'host-page');
   main.setAttribute('aria-label', 'Host desk');
-  const heading = el('div', undefined, 'workspace-heading host-heading'); heading.append(el('h1', 'Host desk'), link('Invite people', '#room-invitation')); main.append(heading);
-  const workspace = el('div', undefined, 'host-workspace'); workspace.id = 'overview';
-  main.append(workspace);
-  const aside = el('aside', undefined, 'host-invitations'); aside.id = 'room-invitation'; aside.append(qrCard());
-  aside.setAttribute('aria-label', 'Room invitation'); main.append(aside);
+  main.append(pageHeading('Host desk', link('Invite people', '#room-invitation')));
+  const grid = workspaceGrid('sidebar');
+  const workspace = slot(el('div', undefined, 'host-workspace stack'), 'primary'); workspace.id = 'overview';
+  const aside = slot(el('aside', undefined, 'host-invitations'), 'secondary'); aside.id = 'room-invitation'; aside.append(qrCard());
+  aside.setAttribute('aria-label', 'Room invitation'); grid.append(workspace, aside); main.append(grid);
   if (!view) return main;
   const active = view.active ?? []; const turnId = view.turnId; const revision = view.revision;
   if (!active.length) {
@@ -349,7 +351,7 @@ function host() {
     if (!view.playbackAvailable || view.mode === 'demo') workspace.append(link('Set up music and speaker', '/host/settings'));
     return main;
   }
-  const audio = el('section', undefined, 'panel host-audio'); const audioTitle = el('div'); audioTitle.append(el('h2', 'Speaker volume'));
+  const audio = panel('host-audio'); const audioTitle = el('div'); audioTitle.append(el('h2', 'Speaker volume'));
   if (!view?.volume?.available) {
     const hint = el('p', undefined, 'muted small');
     hint.append('Volume is unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link'));
@@ -357,7 +359,7 @@ function host() {
   }
   audio.append(audioTitle, volumeControl(view ? player.project(view).volume : undefined, (level, commit) => player.volume(level, commit), !realtime || !view?.connected));
   workspace.append(audio);
-  const live = el('section', undefined, 'host-live panel'); const livePerson = el('div', undefined, 'host-live-person');
+  const live = panel('host-live', { tone: 'highlight' }); const livePerson = el('div', undefined, 'host-live-person');
   const personInfo = el('div'); personInfo.append(label('CURRENT PARTICIPANT'), el('h2', view.current?.nickname ?? 'Waiting for participants'));
   const status = view.playbackStatus === 'playing' ? 'Playing' : view.playbackStatus === 'paused' ? 'Paused' : view.playbackStatus === 'unavailable' ? 'Unavailable' : 'Choosing a song';
   personInfo.append(el('p', `${status}${active.length > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status'));
@@ -368,10 +370,10 @@ function host() {
     return mutate('/api/host/advance', { turnId });
   }); advance.disabled ||= !view.current; controls.append(advance);
   live.append(controls); workspace.prepend(live);
-  const people = el('section', undefined, 'panel host-people'); people.id = 'rotation'; people.tabIndex = -1;
-  const orderHeading = el('div', undefined, 'section-heading'); const orderTitle = el('div'); orderTitle.append(el('h2', 'Listening order'));
+  const people = panel('host-people'); people.id = 'rotation'; people.tabIndex = -1;
+  const orderHeading = sectionHeading('Listening order', 'host-order-title');
   const manage = el('button', managingPeople ? 'Done managing' : 'Manage people', 'secondary'); manage.type = 'button'; manage.id = 'manage-people'; manage.onclick = () => { managingPeople = !managingPeople; hostFeedback = ''; render(); };
-  orderHeading.append(orderTitle, el('span', `${active.length} ${active.length === 1 ? 'listener' : 'listeners'}`, 'count-tag'), manage); people.append(orderHeading);
+  orderHeading.append(el('span', `${active.length} ${active.length === 1 ? 'listener' : 'listeners'}`, 'count-tag'), manage); people.append(orderHeading);
   if (hostFeedback) { const feedback = el('p', hostFeedback, 'muted small'); feedback.setAttribute('role', 'status'); people.append(feedback); }
   active.forEach((person, index) => {
     const row = el('div', undefined, `person-row${person.id === view?.current?.id ? ' is-current' : ''}`);
@@ -412,7 +414,7 @@ function renderParticipantPlayer() {
 }
 function participantPlayer(current: View) {
   const shown = player.project(current); const playback = current.myTurn ? shown.ownPlayback : undefined;
-  const card = el('section', undefined, 'panel playback-card'); card.id = 'participant-player'; card.setAttribute('aria-label', 'Your player');
+  const card = slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player'); card.id = 'participant-player'; card.setAttribute('aria-label', 'Your player');
   const now = el('div', undefined, 'private-now-playing');
   const track = el('div'); const title = el('h2', playback?.track.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
   title.title = title.textContent!; track.append(title);
@@ -445,7 +447,7 @@ function participantPlayer(current: View) {
 }
 function participant() {
   if (!view?.me) return participantEntry();
-  const main = el('main', undefined, 'participant-page');
+  const main = pageFrame('workspace', 'participant-page');
   const position = view.position;
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   main.dataset.turnState = state;
@@ -457,7 +459,7 @@ function participant() {
   main.append(hero, circle);
   const search = el('section', undefined, 'catalogue-panel');
   search.setAttribute('aria-labelledby', 'music-find-title');
-  const searchHeading = el('div', undefined, 'section-heading'); const searchTitle = el('h2', 'Find music'); searchTitle.id = 'music-find-title'; searchHeading.append(searchTitle, el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
+  const searchHeading = sectionHeading('Find music', 'music-find-title'); searchHeading.append(el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
   const realCatalogue = view.catalogue?.source === 'music-assistant';
   if (realCatalogue && !view.catalogue?.playbackAvailable) {
     const hint = el('p', undefined, 'muted small');
@@ -500,9 +502,9 @@ function participant() {
       }
     });
   }; search.append(form);
-  const found = el('section', undefined, 'panel catalogue-results'); found.setAttribute('aria-labelledby', 'music-results-title');
+  const found = panel('catalogue-results'); found.setAttribute('aria-labelledby', 'music-results-title');
   found.setAttribute('aria-busy', String(catalogueBusy));
-  const resultsHeading = el('div', undefined, 'section-heading'); const resultsTitle = el('h2', chosenArtist ? 'Browse music' : 'Results'); resultsTitle.id = 'music-results-title'; resultsHeading.append(resultsTitle); found.append(resultsHeading);
+  const resultsHeading = sectionHeading(chosenArtist ? 'Browse music' : 'Results', 'music-results-title'); found.append(resultsHeading);
   const resultKind = searchMode === 'artists' && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
   const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
@@ -609,12 +611,12 @@ function joinForm() {
 }
 
 function participantEntry() {
-  const main = el('main', undefined, page === 'join' ? 'join-page room-join-page' : 'participant-page participant-entry');
-  const layout = el('div', undefined, 'entry-layout');
+  const main = pageFrame('compact', page === 'join' ? 'room-join-page' : 'participant-entry');
+  const layout = el('div', undefined, 'entry-layout stack');
   const state = participantAccess.state;
   if (state === 'unjoined') layout.append(joinForm());
   else {
-    const status = el('section', undefined, 'panel entry-status');
+    const status = panel('entry-status');
     const title = el('h1', state === 'checking' ? 'Checking your place in the room…' : state === 'offline' ? 'You’re offline.' : 'Can’t reach the room.');
     status.append(title);
     const message = el('p', state === 'checking' ? 'Your saved music is kept separately.' : state === 'offline' ? 'Reconnect to check your place or join the room.' : participantAccess.message, 'muted');
@@ -638,17 +640,18 @@ function render() {
   const scrollRegions = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(node => [node.dataset.scrollKey, node.scrollTop] as const);
   const scrollY = window.scrollY;
   const content = document.createDocumentFragment();
-  if (error) { const notice = el('div', error, 'error'); notice.setAttribute('role', 'alert'); content.append(notice); }
-  if (view && !realtime) { const n = el('div', 'Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection'); n.setAttribute('role', 'status'); content.append(n); }
+  if (error) content.append(notice(error, 'error'));
+  if (view && !realtime) content.append(notice('Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection'));
   else if (view?.playbackIssue) {
-    const notice = el('div', undefined, 'warning'); notice.append('Playback controls lost; the speaker may still be playing. ', page === 'host' ? link('Recover controls in Settings', '/host/settings', 'inline-link') : 'Ask the host to recover controls.'); content.append(notice);
-  } else if (view && !view.connected) content.append(el('div', 'The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error'));
+    const message = notice('', 'warning'); message.append('Playback controls lost; the speaker may still be playing. ', page === 'host' ? link('Recover controls in Settings', '/host/settings', 'inline-link') : 'Ask the host to recover controls.'); content.append(message);
+  } else if (view && !view.connected) content.append(notice('The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error'));
   if (page === 'host') content.append(host());
   else if (page === 'join' && !view) content.append(participantEntry());
   else if (page === 'participant' || page === 'join') content.append(participant());
   else {
-    const main = el('main', undefined, 'join-page'); main.append(el('h1', 'Albums of the Year'),
-      el('p', 'Take turns sharing the music you love.', 'muted'), link('Join room', '/join', 'button'), link('My music', '/participant'), link('Room display', '/display'), link('Host desk', '/host', 'home-host')); content.append(main);
+    const main = pageFrame('compact', 'home-page');
+    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('My music', '/participant'), link('Room display', '/display'));
+    main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.append(main);
   }
   pageContent.replaceChildren(content);
   const ring = root.querySelector('.rotation-list'); if (ring) ring.scrollLeft = ringScroll;

@@ -1,5 +1,6 @@
 import type { UploadPreview } from '../src/uploads';
 import { el } from './dom';
+import { fieldControl } from './ui-components';
 import { artwork } from './media';
 import { operationId, preparationRequest, type PreparationController } from './preparation-controller';
 
@@ -147,9 +148,9 @@ export class UploadPanel {
       form.append(el('h3', 'Review uploaded song'));
       const heading = el('div', undefined, 'result-identity'); heading.append(artwork(preview.artwork, 'Uploaded album artwork', 'result-artwork'), el('p', preview.filename, 'muted small')); form.append(heading);
       for (const [key, caption] of [['title', 'Track title'], ['artist', 'Artist'], ['album', 'Album']] as const) {
-        const field = el('div', undefined, 'field'); const label = el('label', caption); const input = el('input');
-        input.id = `upload-${key}`; input.type = 'text'; input.value = this.text[key]; input.maxLength = 1000; input.required = key === 'title'; input.disabled = disabled;
-        input.oninput = () => { this.text[key] = input.value; this.persist(); }; label.htmlFor = input.id; field.append(label, input); form.append(field);
+        const { group, input } = fieldControl(caption, `upload-${key}`);
+        input.value = this.text[key]; input.maxLength = 1000; input.required = key === 'title'; input.disabled = disabled;
+        input.oninput = () => { this.text[key] = input.value; this.persist(); }; form.append(group);
       }
       form.append(el('p', 'Uploaded, not yet saved. Artist and album are optional.', 'muted small'));
       const add = el('button', 'Add to my list'); add.type = 'submit'; add.disabled = disabled || Boolean(this.library.view?.reviewEntryId); form.append(add);
