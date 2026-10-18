@@ -124,12 +124,14 @@ test('one participant stream separates room and owner events, keeps room access 
 
 test('bounded thumbnail variants remain owner-authorized and independently cached', async t => {
   const f = await fixture(t); const added = await f.add(); const url = added.view.upcoming[0]!.artwork!;
-  for (const size of [128, 512, 128]) {
+  for (const size of [160, 512, 1024, 128, 160]) {
     const response = await f.request(`${url}?size=${size}`, undefined, f.first.privateCookie);
     assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store'); await response.arrayBuffer();
   }
-  assert.equal(f.remote.imageCalls.filter(path => path.includes('size=128')).length, 1);
+  assert.equal(f.remote.imageCalls.filter(path => path.includes('size=128')).length, 0);
+  assert.equal(f.remote.imageCalls.filter(path => path.includes('size=160')).length, 1);
   assert.equal(f.remote.imageCalls.filter(path => path.includes('size=512')).length, 1);
+  assert.equal(f.remote.imageCalls.filter(path => path.includes('size=1024&fmt=jpeg')).length, 1);
   assert.equal((await f.request(`${url}?size=999`, undefined, f.first.privateCookie)).status, 400);
   assert.equal((await f.request(`${url}?size=128`, undefined, f.second.privateCookie)).status, 404);
 });

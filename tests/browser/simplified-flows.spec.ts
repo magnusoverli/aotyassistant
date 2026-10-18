@@ -134,13 +134,17 @@ test('setup retries preserve drafts, healthy summaries need no save, and returni
   await expect(page.locator('.settings-destination').getByRole('alert')).toContainText('Speaker discovery failed');
   await page.getByRole('button', { name: 'Change connection', exact: true }).click();
   await page.getByLabel('Music Assistant URL', { exact: true }).fill('http://draft.local:8095');
+  settings.report = { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true,
+    players: [{ id: 'room', name: settings.destination!.name, available: true }] };
   fail = false; await page.getByRole('button', { name: 'Find speakers again' }).click();
   await expect(page.getByLabel('Music Assistant URL', { exact: true })).toHaveValue('http://draft.local:8095');
   await expect(page.locator('.settings-destination').getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save speaker' })).toHaveCount(0);
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   settings.settingsChangesBlocked = true;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('button', { name: 'Change speaker' })).toBeDisabled();
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
+  await page.getByLabel('Speaker or group', { exact: true }).dispatchEvent('change');
   await expect(page.locator('.settings-destination')).toContainText('Finish the current song');
   await expect(page.getByLabel('Music Assistant URL', { exact: true })).toHaveValue('http://draft.local:8095');
   expect(writes).toEqual([]);
@@ -175,7 +179,7 @@ test('home, error pages and display invitations provide concrete routes while AP
   await page.locator('.room-qr-link').click(); await expect(page.getByLabel('What should we call you?')).toBeVisible();
 });
 
-test('initial settings failure can retry and an empty speaker inventory never enables a save', async ({ page }) => {
+test('initial settings failure can retry and an empty speaker inventory keeps the visible selector disabled', async ({ page }) => {
   let unavailable = true; const writes: string[] = [];
   const settings: IntegrationView = { revision: 1, url: 'http://music.local:8095', tokenConfigured: true, destination: null,
     status: 'checked', message: '', playbackAvailable: false, playbackIssue: '',
@@ -186,9 +190,12 @@ test('initial settings failure can retry and an empty speaker inventory never en
     if (unavailable) await route.abort('failed'); else await route.fulfill({ json: settings });
   });
   await page.goto('/host/settings'); await expect(page.getByRole('button', { name: 'Retry connection' })).toBeEnabled();
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
   unavailable = false; await page.getByRole('button', { name: 'Retry connection' }).click();
   await expect(page.locator('.settings-destination')).toContainText('No speakers found.');
-  await expect(page.getByRole('button', { name: 'Save speaker', exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Save speaker', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Find speakers again' }).click();
   expect(writes).toEqual([]);
 });

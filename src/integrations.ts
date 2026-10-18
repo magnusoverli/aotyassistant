@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import { z } from 'zod';
 import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse } from './model.js';
 import { writePrivateJson } from './store.js';
-import { MusicAssistantClient, musicAssistantUrl, maToken, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport } from './music-assistant.js';
+import { MusicAssistantClient, musicAssistantUrl, maToken, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
 import type { UploadAssets, UploadSelection } from './uploads.js';
 import { applicationOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
@@ -185,7 +185,7 @@ export class IntegrationManager implements CatalogueProvider {
     return this.withArtwork({ ...item, id: this.seal(item.id, kind, context),
       ...(item.sources ? { sources: item.sources.map(source => this.catalogueItem(source, kind, context)) } : {}) }, context);
   }
-  async artwork(reference: string, context: string, size: 128 | 512 = 512) {
+  async artwork(reference: string, context: string, size: ArtworkSize = 512) {
     const revision = this.catalogueRevision;
     try {
       return reference.startsWith('upload:') && this.uploads
@@ -243,7 +243,7 @@ export class IntegrationManager implements CatalogueProvider {
     if (revision !== this.state.revision || epoch !== this.catalogueRevision) throw new AppError(409, 'Playback setup changed during lookup. Your saved list was kept; review the destination and try again.');
     return { ...result, track: this.withArtwork({ ...result.track, id: trackId }, context), revision };
   }
-  async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: 128 | 512 = 512) {
+  async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: ArtworkSize = 512) {
     const saved = this.savedSource(selection); const epoch = this.catalogueRevision;
     const image = kind === 'artwork' ? saved.metadata.artworkId : saved.metadata.artistArtworkId;
     if (!image) throw new AppError(404, 'Artwork unavailable.');

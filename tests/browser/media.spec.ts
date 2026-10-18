@@ -11,9 +11,9 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
   await host.goto('/host/settings');
   await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   await host.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
-  await host.getByRole('button', { name: 'Save speaker', exact: true }).click();
   await expect(host.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
-  await host.reload(); await expect(host.getByRole('button', { name: 'Change speaker', exact: true })).toBeEnabled();
+  await host.reload(); await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
+  await expect(host.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:bedroom');
   expect(checks).toEqual([]);
   await expect(host.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
   const firstContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -35,11 +35,16 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     await first.getByRole('button', { name: 'Artists', exact: true }).click();
     await first.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await first.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(first.getByAltText('Artist image', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(first.getByAltText('Artist image', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     await first.getByRole('button', { name: 'View albums', exact: true }).click();
     await expect(first.getByAltText('Album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(first.getByAltText('Album artwork', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     await first.getByRole('button', { name: 'View tracks', exact: true }).click();
+    await expect(first.getByAltText('Album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(first.getByAltText('Album artwork', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     await saveChoice(first);
     await expect(first.getByAltText('Saved album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(first.getByAltText('Saved album artwork', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     expect(publicImages).toEqual([]); await expect(second.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();
     await first.getByRole('button', { name: 'Play this song', exact: true }).click();
     await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
@@ -63,7 +68,9 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     await tv.screenshot({ path: 'test-results/display-paused-concealed.png' });
     await first.getByRole('button', { name: 'Reveal song', exact: true }).click();
     await expect(tv.getByAltText('Current album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(tv.getByAltText('Current album artwork', { exact: true })).toHaveAttribute('src', /\?size=1024$/);
     await expect(tv.getByAltText('Current artist image', { exact: true })).toHaveJSProperty('naturalWidth', 1);
+    await expect(tv.getByAltText('Current artist image', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     await expect(tv.locator('.track-times')).toContainText('3:00');
     publicState = await (await tv.request.get('/api/display/state')).json();
     expect(publicState.progress.duration).toBe(180); expect(typeof publicState.progress.elapsed).toBe('number');

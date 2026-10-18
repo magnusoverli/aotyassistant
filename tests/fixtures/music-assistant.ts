@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
+import sharp from 'sharp';
 
 /** Actual deployed search shape: no cross-provider identity, only each result's own mapping. */
 export function metadataOnly<T extends { item_id: string; provider: string; provider_mappings?: { available: boolean }[] }>(item: T) {
@@ -12,6 +13,7 @@ export function metadataOnly<T extends { item_id: string; provider: string; prov
 
 /** Synthetic Music Assistant only; it never reaches a real speaker or upstream service. */
 export async function startMusicAssistantFixture(port = 0) {
+  const jpeg = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#608040' } }).jpeg({ quality: 95 }).toBuffer();
   const track = { item_id: 'catalogue-result', provider: 'spotify', name: 'Real catalogue fixture', version: 'Original recording', media_type: 'track',
     uri: 'spotify://track/private-fixture-uri', duration: 180, artists: [{ name: 'Fixture artist', image: { type: 'thumb', proxy_id: 'b'.repeat(64) } }], album: { name: 'Fixture album' },
     provider_mappings: [{ item_id: 'catalogue-result', provider_domain: 'spotify', available: true }], metadata: { images: [{ type: 'thumb', proxy_id: 'a'.repeat(64), path: 'http://private.example/secret-search-art' }] } };
@@ -72,11 +74,15 @@ export async function startMusicAssistantFixture(port = 0) {
     if (req.url === '/api-docs') { res.setHeader('Content-Type', 'text/html'); res.end('<h1>Fixture docs</h1>'); return; }
     if (req.url?.startsWith('/imageproxy/')) {
       imageCalls.push(req.url);
+      const params = new URL(req.url, 'http://fixture').searchParams;
+      // Match MA's actual imageproxy size allowlist, including rejection of the former 128px request.
+      if (!['0', '80', '160', '256', '512', '1024'].includes(params.get('size') ?? '0')) { res.writeHead(400); res.end('Unsupported image size'); return; }
       if (imageDelay) await new Promise(resolve => setTimeout(resolve, imageDelay));
       if (!authorizations.includes(req.headers.authorization ?? '')) { res.writeHead(401); res.end(); return; }
       if (imageMode === 'redirect') { res.writeHead(302, { Location: 'http://169.254.169.254/private' }); res.end(); return; }
       if (imageMode === 'svg') { res.setHeader('Content-Type', 'image/svg+xml'); res.end('<svg><script>PRIVATE</script></svg>'); return; }
       if (imageMode === 'oversized') { res.end(Buffer.alloc(3 * 1024 * 1024)); return; }
+      if (params.get('fmt') === 'jpeg') { res.setHeader('Content-Type', 'image/jpeg'); res.end(jpeg); return; }
       res.setHeader('Content-Type', 'image/png'); res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZXkAAAAASUVORK5CYII=', 'base64')); return;
     }
     let raw = ''; for await (const chunk of req) raw += chunk;

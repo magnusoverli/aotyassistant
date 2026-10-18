@@ -109,7 +109,7 @@ test('a replacement search cancels stale work without blocking the search form',
   } finally { release(); await context.close(); }
 });
 
-test('optional file diagnostics do not disable speaker settings and saving reuses the validated inventory', async ({ page, isolatedApp }) => {
+test('optional file diagnostics do not disable automatic speaker selection, which reuses the validated inventory', async ({ page, isolatedApp }) => {
   await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'fixture-token', 0);
   await isolatedApp.manager.selectDestination('sonos:room', 1);
   let release = () => {}; let entered!: () => void;
@@ -117,11 +117,9 @@ test('optional file diagnostics do not disable speaker settings and saving reuse
   await page.route('**/api/host/addressing/test', async route => { entered(); await held; await route.continue().catch(() => {}); });
   try {
     await page.goto('/host/settings'); await started;
-    await expect(page.getByRole('button', { name: 'Change speaker', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Change speaker', exact: true }).click();
-    await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
+    await expect(page.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
     const before = isolatedApp.calls.filter(call => call.command === 'players/all').length;
-    await page.getByRole('button', { name: 'Save speaker', exact: true }).click();
+    await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
     await expect(page.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
     expect(isolatedApp.calls.filter(call => call.command === 'players/all').length - before).toBe(1);
   } finally { release(); }

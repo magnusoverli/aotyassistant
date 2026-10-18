@@ -7,7 +7,7 @@ import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
 import { PreparationManager, preparationOperationSchema } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
-import { body, rawCookie, setPrivateCookie } from './http-utils.js';
+import { artworkSize, body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { maOperation } from './ma-operation.js';
 
@@ -139,8 +139,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     if (selection.source === 'upload' && kind === 'artwork' && selection.artworkAssetId) {
       const owner = await manager.read(credential(req)); image = await uploads.artwork(selection.assetId, owner.ownerId);
     } else if (integrations && selection.source === 'music-assistant') {
-      const size = z.enum(['128', '512']).default('512').parse(req.query.size);
-      image = await integrations.savedArtwork(selection, kind, size === '128' ? 128 : 512);
+      image = await integrations.savedArtwork(selection, kind, artworkSize.parse(req.query.size));
     }
     else throw new AppError(404, 'Artwork unavailable.');
     const latest = await manager.selection(credential(req), entryId);

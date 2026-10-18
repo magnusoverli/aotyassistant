@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { AppError, catalogueSearchNotice, type CatalogueTrack, type CatalogueArtist, type CatalogueAlbum, type CataloguePage, type Track, type VolumeState } from './model.js';
 import { presentCatalogueItems } from './catalogue-grouping.js';
 import type { SavedSelection } from './preparations.js';
-import { MusicAssistantTransport, type ArtworkData } from './music-assistant-transport.js';
+import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
-export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData } from './music-assistant-transport.js';
+export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
 export type Destination = { id: string; name: string; available: boolean };
 export type ConnectionReport = {
@@ -86,7 +86,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const id = (images.find(i => i?.type === 'thumb') ?? images[0])?.proxy_id;
     return id && !id.includes(this.token) ? `image:${id}` : undefined;
   }
-  async artwork(id: string, size: 128 | 512 = 512): Promise<ArtworkData> {
+  async artwork(id: string, size: ArtworkSize = 512): Promise<ArtworkData> {
     if (!/^image:[a-f0-9]{64}$/.test(id)) throw new AppError(404, 'Artwork unavailable.');
     const key = `${id}:${size}`;
     const cached = this.imageCache.get(key);
@@ -94,7 +94,9 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const pending = this.imageRequests.get(key); if (pending) return pending;
     if (this.imageRequests.size >= 16) throw new AppError(503, 'Artwork is busy.');
     const request = (async () => {
-      const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=png`, undefined, {}, true) as ArtworkData;
+      // MA's high-quality JPEG keeps large TV covers below the bounded response/cache budgets.
+      const format = size === 1024 ? 'jpeg' : 'png';
+      const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=${format}`, undefined, {}, true) as ArtworkData;
       this.imageCache.set(key, { data, expires: Date.now() + 5 * 60_000 });
       let bytes = [...this.imageCache.values()].reduce((sum, item) => sum + item.data.body.length, 0);
       while (this.imageCache.size > 64 || bytes > 20 * 1024 * 1024) {

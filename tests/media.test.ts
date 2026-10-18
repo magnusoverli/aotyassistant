@@ -48,7 +48,7 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
   const tracks = await f.engine.browse(f.alex, 'tracks', albums.albums![0]!.id); const track = tracks.tracks![0]!;
   for (const media of [artists.artists![0]!, albums.albums![0]!, track]) {
     assert.ok(media.artwork?.startsWith('/api/participant/artwork/'));
-    const response = await f.request(media.artwork!, f.alex); assert.equal(response.status, 200);
+    const response = await f.request(`${media.artwork!}?size=160`, f.alex); assert.equal(response.status, 200);
     assert.equal(response.headers.get('content-type'), 'image/png'); assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.ok((await response.arrayBuffer()).byteLength > 20);
   }
@@ -58,7 +58,8 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   const id = f.participant(f.alex).ownPlayback!.id;
   const publicUrl = `/api/display/artwork/${id}/artwork`;
-  assert.equal((await f.request(publicUrl)).status, 403);
+  assert.equal((await f.request(`${publicUrl}?size=1024`)).status, 403);
+  assert.ok(f.remote.imageCalls.every(path => path.includes('size=160')), 'Browsing must not fetch full-size covers.');
   assert.ok(!JSON.stringify(f.display()).includes('/artwork/'));
   await f.engine.reveal(f.alex, f.host().turnId!, id);
   const view = f.display(); assert.equal(view.nowPlaying?.revealed, true);
@@ -67,10 +68,12 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
     assert.ok(!JSON.stringify(view).includes('/api/participant/artwork/'));
     assert.equal((await f.request(view.nowPlaying.track.artistArtwork!)).status, 200);
   }
-  assert.equal((await f.request(publicUrl)).status, 200);
+  const revealed = await f.request(`${publicUrl}?size=1024`);
+  assert.equal(revealed.status, 200); assert.equal(revealed.headers.get('content-type'), 'image/jpeg'); await revealed.arrayBuffer();
+  assert.ok(f.remote.imageCalls.some(path => path.includes('size=1024&fmt=jpeg')));
   assert.ok(!JSON.stringify(f.participant(f.sam)).includes('/artwork/'));
   await f.engine.advance(f.host().turnId!);
-  assert.equal((await f.request(publicUrl)).status, 403);
+  assert.equal((await f.request(`${publicUrl}?size=1024`)).status, 403);
   await f.engine.remove(f.participant(f.alex).me!.id, f.host().revision);
   assert.equal((await f.request(track.artwork!, f.alex)).status, 401);
 });
@@ -84,6 +87,19 @@ test('artwork transport rejects arbitrary references, redirects, SVG/HTML, and o
   }
   assert.equal(remote.imageCalls.length, 3);
   assert.ok(remote.imageCalls.every(path => /^\/imageproxy\/[a-f0-9]{64}\?size=512&fmt=png$/.test(path)));
+});
+
+test('MA rejects unsupported thumbnail sizes; legacy app URLs normalize to the supported cached thumbnail', async t => {
+  const f = await fixture(); t.after(f.close);
+  const unsupported = await fetch(`${f.remote.origin}/imageproxy/${'a'.repeat(64)}?size=128&fmt=png`, { headers: { Authorization: 'Bearer fixture-token' } });
+  assert.equal(unsupported.status, 400); await unsupported.text(); f.remote.imageCalls.length = 0;
+  const artist = (await f.engine.browse(f.alex, 'artists', 'Fixture')).artists![0]!;
+  for (const size of [128, 160, 128]) {
+    const response = await f.request(`${artist.artwork}?size=${size}`, f.alex);
+    assert.equal(response.status, 200); await response.arrayBuffer();
+  }
+  assert.equal(f.remote.imageCalls.length, 1); assert.ok(f.remote.imageCalls[0]!.endsWith('?size=160&fmt=png'));
+  assert.equal((await f.request(`${artist.artwork}?size=999`, f.alex)).status, 400);
 });
 
 test('in-flight public artwork is denied after turn changes and private references expire on credential changes', async t => {

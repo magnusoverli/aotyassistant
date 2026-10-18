@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.3.10] — 2026-10-18
+
+- Restore artist, album and track thumbnails by using Music Assistant's supported 160px size; normalize older 128px requests. Use 1024px high-quality album artwork on the display after reveal, with small artist portraits and size-specific caching.
+- Make the Music Assistant fixture enforce its real image-size allowlist, with regressions for thumbnail loading, legacy URLs and reveal-gated high-resolution covers.
+- Keep the Settings speaker selector visible and apply a changed selection automatically, without Change/Save speaker buttons. Preserve the current destination if validation fails and keep playback-blocked changes disabled.
+- Remove the redundant “Return to host · Invite people” link from Settings; host navigation remains in the menu.
+
 ## [0.3.9] — 2026-10-18
 
 - Separate Music Assistant connection health from saved-speaker availability and queue errors in Settings. Speaker failures no longer suggest reconnecting a healthy Music Assistant server; an unreachable server leaves speaker health unconfirmed rather than declaring the speaker disconnected.

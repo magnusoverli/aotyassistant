@@ -1,5 +1,9 @@
 import type { Request, Response } from 'express';
-import type { z } from 'zod';
+import { z } from 'zod';
+
+/** Old open tabs may still ask for 128; normalize it before reaching MA or the image cache. */
+export const artworkSize = z.enum(['128', '160', '512', '1024']).default('512')
+  .transform(size => size === '128' || size === '160' ? 160 : size === '1024' ? 1024 : 512);
 
 export const body = <T extends z.ZodTypeAny>(request: Request, schema: T): z.infer<T> => schema.parse(request.body);
 

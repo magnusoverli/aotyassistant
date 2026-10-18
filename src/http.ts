@@ -10,7 +10,7 @@ import { PreparationManager, PreparationFileStore } from './preparations.js';
 import { mountPreparations } from './preparation-http.js';
 import { UploadAssets } from './uploads.js';
 import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
-import { body, rawCookie, setPrivateCookie } from './http-utils.js';
+import { artworkSize, body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { mountIntegrations } from './integration-http.js';
 import { ingressContext, requestBase } from './ingress.js';
@@ -137,16 +137,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     app.get('/api/participant/artwork/:reference', async (req, res) => {
       const context = engine.catalogueContext(participantCredential(req));
       const reference = z.string().max(1500).parse(req.params.reference);
-      const size = z.enum(['128', '512']).default('512').parse(req.query.size);
-      const image = await integrations.artwork(reference, context, size === '128' ? 128 : 512);
+      const image = await integrations.artwork(reference, context, artworkSize.parse(req.query.size));
       if (engine.catalogueContext(participantCredential(req)) !== context) throw new AppError(403, 'Artwork access expired.');
       res.type(image.contentType).send(image.body);
     });
     app.get('/api/display/artwork/:id/:kind', async (req, res) => {
       const id = turn.parse(req.params.id); const kind = z.enum(['artwork', 'artistArtwork']).parse(req.params.kind);
       const access = engine.displayArtwork(id, kind);
-      const size = z.enum(['128', '512']).default('512').parse(req.query.size);
-      const image = await integrations.artwork(access.reference, access.context, size === '128' ? 128 : 512);
+      const image = await integrations.artwork(access.reference, access.context, artworkSize.parse(req.query.size));
       engine.displayArtwork(id, kind); // Revalidate reveal/turn after the network read.
       res.type(image.contentType).send(image.body);
     });

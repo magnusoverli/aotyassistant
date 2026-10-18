@@ -12,7 +12,7 @@ export async function mountSettings(container: HTMLElement) {
   let settings: IntegrationView | undefined;
   let urlDraft = '';
   let tokenDraft = '';
-  let destinationDraft = '';
+  let pendingDestination = '';
   let busy = false;
   let busyScope: 'connection' | 'speaker' = 'connection';
   let online = false;
@@ -21,7 +21,6 @@ export async function mountSettings(container: HTMLElement) {
   let helpExpanded = false;
   let manualExpanded = false;
   let editConnection = false;
-  let editSpeaker = false;
   let speakerError = '';
   let authExpiresAt = 0;
   let browserDraft = '';
@@ -53,7 +52,7 @@ export async function mountSettings(container: HTMLElement) {
   function apply(next: IntegrationView, updateDraft = false) {
     settings = next;
     if (!next.tokenConfigured || next.status === 'error') speakerError = '';
-    if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
+    if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; }
   }
   async function loadSetup(refresh = false) {
     const next = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
@@ -218,30 +217,38 @@ export async function mountSettings(container: HTMLElement) {
     const speakerState = busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !settings.destination ? 'Not selected'
       : settings.destinationStatus === 'checked' ? 'Available' : settings.destinationStatus === 'error' ? 'Needs attention' : 'Not checked';
     const destination = panel('destination', '2. Speaker', speakerState);
-    if (settings?.destination) {
-      destination.append(el('p', `Speaker: ${settings.destination.name}`, 'saved-destination'));
-      const change = action(editSpeaker ? 'Cancel speaker change' : 'Change speaker', async () => { editSpeaker = !editSpeaker; destinationDraft = settings!.destination?.id ?? ''; if (editSpeaker && !settings?.report) await discover(); }, true, 'speaker');
-      change.disabled ||= Boolean(settings.settingsChangesBlocked); destination.append(change);
+    const savedSpeaker = settings?.destination; const report = settings?.report;
+    if (savedSpeaker) destination.append(el('p', `Speaker: ${savedSpeaker.name}`, 'saved-destination'));
+    const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
+    const select = el('select'); select.id = 'ma-destination';
+    select.disabled = busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !report?.players.some(player => player.available) || Boolean(settings.settingsChangesBlocked);
+    const empty = el('option', 'Choose a speaker or group'); empty.value = ''; empty.disabled = true; select.append(empty);
+    if (savedSpeaker && !report?.players.some(player => player.id === savedSpeaker.id)) {
+      const saved = el('option', `${savedSpeaker.name} (${report ? 'unavailable' : 'not checked'})`);
+      saved.value = savedSpeaker.id; saved.disabled = true; select.append(saved);
     }
-    if (settings?.report && (!settings.destination || editSpeaker || !settings.report.players.some(p => p.id === settings!.destination?.id && p.available))) {
-      const report = settings.report;
-      const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
-      const select = el('select'); select.id = 'ma-destination'; select.disabled = busy || !online || Boolean(settings.settingsChangesBlocked);
-      const empty = el('option', 'Choose a speaker or group'); empty.value = ''; select.append(empty);
-      for (const player of report.players) {
-        const option = el('option', `${player.name}${player.available ? '' : ' (unavailable)'}`);
-        option.value = player.id; option.disabled = !player.available; select.append(option);
-      }
-      select.value = destinationDraft || settings.destination?.id || '';
-      const choose = action('Save speaker', async () => {
-        if (!destinationDraft) throw new Error('Choose an available speaker or group first.');
-        apply(await request('/destination', { id: destinationDraft, revision: settings!.revision })); editSpeaker = false; notice = 'Speaker saved.';
-      }, false, 'speaker');
-      choose.disabled ||= !select.value || select.value === settings.destination?.id || Boolean(settings.settingsChangesBlocked);
-      select.onchange = () => { destinationDraft = select.value; choose.disabled = select.disabled || !select.value || select.value === settings?.destination?.id; };
-      const group = el('div', undefined, 'field'); group.append(destinationLabel, select, choose); destination.append(group);
-      if (!report.players.length) destination.append(el('p', 'No speakers found. Add one in Music Assistant, then try again.', 'muted small'));
-    } else if (!settings?.destination) {
+    for (const player of report?.players ?? []) {
+      const option = el('option', `${player.name}${player.available ? '' : ' (unavailable)'}`);
+      option.value = player.id; option.disabled = !player.available; select.append(option);
+    }
+    select.value = pendingDestination || savedSpeaker?.id || '';
+    select.onchange = () => {
+      const id = select.value;
+      if (busy || select.disabled || !id || id === settings?.destination?.id) return;
+      const restoreFocus = document.activeElement === select;
+      pendingDestination = id;
+      void run(async () => {
+        try { apply(await request('/destination', { id, revision: settings!.revision })); notice = 'Speaker selected.'; }
+        finally { pendingDestination = ''; }
+      }, 'speaker').then(() => {
+        if (restoreFocus && main.isConnected && document.activeElement === document.body) main.querySelector<HTMLSelectElement>('#ma-destination')?.focus({ preventScroll: true });
+      });
+    };
+    const speakerHelp = el('p', 'Selections apply automatically. Music starts only when Play is pressed.', 'muted field-hint'); speakerHelp.id = 'ma-destination-help';
+    select.setAttribute('aria-describedby', speakerHelp.id);
+    const group = el('div', undefined, 'field'); group.append(destinationLabel, select, speakerHelp); destination.append(group);
+    if (report && !report.players.length) destination.append(el('p', 'No speakers found. Add one in Music Assistant, then try again.', 'muted small'));
+    else if (!report && !savedSpeaker) {
       destination.append(el('div', !settings?.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant to choose a speaker.'
         : busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.', 'empty-state'));
     }
@@ -262,7 +269,7 @@ export async function mountSettings(container: HTMLElement) {
       const details = el('details'); details.append(el('summary', 'Details'), el('p', settings.playbackIssue, 'muted small')); playback.append(details);
       output.append(playback);
     }
-    grid.append(output); workspace.append(grid, link('Return to host · Invite people', '/host'));
+    grid.append(output); workspace.append(grid);
     main.replaceChildren(workspace);
     if (focused && !busy) {
       const replacement = focusId ? document.getElementById(focusId) : [...main.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey);

@@ -164,13 +164,15 @@ Implemented: empty-room invitations, metadata-free playback status, top invitati
 
 ## Batch 6 — Setup and recovery
 
-Implemented: ordered setup and healthy summaries, local speaker retry, sign-in cancellation/expiry, address-change confirmation, ownership-based blocked controls and read-only stale-tab revalidation. Focused browser checks cover draft preservation, blocked settings and sign-in states; backend cancellation invalidates the callback without replacing saved configuration.
+The 0.3.10 release combines automatic speaker selection with corrected 160px Music Assistant thumbnails and reveal-gated 1024px display covers. Release verification: build/typecheck, 227 backend/controller tests and all 104 Chromium workflows passed.
+
+Implemented: ordered setup and healthy connection summaries, an always-visible speaker selector with automatic application, local speaker retry, sign-in cancellation/expiry, address-change confirmation, ownership-based blocked controls and read-only stale-tab revalidation. Focused browser checks cover draft preservation, blocked settings and sign-in states; backend cancellation invalidates the callback without replacing saved configuration.
 
 **Outcome:** first setup is a short page; a working installation shows summaries.
 
-- [x] Organise settings as Music connection → Speaker → Guest access, ending with a Host desk link. Expand the incomplete step and show healthy steps as summaries with Change.
+- [x] Organise settings as Music connection → Speaker → Guest access. Keep host navigation in the menu rather than a duplicate footer link. Expand incomplete connection setup and show a healthy connection as a summary with Change.
 - [x] Distinguish saved credentials from confirmed health. Keep Reconnect, manual tokens and disconnect secondary unless needed.
-- [x] Show the saved speaker by default. Save speaker is enabled only for a changed selection. Add local Find speakers again with pending/error feedback.
+- [x] Keep the Speaker or group menu visible in its card, showing the saved speaker even if unavailable or not yet checked. Apply changed selections automatically with pending/error feedback, restore the confirmed selection on failure, and disable changes during owned playback. No Change/Save speaker buttons; keep the local Find speakers again action.
 - [x] Make sign-in states explicit: waiting, connected, cancelled and expired. Preserve working configuration when sign-in is cancelled.
 - [x] Separate guest sharing from uploaded-file networking. Keep manual address overrides under Advanced; show the old/new link and cookie-access consequence before an origin change.
 - [x] Explain playback-blocked changes beside the affected control, with a return link. Use existing ownership facts or a small server-provided status rather than inferring from button state.

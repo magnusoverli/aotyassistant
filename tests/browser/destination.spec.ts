@@ -39,12 +39,11 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     const beforeSecond = await (await second.request.get('/api/participant/state')).json();
     const cookieBefore = (await secondContext.cookies()).find(cookie => cookie.name === 'aoty_participant')!.value;
     await first.getByRole('searchbox', { name: 'Search catalogue' }).focus();
-    await host.goto('/host/settings'); await host.getByRole('button', { name: 'Change speaker', exact: true }).click();
+    await host.goto('/host/settings');
     await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
     await host.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
-    await host.getByRole('button', { name: 'Save speaker', exact: true }).click();
     await expect(host.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
-    await expect(host.getByText('Speaker saved.', { exact: true })).toBeVisible();
+    await expect(host.getByText('Speaker selected.', { exact: true })).toBeVisible();
     for (const page of [first, second]) {
       expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(1);
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');

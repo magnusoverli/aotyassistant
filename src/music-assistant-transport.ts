@@ -19,6 +19,7 @@ export const musicAssistantUrl = z.string().trim().max(2048).url().transform((va
 });
 export const maToken = z.string().trim().min(1).max(8192).regex(/^[\x21-\x7e]+$/);
 export type ArtworkData = { body: Buffer; contentType: string };
+export type ArtworkSize = 160 | 512 | 1024;
 type Path = '/info' | '/api-docs' | '/api' | `/imageproxy/${string}`;
 
 export function isAllowedAddress(value: string): boolean {

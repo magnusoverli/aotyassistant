@@ -20,7 +20,6 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   await expect(login).toHaveURL(/\/host\/settings$/);
   await expect(login.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   await login.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:room');
-  await login.getByRole('button', { name: 'Save speaker', exact: true }).click();
   await expect(login.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   const binding = isolatedApp.manager.sourceBindingId;
   await login.getByRole('button', { name: 'Change connection', exact: true }).click();

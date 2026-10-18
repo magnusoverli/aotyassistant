@@ -26,7 +26,8 @@ export function artwork(url: string | undefined, alt: string, className = '', ea
   const frame = el('div', undefined, `media-artwork ${className}`); frame.append(vinyl());
   if (url && (url.startsWith('/api/participant/artwork/') || url.startsWith('/api/participant/preparations/artwork/') || /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}\/artwork$/.test(url) || url.startsWith('/api/display/artwork/') || url === '/demo-cover.svg')) {
     const image = el('img'); image.alt = alt; image.loading = eager ? 'eager' : 'lazy'; image.decoding = 'async';
-    image.src = url.startsWith('/api/') ? `${url}?size=${className.includes('result-artwork') || className.includes('artist-portrait') && !eager ? 128 : 512}` : url;
+    const size = className.includes('room-artwork') ? 1024 : className.includes('result-artwork') || className.includes('artist-portrait') ? 160 : 512;
+    image.src = url.startsWith('/api/') ? `${url}?size=${size}` : url;
     image.onerror = () => image.remove(); frame.append(image);
   }
   return frame;
