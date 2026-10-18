@@ -38,10 +38,9 @@ export function rotation(view: View, publicDisplay = false, expanded = false) {
   const title = el('div', undefined, publicDisplay ? '' : 'circle-position');
   if (publicDisplay) title.append(label('PARTICIPANTS'));
   else {
-    title.append(el('h2', view.position ? `Seat ${view.position.seat} of ${view.position.total}` : 'Listening order'));
-    if (!view.myTurn && view.position?.turnsUntil != null) title.append(el('span', view.position.turnsUntil === 1 ? 'You’re next' : `${view.position.turnsUntil} turns away`, 'circle-distance'));
+    title.append(el('h2', 'Listening order'));
   }
-  if (!publicDisplay) head.append(title, el('span', 'Circle ↕', 'circle-caption')); else head.append(title);
+  if (!publicDisplay) head.append(title, el('span', '⌄', 'circle-caption')); else head.append(title);
   panel.append(head);
   const all = view.rotation ?? [];
   if (!all.length) { panel.append(el('p', 'No participants have joined.', 'muted')); return panel; }
@@ -55,7 +54,7 @@ export function rotation(view: View, publicDisplay = false, expanded = false) {
     row.dataset.personId = person.id;
     if (current) row.setAttribute('aria-current', 'step');
     row.append(el('span', String(all.findIndex(p => p.id === person.id) + 1).padStart(2, '0'), 'seat-number'), avatar(person),
-      el('strong', person.nickname), el('span', current && me ? 'NOW · YOU' : current ? 'NOW SHARING' : me ? 'YOU' : person.id === view.next?.id ? 'UP NEXT' : 'LISTENING', 'seat-state'));
+      el('strong', person.nickname), el('span', current && me ? 'Your turn' : current ? 'Current turn' : me ? 'You' : person.id === view.next?.id ? 'Up next' : 'Listening', 'seat-state'));
     list.append(row);
   }
   panel.append(list);

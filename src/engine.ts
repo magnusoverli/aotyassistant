@@ -119,6 +119,7 @@ export class Engine extends EventEmitter {
       ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue } : {}) };
     const joinUrl = `${this.guestUrl}/join`;
     if (role.kind === 'host') return { ...base, active: room.active.map(id => person(id)!), volume: this.adapter.volume,
+      playbackStatus: !this.ready || this.concealPlayback || !this.catalogueState.playbackAvailable ? 'unavailable' : room.playback?.status === 'playing' ? 'playing' : room.playback?.status === 'paused' ? 'paused' : 'idle',
       joinUrl, displayUrl: `${this.guestUrl}/display` };
     if (role.kind === 'display') {
       const revealed = Boolean(room.playback?.revealed && !this.concealPlayback && this.ready);

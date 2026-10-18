@@ -1,15 +1,16 @@
 import { expect } from '@playwright/test';
 import { test } from './app-fixture';
 
-test('host desk prioritizes the current turn with a slim volume panel and responsive invitation sidebar', async ({ page }) => {
+test('host desk prioritizes the current turn with a slim volume panel and responsive invitation sidebar', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('Host layout listener');
   await page.goto('/host');
-  await expect(page.locator('.host-stats')).toBeVisible();
+  await expect(page.locator('.host-live')).toBeVisible();
   await expect(page.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Listening room', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Room display', exact: true })).toHaveCount(0);
   expect(await page.locator('.host-workspace').evaluate(node => Array.from(node.children).map(child => child.className))).toEqual([
-    'host-live panel', 'panel host-audio', 'host-stats', 'panel host-people',
+    'host-live panel', 'panel host-audio', 'panel host-people',
   ]);
-  await expect(page.getByRole('button', { name: 'Advance / skip current turn' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Skip turn' })).toBeEnabled();
   await expect(page.locator('.host-invitations img')).toBeVisible();
 
   for (const width of [1440, 1100, 800, 701, 700, 390, 320]) {
@@ -29,7 +30,8 @@ test('host desk prioritizes the current turn with a slim volume panel and respon
   }
 });
 
-test('unavailable host volume links directly to speaker settings without changing playback', async ({ page }) => {
+test('unavailable host volume links directly to speaker settings without changing playback', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('Volume listener');
   const writes: string[] = [];
   page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
   await page.route('**/api/host/events', route => route.abort());
@@ -50,6 +52,6 @@ test('unavailable host volume links directly to speaker settings without changin
   }
   await settings.click();
   await expect(page).toHaveURL('/host/settings');
-  await expect(page.getByRole('heading', { name: 'Connections & settings.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   expect(writes).toEqual([]);
 });

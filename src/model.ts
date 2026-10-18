@@ -63,6 +63,7 @@ export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'sto
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;
+  playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';
   revision: number; turnId: string | null; current: Person | null; next: Person | null;
   me?: Person; myTurn?: boolean; ownPlayback?: Room['playback'];
   catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };

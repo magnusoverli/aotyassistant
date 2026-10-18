@@ -12,8 +12,8 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     await display.reload(); await expect(display.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await display.goto(isolatedApp.origin + '/display#access=obsolete');
     await expect(display).toHaveURL(isolatedApp.origin + '/display'); await expect(display.getByRole('alert')).toBeHidden();
-    await expect(host.getByRole('button', { name: 'Advance / skip current turn' })).toBeDisabled();
-    await expect(host.getByRole('heading', { name: 'Waiting for participants', exact: true })).toBeVisible();
+    await expect(host.getByRole('button', { name: 'Skip turn' })).toHaveCount(0);
+    await expect(host.getByRole('heading', { name: 'Invite people', exact: true })).toBeVisible();
     const invitation = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
     const join = async (index: number, nickname: string) => {
       const page = await contexts[index]!.newPage(); page.on('request', request => { if (request.method() === 'POST') requests.push(new URL(request.url()).pathname); });
@@ -21,7 +21,7 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
       await expect(page).toHaveURL(/\/participant$/); return page;
     };
     const first = await join(0, 'First'); await expect(first.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
-    const second = await join(1, 'Second'); await expect(second.getByRole('heading', { name: 'Seat 2 of 2', exact: true })).toBeVisible();
+    const second = await join(1, 'Second'); await expect(second.locator('.turn-distance')).toHaveText('You’re next');
     expect((await (await first.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeNull();
     await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);
     await expect(host.getByRole('button', { name: 'Start listening', exact: true })).toHaveCount(0);
@@ -29,14 +29,16 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     await first.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern'); await first.getByRole('button', { name: 'Search', exact: true }).click();
     await first.getByRole('button', { name: 'Play', exact: true }).click(); await expect(first.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     const before = await (await first.request.get('/api/participant/state')).json();
-    const late = await join(2, 'Late'); await expect(late.getByRole('heading', { name: 'Seat 3 of 3', exact: true })).toBeVisible();
+    const late = await join(2, 'Late'); await expect(late.locator('.turn-distance')).toHaveText('2 turns away');
     const after = await (await first.request.get('/api/participant/state')).json(); expect(after.turnId).toBe(before.turnId); expect(after.ownPlayback.id).toBe(before.ownPlayback.id); expect(after.ownPlayback.status).toBe('playing');
+    await host.getByRole('button', { name: 'Manage people' }).click();
     await host.locator('.host-people .person-row').filter({ hasText: 'Second' }).getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(second.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
     await expect(first.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await host.getByRole('button', { name: 'Move Late up', exact: true }).click();
-    await expect(late.getByRole('heading', { name: 'Seat 1 of 2', exact: true })).toBeVisible();
+    await expect(late.locator('.turn-distance')).toHaveText('You’re next');
     await expect(host.getByRole('heading', { name: 'First', exact: true })).toBeVisible();
+    host.once('dialog', dialog => dialog.accept());
     await host.locator('.host-people .person-row').filter({ hasText: 'First' }).getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(late.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     expect((await (await late.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();

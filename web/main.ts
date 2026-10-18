@@ -14,13 +14,16 @@ import { PreparationPanel } from './preparation-panel';
 import type { PreparedEntryView, PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
-import { catalogueSourceChoice } from './catalogue-sources';
+import { catalogueSourceChoice, sourceName } from './catalogue-sources';
+import { BrowseHistory } from './browse-history';
+import { copyButton } from './copy-text';
 import './style.css';
 import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
 import { joinPanel } from './join-panel';
 import { ParticipantAccess } from './participant-access';
 
 const page = pageForPath(pagePath(location.pathname));
+document.title = `${({ home: 'Home', join: 'Join room', participant: 'My music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · Albums of the Year`;
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const turnAnnouncement = el('div', undefined, 'sr-only');
 turnAnnouncement.setAttribute('role', 'status'); turnAnnouncement.setAttribute('aria-live', 'polite'); turnAnnouncement.setAttribute('aria-atomic', 'true');
@@ -49,6 +52,18 @@ const sourceChoices = new Map<string, string>();
 let artistNotices: string[] = [];
 let albumNotices: string[] = [];
 let trackNotices: string[] = [];
+let catalogueDetails = false;
+const browseSnapshot = () => ({ results, searchText, searchDone, searchMode, artists, albums, chosenArtist, chosenAlbum,
+  artistNotices, albumNotices, trackNotices, choices: [...sourceChoices], scroll: scrollY, catalogueDetails });
+const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
+  catalogue.cancel(); resetCatalogueTask();
+  results = snapshot?.results ?? []; searchText = snapshot?.searchText ?? ''; searchDone = snapshot?.searchDone ?? false;
+  searchMode = snapshot?.searchMode ?? (view?.catalogue?.source === 'music-assistant' ? 'artists' : 'tracks');
+  artists = snapshot?.artists ?? []; albums = snapshot?.albums ?? []; chosenArtist = snapshot?.chosenArtist; chosenAlbum = snapshot?.chosenAlbum;
+  artistNotices = snapshot?.artistNotices ?? []; albumNotices = snapshot?.albumNotices ?? []; trackNotices = snapshot?.trackNotices ?? [];
+  sourceChoices.clear(); for (const [key, value] of snapshot?.choices ?? []) sourceChoices.set(key, value);
+  catalogueDetails = snapshot?.catalogueDetails ?? false; render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
+}) : undefined;
 let stream: EventSource | undefined;
 let qrUrl = '';
 let qrImage = '';
@@ -56,6 +71,9 @@ let nicknameDraft = '';
 let joinError = '';
 let accessEnded = false;
 let circleExpanded = false;
+let volumeExpanded = false;
+let managingPeople = false;
+let hostFeedback = '';
 let publicRoom: PublicRoom | undefined;
 let settingsMode: View['mode'] | undefined;
 let settingsMounted = false;
@@ -103,6 +121,7 @@ const participantAccess = new ParticipantAccess(
     resetCatalogueTask();
     results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
+    browseHistory?.reset();
     searchAnnouncement.textContent = '';
   }, render,
 );
@@ -111,9 +130,9 @@ function keepMusicFocusVisible() {
   if (restoringFocus || page !== 'participant') return;
   const focused = document.activeElement;
   if (!(focused instanceof HTMLElement) || !focused.closest('.music-workspace')) return;
-  const headerBottom = appHeader.element.getBoundingClientRect().bottom + 12;
+  const headerBottom = Math.max(0, appHeader.element.getBoundingClientRect().bottom) + 12;
   const list = root.querySelector<HTMLElement>('.preparation-list');
-  const obstruction = innerWidth < 1000 && focused.closest('.catalogue-results') && list ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
+  const obstruction = innerWidth < 1100 && focused.closest('.catalogue-results') && list && getComputedStyle(list).position === 'sticky' ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
   const rect = focused.getBoundingClientRect();
   if (rect.top < obstruction) window.scrollBy({ top: rect.top - obstruction, behavior: 'instant' });
 }
@@ -121,7 +140,7 @@ root.addEventListener('focusin', () => { if (!restoringFocus) requestAnimationFr
 function updateMusicViewport() {
   const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
   document.documentElement.style.setProperty('--music-viewport-height', `${height}px`);
-  document.body.dataset.shortViewport = String(innerWidth < 1000 && height < 600);
+  document.body.dataset.shortViewport = String(innerWidth < 1100 && height < 600);
   requestAnimationFrame(keepMusicFocusVisible);
 }
 if (page === 'participant') {
@@ -195,6 +214,7 @@ function accept(next: View) {
     artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
     searchMode = next.catalogue?.source === 'music-assistant' ? 'artists' : 'tracks';
+    browseHistory?.reset();
     if (page === 'participant') void library.refresh();
   }
   // Position/volume snapshots do not rebuild browsing forms or reload all artwork.
@@ -212,7 +232,7 @@ function accept(next: View) {
     const turnMessage = next.myTurn ? 'It’s your turn to share.'
       : next.current ? `${next.current.nickname}’s turn. ${position?.turnsUntil === 1 ? 'You are up next.' : position?.turnsUntil != null ? `Your turn is ${position.turnsUntil} turns away.` : ''}`
       : 'The listening circle is ready.';
-    const announcement = `${position?.seat ? `Seat ${position.seat} of ${position.total}. ` : ''}${turnMessage}`;
+    const announcement = turnMessage;
     if (turnAnnouncement.textContent !== announcement) turnAnnouncement.textContent = announcement;
   }
   if (next.joinUrl && next.joinUrl !== qrUrl) {
@@ -246,11 +266,13 @@ async function mutate(path: string, data: unknown) { accept(await api<View>(path
 
 function qrCard() {
   const card = el('section', undefined, 'qr-card');
-  card.append(el('h3', 'Join room'));
-  if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Detect or configure a guest address in Connections & settings before sharing the room.'), link('Configure guest access', '/host/settings')); return card; }
+  card.append(el('h2', 'Invite people'));
+  if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Choose a guest address in Settings before sharing the room.'), link('Configure guest access', '/host/settings')); return card; }
   if (view?.joinUrl) {
     if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; card.append(img); }
     card.append(el('p', 'Scan the QR code to join.', 'muted'));
+    const address = el('input'); address.value = view.joinUrl; address.readOnly = true; address.setAttribute('aria-label', 'Join link'); address.className = 'join-link-field';
+    card.append(address, copyButton('Copy join link', address));
     const invitation = link('Open guest invitation ↗', view.joinUrl); invitation.target = '_blank'; invitation.rel = 'noopener noreferrer'; card.append(invitation);
   }
   if (view?.displayUrl) {
@@ -282,8 +304,18 @@ function closedRoom() {
 function host() {
   const main = el('main', undefined, 'host-page');
   main.setAttribute('aria-label', 'Host desk');
+  const heading = el('div', undefined, 'workspace-heading host-heading'); heading.append(el('h1', 'Host desk'), link('Invite people', '#room-invitation')); main.append(heading);
   const workspace = el('div', undefined, 'host-workspace'); workspace.id = 'overview';
   main.append(workspace);
+  const aside = el('aside', undefined, 'host-invitations'); aside.id = 'room-invitation'; aside.append(qrCard());
+  aside.setAttribute('aria-label', 'Room invitation'); main.append(aside);
+  if (!view) return main;
+  const active = view.active ?? []; const turnId = view.turnId; const revision = view.revision;
+  if (!active.length) {
+    main.classList.add('is-empty'); workspace.append(el('p', 'Share the room. The first person to join gets the first turn.', 'muted'));
+    if (!view.playbackAvailable || view.mode === 'demo') workspace.append(link('Set up music and speaker', '/host/settings'));
+    return main;
+  }
   const audio = el('section', undefined, 'panel host-audio'); const audioTitle = el('div'); audioTitle.append(el('h2', 'Speaker volume'));
   if (!view?.volume?.available) {
     const hint = el('p', undefined, 'muted small');
@@ -292,22 +324,22 @@ function host() {
   }
   audio.append(audioTitle, volumeControl(view ? player.project(view).volume : undefined, (level, commit) => player.volume(level, commit), !realtime || !view?.connected));
   workspace.append(audio);
-  if (!view) return main;
-  const active = view.active ?? [];
-  const stats = el('div', undefined, 'host-stats');
-  for (const [value, caption] of [[String(active.length).padStart(2, '0'), 'PARTICIPANTS'], [view.next?.nickname ?? '—', 'UP NEXT']]) {
-    const stat = el('div', undefined, 'host-stat'); stat.append(label(caption!), el('strong', value)); stats.append(stat);
-  }
   const live = el('section', undefined, 'host-live panel'); const livePerson = el('div', undefined, 'host-live-person');
   const personInfo = el('div'); personInfo.append(label('CURRENT PARTICIPANT'), el('h2', view.current?.nickname ?? 'Waiting for participants'));
+  const status = view.playbackStatus === 'playing' ? 'Playing' : view.playbackStatus === 'paused' ? 'Paused' : view.playbackStatus === 'unavailable' ? 'Unavailable' : 'Choosing a song';
+  personInfo.append(el('p', `${status}${active.length > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status'));
   livePerson.append(avatar(view.current, 'avatar-large'), personInfo); live.append(livePerson);
   const controls = el('div', undefined, 'host-live-actions');
-  const advance = button('Advance / skip current turn', () => mutate('/api/host/advance', { turnId: view!.turnId })); advance.disabled ||= !view.current; controls.append(advance);
-  live.append(controls); workspace.prepend(live); workspace.append(stats);
+  const advance = button('Skip turn', () => {
+    if (view?.playbackStatus !== 'idle' && !confirm('Stop the current song and skip to the next person?')) return;
+    return mutate('/api/host/advance', { turnId });
+  }); advance.disabled ||= !view.current; controls.append(advance);
+  live.append(controls); workspace.prepend(live);
   const people = el('section', undefined, 'panel host-people'); people.id = 'rotation'; people.tabIndex = -1;
   const orderHeading = el('div', undefined, 'section-heading'); const orderTitle = el('div'); orderTitle.append(el('h2', 'Listening order'));
-  orderHeading.append(orderTitle, el('span', `${active.length} listeners`, 'count-tag')); people.append(orderHeading);
-  if (!active.length) people.append(el('p', 'No participants yet. Share the invitation; the first person to join gets the first turn.', 'muted'));
+  const manage = el('button', managingPeople ? 'Done managing' : 'Manage people', 'secondary'); manage.type = 'button'; manage.id = 'manage-people'; manage.onclick = () => { managingPeople = !managingPeople; hostFeedback = ''; render(); };
+  orderHeading.append(orderTitle, el('span', `${active.length} ${active.length === 1 ? 'listener' : 'listeners'}`, 'count-tag'), manage); people.append(orderHeading);
+  if (hostFeedback) { const feedback = el('p', hostFeedback, 'muted small'); feedback.setAttribute('role', 'status'); people.append(feedback); }
   active.forEach((person, index) => {
     const row = el('div', undefined, `person-row${person.id === view?.current?.id ? ' is-current' : ''}`);
     row.dataset.personId = person.id;
@@ -318,20 +350,21 @@ function host() {
     for (const [shift, text] of [[-1, '↑'], [1, '↓']] as const) {
       if (index + shift < 0 || index + shift >= active.length) continue;
       const b = button(text, async () => {
-        const ids = (view!.active ?? []).map(p => p.id);
+        const ids = active.map(p => p.id);
         [ids[index], ids[index + shift]] = [ids[index + shift]!, ids[index]!];
-        await mutate('/api/host/reorder', { ids, revision: view!.revision });
+        await mutate('/api/host/reorder', { ids, revision }); hostFeedback = `Moved ${person.nickname} ${shift === -1 ? 'up' : 'down'}.`;
       }, true);
       b.dataset.focusKey = `move-${person.id}-${shift}`;
       b.setAttribute('aria-label', `Move ${person.nickname} ${shift === -1 ? 'up' : 'down'}`); controls.append(b);
     }
-    controls.append(button('Remove', () => mutate('/api/host/remove', { id: person.id, revision: view!.revision }), true));
-    row.append(controls); people.append(row);
+    controls.append(button('Remove', async () => {
+      if (person.id === view?.current?.id && !confirm(`Remove ${person.nickname} from the room? This ends their turn and stops any app-owned song.`)) return;
+      await mutate('/api/host/remove', { id: person.id, revision }); hostFeedback = `Removed ${person.nickname}. Their saved music is kept.`;
+    }, true));
+    if (managingPeople) row.append(controls); people.append(row);
   });
   workspace.append(people);
-  const aside = el('aside', undefined, 'host-invitations'); aside.append(qrCard());
-  aside.setAttribute('aria-label', 'Room invitation');
-  main.append(aside); return main;
+  return main;
 }
 function participant() {
   if (!view?.me) return participantEntry();
@@ -339,18 +372,19 @@ function participant() {
   const position = view.position;
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   main.dataset.turnState = state;
-  const hero = el('section', undefined, `participant-hero is-${state}`); hero.setAttribute('aria-label', 'Your turn status');
+  const hero = el('section', undefined, `participant-hero is-${state}`); hero.id = 'participant-player'; hero.setAttribute('aria-label', 'Your turn status');
   hero.append(el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'));
+  if (!view.myTurn && position) hero.append(el('p', position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away`, 'turn-distance'));
   const circle = rotation(view, false, circleExpanded);
   circle.addEventListener('toggle', () => { if (circle.isConnected && circle instanceof HTMLDetailsElement) circleExpanded = circle.open; });
   main.append(hero, circle);
   const shown = player.project(view); const playback = shown.ownPlayback;
   const turnId = view.turnId;
-  const finish = view.myTurn ? button('Finish my turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId }); }, true) : undefined;
+  const finish = view.myTurn ? button(playback ? 'Finish turn' : 'Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId }); }, true) : undefined;
   if (finish) { finish.id = 'finish-my-turn'; finish.disabled ||= player.starting; }
   if (view.myTurn && playback) {
     const card = el('section', undefined, 'panel playback-card');
-    const cardHeading = el('div', undefined, 'section-heading'); cardHeading.append(label('YOUR TRACK'), el('span', playback.revealed ? view.ownPlayback?.revealed ? 'Revealed' : 'Revealing…' : 'Hidden from the room', 'privacy-tag'));
+    const cardHeading = el('div', undefined, 'section-heading'); cardHeading.append(el('span', playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display', 'privacy-tag'));
     card.append(cardHeading);
     if (player.updating) { const pending = el('p', player.starting ? 'Starting track…' : 'Updating player…', 'player-pending'); pending.setAttribute('role', 'status'); card.append(pending); }
     const now = el('div', undefined, 'private-now-playing');
@@ -363,13 +397,15 @@ function participant() {
       const action = playback.status === 'playing' ? 'pause' : 'resume';
       controls.append(playerButton(action === 'pause' ? 'Pause' : 'Resume', () => player.control(action), true));
     }
-    if (finish) controls.append(finish);
-    card.append(controls);
-    card.append(volumeControl(shown.volume, (level, commit) => player.volume(level, commit), !realtime || !view.connected || playback.status === 'stopped' || player.starting));
     if (!playback.revealed) {
-      const reveal = playerButton('Reveal on the display', () => player.reveal());
-      reveal.classList.add('reveal-button'); card.append(reveal);
+      const reveal = playerButton('Reveal song', () => player.reveal());
+      reveal.classList.add('reveal-button'); controls.append(reveal);
     }
+    card.append(controls);
+    const volume = el('details', undefined, 'player-volume'); volume.open = volumeExpanded;
+    volume.append(el('summary', 'Volume'), volumeControl(shown.volume, (level, commit) => player.volume(level, commit), !realtime || !view.connected || playback.status === 'stopped' || player.starting));
+    volume.ontoggle = () => { if (volume.isConnected) volumeExpanded = volume.open; }; card.append(volume);
+    if (finish) { const ending = el('div', undefined, 'player-ending'); ending.append(el('p', 'Stop this song and pass the turn.', 'muted small'), finish); card.append(ending); }
     main.append(card);
   }
   const search = el('section', undefined, 'catalogue-panel');
@@ -383,17 +419,17 @@ function participant() {
   if (realCatalogue) {
     const modes = el('div', undefined, 'actions search-tabs');
     for (const mode of ['artists', 'tracks'] as const) {
-      const tab = catalogueButton(mode === 'tracks' ? 'Search tracks' : 'Search artists', () => {
+      const tab = catalogueButton(mode === 'tracks' ? 'Songs' : 'Artists', () => {
+        browseHistory?.remember();
         searchMode = mode; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
         sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
+        browseHistory?.push();
       }, searchMode !== mode); tab.id = `catalogue-mode-${mode}`; tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
     }
     search.append(modes);
-    const sources = el('details', undefined, 'catalogue-help'); sources.append(el('summary', 'Sources and matching'),
-      el('p', 'Verified identities can browse all listed sources. Same-name or metadata matches only share a display row: choose a source to browse them. They may be different artists, releases or recordings. Track choices always keep their exact source. Music Assistant may omit failed sources, including in empty searches.', 'muted small')); search.append(sources);
   }
   const form = el('form', undefined, 'search-form');
-  const input = el('input'); input.type = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Track, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
+  const input = el('input'); input.type = 'search'; input.enterKeyHint = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Song, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
   input.id = 'catalogue-search';
   input.setAttribute('aria-label', 'Search catalogue'); input.value = searchText; input.oninput = () => { searchText = input.value; };
   const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = catalogueBusy || !realtime || !view.connected;
@@ -402,16 +438,17 @@ function participant() {
     event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
     if (!query) { catalogueError = 'Enter a track title, artist, or album to search.'; catalogueRetry = undefined; render(); return; }
+    browseHistory?.remember();
     searching = true; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
     void runCatalogue(async () => {
       if (realCatalogue && searchMode === 'artists') {
         const response = await catalogue.browse('artists', query);
-        if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; }
+        if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; browseHistory?.push(); }
       } else {
         const response = await catalogue.search(query);
         if (response && view?.catalogue?.source === response.source) {
-          results = response.tracks; trackNotices = response.notices ?? []; searchDone = true;
+          results = response.tracks; trackNotices = response.notices ?? []; searchDone = true; browseHistory?.push();
         }
       }
     });
@@ -437,45 +474,51 @@ function participant() {
   if (!searchDone && !searching && !catalogueError) found.append(el('p', 'Search for music to add to your private list.', 'muted small'));
   if (searching) { const status = el('p', 'Searching…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
   else if (catalogueBusy) { const status = el('p', 'Loading music…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
-  for (const notice of notices) { const status = el('p', notice, 'catalogue-notice'); status.setAttribute('role', 'status'); found.append(status); }
+  if (coverageUnconfirmed) {
+    const details = el('details', undefined, 'catalogue-help'); details.open = catalogueDetails;
+    details.append(el('summary', 'Some sources may be missing · Details'));
+    for (const notice of allNotices) details.append(el('p', notice, 'muted small'));
+    details.ontoggle = () => { if (details.isConnected) catalogueDetails = details.open; }; found.append(details);
+  }
   if (chosenArtist) {
     const crumbs = el('div', undefined, 'actions browse-crumbs');
-    const backToArtists = catalogueButton('← Artists', () => { chosenArtist = undefined; chosenAlbum = undefined; albums = []; results = []; }); backToArtists.id = 'browse-artists'; crumbs.append(backToArtists);
-    if (chosenAlbum) { const backToAlbums = catalogueButton('← Albums', () => { chosenAlbum = undefined; results = []; }); backToAlbums.id = 'browse-albums'; crumbs.append(backToAlbums); }
+    const back = catalogueButton(chosenAlbum ? '← Albums' : '← Artists', () => browseHistory?.back()); back.id = chosenAlbum ? 'browse-albums' : 'browse-artists'; crumbs.append(back);
     found.append(crumbs, el('h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`),
-      el('p', chosenAlbum?.provider ?? chosenArtist.provider, 'muted small'));
+      el('p', sourceName(chosenAlbum?.provider ?? chosenArtist.provider), 'muted small'));
   }
   for (const artist of !chosenArtist ? artists : []) {
     const source = catalogueSourceChoice(artist, artist.name, sourceChoices, render, 'artist');
     const shown = source.item ?? artist;
-    const row = el('div', undefined, 'track-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name), el('p', artist.provider, 'muted')); info.append(artwork(artist.matchKind === 'metadata' && !source.item ? undefined : shown.artwork, 'Artist image', 'result-artwork artist-portrait'), copy);
+    const row = el('div', undefined, 'track-row browse-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name), el('p', sourceName(artist.provider), 'muted')); info.append(artwork(artist.matchKind === 'metadata' && !source.item ? undefined : shown.artwork, 'Artist image', 'result-artwork artist-portrait'), copy);
     if (source.control) copy.append(source.control);
     const browse = catalogueButton('View albums', async () => {
       if (!source.item) return;
+      browseHistory?.remember();
       const response = await catalogue.browse('albums', source.item!.id);
-      if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; }
+      if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; browseHistory?.push(); }
     }, true); browse.disabled ||= !source.item; row.append(info, browse); found.append(row);
   }
   for (const album of chosenArtist && !chosenAlbum ? albums : []) {
     const source = catalogueSourceChoice(album, album.name, sourceChoices, render, 'album');
     const shown = source.item ?? album; const unchosen = album.matchKind === 'metadata' && !source.item;
-    const row = el('div', undefined, 'track-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name),
-      el('p', [unchosen ? null : shown.year, shown.version, album.provider].filter(Boolean).join(' · '), 'muted'));
+    const row = el('div', undefined, 'track-row browse-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name),
+      el('p', [unchosen ? null : shown.year, shown.version, sourceName(album.provider)].filter(Boolean).join(' · '), 'muted'));
     info.append(artwork(unchosen ? undefined : shown.artwork, 'Album artwork', 'result-artwork'), copy);
     if (source.control) copy.append(source.control);
     const browse = catalogueButton('View tracks', async () => {
       if (!source.item) return;
+      browseHistory?.remember();
       const response = await catalogue.browse('tracks', source.item!.id);
-      if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; }
+      if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; browseHistory?.push(); }
     }, true); browse.disabled ||= !source.item; row.append(info, browse); found.append(row);
   }
   const emptyBrowse = searchDone && searchMode === 'artists' && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
-  if (emptyBrowse) found.append(el('p', coverageUnconfirmed ? 'No results returned. Source coverage is unconfirmed; check Sources and matching or try a source separately.' : chosenArtist && !chosenAlbum
+  if (emptyBrowse) found.append(el('p', coverageUnconfirmed ? 'No results returned. Try another source or check Details.' : chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist. This provider may not support artist albums; try another provider result or search tracks.'
     : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name; Music Assistant may omit unavailable sources.', 'muted'));
   if (searchDone && searchMode === 'tracks' && !results.length) {
     const empty = el('p', realCatalogue
-      ? 'No tracks found. Try a different title or artist, or check that a music source is enabled in Music Assistant. Unavailable sources may be omitted.'
+      ? coverageUnconfirmed ? 'No results returned. Try another source or check Details.' : 'No songs found. Try another title or artist.'
       : 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
     empty.setAttribute('role', 'status'); found.append(empty);
   }
@@ -483,10 +526,10 @@ function participant() {
     const source = catalogueSourceChoice(group, group.title, sourceChoices, render);
     const track = source.item ?? group;
     const row = el('div', undefined, `track-row${library.added.has(track.id) ? ' is-prepared' : ''}`); const info = el('div', undefined, 'result-identity'); const copy = el('div');
-    copy.append(el('strong', track.title), el('p', [track.artist, track.album, track.version, track.provider].filter(Boolean).join(' · '), 'muted'));
+    copy.append(el('strong', track.title), el('p', track.artist, 'result-artist'), el('p', [track.album, track.version, sourceName(track.provider)].filter(Boolean).join(' · '), 'muted result-details'));
     info.append(artwork(group.matchKind === 'metadata' && !source.item ? undefined : track.artwork, 'Album artwork', 'result-artwork'), copy);
     if (source.control) copy.append(source.control);
-    if (source.item && !track.available) info.append(el('p', 'Unavailable through this source', 'muted small'));
+    if (source.item && !track.available) copy.append(el('p', 'Unavailable through this source', 'muted small'));
     const controls = el('div', undefined, 'row-actions');
     const add = music.addButton(track); add.disabled ||= !source.item; controls.append(add);
     if (view.myTurn) {
@@ -496,10 +539,10 @@ function participant() {
     row.append(info, controls);
     found.append(row);
   }
-  const musicPanel = music.render(search, found);
+  const musicPanel = music.render(search, searchDone || catalogueBusy || catalogueError ? found : undefined);
   main.append(musicPanel);
   if (finish && !playback) {
-    const idleFinish = el('section', undefined, 'finish-turn'); idleFinish.append(finish); main.append(idleFinish);
+    hero.append(finish);
   }
   return main;
 }
@@ -552,15 +595,16 @@ function render() {
   const scrollY = window.scrollY;
   const content = document.createDocumentFragment();
   if (error) { const notice = el('div', error, 'error'); notice.setAttribute('role', 'alert'); content.append(notice); }
-  if (view && !realtime) { const n = el('div', 'Reconnecting… controls are disabled until the live connection returns.', 'connection'); n.setAttribute('role', 'status'); content.append(n); }
-  if (view && !view.connected) content.append(el('div', 'Playback or storage state is uncertain. Controls are disabled.', 'error'));
-  if (view?.playbackIssue) content.append(el('div', view.playbackIssue, 'warning'));
+  if (view && !realtime) { const n = el('div', 'Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection'); n.setAttribute('role', 'status'); content.append(n); }
+  else if (view?.playbackIssue) {
+    const notice = el('div', undefined, 'warning'); notice.append('Playback controls lost; the speaker may still be playing. ', page === 'host' ? link('Recover controls in Settings', '/host/settings', 'inline-link') : 'Ask the host to recover controls.'); content.append(notice);
+  } else if (view && !view.connected) content.append(el('div', 'The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error'));
   if (page === 'host') content.append(host());
   else if (page === 'join' && !view) content.append(participantEntry());
   else if (page === 'participant' || page === 'join') content.append(participant());
   else {
     const main = el('main', undefined, 'join-page'); main.append(el('h1', 'Albums of the Year'),
-      el('p', 'Open the listening room, join the circle, or return to My seat.', 'muted small'), link('Open listening room', '/display'), link('Join room', '/join')); content.append(main);
+      el('p', 'Take turns sharing the music you love.', 'muted'), link('Join room', '/join', 'button'), link('My music', '/participant'), link('Room display', '/display'), link('Host desk', '/host', 'home-host')); content.append(main);
   }
   pageContent.replaceChildren(content);
   const ring = root.querySelector('.rotation-list'); if (ring) ring.scrollLeft = ringScroll;
@@ -613,4 +657,9 @@ window.addEventListener('offline', () => {
 window.addEventListener('online', () => {
   if (page === 'participant' && accessEnded) void library.start();
   if (page !== 'settings' && page !== 'home' && !accessEnded) void init();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !navigator.onLine || !['participant', 'host', 'display'].includes(page)) return;
+  if (page === 'participant') { void participantAccess.check(); void library.start(); }
+  else void api<View>(`/api/${page}/state`).then(accept).catch(() => { realtime = false; render(); });
 });

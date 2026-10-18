@@ -69,6 +69,7 @@ export class UploadPanel {
   private async choose(file: File) {
     this.syncOwner();
     if (this.busy || this.recovering || this.discarding || this.library.loading || this.library.saving || this.library.pending || !this.member() || !navigator.onLine) return;
+    if (this.uploadId && (this.preview || this.text.title) && !confirm('Replace this uploaded song and its reviewed details? Your saved list will be kept.')) return;
     const selection = { ownerId: this.ownerId }; this.selection = selection; this.epoch++;
     this.progress = 0; this.error = ''; this.notice = ''; this.changed();
     try {
@@ -112,9 +113,12 @@ export class UploadPanel {
     const button = el('button', label, 'secondary'); button.type = 'button'; button.disabled = disabled;
     button.onclick = () => { void action(); }; return button;
   }
-  stop() {
+  stop(cancelled = false) {
     this.epoch++;
-    if (this.selection) this.error = 'Upload interrupted. Check for a completed upload or select the file again.';
+    if (this.selection) {
+      this.error = cancelled ? '' : 'Upload interrupted. Check for a completed upload or select the file again.';
+      if (cancelled) this.notice = 'Upload cancelled.';
+    }
     this.selection = undefined; this.xhr?.abort(); this.xhr = undefined;
     this.recovering = false; this.discarding = false; this.changed();
   }
@@ -130,21 +134,25 @@ export class UploadPanel {
     if (this.busy) {
       const message = el('p', this.progress >= 100 ? 'Processing audio and artwork…' : `Uploading… ${this.progress}%`, 'muted small'); message.setAttribute('role', 'status');
       const progress = el('progress'); progress.max = 100; progress.value = this.progress; progress.setAttribute('aria-label', 'File upload progress');
-      nodes.push(message, progress, this.button('Cancel upload', () => this.stop()));
-    } else if (allowSelection) nodes.push(this.button(this.uploadId ? 'Choose another file' : 'Upload a track', () => this.input.click(), disabled));
+      nodes.push(message, progress, this.button('Cancel upload', () => this.stop(true)));
+    } else if (allowSelection) {
+      const formats = el('details'); formats.append(el('summary', 'Supported formats'), el('p', 'MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small'));
+      nodes.push(el('p', 'Choose one audio file, then review it before adding.', 'muted small'), formats, this.button(this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled));
+    }
     if (this.recovering) nodes.push(el('p', 'Checking the completed upload…', 'muted small'));
     if (this.error) { const error = el('p', this.error, 'error small'); error.setAttribute('role', 'alert'); nodes.push(error); }
     if (this.notice) { const notice = el('p', this.notice, 'success small'); notice.setAttribute('role', 'status'); nodes.push(notice); }
     if (this.preview && !this.busy) {
       const preview = this.preview; const form = el('form', undefined, 'upload-preview');
+      form.append(el('h3', 'Review uploaded song'));
       const heading = el('div', undefined, 'result-identity'); heading.append(artwork(preview.artwork, 'Uploaded album artwork', 'result-artwork'), el('p', preview.filename, 'muted small')); form.append(heading);
       for (const [key, caption] of [['title', 'Track title'], ['artist', 'Artist'], ['album', 'Album']] as const) {
         const field = el('div', undefined, 'field'); const label = el('label', caption); const input = el('input');
         input.id = `upload-${key}`; input.type = 'text'; input.value = this.text[key]; input.maxLength = 1000; input.required = key === 'title'; input.disabled = disabled;
         input.oninput = () => { this.text[key] = input.value; this.persist(); }; label.htmlFor = input.id; field.append(label, input); form.append(field);
       }
-      form.append(el('p', 'Uploaded, not yet added. Review the details, then save to your list. MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus.', 'muted small'));
-      const add = el('button', 'Add uploaded track to my list'); add.type = 'submit'; add.disabled = disabled || Boolean(this.library.view?.reviewEntryId); form.append(add);
+      form.append(el('p', 'Uploaded, not yet saved. Artist and album are optional.', 'muted small'));
+      const add = el('button', 'Add to my list'); add.type = 'submit'; add.disabled = disabled || Boolean(this.library.view?.reviewEntryId); form.append(add);
       form.onsubmit = event => {
         event.preventDefault();
         void (async () => {

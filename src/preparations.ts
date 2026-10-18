@@ -101,6 +101,7 @@ export type PreparationView = {
   ownerId: string; revision: number; capacity: { upcoming: number; entries: number };
   upcoming: PreparedEntryView[]; played: PreparedEntryView[]; removed: PreparedEntryView[];
   reviewEntryId?: string;
+  recoveryKeyCreated?: boolean;
 };
 export type PreparationResult = { view: PreparationView; entryId: string; replayed: boolean; warning?: string };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -140,7 +141,7 @@ export class PreparationManager {
         ? { artwork: item.selection.metadata.artworkId === 'demo-cover' ? '/demo-cover.svg' : `/api/participant/preparations/artwork/${item.id}/artwork` } : {}),
       ...(item.selection.metadata.artistArtworkId ? { artistArtwork: `/api/participant/preparations/artwork/${item.id}/artistArtwork` } : {}),
       ...(this.sourceAvailable ? { sourceAvailable: this.sourceAvailable(item.selection) } : {}) });
-    return { ownerId: state.ownerId, revision: state.revision, capacity: { upcoming: preparationLimits.upcoming, entries: preparationLimits.entries },
+    return { ownerId: state.ownerId, revision: state.revision, recoveryKeyCreated: Boolean(state.recoveryHash), capacity: { upcoming: preparationLimits.upcoming, entries: preparationLimits.entries },
       upcoming: state.order.map(key => entry(state.entries.find(item => item.id === key)!)),
       played: state.entries.filter(item => item.state === 'played').sort((a, b) => b.playedAt! - a.playedAt!).map(entry),
       removed: state.entries.filter(item => item.state === 'removed').sort((a, b) => b.removedAt! - a.removedAt!).map(entry),

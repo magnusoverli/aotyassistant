@@ -23,7 +23,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     const tv = await tvContext.newPage(); await tv.goto(state.displayUrl);
     const prepare = async (page: Page) => {
       await showFind(page);
-      await page.getByRole('button', { name: 'Search artists', exact: true }).click();
+      await page.getByRole('button', { name: 'Artists', exact: true }).click();
       await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await page.getByRole('button', { name: 'Search', exact: true }).click();
       await page.getByRole('button', { name: 'View albums', exact: true }).click();
       const response = page.waitForResponse(response => response.url().endsWith('/api/participant/browse') && response.request().postDataJSON().kind === 'tracks');
@@ -39,15 +39,16 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     const beforeSecond = await (await second.request.get('/api/participant/state')).json();
     const cookieBefore = (await secondContext.cookies()).find(cookie => cookie.name === 'aoty_participant')!.value;
     await first.getByRole('searchbox', { name: 'Search catalogue' }).focus();
-    await host.goto('/host/settings'); await expect(host.getByLabel('Playback destination', { exact: true })).toBeEnabled();
-    await host.getByLabel('Playback destination', { exact: true }).selectOption('sonos:bedroom');
-    await host.getByRole('button', { name: 'Save destination', exact: true }).click();
-    await expect(host.getByText('Saved destination: Bedroom', { exact: true })).toBeVisible();
-    await expect(host.getByText('Destination saved.', { exact: true })).toBeVisible();
+    await host.goto('/host/settings'); await host.getByRole('button', { name: 'Change speaker', exact: true }).click();
+    await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
+    await host.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
+    await host.getByRole('button', { name: 'Save speaker', exact: true }).click();
+    await expect(host.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
+    await expect(host.getByText('Speaker saved.', { exact: true })).toBeVisible();
     for (const page of [first, second]) {
       expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(1);
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
-      await expect(page.getByRole('button', { name: 'Search artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
       await expect(page.getByRole('button', { name: '← Albums', exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as unknown as { destinationTestDocument: string }).destinationTestDocument)).toBe('same-document');
     }
@@ -67,20 +68,20 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     await second.getByRole('button', { name: '← Albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
     await expect(second.getByRole('button', { name: 'Add to my list', exact: true })).toBeVisible();
     await showList(first); await showList(second);
-    await expect(first.getByRole('button', { name: 'Play next prepared track', exact: true })).toBeEnabled();
-    await expect(second.getByRole('button', { name: 'Play next prepared track', exact: true })).toBeDisabled();
-    await first.getByRole('button', { name: 'Play next prepared track', exact: true }).click(); await expect(first.locator('.player-pending')).toHaveCount(0);
+    await expect(first.getByRole('button', { name: 'Play this song', exact: true })).toBeEnabled();
+    await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toHaveCount(0);
+    await first.getByRole('button', { name: 'Play this song', exact: true }).click(); await expect(first.locator('.player-pending')).toHaveCount(0);
     expect((await (await first.request.get('/api/participant/state')).json()).ownPlayback.track.id).toBe(`prepared:${firstTrack.entryId}`);
     await expect(second.locator('.saved-track.is-next')).toBeVisible();
     await host.goto('/host');
-    await first.getByRole('button', { name: 'Finish my turn' }).click();
-    await expect(second.getByRole('button', { name: 'Play next prepared track', exact: true })).toBeEnabled();
-    await second.getByRole('button', { name: 'Play next prepared track', exact: true }).click(); await expect(second.locator('.player-pending')).toHaveCount(0);
+    await first.getByRole('button', { name: 'Finish turn' }).click();
+    await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toBeEnabled();
+    await second.getByRole('button', { name: 'Play this song', exact: true }).click(); await expect(second.locator('.player-pending')).toHaveCount(0);
     expect((await (await second.request.get('/api/participant/state')).json()).ownPlayback.track.id).toBe(`prepared:${secondTrack.entryId}`);
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
-    await second.getByRole('button', { name: 'Finish my turn' }).click(); await expect(first.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
+    await second.getByRole('button', { name: 'Finish turn' }).click(); await expect(first.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
     for (const page of [first, second]) {
-      await showList(page); await page.locator('#list-played').click(); await page.getByRole('button', { name: 'Restore', exact: true }).click(); await expect(page.locator('.saved-track.is-next')).toBeVisible(); await showFind(page);
+      await showList(page); await page.locator('#list-history').click(); await page.getByRole('button', { name: 'Add back', exact: true }).click(); await expect(page.locator('.saved-track.is-next')).toBeVisible(); await showFind(page);
     }
     settings = await (await host.request.get('/api/host/integrations')).json();
     expect((await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: settings.revision })).ok()).toBe(true);

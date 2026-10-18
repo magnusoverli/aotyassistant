@@ -7,14 +7,12 @@ async function noHorizontalOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 }
 
-async function expectConfiguredConnection(page: Page) {
-  const connection = page.getByRole('region', { name: 'Music Assistant', exact: true });
-  await expect(connection.locator('.settings-state')).toHaveText('Configured');
+async function expectConfiguredConnection(page: Page, state = 'Connected') {
+  const connection = page.getByRole('region', { name: '1. Music connection', exact: true });
+  await expect(connection.locator('.settings-state')).toHaveText(state);
   await expect(connection.getByText('Music Assistant is configured.', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reload saved settings', exact: true })).toHaveCount(0);
-  await expect(connection.getByRole('button', { name: 'Disconnect', exact: true })).toBeEnabled();
-  await expect(connection.locator('input, form, details')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save connection', exact: true })).toHaveCount(0);
+  await expect(connection.getByRole('button', { name: /^(Change connection|Close connection settings)$/ })).toBeEnabled();
   await expect(page.getByRole('button', { name: /Check connection/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
 }
@@ -30,15 +28,15 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.goto('/host');
   const palette = await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)));
   await openNavigation(page);
-  await page.getByRole('link', { name: 'Connections & settings' }).click();
-  await expect(page.getByRole('heading', { name: 'Connections & settings.' })).toBeVisible();
+  await page.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
   await openNavigation(page);
-  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Connections & settings' })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page');
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)))).toEqual(palette);
-  await expect(page.getByRole('region', { name: 'Music Assistant', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: 'Speaker or group', exact: true })).toBeVisible();
-  expect((await page.locator('.settings-workspace').boundingBox())!.width).toBeGreaterThan(1200);
+  await expect(page.getByRole('region', { name: '1. Music connection', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: '2. Speaker', exact: true })).toBeVisible();
+  expect((await page.locator('.settings-workspace').boundingBox())!.width).toBeLessThan(900);
   await expect(page.getByRole('button', { name: 'Reload saved settings', exact: true })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Live playback', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
@@ -59,19 +57,19 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.getByLabel('Music Assistant access token', { exact: true }).fill('browser-test-token');
   await page.getByRole('button', { name: 'Save connection', exact: true }).click();
   await expect(page.getByText('Connection saved.', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Playback destination', { exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   expect((await (await page.request.get('/api/host/integrations')).json()).playbackAvailable).toBe(false);
   await expectConfiguredConnection(page);
-  await expect(page.getByRole('button', { name: 'Save destination', exact: true })).toBeDisabled();
-  await page.getByLabel('Playback destination', { exact: true }).selectOption('sonos:room');
-  await page.getByRole('button', { name: 'Save destination', exact: true }).click();
-  await expect(page.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save speaker', exact: true })).toBeDisabled();
+  await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:room');
+  await page.getByRole('button', { name: 'Save speaker', exact: true }).click();
+  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   expect((await (await page.request.get('/api/host/integrations')).json()).playbackAvailable).toBe(true);
   await expect(page.getByText('Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', { exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/settings-configured.png', fullPage: true });
   await page.reload();
   await expectConfiguredConnection(page);
-  await expect(page.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   expect(outgoing.some(url => url.endsWith('/playback'))).toBe(false);
   await expect(page.locator('header .badge')).toHaveText('Music Assistant');
   for (const width of [390, 320]) {
@@ -80,24 +78,25 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/settings-mobile.png', fullPage: true });
   await page.reload();
-  await expect(page.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   await expectConfiguredConnection(page);
   expect(responses.join('')).not.toContain('browser-test-token');
   expect(responses.join('')).not.toContain('PRIVATE FIXTURE TRACK');
   expect(responses.join('')).not.toContain('http://private.example/art');
   expect(outgoing.some(url => url.startsWith(isolatedApp.musicAssistantOrigin))).toBe(false); // Only the backend talks to Music Assistant.
   expect(await page.evaluate(() => Object.values(localStorage).join(''))).not.toContain('browser-test-token');
+  await page.getByRole('button', { name: 'Change connection', exact: true }).click();
   page.once('dialog', dialog => dialog.dismiss());
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expectConfiguredConnection(page);
-  await expect(page.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   expect(outgoing.some(url => url.endsWith('/clear'))).toBe(false);
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(page.getByText('Music Assistant disconnected.', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Music Assistant URL', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Music Assistant access token', { exact: true })).toHaveValue('');
-  await expect(page.getByLabel('Playback destination', { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
   await expect(page.locator('header .badge')).toHaveText('DEMO · NO AUDIO');
   const disconnected: IntegrationView = await (await page.request.get('/api/host/integrations')).json();
@@ -107,10 +106,10 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.getByLabel('Music Assistant access token', { exact: true }).fill('wrong-token');
   await page.getByRole('button', { name: 'Save connection', exact: true }).click();
   await expect(page.getByText('Connection saved.', { exact: true })).toBeVisible();
-  await expectConfiguredConnection(page);
+  await expectConfiguredConnection(page, 'Needs attention');
   await expect(page.getByRole('alert')).toContainText('rejected the token');
   await page.reload();
-  await expectConfiguredConnection(page);
+  await expectConfiguredConnection(page, 'Needs attention');
   await expect(page.getByRole('alert')).toContainText('rejected the token');
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
@@ -137,12 +136,13 @@ test('a rejected disconnect keeps the configured summary and saved destination',
     } else await route.fulfill({ json: settings });
   });
   await page.goto('/host/settings');
-  await expectConfiguredConnection(page);
+  await expectConfiguredConnection(page, 'Not checked');
+  await page.getByRole('button', { name: 'Change connection', exact: true }).click();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Stop or finish the current track');
-  await expectConfiguredConnection(page);
-  await expect(page.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expectConfiguredConnection(page, 'Not checked');
+  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
   expect(changes).toEqual(['/api/host/integrations/clear']);
 });
@@ -163,8 +163,10 @@ test('settings keep recovery warnings visible and require confirmation without a
     await route.fulfill({ json: settings });
   });
   await page.setViewportSize({ width: 320, height: 844 }); await page.goto('/host/settings');
-  await expectConfiguredConnection(page);
+  await expectConfiguredConnection(page, 'Needs attention');
   await expect(page.getByRole('alert')).toContainText('connection check failed');
+  await expect(page.locator('.settings-recovery')).toContainText('The speaker may still be playing');
+  await page.locator('.settings-recovery summary').click();
   await expect(page.getByText(settings.playbackIssue, { exact: true })).toBeVisible();
   expect(changes).toEqual([]); await noHorizontalOverflow(page);
   page.once('dialog', dialog => dialog.dismiss());

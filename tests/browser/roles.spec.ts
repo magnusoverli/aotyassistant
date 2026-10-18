@@ -28,7 +28,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     }
     state = await (await host.request.get('/api/host/state')).json();
     expect(state.phase).toBeUndefined(); expect(state.active).toHaveLength(4); expect(state.waiting).toBeUndefined();
-    await expect(listeners.get('Alex')!.locator('.turn-chip')).toHaveText('YOUR TURN');
+    await expect(listeners.get('Alex')!.locator('.participant-hero h1')).toHaveText('Your turn.');
     await host.setViewportSize({ width: 1440, height: 1000 }); await host.goto('/host');
     await openNavigation(host);
     await expect(host.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
@@ -37,20 +37,20 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(alex.locator('main')).toHaveAttribute('data-turn-state', 'mine');
     await expect(sam.locator('main')).toHaveAttribute('data-turn-state', 'next');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'listening');
-    await expect(jordan.getByRole('heading', { name: 'Seat 3 of 4', exact: true })).toBeVisible();
+    expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 3, total: 4 });
     await expect(jordan.getByText('2 turns away', { exact: true })).toBeVisible();
     await expect(jordan.getByRole('heading', { name: 'Alex’s turn.', exact: true })).toBeVisible();
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
-    await expect(riley.getByRole('heading', { name: 'Seat 4 of 4', exact: true })).toBeVisible();
-    await expect(riley.locator('.turn-chip')).toHaveText('LISTENING');
-    await expect(alex.locator('.turn-chip')).toHaveText('YOUR TURN');
-    await expect(sam.locator('.turn-chip')).toHaveText('UP NEXT');
-    await expect(jordan.locator('.turn-chip')).toHaveText('LISTENING');
+    expect((await (await riley.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 4, total: 4 });
+    await expect(riley.locator('.turn-distance')).toHaveText('3 turns away');
+    await expect(alex.locator('.participant-hero h1')).toHaveText('Your turn.');
+    await expect(sam.locator('.turn-distance')).toHaveText('You’re next');
+    await expect(jordan.locator('.turn-distance')).toHaveText('2 turns away');
     await expect(jordan.locator('.circle-panel')).toHaveJSProperty('open', false);
     await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeHidden();
     for (const page of listeners.values()) {
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeInViewport();
-      await expect(page.locator('.participant-hero p:not(.eyebrow)')).toHaveCount(0);
+      await expect(page.locator('.participant-hero p:not(.turn-distance)')).toHaveCount(0);
       await expect(page.locator('.participant-facts, .participant-footer')).toHaveCount(0);
     }
     for (const page of listeners.values()) {
@@ -61,7 +61,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     }
     await noHorizontalOverflow(host);
     const tv = await tvContext.newPage(); await tv.goto(state.displayUrl);
-    await expect(tv.getByAltText('Scan to join the listening room')).toBeVisible(); await tvFits(tv);
+    await expect(tv.getByAltText('Scan to join the room')).toBeVisible(); await tvFits(tv);
     await expect(tv.getByRole('button', { name: 'Full screen', exact: true })).toBeEnabled();
     const palette = (page: Page) => page.evaluate(() => {
       const style = getComputedStyle(document.body);
@@ -79,26 +79,27 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await jordan.screenshot({ path: 'test-results/participant-circle.png', fullPage: true });
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern');
     await jordan.getByRole('button', { name: 'Search', exact: true }).click(); await saveChoice(jordan);
-    await expect(jordan.getByRole('button', { name: 'Play next prepared track' })).toBeDisabled();
+    await expect(jordan.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
     await expect(jordan.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await jordan.screenshot({ path: 'test-results/participant-prepared.png', fullPage: true });
     await showFind(jordan);
     await expect(tv.getByText('Northern Lights')).toHaveCount(0); await expect(host.getByText('Northern Lights')).toHaveCount(0);
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).focus();
+    await host.getByRole('button', { name: 'Manage people' }).click();
     await host.getByRole('button', { name: 'Move Jordan up', exact: true }).click();
     await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Jordan');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'next');
-    await expect(jordan.getByRole('heading', { name: 'Seat 2 of 4', exact: true })).toBeVisible();
+    expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 4 });
     await expect(host.getByRole('heading', { name: 'Alex', exact: true })).toBeVisible();
-    await expect(jordan.getByRole('button', { name: 'Play next prepared track', includeHidden: true })).toBeDisabled();
+    await expect(jordan.getByRole('button', { name: 'Play this song', includeHidden: true })).toHaveCount(0);
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
     await expect(jordan.locator('.circle-panel')).toHaveJSProperty('open', true);
-    await host.getByRole('button', { name: 'Advance / skip current turn' }).click();
+    await host.getByRole('button', { name: 'Skip turn' }).click();
     await expect(tv.locator('.turn-person.is-current strong')).toHaveText('Jordan');
     await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');
-    await expect(jordan.getByRole('button', { name: 'Play next prepared track', includeHidden: true })).toBeEnabled();
+    await expect(jordan.getByRole('button', { name: 'Play this song', includeHidden: true })).toBeEnabled();
     await expect(sam.getByRole('heading', { name: 'Jordan’s turn.', exact: true })).toBeVisible();
     // Direct late joining preserves the current turn and the host's reordered rotation.
     const beforeArrival = await (await host.request.get('/api/host/state')).json();
@@ -109,7 +110,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     expect(state.active.map((person: { nickname: string }) => person.nickname)).toEqual(['Alex', 'Jordan', 'Sam', 'Riley', 'Another listener']);
     await expect(host.getByLabel('Position for Riley')).toHaveCount(0);
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');
-    await expect(jordan.getByRole('heading', { name: 'Seat 2 of 5', exact: true })).toBeVisible();
+    expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 5 });
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     await expect(riley.getByText('2 turns away', { exact: true })).toBeVisible();
     // Bound the public roster for a larger room without clipping the TV page.
@@ -132,7 +133,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(tv.getByRole('list', { name: 'Participant rotation' })).toHaveCount(0);
     await expect(jordan.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(jordan.locator('.preparation-list')).toHaveCount(0);
-    await expect(jordan.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
+    await expect(jordan.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
   } finally {
     for (const context of contexts) await context.close(); await tvContext.close();
   }

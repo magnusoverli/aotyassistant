@@ -17,6 +17,7 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
     await expect(host.getByRole('button', { name: 'Find Music Assistant', exact: true })).toBeEnabled();
     const titleStyle = await host.getByRole('heading', { level: 1 }).evaluate(typography);
     const labelStyle = await host.locator('label[for="ma-url"]').evaluate(typography);
+    await isolatedApp.engine.join('Layout host');
     await host.goto('/host'); await expect(host.locator('.host-people')).toBeVisible();
     const cardStyle = await host.locator('.host-people').evaluate(surface);
     const background = await host.locator('body').evaluate(node => ({ color: getComputedStyle(node).backgroundColor, image: getComputedStyle(node).backgroundImage }));
@@ -46,8 +47,8 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
     await page.setViewportSize({ width: 390, height: 844 });
     await input.focus(); await page.keyboard.press('Tab'); await expect(submit).toBeFocused(); await submit.press('Enter');
     await expect(page).toHaveURL(isolatedApp.origin + '/participant');
-    await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
-    expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeNull();
+    await expect(page.getByRole('heading', { name: 'Layout host’s turn.', exact: true })).toBeVisible();
+    expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeFalsy();
   } finally { await guest.close(); }
 });
 

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-10-18
+
+- Simplify the mobile workspace with a compact header/list, one turn summary, inline list expansion, and separate playback, reveal, volume and finish controls.
+- Clarify music results and source choices; restore browsing context with in-page and browser Back/Forward without putting private music in URLs or history state.
+- Simplify list history, Undo, upload review/cancellation and recovery-key creation, replacement and copying.
+- Prioritise invitations in empty rooms and current-turn status in active rooms; put roster editing behind Manage people and confirm consequential host actions.
+- Organise setup into connection, speaker and guest access, with healthy summaries, local retry, explicit sign-in states and playback-blocked controls.
+- Refresh Home, Join, route titles, favicon, themed error pages and the room display's linked QR invitation.
+- Verify with 195 unit/controller tests and 79 browser workflows; retain screenshots as ignored local artifacts.
+
 ## [0.2.9] — 2026-10-18
 
 - Replace the hard-coded speaker/live badge with truthful playback availability and describe idle participants by whose turn it is.

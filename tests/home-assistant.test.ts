@@ -168,6 +168,20 @@ test('reauthorization and same-server relocation preserve source binding and des
   assert.equal(f.manager.sourceBindingId, binding);
 });
 
+test('explicit sign-in cancellation invalidates its callback and preserves a working connection', async t => {
+  const f = await authorizationFixture(t);
+  await f.manager.save(f.remote.origin, 'old-token', 0);
+  const before = f.manager.view(); const login = await f.start();
+  const response = await fetch(`${f.local.origin}/api/host/auth/cancel`, { method: 'POST', headers: {
+    Origin: f.local.origin, 'Content-Type': 'application/json', Cookie: login.cookie,
+  }, body: '{}' });
+  assert.equal(response.status, 200);
+  login.callback.searchParams.set('code', 'login-code');
+  const callback = await fetch(login.callback, { headers: { Cookie: login.cookie }, redirect: 'manual' });
+  assert.match(callback.headers.get('location')!, /expired$/);
+  assert.deepEqual(f.manager.view(), before); assert.deepEqual(f.calls, []);
+});
+
 test('Ingress requires its dedicated trusted listener; prefixes assets/auth and preserves canonical guest links', async t => {
   const f = await authorizationFixture(t); const ingress = await listen(t, ingressListener(f.app, '127.0.0.1'));
   const guestOrigin = 'http://192.168.9.22:3000'; await f.manager.saveGuestOrigin(guestOrigin, 0);

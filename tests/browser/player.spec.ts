@@ -1,5 +1,6 @@
 import { expect, type Browser, type Page } from '@playwright/test';
 import { test } from './app-fixture';
+import { showList } from './preparation-helpers';
 
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 async function setup(browser: Browser, host: Page) {
@@ -34,7 +35,8 @@ for (const paused of [false, true]) test(`direct and prepared replacement both r
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
     const original = await (await page.request.get('/api/participant/state')).json();
     const prompts: string[] = [];
-    for (const name of ['Play', 'Play next prepared track']) {
+    for (const name of ['Play', 'Play this song']) {
+      if (name === 'Play this song') await showList(page);
       page.once('dialog', async dialog => { prompts.push(dialog.message()); await dialog.dismiss(); });
       await page.getByRole('button', { name, exact: true }).click();
       expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).toBe(original.ownPlayback.id);
@@ -56,10 +58,10 @@ test('a delayed search leaves pause and finish available and retains its results
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Night');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'true');
-    await expect(page.getByRole('button', { name: 'Finish my turn', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Finish my turn', exact: true }).click();
+    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.locator('.playback-card')).toHaveCount(0);
     search.release();
     await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'false');
@@ -85,7 +87,7 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.getByText('Starting track…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Finish my turn', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeDisabled();
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
@@ -96,8 +98,9 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
-    await expect(page.locator('.playback-card').getByRole('button', { name: 'Finish my turn', exact: true })).toBeEnabled();
+    await expect(page.locator('.playback-card').getByRole('button', { name: 'Finish turn', exact: true })).toBeEnabled();
     await expect(page.locator('.finish-turn')).toHaveCount(0);
+    await page.locator('.player-volume summary').click();
     await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
     await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/player-pending-responsive.png', fullPage: true });
@@ -105,11 +108,11 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     pause.release(); await expect(page.locator('.player-pending')).toHaveCount(0);
     expect(actions).toEqual(['resume', 'pause', 'resume']);
-    await page.getByRole('button', { name: 'Finish my turn', exact: true }).click();
+    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Fixture finish rejected.');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     expect(finishes).toBe(1); expect(actions).not.toContain('stop');
-    await page.getByRole('button', { name: 'Reveal on the display', exact: true }).click();
+    await page.getByRole('button', { name: 'Reveal song', exact: true }).click();
     await expect(page.getByText('Revealing…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
@@ -126,13 +129,13 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     await nextContext.request.post(origin + '/api/participant/join', { headers: { Origin: origin }, data: { nickname: 'Next listener' } });
     const next = await nextContext.newPage(); await next.goto(origin + '/participant');
     await expect(next.getByRole('heading', { name: 'Alex’s turn.' })).toBeVisible();
-    await expect(next.getByRole('button', { name: 'Finish my turn', exact: true })).toHaveCount(0);
+    await expect(next.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
-      await expect(page.getByRole('button', { name: 'Finish my turn', exact: true })).toHaveCount(1);
-      await expect(page.locator('.playback-card .actions').getByRole('button', { name: 'Finish my turn', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(1);
+      await expect(page.locator('.player-ending').getByRole('button', { name: 'Finish turn', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
       await expect(page.locator('.finish-turn')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -141,19 +144,19 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     page.on('request', request => { if (request.url().endsWith('/api/participant/control')) controls.push(request.postDataJSON().action); });
     await page.route('**/api/participant/finish', async route => { finishes++; await finish.promise; await route.continue(); });
     const before = await (await page.request.get('/api/participant/state')).json();
-    await page.getByRole('button', { name: 'Finish my turn', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Finish my turn', exact: true })).toBeDisabled();
+    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeDisabled();
     await page.locator('#finish-my-turn').evaluate(node => { (node as HTMLButtonElement).click(); });
     expect(finishes).toBe(1);
     finish.release(); await expect(next.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     await expect(page.locator('.playback-card')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Finish my turn', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(0);
     await expect(f.tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     const after = await (await next.request.get('/api/participant/state')).json();
     expect(after.turnId).not.toBe(before.turnId); expect(after.ownPlayback).toBeNull(); expect(controls).toEqual([]); expect(finishes).toBe(1);
     // A participant can still pass an idle turn without choosing music.
-    await expect(next.getByRole('button', { name: 'Finish my turn', exact: true })).toBeEnabled();
-    await next.getByRole('button', { name: 'Finish my turn', exact: true }).click();
+    await expect(next.getByRole('button', { name: 'Pass turn', exact: true })).toBeEnabled();
+    await next.getByRole('button', { name: 'Pass turn', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   } finally { finish.release(); await nextContext.close(); await f.close(); }
 });
@@ -176,6 +179,7 @@ test('participant and host volume remain active, optimistic, and latest-only dur
   });
   try {
     await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
+    await page.locator('.player-volume summary').click();
     await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
     await page.getByRole('slider', { name: 'Volume', exact: true }).evaluate(node => { (node as HTMLElement).dataset.sameNode = 'yes'; });
     await volume(page, 55); await expect(page.locator('.volume-control output')).toHaveText('55%');
@@ -189,7 +193,7 @@ test('participant and host volume remain active, optimistic, and latest-only dur
     await expect(host.locator('.volume-control output')).toHaveText('65%'); expect(participantLevels).toEqual([55, 65]);
     await volume(host, 45); await volume(host, 25);
     await expect(host.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
-    await expect(host.getByRole('button', { name: 'Advance / skip current turn' })).toBeEnabled();
+    await expect(host.getByRole('button', { name: 'Skip turn' })).toBeEnabled();
     await expect(host.locator('.volume-control output')).toHaveText('25%');
     hostAck.release(); await expect(page.locator('.volume-control output')).toHaveText('25%'); expect(hostLevels).toEqual([45, 25]);
     fail = true; await volume(page, 90);

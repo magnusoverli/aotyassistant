@@ -16,16 +16,17 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   const login = await popupPromise;
   await expect(login.getByRole('heading', { name: 'Music Assistant sign-in' })).toBeVisible();
   await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
-  await expect(login.locator('.settings-connection .settings-state')).toHaveText('Configured');
+  await expect(login.locator('.settings-connection .settings-state')).toHaveText('Connected');
   await expect(login).toHaveURL(/\/host\/settings$/);
-  await expect(login.getByLabel('Playback destination', { exact: true })).toBeEnabled();
-  await login.getByLabel('Playback destination', { exact: true }).selectOption('sonos:room');
-  await login.getByRole('button', { name: 'Save destination', exact: true }).click();
-  await expect(login.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expect(login.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
+  await login.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:room');
+  await login.getByRole('button', { name: 'Save speaker', exact: true }).click();
+  await expect(login.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   const binding = isolatedApp.manager.sourceBindingId;
+  await login.getByRole('button', { name: 'Change connection', exact: true }).click();
   const reconnectPromise = login.waitForEvent('popup'); await login.getByRole('button', { name: 'Reconnect Music Assistant' }).click();
   const reconnect = await reconnectPromise; await reconnect.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
-  await expect(reconnect.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
+  await expect(reconnect.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   expect(isolatedApp.manager.sourceBindingId).toBe(binding);
   expect(isolatedApp.calls.filter(c => c.command === 'auth/token/create')).toHaveLength(2);
   expect(isolatedApp.calls.some(c => /play_media|cmd\/|\/stop$|\/pause$|\/resume$/.test(c.command))).toBe(false);
@@ -52,20 +53,20 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
   const origin = `http://127.0.0.1:${(proxy.address() as AddressInfo).port}`;
   try {
     await page.goto(origin); const frame = page.frameLocator('iframe');
-    await expect(frame.getByRole('heading', { name: 'Connections & settings.' })).toBeVisible();
+    await expect(frame.getByRole('heading', { name: 'Settings' })).toBeVisible();
     await expect(frame.getByRole('button', { name: 'Use the address I opened for guest links' })).toHaveCount(0);
     await expect(frame.getByLabel('Guest address', { exact: true })).toHaveValue(guest);
     await frame.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
     const popupPromise = page.waitForEvent('popup'); await frame.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
     const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
-    await expect(login.locator('.settings-connection .settings-state')).toHaveText('Configured');
+    await expect(login.locator('.settings-connection .settings-state')).toHaveText('Connected');
     await expect(login).toHaveURL(`${origin}${prefix}/host/settings`);
     await openNavigation(login);
     await login.getByRole('link', { name: 'Host desk', exact: true }).click();
     await expect(login).toHaveURL(`${origin}${prefix}/host`);
     await expect(login.getByRole('link', { name: 'Open guest invitation ↗' })).toHaveAttribute('href', `${guest}/join`);
     await openNavigation(login);
-    await expect(login.getByRole('link', { name: 'Listening room', exact: true })).toHaveAttribute('href', `${guest}/display`);
+    await expect(login.getByRole('link', { name: 'Room display', exact: true })).toHaveAttribute('href', `${guest}/display`);
     await page.request.post(`${isolatedApp.origin}/api/participant/join`, { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Ingress listener' } });
     await expect(login.getByText('Ingress listener', { exact: true }).first()).toBeVisible(); // Prefixed SSE delivered the live join.
     expect(escaped.filter(path => path !== '/favicon.ico')).toEqual([]);

@@ -38,12 +38,19 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     const oldBrowser = rawCookie(req, cookieName);
     if (oldBrowser) for (const [key, tx] of transactions) if (tx.browserHash === digest(oldBrowser)) transactions.delete(key);
     if (transactions.size >= 32) throw new AppError(429, 'Too many pending connections. Try again later.');
+    const expiresAt = now() + 10 * 60_000;
     transactions.set(state, { browserHash: digest(browser), origin, base, userId: ingressContext(req)?.userId,
-      url: input.url, browserUrl, serverId: info.server_id, revision: input.revision, expires: now() + 10 * 60_000 });
+      url: input.url, browserUrl, serverId: info.server_id, revision: input.revision, expires: expiresAt });
     res.cookie(cookieName, browser, { path: `${base}/api/host/auth`, httpOnly: true, sameSite: 'lax', secure: origin.startsWith('https:'), maxAge: 10 * 60_000 });
     const callback = new URL(`${base}/api/host/auth/callback`, origin); callback.searchParams.set('state', state);
     const login = new URL('/login', browserUrl); login.searchParams.set('return_url', callback.href); login.searchParams.set('device_name', 'Albums of the Year');
-    res.json({ loginUrl: login.href });
+    res.json({ loginUrl: login.href, expiresAt });
+  });
+  app.post('/api/host/auth/cancel', (req, res) => {
+    body(req, z.object({}).strict()); const browser = rawCookie(req, cookieName);
+    if (browser) for (const [key, tx] of transactions) if (tx.browserHash === digest(browser)) transactions.delete(key);
+    res.clearCookie(cookieName, { path: `${requestBase(req)}/api/host/auth`, httpOnly: true, sameSite: 'lax', secure: browserOrigin(req, integrations.guestOrigin).startsWith('https:') });
+    res.json({ cancelled: true });
   });
   app.get('/api/host/auth/callback', async (req, res) => {
     // Always finish at a clean local URL, including failure and malformed callbacks.
@@ -51,6 +58,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     try {
       prune(); const state = z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.query.state);
       const tx = transactions.get(state); const browser = rawCookie(req, cookieName);
+      if (!tx) { result = 'expired'; throw new Error(); }
       const context = ingressContext(req);
       if (!tx || !browser || digest(browser) !== tx.browserHash || tx.base !== base || tx.userId !== context?.userId ||
         (context ? context.origin !== tx.origin : req.headers.host !== new URL(tx.origin).host)) throw new Error();

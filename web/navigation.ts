@@ -13,18 +13,14 @@ export function headerModel(page: Page, state: HeaderState) {
   const view = state.view;
   const primary: NavigationItem[] = [
     { id: 'host', text: 'Host desk', href: routes.host, current: page === 'host' },
-    { id: 'settings', text: 'Connections & settings', href: routes.settings, current: page === 'settings' },
-    { id: 'participant', text: 'My seat', href: routes.participant, current: page === 'participant' },
-    { id: 'display', text: 'Listening room', href: routes.display, current: page === 'display' },
+    { id: 'settings', text: 'Settings', href: routes.settings, current: page === 'settings' },
+    { id: 'participant', text: 'My music', href: routes.participant, current: page === 'participant' },
+    { id: 'display', text: 'Room display', href: routes.display, current: page === 'display' },
   ];
   const mode = state.mode ?? view?.mode;
-  const turn = page === 'participant' && view?.me ? {
-    text: view.myTurn ? 'YOUR TURN' : view.position?.turnsUntil === 1 ? 'UP NEXT' : 'LISTENING',
-    mine: Boolean(view.myTurn), title: view.current ? `${view.current.nickname}’s turn` : 'Waiting for participants',
-  } : undefined;
-  const subtitle = page === 'participant' && view?.me ? view.me.nickname : page === 'display' ? 'Listening room'
-    : page === 'settings' ? 'Connections & settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : page === 'participant' ? 'My seat' : 'Home';
+  const subtitle = page === 'participant' && view?.me ? view.me.nickname : page === 'display' ? 'Room display'
+    : page === 'settings' ? 'Settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : page === 'participant' ? 'My music' : 'Home';
   const modeText = view && state.realtime === false ? 'Reconnecting…' : mode === 'demo' ? 'DEMO · NO AUDIO'
     : mode === 'music-assistant' ? view?.playbackAvailable === true ? 'Playback ready' : view?.playbackAvailable === false ? 'Playback unavailable' : 'Music Assistant' : '';
-  return { primary, turn, subtitle, modeText };
+  return { primary, subtitle, modeText };
 }

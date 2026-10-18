@@ -2,11 +2,11 @@
 
 Started 18 October 2026. Source: [UI/UX audit](ui-ux-audit.md) and [reproductions](ui-ux-audit-evidence.md).
 
-**Latest milestone:** Batch 1 completed and verified on 18 October 2026. Remaining work replanned into **six batches (2–7)** following the owner's direction to simplify implementation and user flows. Accessibility-specific work is outside the remaining scope.
+**Latest milestone:** all scoped batches 1–7 completed and verified on 18 October 2026. Batches 2–7 comprise release **0.3.0**, following the 0.2.9 checkpoint. The owner's direction is simple implementation and simple user flows. Accessibility-specific work is outside scope.
 
-**0.2.9 release checkpoint:** the owner requested a testable release before continuing. Release scope is the completed Batch 1. Initial Batch 2 edits are saved locally in `/tmp/opencode/aoty-batch2-in-progress.patch` (with a source snapshot alongside it) for resumption after this checkpoint. Screenshots are local/ignored artifacts, not tracked deliverables.
+**0.2.9 release checkpoint:** published with completed Batch 1 only. Batches 2–7 follow in 0.3.0. Screenshots are local/ignored artifacts, not tracked deliverables.
 
-Release checks rerun at version 0.2.9: build/typecheck, 194 unit/controller tests and all 70 Chromium browser tests passed. Publication uses the `v0.2.9` workflow, with the store manifest pushed after image availability is verified.
+Release checks rerun at version 0.2.9: build/typecheck, 194 unit/controller tests and all 70 Chromium browser tests passed. [0.2.9 is published](https://github.com/magnusoverli/aotyassistant/releases/tag/v0.2.9); amd64/arm64 manifests and image configurations were downloaded anonymously before completing publication.
 
 ## Delivery plan
 
@@ -15,12 +15,12 @@ This sequence supersedes the audit's four implementation phases and the earlier 
 | Batch | Status | Outcome |
 | --- | --- | --- |
 | 1 — Confirmed defects | Complete | Trustworthy status, recovery, independent search, consistent replacement, cross-tab list discovery |
-| 2 — Participant workspace | Next | One compact mobile layout for waiting, choosing and playing |
-| 3 — Finding music | Pending | Clear results, source choices and predictable Back navigation |
-| 4 — Keeping music | Pending | Simple list management, uploads and recovery |
-| 5 — Hosting | Pending | Invite people, see the current turn, manage the order |
-| 6 — Setup and recovery | Pending | Short first setup and calm connected summaries |
-| 7 — Finish and verify | Pending | Cohesive entry/display/error pages and end-to-end verification |
+| 2 — Participant workspace | Complete | One compact mobile layout for waiting, choosing and playing |
+| 3 — Finding music | Complete | Clear results, source choices and predictable Back navigation |
+| 4 — Keeping music | Complete | Simple list management, uploads and recovery |
+| 5 — Hosting | Complete | Invite people, see the current turn, manage the order |
+| 6 — Setup and recovery | Complete | Short first setup and calm connected summaries |
+| 7 — Finish and verify | Complete | Cohesive entry/display/error pages and end-to-end verification |
 
 ### Design and implementation rules
 
@@ -55,7 +55,7 @@ This sequence supersedes the audit's four implementation phases and the earlier 
 | P02 | Direct and prepared Play share one replacement guard for playing and paused songs; first play needs no confirmation. | Complete |
 | V11 | Existing tabs discover first-list creation via a content-free storage notice and authoritative read; later updates use the private event stream. Focus rechecks missing access if storage is unavailable. | Complete |
 
-S09 is **partially addressed**: complete failures now have task-local Retry and retain the existing distinction from empty results. Shortened coverage copy and preserved explanatory disclosures remain pending.
+S09 is completed by Batch 3: task-local Retry, distinct empty/failure states, and shortened coverage copy with a persistent Details disclosure.
 
 ### Implementation notes
 
@@ -80,17 +80,19 @@ Checks use isolated synthetic services/data. Physical phone keyboard checks rema
 
 ## Batch 2 — Participant workspace
 
+Implemented: compact navigation, one turn summary, inline mobile list with short-screen unstick, separate player actions and hidden-until-needed results. Focused journey/geometry checks and the final complete browser suite pass. Existing presentation assertions now exercise the revised controls and disclosures.
+
 **Outcome:** the phone screen immediately communicates whose turn it is and what to do next.
 
-- [ ] Compact the shared header and adopt **My music / Room display / Host desk / Settings**. Put Full screen in the menu outside the display.
-- [ ] Use one turn summary: “Sam’s turn · You’re next” or “Your turn”, with a Listening order disclosure. Remove the participant's duplicate header turn chip and seat-heavy summary.
-- [ ] Build waiting, idle-current and playing layouts together. Keep search and list available in all three states.
-- [ ] Replace the mobile list card with one summary row: count, next pick when space permits, and Open. Empty lists take one line. Expanding reveals the existing list in normal page flow.
-- [ ] Let the mobile header scroll away. Only the collapsed list companion may stick while browsing; unstick it on short screens. Keep the expanded list nonsticky. Retain the desktop supporting pane with a content-driven breakpoint.
-- [ ] Use the same companion for a quiet “Your turn · Go to player” link when appropriate. Keep one player; no second transport strip, bottom sheet or forced scrolling.
-- [ ] Player hierarchy: song → Pause/Resume → Reveal song → secondary Finish turn. Show Hidden on room display / Revealing… / Visible on room display. Keep volume in a small disclosure on phones.
-- [ ] Place Pass turn beside the idle turn summary. During playback, explain briefly that Finish stops the song and passes the turn. Keep replacement confirmation from Batch 1.
-- [ ] Remove the empty Results panel before searching. Apply readable type and consistent spacing to these touched components.
+- [x] Compact the shared header and adopt **My music / Room display / Host desk / Settings**. Put Full screen in the menu outside the display.
+- [x] Use one turn summary: “Sam’s turn · You’re next” or “Your turn”, with a Listening order disclosure. Remove the participant's duplicate header turn chip and seat-heavy summary.
+- [x] Build waiting, idle-current and playing layouts together. Keep search and list available in all three states.
+- [x] Replace the mobile list card with one summary row: count, next pick when space permits, and Open. Empty lists take one line. Expanding reveals the existing list in normal page flow.
+- [x] Let the mobile header scroll away. Only the collapsed list companion may stick while browsing; unstick it on short screens. Keep the expanded list nonsticky. Retain the desktop supporting pane with a content-driven breakpoint.
+- [x] Use the same companion for a quiet “Your turn · Go to player” link when appropriate. Keep one player; no second transport strip, bottom sheet or forced scrolling.
+- [x] Player hierarchy: song → Pause/Resume → Reveal song → secondary Finish turn. Show Hidden on room display / Revealing… / Visible on room display. Keep volume in a small disclosure on phones.
+- [x] Place Pass turn beside the idle turn summary. During playback, explain briefly that Finish stops the song and passes the turn. Keep replacement confirmation from Batch 1.
+- [x] Remove the empty Results panel before searching. Apply readable type and consistent spacing to these touched components.
 
 **Implementation:** `web/app-header.ts`, `web/navigation.ts`, `web/main.ts`, `web/visuals.ts`, `web/preparation-panel.ts`, `web/style.css`. Retain one preparation panel/controller and one player controller; use classes and small render helpers for state differences.
 
@@ -100,15 +102,17 @@ Checks use isolated synthetic services/data. Physical phone keyboard checks rema
 
 ## Batch 3 — Finding music
 
+Implemented: Artists/Songs, clearer identities/service names, separate source controls, local Details and memory-only Back/Forward snapshots. Build/typecheck and the focused browser history journey pass. Browser history stores only a local key; metadata remains in the active document.
+
 **Outcome:** find an artist, open an album, choose a song and return without losing context.
 
-- [ ] Label modes Artists / Songs; use a mode-specific search hint and phone Search key.
-- [ ] Simplify rows to artwork, title/name, necessary supporting identity and actions. Keep distinguishing version/source information visible where it affects the choice.
-- [ ] Give artist and album rows one clear browse action. Keep any source selector separate.
-- [ ] Replace matching jargon with “Choose a source” and friendly service names. Use existing safe edition/availability details when available; require the same exact source selection as today.
-- [ ] Support browser Back/Forward through search → artist → album. Retain query, selected source and per-level scroll within the current document.
-- [ ] Keep a small in-memory browse stack; browser history stores only a local entry key. Clear invalid snapshots when membership/catalogue identity changes. Reload uses a fresh workspace; server validation still governs expired results.
-- [ ] Finish local loading/error/empty states. Keep partial-source caveats under Details, preserve its open state, and provide explicit read-only Retry where useful.
+- [x] Label modes Artists / Songs; use a mode-specific search hint and phone Search key.
+- [x] Simplify rows to artwork, title/name, necessary supporting identity and actions. Keep distinguishing version/source information visible where it affects the choice.
+- [x] Give artist and album rows one clear browse action. Keep any source selector separate.
+- [x] Replace matching jargon with “Choose a source” and friendly service names. Use existing safe edition/availability details when available; require the same exact source selection as today.
+- [x] Support browser Back/Forward through search → artist → album. Retain query, selected source and per-level scroll within the current document.
+- [x] Keep a small in-memory browse stack (40 snapshots); browser history stores only a local entry key. Clear invalid snapshots when membership/catalogue identity changes. Reload uses a fresh workspace; server validation still governs expired results.
+- [x] Finish local loading/error/empty states. Keep partial-source caveats under Details, preserve its open state, and provide explicit read-only Retry where useful.
 
 **Implementation:** `web/main.ts`, `web/catalogue-controller.ts`, `web/catalogue-sources.ts`. Add a narrowly scoped browse-history helper if needed; use the existing page routing and catalogue lifetime rules.
 
@@ -118,16 +122,18 @@ Checks use isolated synthetic services/data. Physical phone keyboard checks rema
 
 ## Batch 4 — Keeping music
 
+Implemented: contextual list playback, nearby Undo, separate History/List access, recovery-key lifecycle and copy fallback, explicit upload disclosure/review/cancellation and draft-replacement guard. Build/typecheck, all 194 unit/controller tests and four focused browser journeys pass.
+
 **Outcome:** save, arrange, upload and recover songs with minimal management UI.
 
-- [ ] Keep upcoming songs as the main list. Use “Your next pick” and contextual “Play this song”; while waiting show “Ready for your turn” rather than a prominent disabled Play action.
-- [ ] Keep Edit order with existing move controls. Show removal feedback with nearby Undo; label history actions Add back and explain when they append to the end.
-- [ ] Put History and List access in separate inline disclosures below the upcoming list, outside its desktop scroll container.
-- [ ] Keep a short Needs attention indicator in the collapsed companion for failed saves, unavailable sources or uncertain playback, opening the existing explanation.
-- [ ] Explain retained changes plainly: “Save not confirmed. Your change is kept.” Keep explicit retry/reconciliation and show which edit needs attention.
-- [ ] Simplify List access into backup key, use a key, and other devices. Add Copy with a selectable-text fallback; distinguish creating from replacing a key. Keep this user-opened rather than adding backup reminders.
-- [ ] Make Upload a song an explicitly opened inline section. Show supported formats before selection and distinguish Uploading → Processing → Review → Add to my list.
-- [ ] Keep upload cancellation calm; confirm replacement only when another file would discard meaningful draft work. Preserve read-only recovery of uncertain uploads.
+- [x] Keep upcoming songs as the main list. Use “Your next pick” and contextual “Play this song”; while waiting show “Ready for your turn” rather than a prominent disabled Play action.
+- [x] Keep Edit order with existing move controls. Show removal feedback with nearby Undo; label history actions Add back and explain when they append to the end.
+- [x] Put History and List access in separate inline disclosures below the upcoming list, outside its desktop scroll container.
+- [x] Keep a short Needs attention indicator in the collapsed companion for failed saves, unavailable sources or uncertain playback, opening the existing explanation.
+- [x] Explain retained changes plainly: “Save not confirmed. Your change is kept.” Keep explicit retry/reconciliation and show which edit needs attention.
+- [x] Simplify List access into backup key, use a key, and other devices. Add Copy with a selectable-text fallback; distinguish creating from replacing a key. Keep this user-opened rather than adding backup reminders.
+- [x] Make Upload a song an explicitly opened inline section. Show supported formats before selection and distinguish Uploading → Processing → Review → Add to my list.
+- [x] Keep upload cancellation calm; confirm replacement only when another file would discard meaningful draft work. Preserve read-only recovery of uncertain uploads.
 
 **Implementation:** `web/preparation-panel.ts`, `web/preparation-controller.ts`, `web/upload-panel.ts`, `web/style.css`. Reuse controllers, disclosures, saved-entry semantics and native confirmation. Keep storage schemas unchanged.
 
@@ -137,14 +143,16 @@ Checks use isolated synthetic services/data. Physical phone keyboard checks rema
 
 ## Batch 5 — Hosting
 
+Implemented: empty-room invitations, metadata-free playback status, top invitation anchor/copy fallback, Manage people, guarded skip/current-person removal and action feedback. The focused 30-person browser journey passes.
+
 **Outcome:** the host sees the next useful action, even with a long roster.
 
-- [ ] Empty room: lead with Invite people and any required setup link. Omit empty statistics and irrelevant playback controls.
-- [ ] Active room: show current person, metadata-free Choosing a song / Playing / Paused / Unavailable status, next person and volume. Consolidate participant counts.
-- [ ] Keep an Invite link near the top that jumps to the invitation section. Add Copy join link with selectable-URL fallback; retain QR and Open display.
-- [ ] Rename advance to Skip turn. Confirm stopping/passing when audio is active or paused, using authoritative state and existing stale-action guards.
-- [ ] Show move/remove tools only in Manage people mode. Confirm removing the current participant with its actual consequence.
-- [ ] Give the page a clear Host desk title and concise action feedback.
+- [x] Empty room: lead with Invite people and any required setup link. Omit empty statistics and irrelevant playback controls.
+- [x] Active room: show current person, metadata-free Choosing a song / Playing / Paused / Unavailable status, next person and volume. Consolidate participant counts.
+- [x] Keep an Invite link near the top that jumps to the invitation section. Add Copy join link with selectable-URL fallback; retain QR and Open display.
+- [x] Rename advance to Skip turn. Confirm stopping/passing when audio is active or paused, using authoritative state and existing stale-action guards.
+- [x] Show move/remove tools only in Manage people mode. Confirm removing the current participant with its actual consequence.
+- [x] Give the page a clear Host desk title and concise action feedback.
 
 **Implementation:** host rendering in `web/main.ts`, shared styles, and a minimal metadata-free playback status in `src/model.ts`/`src/engine.ts` if required. Use an anchor for invitation access and the existing host mutations.
 
@@ -154,16 +162,18 @@ Checks use isolated synthetic services/data. Physical phone keyboard checks rema
 
 ## Batch 6 — Setup and recovery
 
+Implemented: ordered setup and healthy summaries, local speaker retry, sign-in cancellation/expiry, address-change confirmation, ownership-based blocked controls and read-only stale-tab revalidation. Focused browser checks cover draft preservation, blocked settings and sign-in states; backend cancellation invalidates the callback without replacing saved configuration.
+
 **Outcome:** first setup is a short page; a working installation shows summaries.
 
-- [ ] Organise settings as Music connection → Speaker → Guest access, ending with a Host desk link. Expand the incomplete step and show healthy steps as summaries with Change.
-- [ ] Distinguish saved credentials from confirmed health. Keep Reconnect, manual tokens and disconnect secondary unless needed.
-- [ ] Show the saved speaker by default. Save speaker is enabled only for a changed selection. Add local Find speakers again with pending/error feedback.
-- [ ] Make sign-in states explicit: waiting, connected, cancelled and expired. Preserve working configuration when sign-in is cancelled.
-- [ ] Separate guest sharing from uploaded-file networking. Keep manual address overrides under Advanced; show the old/new link and cookie-access consequence before an origin change.
-- [ ] Explain playback-blocked changes beside the affected control, with a return link. Use existing ownership facts or a small server-provided status rather than inferring from button state.
-- [ ] Shorten playback recovery to what may still be playing, what recovery will do and its explicit action. Preserve current ownership checks and confirmation.
-- [ ] Apply one prioritised room-level connection notice and local task errors. On returning to a stale tab, revalidate with reads; never replay writes.
+- [x] Organise settings as Music connection → Speaker → Guest access, ending with a Host desk link. Expand the incomplete step and show healthy steps as summaries with Change.
+- [x] Distinguish saved credentials from confirmed health. Keep Reconnect, manual tokens and disconnect secondary unless needed.
+- [x] Show the saved speaker by default. Save speaker is enabled only for a changed selection. Add local Find speakers again with pending/error feedback.
+- [x] Make sign-in states explicit: waiting, connected, cancelled and expired. Preserve working configuration when sign-in is cancelled.
+- [x] Separate guest sharing from uploaded-file networking. Keep manual address overrides under Advanced; show the old/new link and cookie-access consequence before an origin change.
+- [x] Explain playback-blocked changes beside the affected control, with a return link. Use existing ownership facts or a small server-provided status rather than inferring from button state.
+- [x] Shorten playback recovery to what may still be playing, what recovery will do and its explicit action. Preserve current ownership checks and confirmation.
+- [x] Apply one prioritised room-level connection notice and local task errors. On returning to a stale tab, revalidate with reads; never replay writes.
 
 **Implementation:** `web/settings.ts`, `web/addressing-panel.ts`, existing request/connection handling and minimal safe backend status additions where necessary. Keep the current authorization/discovery flows and inline forms.
 
@@ -173,21 +183,35 @@ Checks use isolated synthetic services/data. Physical phone keyboard checks rema
 
 ## Batch 7 — Finish and verify
 
+Implemented: Home/Join entry copy, route titles/record favicon/theme colour, themed HTML errors with JSON API errors preserved, linked display QR/URL and larger essential display labels. Removed obsolete turn-chip/stat/finish-strip styles. Responsive captures reviewed and existing presentation assertions reconciled with the new disclosures and labels.
+
 **Outcome:** complete the small remaining surfaces and verify the whole simplified application.
 
-- [ ] Simplify Home to Join room, My music, Room display and secondary Host desk, with existing authoritative membership checks on entry. Add one short explanation on Join.
-- [ ] Use useful route titles, the existing record icon and matching browser theme colour. Keep private track names out of titles/history.
-- [ ] Provide small themed page-not-found and wrong-address/error pages with a concrete next link. Preserve JSON for API errors.
-- [ ] Keep the public display's stage. Make its QR clickable with a quiet join-link fallback; tune current/next and essential secondary text for across-room readability.
-- [ ] Use the compact shared header and existing Full screen for display presentation. Keep the current record animation/reduced-motion behaviour.
-- [ ] Consolidate redundant CSS encountered across completed batches and align common headings, buttons and notices. Add shared helpers only for repeated, stable patterns.
-- [ ] Run the complete join → search → save → play → reveal → finish journey, host setup/invite/manage journey and upload/recovery journey, including long content and a returning tab.
+- [x] Simplify Home to Join room, My music, Room display and secondary Host desk, with existing authoritative membership checks on entry. Add one short explanation on Join.
+- [x] Use useful route titles, the existing record icon and matching browser theme colour. Keep private track names out of titles/history.
+- [x] Provide small themed page-not-found and wrong-address/error pages with a concrete next link. Preserve JSON for API errors.
+- [x] Keep the public display's stage. Make its QR clickable with a quiet join-link fallback; tune current/next and essential secondary text for across-room readability.
+- [x] Use the compact shared header and existing Full screen for display presentation. Keep the current record animation/reduced-motion behaviour.
+- [x] Consolidate redundant CSS encountered across completed batches and align common headings, buttons and notices. Add shared helpers only for repeated, stable patterns.
+- [x] Run the complete join → search → save → play → reveal → finish journey, host setup/invite/manage journey and upload/recovery journey, including long content and a returning tab.
 
 **Implementation:** `web/main.ts`, `web/index.html`, `web/public-room.ts`, shared styles, and existing HTTP/address fallback handlers. Keep this a finishing pass, not a framework or rendering rewrite.
 
 **Done when:** build, typecheck and complete unit/browser suites pass; review representative 320px, 390px, tablet, desktop and display layouts with long content and short phone heights. Record remaining real-device observations separately from confirmed automated results.
 
 **Audit links:** G04–G05/G09, J01, D02–D03, V01/V10 (visual consistency portions).
+
+### Final verification — 18 October 2026
+
+- `npm run build` and `npm run typecheck` — passed.
+- `npm test` — **195 passed**.
+- Complete Chromium suite (`npx playwright test --workers=2`) — **79 passed**, including all existing flows and nine new simplified-flow checks.
+- `git diff --check` — passed.
+- Reviewed local captures at 320px and 390px phone widths, 390×440 short height, 999px tablet, 1440px desktop and 1366×768 display. Geometry checks also cover 1920×1080 display and other intermediate widths, long music/nicknames, one private list, and 30-person invitation access.
+- Verified exact-source choices, private role boundaries, reveal gating, explicit playback/replacement, uncertain-save retention, recovery, upload review, Ingress, sign-in cancellation and read-only retries.
+- New screenshots are ignored under `test-results/`; the only tracked PNG is the existing application `icon.png` asset.
+
+Physical phone keyboards, touch behaviour and across-room TV readability remain real-device observations for the owner; the checks above use isolated synthetic services and Chromium. Release 0.3.0 uses the tagged image-publication workflow; public amd64/arm64 image verification precedes the store-branch update. Installation is a separate step.
 
 ## Explicitly deferred or excluded
 

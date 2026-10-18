@@ -9,7 +9,8 @@ async function room(browser: Browser, host: Page, origin: string) {
   const joined = await context.request.post(origin + '/api/participant/join', { data: { nickname: 'Upload listener' }, headers: { Origin: origin } });
   expect(joined.ok()).toBe(true);
   const page = await context.newPage(); await page.goto(origin + '/participant');
-  await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
+  await page.locator('#list-upload').click();
+  await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
   return { page, context, post };
 }
 const selectFile = (page: Page, name = 'local-song.mp3') => page.locator('#track-upload-file').setInputFiles({ name, mimeType: 'audio/mpeg', buffer: uploadBytes });
@@ -42,7 +43,7 @@ test('cancelling during private-list initialization prevents a delayed upload an
     await selectFile(page, 'cancelled.mp3'); await entered;
     await page.getByRole('button', { name: 'Cancel upload', exact: true }).click({ timeout: 3000 });
     const initialized = page.waitForResponse('**/api/participant/preparations/init'); release(); await initialized;
-    await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
     await selectFile(page, 'fresh.mp3');
     await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     await expect(page.locator('.upload-preview')).toContainText('fresh.mp3');
@@ -57,7 +58,7 @@ test('single-file metadata review, private save/reload/recovery and reversible/p
     await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     await expect(page.getByLabel('Artist', { exact: true })).toHaveValue('Local artist');
     await expect(page.getByRole('img', { name: 'Uploaded album artwork' })).toBeVisible();
-    await expect(page.locator('.list-save-status')).toHaveText('Private · upload not yet added');
+    await expect(page.locator('.upload-preview')).toContainText('Uploaded, not yet saved.');
     expect((await list(page)).upcoming).toHaveLength(0);
     await page.getByLabel('Track title', { exact: true }).fill('My private file title');
     await page.getByLabel('Artist', { exact: true }).fill('My local artist');
@@ -67,7 +68,8 @@ test('single-file metadata review, private save/reload/recovery and reversible/p
     await expect(page.getByLabel('Album', { exact: true })).toBeFocused();
     await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My private file title');
     await page.screenshot({ path: 'test-results/participant-upload-review-320.png', fullPage: true });
-    await page.getByRole('button', { name: 'Add uploaded track to my list', exact: true }).click();
+    await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list', exact: true }).click();
+    await showList(page);
     await expect(page.locator('.saved-track strong')).toHaveText('My private file title');
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
     const publicHost = await (await host.request.get('/api/host/state')).json(); expect(JSON.stringify(publicHost)).not.toContain('My private file title');
@@ -77,12 +79,12 @@ test('single-file metadata review, private save/reload/recovery and reversible/p
     await page.getByLabel('Options for My private file title', { exact: true }).click();
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] .saved-track')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Undo last removal' }).click();
+    await page.getByRole('button', { name: 'Undo removal' }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] strong')).toHaveText('My private file title');
     const options = page.getByLabel('Options for My private file title', { exact: true });
     if (!await options.evaluate(node => (node.parentElement as HTMLDetailsElement).open)) await options.click();
     await page.getByRole('button', { name: 'Remove', exact: true }).click();
-    await page.locator('#list-removed').click(); page.once('dialog', dialog => dialog.accept());
+    await page.locator('#list-history').click(); page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Delete file permanently' }).click();
     await expect.poll(async () => (await list(page)).removed.length).toBe(0);
     await page.reload(); expect((await list(page)).removed).toHaveLength(0);
@@ -102,10 +104,10 @@ test('lost upload and add acknowledgements recover through read-only checks and 
     await page.unroute(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/);
     let adds = 0;
     await page.route('**/api/participant/preparations/add-upload', async route => { adds++; await route.fetch(); await route.abort('failed'); });
-    await page.getByRole('button', { name: 'Add uploaded track to my list' }).click();
-    await expect(page.locator('.list-save-status')).toHaveText('Not synced · draft retained');
+    await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list' }).click();
+    await expect(page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     expect((await list(page)).upcoming).toHaveLength(1);
-    await page.reload(); await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible(); expect(adds).toBe(1);
+    await page.reload(); await showList(page); await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible(); expect(adds).toBe(1);
     await page.unroute('**/api/participant/preparations/add-upload');
     await page.getByRole('button', { name: 'Retry save', exact: true }).click();
     await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓'); expect((await list(page)).upcoming).toHaveLength(1);
@@ -119,15 +121,16 @@ test('an uploaded file uses the normal explicit player and never exposes Music A
     const settings = await (await host.request.get('/api/host/integrations')).json();
     await r.post('/api/host/integrations/destination', { id: 'sonos:room', revision: settings.revision });
     await selectFile(page); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
-    await page.getByRole('button', { name: 'Add uploaded track to my list' }).click();
-    await expect(page.getByRole('button', { name: 'Play next prepared track' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Play next prepared track' }).click();
+    await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list' }).click();
+    await showList(page);
+    await expect(page.getByRole('button', { name: 'Play this song' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Play this song' }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
     const state = await (await page.request.get('/api/participant/state')).json();
     expect(state.ownPlayback.track.title).toBe('Uploaded song'); expect(JSON.stringify(state)).not.toContain('/api/media/'); expect(JSON.stringify(state)).not.toContain('UPSTREAM SECRET');
     expect((await list(page)).played).toHaveLength(1);
-    await page.getByRole('button', { name: 'Finish my turn', exact: true }).click();
+    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.locator('.playback-card')).toHaveCount(0);
   } finally { await r.context.close(); }
 });
@@ -139,7 +142,7 @@ test('unsupported standalone AAC and explicit cancellation leave existing lists 
     await selectFile(page, 'unsupported.aac'); await expect(page.getByText('Standalone AAC is not supported.', { exact: false })).toBeVisible();
     expect((await list(page)).upcoming).toHaveLength(0);
     await page.getByRole('button', { name: 'Discard upload draft' }).click();
-    await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
     let enter!: () => void; const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
     await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
       if (route.request().method() !== 'POST') { await route.continue(); return; }
@@ -147,10 +150,10 @@ test('unsupported standalone AAC and explicit cancellation leave existing lists 
     });
     await selectFile(page); await entered;
     await page.getByRole('button', { name: 'Cancel upload', exact: true }).click();
-    await expect(page.getByText('Upload interrupted.', { exact: false })).toBeVisible(); release();
+    await expect(page.getByText('Upload cancelled.', { exact: false })).toBeVisible(); release();
     await page.unroute(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/);
     await page.getByRole('button', { name: 'Discard upload draft' }).click();
-    await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
     await selectFile(page, 'fresh.mp3'); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     expect((await list(page)).upcoming).toHaveLength(0);
   } finally { release(); await r.context.close(); }

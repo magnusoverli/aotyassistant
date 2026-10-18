@@ -30,13 +30,10 @@ test('all pages have stable navigation without display credentials or lifecycle 
   }
 });
 
-test('header state stays presentation-only, with literal nicknames, accurate turn badges, and explicit settings mode updates', () => {
-  assert.equal(headerModel('participant', {}).subtitle, 'My seat');
-  const participant = headerModel('participant', { view }); assert.equal(participant.subtitle, 'Literal <name>'); assert.equal(participant.turn!.text, 'UP NEXT');
-  assert.equal(headerModel('participant', { view: { ...view, myTurn: true } }).turn!.text, 'YOUR TURN');
-  assert.equal(headerModel('participant', { view: { ...view, position: { ...view.position!, turnsUntil: 2 } } }).turn!.text, 'LISTENING');
-  assert.equal(headerModel('participant', { view: { ...view, me: undefined } }).turn, undefined);
-  assert.equal(headerModel('display', { view }).turn, undefined);
+test('header state stays presentation-only, with literal nicknames and explicit settings mode updates', () => {
+  assert.equal(headerModel('participant', {}).subtitle, 'My music');
+  const participant = headerModel('participant', { view }); assert.equal(participant.subtitle, 'Literal <name>');
+  assert.ok(!('turn' in participant), 'Turn status belongs in the workspace, not repeated in the header.');
   assert.equal(headerModel('settings', { view, mode: 'demo' }).modeText, 'DEMO · NO AUDIO');
   const withPrivateData = { ...view, ownPlayback: { track: { title: 'SECRET TITLE' } }, preparations: ['PRIVATE LIST'] };
   assert.ok(!JSON.stringify(headerModel('participant', { view: withPrivateData })).includes('SECRET TITLE'));
@@ -48,5 +45,4 @@ test('header readiness uses server availability, never an assumed speaker or a s
   assert.equal(headerModel('host', { view: { ...view, playbackAvailable: false } }).modeText, 'Playback unavailable');
   assert.equal(headerModel('host', { view: { ...view, playbackAvailable: true } }).modeText, 'Playback ready');
   assert.equal(headerModel('participant', { view: { ...view, playbackAvailable: true }, realtime: false }).modeText, 'Reconnecting…');
-  assert.equal(headerModel('participant', { view }).turn?.title, 'Other’s turn');
 });

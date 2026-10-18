@@ -28,6 +28,7 @@ export type IntegrationView = {
   message: string; report: ConnectionReport | null; playbackAvailable: boolean; playbackIssue: string;
   mediaOrigin?: string | null;
   browserUrl?: string; tokenExpiresAt?: number;
+  settingsChangesBlocked?: boolean;
 };
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
@@ -313,6 +314,7 @@ export class IntegrationManager implements CatalogueProvider {
   view(): IntegrationView {
     const ma = this.state.musicAssistant;
     return { revision: this.state.revision, url: ma?.url ?? null, tokenConfigured: Boolean(ma?.accessToken),
+      settingsChangesBlocked: Boolean(this.playback?.ownsPlayback),
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
       status: !ma ? 'not-configured' : this.failure ? 'error' : this.report ? 'checked' : 'not-checked',
       message: !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (this.report

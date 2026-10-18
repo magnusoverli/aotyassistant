@@ -28,9 +28,9 @@ test('a first visit offers the shared inline join form and optional recovery, wi
   const form = await page.locator('.join-panel > form').innerHTML();
   await page.goto('/participant'); await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
   expect(await page.locator('.join-panel > form').innerHTML()).toBe(form);
-  await expect(page.locator('.brand-subtitle')).toHaveText('My seat');
+  await expect(page.locator('.brand-subtitle')).toHaveText('My music');
   await expect(page.locator('.preparation-list, .catalogue-panel, .playback-card')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Recover with a private key')).toBeHidden();
   for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
     await page.setViewportSize({ width: width!, height: height! }); await noOverflow(page);
@@ -83,8 +83,8 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list, .saved-track, .music-workspace')).toHaveCount(0);
-    await expect(r.page.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
-    await expect(r.page.getByRole('button', { name: 'Upload a track', exact: true })).toHaveCount(0);
+    await expect(r.page.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
+    await expect(r.page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
     for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
       await r.page.setViewportSize({ width: width!, height: height! }); await noOverflow(r.page);
       await expect(r.page.getByRole('button', { name: 'Join room', exact: true })).toBeInViewport();
@@ -172,7 +172,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
     let moves = 0;
     await r.page.route('**/api/participant/preparations/move', async route => { moves++; await route.fetch(); await route.abort('failed'); });
     await r.page.getByRole('button', { name: 'Move Saved selection 2 up', exact: true }).click();
-    await expect(r.page.locator('.list-save-status')).toHaveText('Not synced · draft retained');
+    await expect(r.page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.reload();
     await expect(r.page.getByRole('status').filter({ hasText: 'Your unsynced list change is kept.' })).toBeVisible();
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
@@ -189,7 +189,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
 
 test('unfinished uploads remain recoverable before joining, and rejoining does not reupload or lose edited metadata', async ({ page, isolatedApp }) => {
   const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Upload listener' } }); expect(joined.ok()).toBe(true);
-  await page.goto('/participant'); await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
+  await page.goto('/participant'); await page.locator('#list-upload').click(); await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
   let uploads = 0; page.on('request', request => { if (request.method() === 'POST' && /\/uploads\/[a-f0-9-]+$/.test(new URL(request.url()).pathname)) uploads++; });
   await page.locator('#track-upload-file').setInputFiles({ name: 'retained.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
   await page.getByLabel('Track title', { exact: true }).fill('My edited upload');

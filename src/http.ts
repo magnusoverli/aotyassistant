@@ -17,6 +17,7 @@ import { ingressContext, requestBase } from './ingress.js';
 import { mountAuthorization } from './ma-authorization.js';
 import type { SetupManager } from './setup.js';
 import { durability } from './backup.js';
+import { errorPage, escapeHtml } from './error-page.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -219,8 +220,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     });
   }
   app.use((_req, _res, next) => next(new AppError(404, 'Page not found.')));
-  app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent) { res.end(); return; }
+    if (['GET', 'HEAD'].includes(req.method) && !req.path.startsWith('/api/') && req.accepts('html')) {
+      const status = error instanceof AppError ? error.status : 500;
+      const base = requestBase(req);
+      res.status(status).type('html').send(errorPage(status === 404 ? 'Page not found' : 'Unable to open this page',
+        `<p>${escapeHtml(error instanceof AppError ? error.message : 'Please try again.')}</p><p><a href="${escapeHtml(base)}/host/settings">Open Settings</a> · <a href="${escapeHtml(base)}/">Return home</a></p>`, base)); return;
+    }
     if (error instanceof AppError) { res.status(error.status).json({ error: error.message }); return; }
     if (error instanceof z.ZodError || error instanceof SyntaxError) { res.status(400).json({ error: 'Invalid request. Check the supplied fields.' }); return; }
     const status = (error as { status?: number })?.status;

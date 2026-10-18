@@ -1,0 +1,4 @@
+:root { color-scheme:dark; font:18px/1.6 system-ui,sans-serif; color:#f2f0e6; background:#101713; }
+body { margin:0; } main { max-width:620px; margin:10vh auto; padding:28px; }
+h1 { font-size:2rem; line-height:1.2; } p { color:#a1b0a3; overflow-wrap:anywhere; }
+a { color:#e9bd79; } a:focus-visible { outline:2px solid; outline-offset:4px; }

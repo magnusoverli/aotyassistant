@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 export async function showList(page: Page) {
-  const expand = page.getByRole('button', { name: 'View all', exact: true });
+  const expand = page.getByRole('button', { name: 'Open list', exact: true });
   if (await expand.isVisible()) await expand.click();
   await expect(page.getByRole('complementary', { name: /^My list/ })).toBeVisible();
 }

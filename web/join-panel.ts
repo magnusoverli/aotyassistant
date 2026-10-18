@@ -4,6 +4,7 @@ import { el } from './dom';
 export function joinPanel(options: { nickname: string; busy: boolean; disabled: boolean; notice?: string; error?: string; changed(value: string): void; submit(nickname: string): void }) {
   const panel = el('section', undefined, 'panel join-panel');
   const title = el('h1', 'Join room'); title.id = 'join-room-title'; panel.setAttribute('aria-labelledby', title.id); panel.append(title);
+  panel.append(el('p', 'Choose a name, find your songs, and share one when it’s your turn.', 'muted'));
   if (options.notice) { const notice = el('p', options.notice, 'muted join-notice'); notice.setAttribute('role', 'status'); panel.append(notice); }
   const form = el('form');
   const field = el('div', undefined, 'field'); const label = el('label', 'What should we call you?'); label.htmlFor = 'nickname';

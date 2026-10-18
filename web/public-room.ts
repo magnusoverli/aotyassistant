@@ -1,5 +1,5 @@
 import type { View } from '../src/model';
-import { el } from './dom';
+import { el, link } from './dom';
 import { vinyl, updateVinylLabel } from './visuals';
 import { artwork, progressBar, updateProgress } from './media';
 import { publicRecordLabels } from './record-labels';
@@ -87,7 +87,9 @@ export class PublicRoom {
       this.invitationKey = invitationKey;
       this.invitation.replaceChildren(el('h3', 'Join room'));
       if (view.joinUrl) {
-        if (qrImage) { const image = el('img'); image.src = qrImage; image.alt = 'Scan to join the listening room'; this.invitation.append(image); }
+        const join = link('', view.joinUrl, 'room-qr-link'); join.setAttribute('aria-label', 'Join room');
+        if (qrImage) { const image = el('img'); image.src = qrImage; image.alt = 'Scan to join the room'; join.append(image); this.invitation.append(join); }
+        this.invitation.append(link(view.joinUrl, view.joinUrl, 'room-join-link'));
       }
     }
   }

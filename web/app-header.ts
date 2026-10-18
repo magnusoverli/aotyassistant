@@ -8,7 +8,6 @@ export class AppHeader {
   private subtitle = el('span', undefined, 'brand-subtitle');
   private meta = el('div', undefined, 'header-meta');
   private mode = el('span', undefined, 'badge mode-badge');
-  private turn = el('span', undefined, 'turn-chip');
   private navigation = el('nav', undefined, 'primary-navigation');
   private primary = el('ul', undefined, 'primary-links');
   private toggle = el('button', 'Menu', 'secondary header-menu-toggle');
@@ -36,7 +35,8 @@ export class AppHeader {
     this.navigation.append(this.primary);
     this.toggle.type = 'button'; this.toggle.setAttribute('aria-controls', this.navigation.id);
     this.toggle.onclick = () => this.setExpanded(!this.expanded);
-    this.meta.append(this.mode, this.turn, this.fullscreen);
+    this.navigation.append(this.mode);
+    if (page === 'display') this.meta.append(this.fullscreen); else this.navigation.append(this.fullscreen);
     this.fullscreen.type = 'button'; this.fullscreen.onclick = () => { void this.toggleFullscreen(); };
     inner.append(brand, this.meta, this.toggle, this.navigation); this.element.append(skip, inner);
     this.element.dataset.header = 'shared';
@@ -62,9 +62,6 @@ export class AppHeader {
     const model = headerModel(this.page, state);
     if (this.subtitle.textContent !== model.subtitle) this.subtitle.textContent = model.subtitle;
     this.mode.hidden = !model.modeText; this.mode.textContent = model.modeText;
-    this.turn.hidden = !model.turn;
-    this.turn.textContent = model.turn?.text ?? ''; this.turn.title = model.turn?.title ?? '';
-    this.turn.classList.toggle('is-mine', model.turn?.mine ?? false);
     for (const item of model.primary) {
       let anchor = this.links.get(item.id);
       if (!anchor) { anchor = link('', item.href, 'header-nav-link'); const li = el('li'); li.append(anchor); this.primary.append(li); this.links.set(item.id, anchor); }
@@ -104,7 +101,7 @@ export class AppHeader {
     this.fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
     this.fullscreen.setAttribute('aria-pressed', String(Boolean(document.fullscreenElement)));
     this.fullscreen.disabled = this.fullscreenPending;
-    this.meta.hidden = this.mode.hidden && this.turn.hidden && this.fullscreen.hidden;
+    this.meta.hidden = this.page !== 'display' || this.fullscreen.hidden;
   }
   private async toggleFullscreen() {
     if (this.fullscreenPending) return;

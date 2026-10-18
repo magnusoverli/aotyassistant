@@ -28,10 +28,10 @@ const state = async (page: Page) => (await page.request.get('/api/participant/pr
 
 test('the first save reaches an already-open tab without reload, extra writes, or private broadcast data', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { nickname: 'Two tabs' }, headers: { Origin: isolatedApp.origin } });
-  await page.goto('/participant'); await expect(page.locator('.list-save-status')).toHaveText('Private · saved when you add a track');
+  await page.goto('/participant'); await expect(page.locator('.list-save-status')).toHaveText('Private · saved when you add a song');
   const other = await page.context().newPage();
   try {
-    await other.goto(isolatedApp.origin + '/participant'); await expect(other.locator('.list-save-status')).toHaveText('Private · saved when you add a track');
+    await other.goto(isolatedApp.origin + '/participant'); await expect(other.locator('.list-save-status')).toHaveText('Private · saved when you add a song');
     const writes: string[] = []; other.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
     await other.evaluate(() => { (window as any).originalDocument = document; });
     await add(page, 'Northern');
@@ -51,7 +51,7 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
   try {
     for (const query of ['Northern', 'Summer', 'Night']) await add(second, query);
     await showList(second); await expect(titles(second)).toHaveText(['Northern Lights', 'Late Summer', 'Night Bus Home']);
-    await expect(second.getByRole('button', { name: 'Play next prepared track' })).toBeDisabled();
+    await expect(second.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
     await second.getByRole('button', { name: 'Edit order', exact: true }).click();
     await second.getByRole('button', { name: 'Move Night Bus Home up', exact: true }).click();
     await expect(titles(second)).toHaveText(['Northern Lights', 'Night Bus Home', 'Late Summer']);
@@ -63,22 +63,22 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
     await second.getByLabel('Options for Northern Lights', { exact: true }).click();
     await second.locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer']);
-    await second.getByRole('button', { name: 'Undo last removal' }).click();
+    await second.getByRole('button', { name: 'Undo removal' }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     await second.reload(); await showList(second); await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     const overflow = await second.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); expect(overflow).toBe(false);
     await second.screenshot({ path: 'test-results/participant-durable-list-320.png', fullPage: true });
     expect((await (await r.first.request.get('/api/participant/preparations/state')).json()).code).toBe('missing-library');
     const before = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/advance', { turnId: before.turnId });
-    await expect(second.getByRole('button', { name: 'Play next prepared track' })).toBeEnabled();
+    await expect(second.getByRole('button', { name: 'Play this song' })).toBeEnabled();
     expect((await (await second.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
-    await second.getByRole('button', { name: 'Play next prepared track' }).click();
+    await second.getByRole('button', { name: 'Play this song' }).click();
     await expect.poll(async () => (await state(second)).played.length).toBe(1);
     await showList(second);
     await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
-    await second.locator('#list-played').click(); await expect(second.getByRole('button', { name: 'Restore', exact: true })).toBeVisible();
+    await second.locator('#list-history').click(); await expect(second.getByRole('button', { name: 'Add back', exact: true })).toBeVisible();
     await second.locator('#list-recovery').click(); second.once('dialog', dialog => dialog.accept());
-    await second.getByRole('button', { name: 'Create a new recovery key' }).click();
+    await second.getByRole('button', { name: 'Create recovery key' }).click();
     const key = await second.getByRole('textbox', { name: 'Your private recovery key' }).inputValue(); expect(key.length).toBeGreaterThan(70);
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); r.contexts.push(context);
     const phone = await context.newPage(); await phone.goto(isolatedApp.origin + '/participant');
@@ -86,7 +86,7 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
     await phone.getByRole('button', { name: 'Recover my list', exact: true }).click();
     await expect.poll(async () => (await state(phone)).ownerId).toBe((await state(second)).ownerId);
     await expect(titles(phone)).toHaveCount(0);
-    await expect(phone.getByRole('button', { name: 'Play next prepared track' })).toHaveCount(0);
+    await expect(phone.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
     expect(phone.url()).not.toContain(key); expect(await phone.evaluate(() => JSON.stringify(localStorage))).not.toContain(key);
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });
     await expect(second.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
@@ -104,9 +104,9 @@ test('lost save replies retain a reload-safe draft and conflicts require explici
     await page.route('**/api/participant/preparations/add', async route => { calls++; await route.fetch(); await route.abort('failed'); });
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     await page.getByRole('button', { name: 'Add to my list' }).click();
-    await expect(page.locator('.list-save-status')).toHaveText('Not synced · draft retained');
+    await expect(page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     expect((await state(page)).upcoming).toHaveLength(1); expect(calls).toBe(1);
-    await page.reload(); await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
+    await page.reload(); await showList(page); await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
     expect(calls).toBe(1); await page.unroute('**/api/participant/preparations/add');
     await page.getByRole('button', { name: 'Retry save', exact: true }).click(); await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     expect((await state(page)).upcoming).toHaveLength(1);
@@ -116,9 +116,9 @@ test('lost save replies retain a reload-safe draft and conflicts require explici
     await page.getByRole('button', { name: 'Move Late Summer up', exact: true }).click(); await routed;
     const before = await state(page);
     await page.request.post('/api/participant/preparations/add', { headers: { Origin: isolatedApp.origin }, data: { trackId: 'demo:night', operation: { id: '1390efbb-f9a9-44bb-a376-fefb8f1d342c', issuedAt: Date.now(), revision: before.revision } } });
-    release(); await expect(page.getByRole('button', { name: 'Apply to updated list', exact: true })).toBeVisible();
+    release(); await expect(page.getByRole('button', { name: 'Apply this change', exact: true })).toBeVisible();
     await page.unroute('**/api/participant/preparations/move');
-    await page.getByRole('button', { name: 'Apply to updated list', exact: true }).click();
+    await page.getByRole('button', { name: 'Apply this change', exact: true }).click();
     await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await expect(titles(page)).toHaveText(['Late Summer', 'Northern Lights', 'Night Bus Home']);
   } finally { await r.close(); }
@@ -132,9 +132,9 @@ test('Play next keeps optimistic controls responsive while its list bookkeeping 
     let entered!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); const routed = new Promise<void>(resolve => { entered = resolve; });
     let plays = 0;
     await page.route('**/api/participant/preparations/play', async route => { plays++; const response = await route.fetch(); entered(); await gate; await route.fulfill({ response }); });
-    await page.getByRole('button', { name: 'Play next prepared track' }).click(); await routed;
+    await page.getByRole('button', { name: 'Play this song' }).click(); await routed;
     await expect(page.locator('.player-pending')).toBeVisible();
-    await page.getByRole('button', { name: 'Pause', exact: true }).click(); await page.getByRole('button', { name: 'Reveal on the display', exact: true }).click();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click(); await page.getByRole('button', { name: 'Reveal song', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
     release(); await expect(page.locator('.player-pending')).toHaveCount(0);
     await expect.poll(async () => (await (await page.request.get('/api/participant/state')).json()).ownPlayback.status).toBe('paused');

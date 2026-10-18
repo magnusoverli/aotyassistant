@@ -7,7 +7,7 @@ test('host suggests the opened address, verifies media automatically without a s
   expect(saved.status()).toBe(200);
   const responses: string[] = []; page.on('response', response => { if (response.url().includes('/api/host/addressing')) void response.text().then(text => responses.push(text)).catch(() => {}); });
   await page.goto('/host/settings');
-  const panel = page.getByRole('region', { name: 'Application addresses', exact: true });
+  const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
   await expect(panel.getByText('File access verified.', { exact: true })).toBeVisible();
   await expect(panel.getByLabel('Guest address', { exact: true })).toBeHidden();
   await expect(panel.getByLabel('Application address reachable from Music Assistant', { exact: true })).toBeHidden();
@@ -34,7 +34,7 @@ test('an unreachable manual override is rejected without replacing the automatic
   const origin = isolatedApp.origin;
   await page.request.post('/api/host/integrations/save', { headers: { Origin: origin }, data: { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: 0 } });
   await page.goto('/host/settings');
-  const panel = page.getByRole('region', { name: 'Application addresses', exact: true });
+  const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
   await expect(panel.getByText('File access verified.', { exact: true })).toBeVisible();
   const initial = await (await page.request.get('/api/host/addressing')).json();
   await panel.getByText('Advanced address override', { exact: true }).click();
@@ -51,9 +51,10 @@ test('the host can select the opened local hostname without MA and new invitatio
   const port = new URL(isolatedApp.origin).port; const origin = `http://localhost:${port}`;
   // localhost is a configured loopback admin alias; save another advertised origin to exercise explicit selection.
   await page.goto(origin + '/host/settings');
-  const panel = page.getByRole('region', { name: 'Application addresses', exact: true });
+  const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
   await panel.getByText('Change guest address', { exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Use the address I opened for guest links' })).toBeEnabled();
+  page.once('dialog', async dialog => { expect(dialog.message()).toContain('Browser access does not move'); await dialog.accept(); });
   await panel.getByRole('button', { name: 'Use the address I opened for guest links' }).click();
   await expect(panel.getByText('Guest address saved.', { exact: false })).toBeVisible();
   const saved = await (await page.request.get(origin + '/api/host/addressing')).json(); expect(saved.guestOrigin).toBe(origin);

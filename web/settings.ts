@@ -1,5 +1,5 @@
 import type { IntegrationView } from '../src/integrations';
-import { el } from './dom';
+import { el, link } from './dom';
 import { AddressingPanel } from './addressing-panel';
 import { requestJson, RequestError } from './request';
 import type { SetupView } from '../src/setup';
@@ -18,6 +18,9 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
   let helpExpanded = false;
   let manualExpanded = false;
   let editConnection = false;
+  let editSpeaker = false;
+  let speakerError = '';
+  let authExpiresAt = 0;
   let browserDraft = '';
   let setup: SetupView | undefined;
   let loginUrl = '';
@@ -25,13 +28,15 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
   const authResult = new URL(location.href).searchParams.get('ma_auth');
   if (authResult) {
     history.replaceState(null, '', location.pathname);
+    try { localStorage.setItem('aoty.ma-auth-result', JSON.stringify({ result: authResult, at: Date.now() })); } catch { /* Returning to the original tab also refreshes its saved connection. */ }
     if (authResult === 'connected') notice = 'Music Assistant connected. Choose a speaker below.';
-    else if (authResult === 'cancelled') error = 'Music Assistant sign-in was cancelled. Your saved connection was kept.';
+    else if (authResult === 'cancelled') notice = 'Sign-in cancelled. Your saved connection was kept.';
+    else if (authResult === 'expired') notice = 'Sign-in expired. Try connecting again.';
     else error = 'Music Assistant sign-in could not finish. It may have expired, settings changed, or this browser blocked the return. Try Connect again or use advanced token setup.';
   }
   const addresses = new AddressingPanel(() => render(), revision => {
     if (settings && settings.tokenConfigured === addresses.view?.configured) settings = { ...settings, revision };
-  }, () => busy);
+  }, () => busy, () => Boolean(settings?.settingsChangesBlocked));
 
   async function request(path: string, data?: unknown): Promise<IntegrationView> {
     try {
@@ -39,11 +44,12 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       online = true; return result;
     } catch (error) {
       if (error instanceof RequestError) { online = true; throw error; }
-      online = false; throw new Error('Cannot reach the application. Refresh this page when the connection returns.');
+      online = false; throw new Error('Cannot reach the application. Check your connection and try again.');
     }
   }
   function apply(next: IntegrationView, updateDraft = false) {
     settings = next;
+    if (!next.tokenConfigured) speakerError = '';
     modeChanged(next.tokenConfigured ? 'music-assistant' : 'demo');
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
   }
@@ -54,14 +60,14 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     }
   }
   function connectButton(text: string) {
-    const button = el('button', text); button.type = 'button'; button.disabled = busy || addresses.busy || !online || !urlDraft.trim();
+    const button = el('button', text, settings?.tokenConfigured ? 'secondary' : ''); button.type = 'button'; button.disabled = busy || addresses.busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked);
     button.onclick = () => {
       const popup = window.open('about:blank', '_blank'); if (popup) popup.opener = null;
       void run(async () => {
         try {
-          const result = await requestJson<{ loginUrl: string }>('/api/host/auth/start', { url: urlDraft.trim(),
+          const result = await requestJson<{ loginUrl: string; expiresAt: number }>('/api/host/auth/start', { url: urlDraft.trim(),
             ...(browserDraft.trim() ? { browserUrl: browserDraft.trim() } : {}), revision: settings!.revision }, 30_000);
-          loginUrl = result.loginUrl; authPending = true;
+          loginUrl = result.loginUrl; authPending = true; authExpiresAt = result.expiresAt;
           if (popup) popup.location.replace(loginUrl);
           notice = popup ? 'Sign in in the opened tab, then return here.' : 'Your browser blocked the sign-in tab. Open the sign-in link below.';
         } catch (error) { popup?.close(); throw error; }
@@ -71,8 +77,9 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
   }
   async function discover() {
     if (!settings?.tokenConfigured) return;
-    apply(await request('/destinations'));
-    if (settings!.status === 'error') error = settings!.message;
+    speakerError = '';
+    try { apply(await request('/destinations')); if (settings!.status === 'error') speakerError = settings!.message; }
+    catch (cause) { speakerError = cause instanceof Error ? cause.message : 'Speakers could not be loaded.'; }
   }
   async function run(work: () => Promise<void>) {
     if (busy || addresses.busy) return;
@@ -109,24 +116,29 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     const scrollY = window.scrollY;
     const workspace = el('div', undefined, 'host-workspace settings-workspace');
     const heading = el('div', undefined, 'workspace-heading'); const title = el('div');
-    title.append(el('h1', 'Connections & settings.'));
+    title.append(el('h1', 'Settings'));
     heading.append(title); workspace.append(heading);
-    const failure = error || (settings?.status === 'error' ? settings.message : '');
+    const failure = error;
     if (failure) { const message = el('div', failure, 'error settings-notice'); message.setAttribute('role', 'alert'); workspace.append(message); }
     if (notice) { const message = el('p', notice, 'success settings-notice'); message.setAttribute('role', 'status'); workspace.append(message); }
+    if (!online && error) { const retry = el('button', 'Retry connection', 'secondary'); retry.onclick = () => { void run(async () => { apply(await request(''), !settings); await loadSetup(); await discover(); }); }; workspace.append(retry); }
     const grid = el('div', undefined, 'settings-grid');
-    const state = busy ? 'Working…' : !settings ? 'Loading…' : settings.tokenConfigured ? 'Configured' : 'Not configured';
-    const connection = panel('connection', 'Music Assistant', state);
+    const state = busy ? 'Working…' : !settings ? 'Loading…' : !settings.tokenConfigured ? 'Not connected' : settings.status === 'checked' ? 'Connected' : settings.status === 'error' ? 'Needs attention' : 'Not checked';
+    const connection = panel('connection', '1. Music connection', state);
     if (settings?.tokenConfigured) {
+      connection.append(el('p', settings.url ?? 'Music Assistant', 'saved-address'));
+      if (settings.status !== 'checked') connection.append(el('p', settings.status === 'error' ? settings.message : 'Connection saved. Checking availability…', 'muted small'));
+      const change = action(editConnection ? 'Close connection settings' : 'Change connection', async () => { editConnection = !editConnection; }, true);
+      change.disabled ||= Boolean(settings.settingsChangesBlocked); connection.append(change);
       const actions = el('div', undefined, 'settings-connection-actions');
       actions.append(connectButton('Reconnect Music Assistant'));
-      actions.append(action(editConnection ? 'Hide advanced connection' : 'Advanced connection', async () => { editConnection = !editConnection; manualExpanded = editConnection; }, true));
       actions.append(action('Disconnect', async () => {
         if (!confirm('Disconnect Music Assistant and remove the saved token and destination? This does not revoke the token in Music Assistant.')) return;
         apply(await request('/clear', { revision: settings!.revision }), true); editConnection = false; authPending = false; loginUrl = '';
         notice = 'Music Assistant disconnected.';
       }, true));
-      connection.append(actions);
+      if (editConnection || settings.status === 'error') connection.append(actions);
+      for (const control of actions.querySelectorAll('button')) control.disabled ||= Boolean(settings.settingsChangesBlocked);
       if (settings.tokenExpiresAt) connection.append(el('p', `Authorization expires ${new Date(settings.tokenExpiresAt).toLocaleDateString()}.`, 'muted small'));
     }
     if (settings && (!settings.tokenConfigured || editConnection)) {
@@ -147,7 +159,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
         }
       }
       const form = el('form', undefined, 'integration-form');
-      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || addresses.busy || !online; });
+      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || addresses.busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
       url.input.required = true; url.input.maxLength = 2048; url.input.placeholder = 'http://homeassistant.local:8095';
       connection.append(url.group);
       if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); connect.id = 'ma-connect'; connection.append(connect); }
@@ -162,7 +174,7 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       const tokenHelp = el('p', 'Create a token in Music Assistant → Settings → Profile.', 'muted field-hint'); tokenHelp.id = 'ma-token-help';
       token.input.setAttribute('aria-describedby', tokenHelp.id); token.group.append(tokenHelp);
       if (location.protocol !== 'https:') token.group.append(el('p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
-      const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || addresses.busy || !online; save.id = 'ma-save';
+      const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || addresses.busy || !online || Boolean(settings.settingsChangesBlocked); save.id = 'ma-save';
       const controls = el('div', undefined, 'actions settings-form-actions'); controls.append(save);
       form.append(token.group, controls);
       form.onsubmit = event => {
@@ -182,53 +194,66 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
       connection.append(help);
     }
     if (loginUrl) {
+      const pending = el('p', 'Waiting for sign-in…', 'muted'); pending.setAttribute('role', 'status'); connection.append(pending);
       const login = el('a', 'Open Music Assistant sign-in', 'button secondary'); login.href = loginUrl; login.target = '_blank'; login.rel = 'noopener noreferrer'; connection.append(login);
+      connection.append(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = 'Sign-in cancelled. Your saved connection was kept.'; }, true));
     }
+    if (settings?.settingsChangesBlocked) { const blocked = el('p', undefined, 'muted small'); blocked.append('Finish the current song before changing setup. ', link('Return to host', '/host', 'inline-link')); connection.append(blocked); }
     grid.append(connection);
     const output = el('div', undefined, 'settings-output');
     if (setup?.supervisor.enabled && (!setup.supervisor.available || setup.supervisor.guestOrigins.some(origin => origin !== addresses.view?.guestOrigin))) {
       const detected = panel('detected', 'Home Assistant setup', setup.supervisor.available ? 'Detected' : 'Unavailable');
       detected.append(el('p', setup.supervisor.message, 'muted small'));
       for (const origin of setup.supervisor.guestOrigins) if (origin !== addresses.view?.guestOrigin) detected.append(action(`Use ${origin} for guests`, async () => {
+        if (!confirm(`Change the guest link from ${addresses.view?.guestOrigin}/join to ${origin}/join? Keep private recovery keys before switching browser addresses.`)) return;
         await requestJson('/api/host/addressing/guest', { origin, revision: settings!.revision }); notice = 'Guest address saved.';
       }, true));
+      for (const control of detected.querySelectorAll('button')) control.disabled ||= Boolean(settings?.settingsChangesBlocked);
       output.append(detected);
     }
-    const destination = panel('destination', 'Speaker or group');
-    if (settings?.destination) destination.append(el('p', `Saved destination: ${settings.destination.name}`, 'saved-destination'));
-    if (settings?.report) {
+    const destination = panel('destination', '2. Speaker');
+    if (settings?.destination) {
+      destination.append(el('p', `Speaker: ${settings.destination.name}`, 'saved-destination'));
+      const change = action(editSpeaker ? 'Cancel speaker change' : 'Change speaker', async () => { editSpeaker = !editSpeaker; destinationDraft = settings!.destination?.id ?? ''; if (editSpeaker && !settings?.report) await discover(); }, true);
+      change.disabled ||= Boolean(settings.settingsChangesBlocked); destination.append(change);
+    }
+    if (settings?.report && (!settings.destination || editSpeaker || !settings.report.players.some(p => p.id === settings!.destination?.id && p.available))) {
       const report = settings.report;
-      const destinationLabel = el('label', 'Playback destination'); destinationLabel.htmlFor = 'ma-destination';
-      const select = el('select'); select.id = 'ma-destination'; select.disabled = busy || addresses.busy || !online;
+      const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
+      const select = el('select'); select.id = 'ma-destination'; select.disabled = busy || addresses.busy || !online || Boolean(settings.settingsChangesBlocked);
       const empty = el('option', 'Choose a speaker or group'); empty.value = ''; select.append(empty);
       for (const player of report.players) {
         const option = el('option', `${player.name}${player.available ? '' : ' (unavailable)'}`);
         option.value = player.id; option.disabled = !player.available; select.append(option);
       }
       select.value = destinationDraft || settings.destination?.id || '';
-      const choose = action('Save destination', async () => {
+      const choose = action('Save speaker', async () => {
         if (!destinationDraft) throw new Error('Choose an available speaker or group first.');
-        apply(await request('/destination', { id: destinationDraft, revision: settings!.revision })); notice = 'Destination saved.';
+        apply(await request('/destination', { id: destinationDraft, revision: settings!.revision })); editSpeaker = false; await discover(); notice = 'Speaker saved.';
       });
-      choose.disabled ||= !select.value;
-      select.onchange = () => { destinationDraft = select.value; choose.disabled = busy || addresses.busy || !online || !select.value; };
+      choose.disabled ||= !select.value || select.value === settings.destination?.id || Boolean(settings.settingsChangesBlocked);
+      select.onchange = () => { destinationDraft = select.value; choose.disabled = select.disabled || !select.value || select.value === settings?.destination?.id; };
       const group = el('div', undefined, 'field'); group.append(destinationLabel, select, choose); destination.append(group);
-      if (!report.players.length) destination.append(el('p', 'No speakers found. Add one in Music Assistant, then refresh this page.', 'muted small'));
-    } else {
-      destination.append(el('div', settings?.tokenConfigured ? busy ? 'Discovering speakers…' : 'Speakers could not be loaded. Refresh this page to retry.' : 'Connect Music Assistant to choose a speaker.', 'empty-state'));
+      if (!report.players.length) destination.append(el('p', 'No speakers found. Add one in Music Assistant, then try again.', 'muted small'));
+    } else if (!settings?.destination) {
+      destination.append(el('div', settings?.tokenConfigured ? busy ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.' : 'Connect Music Assistant to choose a speaker.', 'empty-state'));
     }
+    if (speakerError) { const failure = el('p', speakerError, 'error'); failure.setAttribute('role', 'alert'); destination.append(failure); }
+    if (settings?.tokenConfigured) destination.append(action('Find speakers again', discover, true));
+    if (settings?.settingsChangesBlocked) destination.append(el('p', 'Finish the current song before changing speakers.', 'muted small'));
     if (settings?.destination) destination.append(el('p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
     output.append(destination);
     output.append(addresses.render());
     if (settings?.playbackIssue) {
       const playback = panel('recovery', 'Playback recovery');
-      playback.append(el('p', settings.playbackIssue, 'warning'), action('Recover playback controls', async () => {
+      playback.append(el('p', 'The speaker may still be playing. Recovery stops only the song this app still controls; other audio is left alone. It does not start music or pass the turn.', 'warning'), action('Recover playback controls', async () => {
         if (!confirm('Recover playback controls? This stops the recording only if the app still owns that exact queue item. Externally replaced audio is left untouched. The turn will not advance.')) return;
         apply(await request('/recover', { revision: settings!.revision })); notice = 'Playback controls recovered. Select a track to start again.';
       }, true));
+      const details = el('details'); details.append(el('summary', 'Details'), el('p', settings.playbackIssue, 'muted small')); playback.append(details);
       output.append(playback);
     }
-    grid.append(output); workspace.append(grid);
+    grid.append(output); workspace.append(grid, link('Return to host · Invite people', '/host'));
     main.replaceChildren(workspace);
     if (focused && !busy) {
       const replacement = focusId ? document.getElementById(focusId) : [...main.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey);
@@ -248,10 +273,30 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
     if (!busy && !addresses.busy) void loadSetup().then(() => render()).catch(() => {});
   }, 2000);
   window.addEventListener('pagehide', () => clearInterval(poll), { once: true });
-  window.addEventListener('focus', () => {
-    if (authPending && !busy && !addresses.busy) void run(async () => {
-      const next = await request('');
-      if (next.revision !== settings?.revision) { authPending = false; loginUrl = ''; apply(next, true); await discover(); notice = 'Saved connection refreshed.'; }
-    });
+  const authTimer = setInterval(() => {
+    if (authPending && Date.now() >= authExpiresAt) { authPending = false; loginUrl = ''; notice = 'Sign-in expired. Try connecting again.'; render(); }
+  }, 1000);
+  window.addEventListener('pagehide', () => clearInterval(authTimer), { once: true });
+  window.addEventListener('storage', event => {
+    if (event.key !== 'aoty.ma-auth-result' || !authPending || !event.newValue) return;
+    try {
+      const result = JSON.parse(event.newValue);
+      if (typeof result.at !== 'number' || Date.now() - result.at > 60_000) return;
+      if (result.result === 'connected') void refreshSnapshot();
+      else { authPending = false; loginUrl = ''; notice = result.result === 'cancelled' ? 'Sign-in cancelled. Your saved connection was kept.' : result.result === 'expired' ? 'Sign-in expired. Try connecting again.' : 'Sign-in could not finish. Try connecting again.'; render(); }
+    } catch { /* Ignore unrelated/malformed browser storage. */ }
   });
+  let refreshing = false;
+  async function refreshSnapshot() {
+    if (busy || addresses.busy || refreshing || !navigator.onLine) return;
+    refreshing = true;
+    try {
+      const next = await request('');
+      if (authPending && next.revision !== settings?.revision) { authPending = false; loginUrl = ''; apply(next, true); await discover(); notice = 'Music Assistant connected.'; }
+      else apply(next);
+    } catch { /* Keep the current form and explicit retry; a read cannot replay a mutation. */ }
+    finally { refreshing = false; render(); }
+  }
+  window.addEventListener('focus', () => { void refreshSnapshot(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSnapshot(); });
 }

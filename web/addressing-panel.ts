@@ -13,14 +13,18 @@ export class AddressingPanel {
   private mediaDraft = '';
   private guestExpanded = false;
   private advanced = false;
-  constructor(private changed: () => void, private saved: (revision: number) => void, private blocked: () => boolean) {}
+  constructor(private changed: () => void, private saved: (revision: number) => void, private blocked: () => boolean, private playbackBlocked = () => false) {}
   private async request(path = '', data?: unknown): Promise<AddressingView> {
     return requestJson<AddressingView>(`/api/host/addressing${path}`, data, 60_000);
   }
   private accept(view: AddressingView, drafts = false) {
+    const previous = this.view;
     this.view = view; this.saved(view.revision);
     setGuestOrigin(view.guestOrigin);
-    if (drafts) { this.guestDraft = view.guestOrigin; this.mediaDraft = view.mediaOrigin ?? ''; }
+    if (drafts || !previous) {
+      if (!previous || this.guestDraft === previous.guestOrigin) this.guestDraft = view.guestOrigin;
+      if (!previous || this.mediaDraft === (previous.mediaOrigin ?? '')) this.mediaDraft = view.mediaOrigin ?? '';
+    }
   }
   private async run(work: () => Promise<void>) {
     if (this.busy || this.blocked()) return;
@@ -47,21 +51,23 @@ export class AddressingPanel {
     if (view.mediaCheck.status === 'verified' && view.mediaCheck.origin === candidates[0]) return;
     this.accept(await this.request('/test', { origins: candidates, revision: view.revision, automatic: !view.mediaOrigin }));
   }
-  private button(text: string, work: () => Promise<void>) {
+  private button(text: string, work: () => Promise<void>, mutation = false) {
     const button = el('button', text, 'secondary'); button.type = 'button'; button.disabled = this.busy || this.blocked() || !navigator.onLine;
+    button.disabled ||= mutation && this.playbackBlocked();
     button.dataset.focusKey = text; button.onclick = () => { void this.run(work); }; return button;
   }
   private field(text: string, id: string, value: string, change: (text: string) => void) {
     const group = el('div', undefined, 'field'); const label = el('label', text); label.htmlFor = id;
-    const input = el('input'); input.id = id; input.type = 'url'; input.value = value; input.maxLength = 2048; input.disabled = this.busy || this.blocked();
+    const input = el('input'); input.id = id; input.type = 'url'; input.value = value; input.maxLength = 2048; input.disabled = this.busy || this.blocked() || this.playbackBlocked();
     input.oninput = () => change(input.value); group.append(label, input); return { group, input };
   }
   render() {
     const panel = el('section', undefined, 'panel settings-card settings-addressing'); panel.setAttribute('aria-labelledby', 'settings-addressing-title');
-    const title = el('h2', 'Application addresses'); title.id = 'settings-addressing-title'; panel.append(title);
+    const title = el('h2', '3. Guest access'); title.id = 'settings-addressing-title'; panel.append(title);
     if (!this.view) panel.append(el('p', 'Loading address settings…', 'muted'));
     else {
       const view = this.view;
+      if (this.playbackBlocked()) panel.append(el('p', 'Finish the current song before changing addresses.', 'muted small'));
       panel.append(el('p', `Guest links: ${view.guestOrigin}`, 'saved-address'));
       if (view.guestOrigin !== location.origin) {
         const link = el('a', 'Open saved guest address', 'button secondary'); link.href = `${view.guestOrigin}/host/settings`; panel.append(link);
@@ -72,21 +78,23 @@ export class AddressingPanel {
       guestSettings.ontoggle = () => { if (guestSettings.isConnected) this.guestExpanded = guestSettings.open; };
       guestSettings.append(el('p', 'Changing address may require people to rejoin or recover their private lists. Keep recovery keys before switching.', 'muted small'));
       if (!inIngress()) guestSettings.append(this.button('Use the address I opened for guest links', async () => {
+        if (!this.confirmGuestChange(location.origin)) return;
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
         this.notice = 'Guest address saved.';
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
-      }));
+      }, true));
       else guestSettings.append(el('p', 'Guests need a LAN address, not the Home Assistant host interface.', 'muted small'));
       const guestForm = el('form', undefined, 'integration-form');
       const guest = this.field('Guest address', 'app-guest-origin', this.guestDraft, value => { this.guestDraft = value; }); guest.input.required = true;
-      const save = el('button', 'Save guest address'); save.type = 'submit'; save.disabled = this.busy || this.blocked() || !navigator.onLine;
+      const save = el('button', 'Save guest address'); save.type = 'submit'; save.disabled = this.busy || this.blocked() || !navigator.onLine || this.playbackBlocked();
       guestForm.append(guest.group, save);
       guestForm.onsubmit = event => { event.preventDefault(); void this.run(async () => {
+        if (!this.confirmGuestChange(this.guestDraft.trim())) return;
         this.accept(await this.request('/guest', { origin: this.guestDraft.trim(), revision: this.view!.revision }), true);
         this.notice = 'Guest address saved.';
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
       }); }; guestSettings.append(guestForm); panel.append(guestSettings);
-      panel.append(el('p', `File access: ${view.effectiveMediaOrigin}${view.mediaOrigin ? ' (manual)' : ' (automatic)'}`, 'saved-address'));
+      panel.append(el('h3', 'Uploaded-file playback'));
       const status = this.busy ? 'Checking file access…' : !view.configured ? 'Connect Music Assistant to enable file access.'
         : view.mediaCheck.status === 'verified' ? 'File access verified.' : view.mediaCheck.message;
       const message = el('p', status,
@@ -99,11 +107,12 @@ export class AddressingPanel {
       const advanced = el('details', undefined, 'settings-address-help'); advanced.open = this.advanced;
       const summary = el('summary', 'Advanced address override'); summary.id = 'app-address-advanced'; advanced.append(summary);
       advanced.ontoggle = () => { if (advanced.isConnected) this.advanced = advanced.open; };
+      advanced.append(el('p', `File access: ${view.effectiveMediaOrigin}${view.mediaOrigin ? ' (manual)' : ' (automatic)'}`, 'saved-address'));
       if (view.mediaCheck.origin) advanced.append(el('p', `Last tested: ${view.mediaCheck.origin}`, 'muted small'));
       advanced.append(el('p', 'File checks use Music Assistant and never play audio.', 'muted small'));
       const form = el('form', undefined, 'integration-form');
       const media = this.field('Application address reachable from Music Assistant', 'upload-media-origin', this.mediaDraft, value => { this.mediaDraft = value; }); media.input.placeholder = 'Automatic';
-      const saveMedia = el('button', 'Save file playback address'); saveMedia.type = 'submit'; saveMedia.disabled = this.busy || this.blocked() || !navigator.onLine || !view.configured;
+      const saveMedia = el('button', 'Save file playback address'); saveMedia.type = 'submit'; saveMedia.disabled = this.busy || this.blocked() || !navigator.onLine || !view.configured || this.playbackBlocked();
       form.append(media.group, el('p', 'Only needed if Music Assistant uses a different address. Overrides must pass a file check; leave empty for automatic selection.', 'muted small'), saveMedia);
       form.onsubmit = event => { event.preventDefault(); void this.run(async () => {
         await requestJson('/api/host/integrations/media-origin', { origin: this.mediaDraft.trim() || null, revision: this.view!.revision }, 60_000);
@@ -114,5 +123,8 @@ export class AddressingPanel {
     if (this.error) { const error = el('p', this.error, 'error'); error.setAttribute('role', 'alert'); panel.append(error); }
     if (this.notice) { const notice = el('p', this.notice, 'success'); notice.setAttribute('role', 'status'); panel.append(notice); }
     return panel;
+  }
+  private confirmGuestChange(origin: string) {
+    return origin === this.view?.guestOrigin || confirm(`Change the guest link from ${this.view?.guestOrigin}/join to ${origin}/join? Browser access does not move between addresses. Keep private recovery keys before switching; saved songs are kept.`);
   }
 }

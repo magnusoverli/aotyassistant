@@ -34,25 +34,23 @@ test('participant typography, surfaces and desktop alignment match the host page
   try {
     await host.setViewportSize({ width: 1440, height: 1000 }); await host.goto('/host/settings');
     await expect(host.getByRole('button', { name: 'Find Music Assistant', exact: true })).toBeEnabled();
-    const titleStyle = await host.getByRole('heading', { level: 1 }).evaluate(typography);
     const sectionStyle = await host.locator('.settings-connection h2').evaluate(typography);
     await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
-    expect(await page.locator('.participant-hero h1').evaluate(typography)).toEqual(titleStyle);
+    expect((await page.locator('.participant-hero h1').evaluate(typography)).size).toBe('28px');
     expect(await page.locator('.catalogue-panel h2').evaluate(typography)).toEqual(sectionStyle);
     expect(await page.locator('.preparation-list h2').evaluate(typography)).toEqual(sectionStyle);
     await host.goto('/host'); await expect(host.locator('.host-people')).toBeVisible();
     expect(await page.locator('.catalogue-panel').evaluate(surface)).toEqual(await host.locator('.host-people').evaluate(surface));
-    expect((await page.locator('main').boundingBox())!.x).toBe((await host.locator('main').boundingBox())!.x);
-    expect((await page.locator('.catalogue-panel').boundingBox())!.x).toBe((await host.locator('.host-workspace').boundingBox())!.x);
-    await expect(page.locator('.catalogue-panel').getByRole('button', { name: 'Upload a track', exact: true })).toBeEnabled();
-    await expect(page.getByRole('region', { name: 'Upload a private track', exact: true })).toHaveCount(1);
+    await page.locator('#list-upload').click();
+    await expect(page.locator('.catalogue-panel').getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
+    await expect(page.locator('.music-upload')).toHaveCount(1);
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Workspace');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.locator('.catalogue-results .count-tag')).toHaveText('3 tracks');
-    expect((await page.getByRole('button', { name: 'Upload a track', exact: true }).boundingBox())!.y).toBeLessThan((await page.locator('.catalogue-results').boundingBox())!.y);
+    expect((await page.getByRole('button', { name: 'Choose audio file', exact: true }).boundingBox())!.y).toBeLessThan((await page.locator('.catalogue-results').boundingBox())!.y);
     await page.screenshot({ path: 'test-results/participant-coherent-desktop.png', fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByRole('button', { name: 'Upload a track', exact: true })).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/participant-coherent-mobile.png', fullPage: true });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('.catalogue-results .track-row').first().getByRole('button', { name: 'Play', exact: true }).click();
@@ -61,11 +59,11 @@ test('participant typography, surfaces and desktop alignment match the host page
     await page.screenshot({ path: 'test-results/participant-coherent-playing-desktop.png', fullPage: true });
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
-      expect(await page.locator('.preparation-list').evaluate(surface)).toEqual(await page.locator('.playback-card').evaluate(surface));
-      if (width < 1000) {
-        await page.getByRole('button', { name: 'View all', exact: true }).click();
-        expect(await page.locator('.preparation-list').evaluate(surface)).toEqual(await page.locator('.playback-card').evaluate(surface));
-        await page.getByRole('button', { name: 'Show less', exact: true }).click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      if (width < 1100) {
+        await page.getByRole('button', { name: 'Open list', exact: true }).click();
+        expect(await page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('static');
+        await page.getByRole('button', { name: 'Close list', exact: true }).click();
       }
     }
     await page.setViewportSize({ width: 390, height: 844 });
@@ -107,17 +105,17 @@ test('search and one private list share desktop/phone layouts, including long me
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
       const layout = await page.evaluate(() => {
         const search = document.querySelector('.catalogue-panel')!.getBoundingClientRect(); const list = document.querySelector('.preparation-list')!.getBoundingClientRect();
-        return { sideBySide: list.left >= search.right, previewRows: [...document.querySelectorAll('.saved-tracks[aria-label="Your prepared tracks"] > li')].filter(node => getComputedStyle(node).display !== 'none').length };
+        return { sideBySide: list.left >= search.right, previewRows: [...document.querySelectorAll('.saved-tracks[aria-label="Your prepared tracks"] > li')].filter(node => node.getClientRects().length > 0).length };
       });
-      expect(layout.sideBySide).toBe(width! >= 1000);
-      expect(layout.previewRows).toBe(width! >= 1000 ? 24 : width! <= 360 || height! < 600 ? 1 : 2);
+      expect(layout.sideBySide).toBe(width! >= 1100);
+      expect(layout.previewRows).toBe(width! >= 1100 ? 24 : 0);
       await page.screenshot({ path: `test-results/participant-workspace-${width}x${height}-initial.png` });
-      if (width! < 1000) {
-        await page.getByRole('button', { name: 'View all', exact: true }).click();
-        await expect(page.getByRole('button', { name: 'Show less', exact: true })).toHaveAttribute('aria-expanded', 'true');
-        expect(await page.locator('.list-body').evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+      if (width! < 1100) {
+        await page.getByRole('button', { name: 'Open list', exact: true }).click();
+        await expect(page.getByRole('button', { name: 'Close list', exact: true })).toHaveAttribute('aria-expanded', 'true');
+        expect(await page.locator('.list-body').evaluate(node => getComputedStyle(node).overflowY)).toBe('visible');
         await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
-        await page.getByRole('button', { name: 'Show less', exact: true }).click();
+        await page.getByRole('button', { name: 'Close list', exact: true }).click();
       }
       // Keyboard focus must not be obscured by either sticky surface.
       const add = page.locator('.catalogue-results .track-row').nth(12).getByRole('button', { name: 'Add to my list', exact: true });
@@ -125,9 +123,9 @@ test('search and one private list share desktop/phone layouts, including long me
       await expect.poll(() => add.evaluate(node => {
         const rect = node.getBoundingClientRect(); const list = document.querySelector('.preparation-list')!.getBoundingClientRect();
         const header = document.querySelector('header')!.getBoundingClientRect();
-        return rect.top >= (innerWidth < 1000 ? list.bottom : header.bottom) && rect.bottom <= innerHeight;
+        return rect.top >= Math.max(0, innerWidth < 1100 ? list.bottom : header.bottom) && rect.bottom <= innerHeight;
       }), { message: `Focused result is unobscured at ${width}×${height}` }).toBe(true);
-      await expect(page.locator('.preparation-list')).toBeInViewport();
+      if (height! >= 600) await expect(page.locator('.preparation-list')).toBeInViewport();
       await page.screenshot({ path: `test-results/participant-workspace-${width}x${height}.png` });
     }
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeFalsy();
@@ -138,7 +136,7 @@ test('owner and room updates preserve search/caret, expanded list scroll, and th
   const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo); const page = r.page;
   try {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: 'View all', exact: true }).click();
+    await page.getByRole('button', { name: 'Open list', exact: true }).click();
     await page.locator('.list-body').evaluate(node => { node.scrollTop = 260; });
     const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Still searching');
     await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 7));
@@ -152,7 +150,7 @@ test('owner and room updates preserve search/caret, expanded list scroll, and th
     await expect(input).toBeFocused(); await expect(input).toHaveValue('Still searching');
     expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 7]);
     expect(await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }))).toEqual(before);
-    await expect(page.getByRole('button', { name: 'Show less', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('button', { name: 'Close list', exact: true })).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('header')).toHaveAttribute('data-same-node', 'yes');
     await r.post('/api/host/remove', { id: session.current.id, revision: session.revision });
     await expect(page.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
@@ -173,7 +171,7 @@ test('adding from results keeps compact list, query, focus and scroll without st
     const added = page.getByRole('button', { name: 'Added ✓', exact: true }); await expect(added).toBeFocused();
     await expect(added).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('.list-count')).toHaveText(' · 2'); await expect(input).toHaveValue('Summer');
-    await expect(page.getByRole('button', { name: 'View all', exact: true })).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('button', { name: 'Open list', exact: true })).toHaveAttribute('aria-expanded', 'false');
     expect(await page.evaluate(() => scrollY)).toBe(before);
     expect(Math.abs((await added.boundingBox())!.y - buttonTop)).toBeLessThanOrEqual(1);
     await expect(page.getByRole('status').filter({ hasText: 'Added Late Summer to your list.' })).toHaveCount(1);

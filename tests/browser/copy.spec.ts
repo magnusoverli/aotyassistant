@@ -30,7 +30,7 @@ test('pages use plain functional copy without host banners or slogans while join
     await expect(host.getByRole('button', { name: 'Start listening', exact: true })).toHaveCount(0); await plainCopy(host);
     await listener.goto(session.joinUrl); await expect(listener.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); await plainCopy(listener);
     await listener.getByLabel('What should we call you?').fill('Listener'); await listener.getByRole('button', { name: 'Join room', exact: true }).click();
-    await expect(listener.locator('.turn-chip')).toHaveText('YOUR TURN'); await plainCopy(listener);
+    await expect(listener.locator('.participant-hero')).toContainText('Your turn.'); await plainCopy(listener);
     session = await (await host.request.get('/api/host/state')).json();
     await expect(listener.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible(); await plainCopy(listener);
     await listener.screenshot({ path: 'test-results/participant-plain-copy.png', fullPage: true });

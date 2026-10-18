@@ -30,24 +30,25 @@ test('participant searches privately with empty/errors but cannot play until a s
     await expect(alice.getByText('Private search', { exact: true })).toBeVisible();
     await expect(alice.getByText('Choose a speaker in host settings before playing. You can still prepare tracks.', { exact: true })).toBeVisible();
     await expect(alice.locator('.catalogue-panel').getByRole('link', { name: 'host settings', exact: true })).toHaveAttribute('href', '/host/settings');
-    await expect(alice.getByRole('button', { name: 'Search artists', exact: true })).toBeVisible();
-    await expect(alice.getByRole('button', { name: 'Search artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(alice.locator('.search-tabs button')).toHaveText(['Search artists', 'Search tracks']);
+    await expect(alice.getByRole('button', { name: 'Artists', exact: true })).toBeVisible();
+    await expect(alice.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(alice.locator('.search-tabs button')).toHaveText(['Artists', 'Songs']);
     for (const width of [1440, 390, 320]) {
       await alice.setViewportSize({ width, height: 844 });
-      const artist = (await alice.getByRole('button', { name: 'Search artists', exact: true }).boundingBox())!;
-      const tracks = (await alice.getByRole('button', { name: 'Search tracks', exact: true }).boundingBox())!;
+      const artist = (await alice.getByRole('button', { name: 'Artists', exact: true }).boundingBox())!;
+      const tracks = (await alice.getByRole('button', { name: 'Songs', exact: true }).boundingBox())!;
       expect(artist.x + artist.width).toBeLessThanOrEqual(tracks.x);
     }
     await alice.setViewportSize({ width: 390, height: 844 });
     await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toBeInViewport();
     await alice.screenshot({ path: 'test-results/participant-catalogue.png', fullPage: true });
-    await alice.getByRole('button', { name: 'Search tracks', exact: true }).click();
-    await expect(alice.getByRole('button', { name: 'Search tracks', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Track, artist, or album');
+    await alice.getByRole('button', { name: 'Songs', exact: true }).click();
+    await expect(alice.getByRole('button', { name: 'Songs', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Song, artist, or album');
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('fixture'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toBeVisible();
-    await expect(alice.getByText('Fixture artist · Fixture album · Original recording · spotify')).toBeVisible();
+    await expect(alice.getByText('Fixture artist', { exact: true })).toBeVisible();
+    await expect(alice.getByText('Fixture album · Original recording · Spotify')).toBeVisible();
     await expect(alice.getByRole('button', { name: 'Choose a speaker', exact: true })).toBeDisabled();
     await expect(waiting.getByText('Real catalogue fixture')).toHaveCount(0);
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
@@ -57,14 +58,14 @@ test('participant searches privately with empty/errors but cannot play until a s
     expect(responses.join('')).not.toContain('secret-search-art');
     expect(requests.some(url => url.startsWith(isolatedApp.musicAssistantOrigin))).toBe(false);
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('empty'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(alice.getByText('No tracks found. Try a different title or artist,')).toBeVisible();
+    await expect(alice.getByText('No results returned. Try another source or check Details.')).toBeVisible();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('failure'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(alice.getByRole('alert')).toContainText('Music Assistant did not accept');
     await expect(alice.locator('.catalogue-results').getByRole('alert')).toContainText('Music Assistant did not accept');
     await expect(alice.locator('.catalogue-results').getByRole('button', { name: 'Try again', exact: true })).toBeEnabled();
     await expect(alice.getByText('PRIVATE FIXTURE ERROR')).toHaveCount(0);
-    await expect(alice.getByRole('button', { name: 'Finish my turn' })).toBeEnabled();
+    await expect(alice.getByRole('button', { name: 'Pass turn' })).toBeEnabled();
     // The demo catalogue is not used as a silent fallback after an upstream failure.
     await expect(alice.getByText('Northern Lights', { exact: true })).toHaveCount(0);
   } finally {
