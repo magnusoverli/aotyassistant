@@ -95,11 +95,9 @@ export class PreparationPanel {
     preview.hidden = !attention && !snapshot?.upcoming.length;
     preview.title = preview.textContent ?? ''; summary.append(preview); heading.replaceChildren(summary);
     if (search) heading.append(expand);
-    if (this.options.getView()?.myTurn) {
-      const player = link('Your turn · Go to player', '#participant-player', 'list-player-link');
-      player.onclick = event => { event.preventDefault(); document.getElementById('participant-player')?.scrollIntoView({ block: 'start' }); };
-      summary.append(player);
-    }
+    const player = link(this.options.getView()?.myTurn ? 'Your turn · Go to player' : 'Go to player', '#participant-player', 'list-player-link');
+    player.onclick = event => { event.preventDefault(); document.getElementById('participant-player')?.scrollIntoView({ block: 'start' }); };
+    summary.append(player);
     const status = el('p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Private · saved when you add a song', 'list-save-status'); status.setAttribute('role', 'status');
     list.append(heading, status);
     const body = el('div', undefined, 'list-body'); body.id = 'music-list-body'; body.dataset.scrollKey = 'private-list';
@@ -146,10 +144,9 @@ export class PreparationPanel {
     const actions = el('div', undefined, 'list-actions');
     const next = snapshot?.upcoming[0];
     if (next) {
-      if (this.options.getView()?.myTurn) {
-        const play = this.button('Play this song', () => this.options.play(next), false, `play-next-${next.id}`); play.classList.add('list-play');
-        play.disabled ||= !this.options.canPlay() || next.sourceAvailable === false || Boolean(library.pending || snapshot?.reviewEntryId) || this.options.starting(); actions.append(play);
-      } else actions.append(el('span', 'Ready for your turn', 'muted small'));
+      const play = this.button('Play this song', () => this.options.play(next), false, `play-next-${next.id}`); play.classList.add('list-play');
+      play.disabled ||= !this.options.canPlay() || next.sourceAvailable === false || Boolean(library.pending || snapshot?.reviewEntryId);
+      play.dataset.playerReady = String(!play.disabled); play.disabled ||= this.options.starting(); actions.append(play);
       const edit = this.button(this.editing ? 'Done' : 'Edit order', () => { this.editing = !this.editing; this.options.changed(); }, true, 'list-edit'); edit.classList.add('list-edit'); edit.setAttribute('aria-pressed', String(this.editing)); actions.append(edit);
     }
     body.append(actions, ordered);

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-10-18
+
+- Keep the participant player visible at a stable size while idle, playing, paused and waiting for a turn; update playback locally without rebuilding search and list content.
+- Remove the participant's “Updating player…” message and its unused controller getter.
+- Keep the playback volume slider visible directly in the player, removing its expandable wrapper.
+- Show the start of new search, artist and album result lists below sticky controls; preserve saved scroll positions when browsing Back/Forward.
+
 ## [0.3.0] — 2026-10-18
 
 - Simplify the mobile workspace with a compact header/list, one turn summary, inline list expansion, and separate playback, reveal, volume and finish controls.

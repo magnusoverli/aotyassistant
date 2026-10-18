@@ -30,7 +30,6 @@ export class PlayerController {
     return JSON.stringify([view.roomId, view.turnId, this.options.role === 'participant' ? view.me?.id : 'host', view.catalogue?.revision, view.volume?.revision]);
   }
   get starting() { return this.commands.some(command => command.kind === 'play'); }
-  get updating() { return this.commands.length > 0; }
   observe(view: View) {
     const identity = this.key(view);
     if (identity !== this.identity || !view.connected || (this.options.role === 'participant' && !view.myTurn)) this.cancel();

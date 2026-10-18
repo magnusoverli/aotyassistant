@@ -41,7 +41,8 @@ let searchDone = false;
 let searching = false;
 let catalogueBusy = false;
 let catalogueError = '';
-let catalogueRetry: (() => Promise<void> | void) | undefined;
+type CatalogueAction = () => Promise<boolean | void> | boolean | void;
+let catalogueRetry: CatalogueAction | undefined;
 let catalogueSequence = 0;
 let searchMode: 'tracks' | 'artists' = 'artists';
 let artists: CatalogueArtist[] = [];
@@ -71,7 +72,6 @@ let nicknameDraft = '';
 let joinError = '';
 let accessEnded = false;
 let circleExpanded = false;
-let volumeExpanded = false;
 let managingPeople = false;
 let hostFeedback = '';
 let publicRoom: PublicRoom | undefined;
@@ -92,7 +92,7 @@ const player = new PlayerController({
   resync: async () => { try { accept(await api<View>(`/api/${page}/state`)); } catch { realtime = false; render(); } },
   changed: kind => {
     if (kind === 'volume' && view) updateVolume(root, player.project(view).volume);
-    else render();
+    else renderParticipantPlayer();
   },
   failed: message => { error = message; render(); },
 });
@@ -136,7 +136,10 @@ function keepMusicFocusVisible() {
   const rect = focused.getBoundingClientRect();
   if (rect.top < obstruction) window.scrollBy({ top: rect.top - obstruction, behavior: 'instant' });
 }
-root.addEventListener('focusin', () => { if (!restoringFocus) requestAnimationFrame(keepMusicFocusVisible); });
+root.addEventListener('focusin', () => {
+  const focused = document.activeElement;
+  if (!restoringFocus) requestAnimationFrame(() => { if (document.activeElement === focused) keepMusicFocusVisible(); });
+});
 function updateMusicViewport() {
   const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
   document.documentElement.style.setProperty('--music-viewport-height', `${height}px`);
@@ -181,12 +184,30 @@ async function run(action: () => Promise<void> | void) {
 function resetCatalogueTask() {
   catalogueSequence++; catalogueBusy = false; searching = false; catalogueError = ''; catalogueRetry = undefined;
 }
-async function runCatalogue(action: () => Promise<void> | void) {
+function showCatalogueStart() {
+  const results = root.querySelector<HTMLElement>('.catalogue-results');
+  if (!results) return;
+  const header = appHeader.element;
+  let top = getComputedStyle(header).position === 'sticky' ? header.getBoundingClientRect().bottom + 12 : 12;
+  const list = root.querySelector<HTMLElement>('.preparation-list');
+  if (innerWidth < 1100 && list && getComputedStyle(list).position === 'sticky') {
+    // Use the companion's eventual sticky position, not its position before scrolling.
+    top = Math.max(top, parseFloat(getComputedStyle(list).top) + list.getBoundingClientRect().height + 12);
+  }
+  const heading = results.querySelector('h2')!.getBoundingClientRect();
+  const first = (results.querySelector('.track-row') ?? results).getBoundingClientRect();
+  const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
+  if (heading.top < top || first.bottom > height) {
+    window.scrollTo({ top: Math.max(0, scrollY + results.getBoundingClientRect().top - top), behavior: 'instant' });
+  }
+}
+async function runCatalogue(action: CatalogueAction) {
   if (catalogueBusy) return;
   const sequence = ++catalogueSequence;
   const focusId = document.activeElement instanceof HTMLElement ? document.activeElement.id : '';
+  let newList = false;
   catalogueBusy = true; catalogueError = ''; catalogueRetry = undefined; render();
-  try { await action(); }
+  try { newList = await action() === true; }
   catch (cause) {
     if (sequence !== catalogueSequence) return;
     catalogueError = cause instanceof Error ? cause.message : 'Music could not be loaded. Try again.';
@@ -194,14 +215,24 @@ async function runCatalogue(action: () => Promise<void> | void) {
   } finally {
     if (sequence === catalogueSequence) {
       catalogueBusy = false; searching = false; render();
-      if (focusId && document.activeElement === document.body) document.getElementById(focusId)?.focus({ preventScroll: true });
+      if (focusId && document.activeElement === document.body) {
+        restoringFocus = true;
+        document.getElementById(focusId)?.focus({ preventScroll: true });
+        restoringFocus = false;
+      }
+      // Ordinary renders keep the viewport; a successful search/browse starts a new list.
+      if (newList) { showCatalogueStart(); browseHistory?.push(); }
     }
   }
 }
-function catalogueButton(text: string, action: () => Promise<void> | void, secondary = true) {
+function catalogueButton(text: string, action: CatalogueAction, secondary = true) {
   const control = el('button', text, secondary ? 'secondary' : ''); control.type = 'button';
   control.disabled = catalogueBusy || !realtime || !view?.connected;
   control.onclick = () => { void runCatalogue(action); }; return control;
+}
+function participantLayoutKey(current: View) {
+  return JSON.stringify({ ...current, revision: undefined, ownPlayback: undefined, progress: undefined, playbackStatus: undefined, nowPlaying: undefined,
+    volume: [current.volume?.available, current.volume?.revision] });
 }
 function accept(next: View) {
   accessEnded = false;
@@ -219,14 +250,16 @@ function accept(next: View) {
   }
   // Position/volume snapshots do not rebuild browsing forms or reload all artwork.
   const telemetryOnly = view && JSON.stringify({ ...view, progress: undefined, volume: [view.volume?.available, view.volume?.revision] }) === JSON.stringify({ ...next, progress: undefined, volume: [next.volume?.available, next.volume?.revision] });
+  const playerOnly = page === 'participant' && view?.me && participantLayoutKey(view) === participantLayoutKey(next);
   view = next;
   if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
   player.observe(next);
   if (page !== 'display' && telemetryOnly && root.querySelector('main')) {
     const shown = player.project(next);
-    for (const frame of root.querySelectorAll<HTMLElement>('.playback-progress')) updateProgress(frame, shown.progress);
+    for (const frame of root.querySelectorAll<HTMLElement>('.playback-progress')) if (!frame.querySelector('.player-pending')) updateProgress(frame, shown.progress);
     updateVolume(root, shown.volume); return;
   }
+  if (playerOnly) { renderParticipantPlayer(); return; }
   if (page === 'participant' && next.me) {
     const position = next.position;
     const turnMessage = next.myTurn ? 'It’s your turn to share.'
@@ -366,48 +399,62 @@ function host() {
   workspace.append(people);
   return main;
 }
+function renderParticipantPlayer() {
+  const card = root.querySelector('.playback-card');
+  if (page !== 'participant' || !view?.me || !card || root.querySelector('.app-content > .error')) { render(); return; }
+  const focused = document.activeElement instanceof HTMLElement && card.contains(document.activeElement) ? document.activeElement.id : '';
+  const top = scrollY;
+  card.replaceWith(participantPlayer(view));
+  // Starting a track changes availability, not the search/list layout or their DOM state.
+  for (const control of root.querySelectorAll<HTMLButtonElement>('[data-player-ready]')) control.disabled = control.dataset.playerReady !== 'true' || player.starting;
+  if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
+  window.scrollTo({ top, behavior: 'instant' });
+}
+function participantPlayer(current: View) {
+  const shown = player.project(current); const playback = current.myTurn ? shown.ownPlayback : undefined;
+  const card = el('section', undefined, 'panel playback-card'); card.id = 'participant-player'; card.setAttribute('aria-label', 'Your player');
+  const now = el('div', undefined, 'private-now-playing');
+  const track = el('div'); const title = el('h2', playback?.track.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
+  title.title = title.textContent!; track.append(title);
+  const artist = el('div', undefined, 'artist-credit');
+  if (playback?.track.artistArtwork) artist.append(artwork(playback.track.artistArtwork, 'Artist image', 'artist-portrait'));
+  const credit = el('p', playback?.track.artist ?? 'Search or use your list.', 'artist'); credit.title = credit.textContent!;
+  artist.append(credit); track.append(artist);
+  now.append(artwork(playback?.track.artwork, 'Album artwork', 'mini-record'), track);
+  const progress = progressBar(playback ? shown.progress : undefined);
+  if (player.starting) {
+    const status = progress.querySelector<HTMLElement>('.playback-status')!;
+    status.textContent = 'Starting track…'; status.classList.add('player-pending');
+  }
+  const statusLine = el('div', undefined, 'player-status-line');
+  statusLine.append(progress.querySelector('.playback-status')!, el('span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : 'Your player', 'privacy-tag'));
+  progress.prepend(statusLine);
+  const controls = el('div', undefined, 'actions');
+  const action = playback?.status === 'paused' ? 'resume' : 'pause';
+  const transport = playerButton(action === 'pause' ? 'Pause' : 'Resume', () => player.control(action), true);
+  transport.id = 'player-transport'; transport.disabled ||= !playback || playback.status === 'stopped';
+  const reveal = playerButton(playback?.revealed ? 'Revealed' : 'Reveal song', () => player.reveal());
+  reveal.id = 'player-reveal'; reveal.classList.add('reveal-button'); reveal.disabled ||= !playback || playback.revealed;
+  controls.append(transport, reveal);
+  const finish = button(playback ? 'Finish turn' : 'Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId: current.turnId }); }, true);
+  finish.id = 'finish-my-turn'; finish.disabled ||= !current.myTurn || player.starting;
+  const ending = el('div', undefined, 'player-ending'); ending.append(finish);
+  card.append(now, progress, controls,
+    volumeControl(shown.volume, (level, commit) => player.volume(level, commit), !realtime || !current.connected || !playback || playback.status === 'stopped' || player.starting), ending);
+  return card;
+}
 function participant() {
   if (!view?.me) return participantEntry();
   const main = el('main', undefined, 'participant-page');
   const position = view.position;
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   main.dataset.turnState = state;
-  const hero = el('section', undefined, `participant-hero is-${state}`); hero.id = 'participant-player'; hero.setAttribute('aria-label', 'Your turn status');
-  hero.append(el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'));
-  if (!view.myTurn && position) hero.append(el('p', position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away`, 'turn-distance'));
+  const hero = el('section', undefined, `participant-hero is-${state}`); hero.setAttribute('aria-label', 'Your turn status');
+  const title = el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'); title.title = title.textContent!;
+  hero.append(title, el('p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance'));
   const circle = rotation(view, false, circleExpanded);
   circle.addEventListener('toggle', () => { if (circle.isConnected && circle instanceof HTMLDetailsElement) circleExpanded = circle.open; });
-  main.append(hero, circle);
-  const shown = player.project(view); const playback = shown.ownPlayback;
-  const turnId = view.turnId;
-  const finish = view.myTurn ? button(playback ? 'Finish turn' : 'Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId }); }, true) : undefined;
-  if (finish) { finish.id = 'finish-my-turn'; finish.disabled ||= player.starting; }
-  if (view.myTurn && playback) {
-    const card = el('section', undefined, 'panel playback-card');
-    const cardHeading = el('div', undefined, 'section-heading'); cardHeading.append(el('span', playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display', 'privacy-tag'));
-    card.append(cardHeading);
-    if (player.updating) { const pending = el('p', player.starting ? 'Starting track…' : 'Updating player…', 'player-pending'); pending.setAttribute('role', 'status'); card.append(pending); }
-    const now = el('div', undefined, 'private-now-playing');
-    const track = el('div'); track.append(el('h2', playback.track.title));
-    const artist = el('div', undefined, 'artist-credit'); if (playback.track.artistArtwork) artist.append(artwork(playback.track.artistArtwork, 'Artist image', 'artist-portrait'));
-    artist.append(el('p', playback.track.artist, 'artist')); track.append(artist);
-    now.append(artwork(playback.track.artwork, 'Album artwork', 'mini-record'), track); card.append(now, progressBar(shown.progress));
-    const controls = el('div', undefined, 'actions');
-    if (playback.status !== 'stopped') {
-      const action = playback.status === 'playing' ? 'pause' : 'resume';
-      controls.append(playerButton(action === 'pause' ? 'Pause' : 'Resume', () => player.control(action), true));
-    }
-    if (!playback.revealed) {
-      const reveal = playerButton('Reveal song', () => player.reveal());
-      reveal.classList.add('reveal-button'); controls.append(reveal);
-    }
-    card.append(controls);
-    const volume = el('details', undefined, 'player-volume'); volume.open = volumeExpanded;
-    volume.append(el('summary', 'Volume'), volumeControl(shown.volume, (level, commit) => player.volume(level, commit), !realtime || !view.connected || playback.status === 'stopped' || player.starting));
-    volume.ontoggle = () => { if (volume.isConnected) volumeExpanded = volume.open; }; card.append(volume);
-    if (finish) { const ending = el('div', undefined, 'player-ending'); ending.append(el('p', 'Stop this song and pass the turn.', 'muted small'), finish); card.append(ending); }
-    main.append(card);
-  }
+  main.append(hero, circle, participantPlayer(view));
   const search = el('section', undefined, 'catalogue-panel');
   search.setAttribute('aria-labelledby', 'music-find-title');
   const searchHeading = el('div', undefined, 'section-heading'); const searchTitle = el('h2', 'Find music'); searchTitle.id = 'music-find-title'; searchHeading.append(searchTitle, el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
@@ -444,11 +491,11 @@ function participant() {
     void runCatalogue(async () => {
       if (realCatalogue && searchMode === 'artists') {
         const response = await catalogue.browse('artists', query);
-        if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; browseHistory?.push(); }
+        if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; return true; }
       } else {
         const response = await catalogue.search(query);
         if (response && view?.catalogue?.source === response.source) {
-          results = response.tracks; trackNotices = response.notices ?? []; searchDone = true; browseHistory?.push();
+          results = response.tracks; trackNotices = response.notices ?? []; searchDone = true; return true;
         }
       }
     });
@@ -495,7 +542,7 @@ function participant() {
       if (!source.item) return;
       browseHistory?.remember();
       const response = await catalogue.browse('albums', source.item!.id);
-      if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; browseHistory?.push(); }
+      if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; return true; }
     }, true); browse.disabled ||= !source.item; row.append(info, browse); found.append(row);
   }
   for (const album of chosenArtist && !chosenAlbum ? albums : []) {
@@ -509,7 +556,7 @@ function participant() {
       if (!source.item) return;
       browseHistory?.remember();
       const response = await catalogue.browse('tracks', source.item!.id);
-      if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; browseHistory?.push(); }
+      if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; return true; }
     }, true); browse.disabled ||= !source.item; row.append(info, browse); found.append(row);
   }
   const emptyBrowse = searchDone && searchMode === 'artists' && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
@@ -532,18 +579,14 @@ function participant() {
     if (source.item && !track.available) copy.append(el('p', 'Unavailable through this source', 'muted small'));
     const controls = el('div', undefined, 'row-actions');
     const add = music.addButton(track); add.disabled ||= !source.item; controls.append(add);
-    if (view.myTurn) {
-      const play = playerButton(!source.item ? 'Choose a source' : !track.available ? 'Unavailable' : !view.catalogue?.playbackAvailable ? 'Choose a speaker' : 'Play', () => playTrack(track));
-      play.disabled ||= !source.item || !track.available || !view.catalogue?.playbackAvailable || player.starting; controls.append(play);
-    }
+    const play = playerButton(!source.item ? 'Choose a source' : !track.available ? 'Unavailable' : !view.catalogue?.playbackAvailable ? 'Choose a speaker' : 'Play', () => playTrack(track));
+    play.disabled ||= !source.item || !track.available || !view.catalogue?.playbackAvailable;
+    play.dataset.playerReady = String(!play.disabled); play.disabled ||= player.starting; controls.append(play);
     row.append(info, controls);
     found.append(row);
   }
   const musicPanel = music.render(search, searchDone || catalogueBusy || catalogueError ? found : undefined);
   main.append(musicPanel);
-  if (finish && !playback) {
-    hero.append(finish);
-  }
   return main;
 }
 function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }) {

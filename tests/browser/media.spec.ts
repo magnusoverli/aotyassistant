@@ -40,7 +40,7 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     await first.getByRole('button', { name: 'View tracks', exact: true }).click();
     await saveChoice(first);
     await expect(first.getByAltText('Saved album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
-    expect(publicImages).toEqual([]); await expect(second.getByRole('slider', { name: 'Volume', exact: true })).toHaveCount(0);
+    expect(publicImages).toEqual([]); await expect(second.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();
     await first.getByRole('button', { name: 'Play this song', exact: true }).click();
     await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
     await expect(tv.getByRole('progressbar', { name: 'Track progress', exact: true })).toBeVisible();
@@ -48,7 +48,6 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     let publicState = await (await tv.request.get('/api/display/state')).json();
     expect(Object.keys(publicState.progress).sort()).toEqual(['fraction', 'id', 'status']);
     expect(publicImages).toEqual([]);
-    await first.locator('.player-volume summary').click();
     const volume = first.getByRole('slider', { name: 'Volume', exact: true });
     await expect(volume).toBeEnabled();
     await volume.evaluate(input => { const slider = input as HTMLInputElement; slider.value = '25'; slider.dispatchEvent(new Event('input', { bubbles: true })); slider.dispatchEvent(new Event('change', { bubbles: true })); });
@@ -78,7 +77,7 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await expect(tv.locator('.track-times')).toBeEmpty(); await expect(tv.getByAltText('Current album artwork')).toHaveCount(0);
     expect((await tv.request.get(oldImage!)).status()).toBe(403);
-    await expect(first.getByRole('slider', { name: 'Volume', exact: true })).toHaveCount(0);
+    await expect(first.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();
   } finally {
     await firstContext.close(); await secondContext.close(); await tvContext.close();
     state = await (await host.request.get('/api/host/state')).json();

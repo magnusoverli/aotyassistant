@@ -2,6 +2,8 @@
 
 ## Status
 
+**0.3.1 release — 2026-10-18:** stabilise the participant player and surrounding workspace across playback/turn changes, keep volume visible, remove “Updating player…”, and open new catalogue lists at their beginning while retaining Back/Forward positions. Build/typecheck, 195 unit/controller tests and all 86 browser workflows pass. Publication uses the `v0.3.1` workflow, with anonymous amd64/arm64 image verification before updating the store branch. Screenshots remain local/ignored.
+
 **0.2.9 release checkpoint — 2026-10-18:** published completed UI/UX Batch 1. Build/typecheck, 194 unit/controller tests and 70 Chromium browser tests passed for the release. Public amd64/arm64 image manifests and configurations were verified before completing publication. Screenshots are ignored and none are tracked.
 
 **0.3.0 release — 2026-10-18:** all scoped UI/UX batches 1–7 completed; version 0.3.0 includes Batches 2–7 following the 0.2.9 checkpoint. Build/typecheck, 195 unit/controller tests and all 79 browser workflows pass. Phone, tablet, desktop and display captures were reviewed; screenshots remain ignored. Publication uses the `v0.3.0` workflow, with public image verification before updating the store branch. See the [implementation plan and progress](docs/ui-ux-implementation.md) for delivered behaviour, verification and deliberate deferrals. The implementation retains the owner's simple-code/simple-flow direction; accessibility-specific work is excluded.

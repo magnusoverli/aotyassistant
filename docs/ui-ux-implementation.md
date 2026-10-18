@@ -213,6 +213,14 @@ Implemented: Home/Join entry copy, route titles/record favicon/theme colour, the
 
 Physical phone keyboards, touch behaviour and across-room TV readability remain real-device observations for the owner; the checks above use isolated synthetic services and Chromium. Release 0.3.0 uses the tagged image-publication workflow; public amd64/arm64 image verification precedes the store-branch update. Installation is a separate step.
 
+### Owner testing follow-up — 0.3.1, 18 October 2026
+
+- New search, artist and album results show their beginning below sticky controls; Back/Forward retains each list's previous position.
+- Volume stays visible in the player; the generic “Updating player…” message and its controller getter are removed.
+- The participant player remains visible at a stable size through idle, starting, playing, paused, stopped and waiting states. Pass/Finish turn stays in the player, and unavailable controls remain in place but disabled.
+- Playback-only updates preserve the existing search/list DOM. Long titles, artist artwork and track replacement do not shift the workspace; starting feedback uses the existing status line.
+- Release verification: build/typecheck, **195 unit/controller tests**, **86 Chromium workflows**, and `git diff --check` pass. Seven new browser cases cover list/history scrolling and player geometry at desktop, phone and short-height sizes. Screenshots remain ignored local artifacts.
+
 ## Explicitly deferred or excluded
 
 - **New product capabilities:** self-leave/rename and duplicate-name management (J05–J06), album search (S12), discussion hold/changed natural ending (P08), display wake lock (D05).

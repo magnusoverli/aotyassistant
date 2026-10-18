@@ -79,7 +79,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await jordan.screenshot({ path: 'test-results/participant-circle.png', fullPage: true });
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern');
     await jordan.getByRole('button', { name: 'Search', exact: true }).click(); await saveChoice(jordan);
-    await expect(jordan.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
+    await expect(jordan.getByRole('button', { name: 'Play this song' })).toBeDisabled();
     await expect(jordan.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await jordan.screenshot({ path: 'test-results/participant-prepared.png', fullPage: true });
     await showFind(jordan);
@@ -91,7 +91,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'next');
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 4 });
     await expect(host.getByRole('heading', { name: 'Alex', exact: true })).toBeVisible();
-    await expect(jordan.getByRole('button', { name: 'Play this song', includeHidden: true })).toHaveCount(0);
+    await expect(jordan.getByRole('button', { name: 'Play this song', includeHidden: true })).toBeDisabled();
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
     await expect(jordan.locator('.circle-panel')).toHaveJSProperty('open', true);

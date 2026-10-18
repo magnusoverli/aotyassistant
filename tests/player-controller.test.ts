@@ -33,7 +33,7 @@ test('the complete player projects immediately, queues dependent commands behind
   f.calls[1]!.resolve({ ...f.view, revision: 3, ownPlayback: { ...f.view.ownPlayback!, status: 'paused' } }); await delay(0);
   assert.equal(f.calls[2]!.path, '/api/participant/reveal');
   f.calls[2]!.resolve({ ...f.view, revision: 4, ownPlayback: { ...f.view.ownPlayback!, revealed: true } }); await delay(0);
-  assert.equal(f.controller.updating, false); assert.equal(f.failures.length, 0);
+  assert.deepEqual(f.controller.project(f.view), f.view); assert.equal(f.failures.length, 0);
 });
 
 test('optimistic pause/resume/stop remain interactive during slow replies and roll back on rejection without replaying writes', async () => {
@@ -76,7 +76,7 @@ test('turn changes and offline transitions cancel private optimistic state and n
   const response = f.playing();
   f.observe({ ...f.view, revision: 4, turnId: 'next-turn', current: { id: 'sam', nickname: 'Sam' }, myTurn: false, ownPlayback: undefined, volume: undefined });
   f.calls[0]!.resolve(response); await delay(0);
-  assert.equal(f.calls.length, 1); assert.equal(f.controller.updating, false); assert.equal(f.controller.project(f.view).ownPlayback, undefined);
+  assert.equal(f.calls.length, 1); assert.deepEqual(f.controller.project(f.view), f.view); assert.equal(f.controller.project(f.view).ownPlayback, undefined);
   const host = fixture('host'); host.controller.volume(20, true); host.controller.volume(70, true); host.offline();
   host.calls[0]!.resolve({ ...host.view, volume: { ...host.view.volume!, level: 20 } }); await delay(0);
   assert.equal(host.calls.length, 1); assert.equal(host.controller.project(host.view).volume!.level, 30);
@@ -88,7 +88,7 @@ test('routing-only changes cancel queued player/volume work even when catalogue 
   const old = structuredClone(f.view);
   f.observe({ ...f.view, volume: { available: false, level: null, revision: 'new-destination' }, catalogue: { ...f.view.catalogue!, playbackAvailable: true } });
   for (const call of f.calls) call.resolve(old); await delay(0);
-  assert.equal(f.calls.length, 2); assert.equal(f.controller.updating, false); assert.equal(f.controller.project(f.view).volume!.level, null);
+  assert.equal(f.calls.length, 2); assert.deepEqual(f.controller.project(f.view), f.view); assert.equal(f.controller.project(f.view).volume!.level, null);
   assert.equal(f.view.catalogue!.revision, 'same-catalogue'); assert.equal(f.view.volume!.revision, 'new-destination');
 });
 

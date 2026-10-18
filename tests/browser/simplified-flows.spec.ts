@@ -38,16 +38,16 @@ test('compact phone workspace keeps results visible, expands the list inline and
 test('one player separates reveal, volume and finish while keeping search available', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
-  await expect(page.locator('.participant-hero').getByRole('button', { name: 'Pass turn' })).toBeEnabled();
+  await expect(page.locator('.playback-card').getByRole('button', { name: 'Pass turn' })).toBeEnabled();
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Reveal song' })).toBeEnabled();
   await expect(page.locator('.player-ending').getByRole('button', { name: 'Finish turn' })).toBeEnabled();
-  await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeHidden();
-  await page.locator('.player-volume summary').click(); await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
+  await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeVisible();
+  await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Reveal song' }).click(); await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display');
   await expect(page.getByRole('searchbox')).toHaveValue('Northern');
-  await page.getByRole('button', { name: 'Finish turn', exact: true }).click(); await expect(page.locator('.playback-card')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Finish turn', exact: true }).click(); await expect(page.locator('.playback-card')).toContainText('Choose a song');
   await expect(page.getByRole('button', { name: 'Pass turn' })).toBeEnabled();
 });
 

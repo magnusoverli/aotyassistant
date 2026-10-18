@@ -69,7 +69,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     await expect(second.getByRole('button', { name: 'Add to my list', exact: true })).toBeVisible();
     await showList(first); await showList(second);
     await expect(first.getByRole('button', { name: 'Play this song', exact: true })).toBeEnabled();
-    await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toHaveCount(0);
+    await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toBeDisabled();
     await first.getByRole('button', { name: 'Play this song', exact: true }).click(); await expect(first.locator('.player-pending')).toHaveCount(0);
     expect((await (await first.request.get('/api/participant/state')).json()).ownPlayback.track.id).toBe(`prepared:${firstTrack.entryId}`);
     await expect(second.locator('.saved-track.is-next')).toBeVisible();

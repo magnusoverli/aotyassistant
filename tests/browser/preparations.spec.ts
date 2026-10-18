@@ -51,7 +51,7 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
   try {
     for (const query of ['Northern', 'Summer', 'Night']) await add(second, query);
     await showList(second); await expect(titles(second)).toHaveText(['Northern Lights', 'Late Summer', 'Night Bus Home']);
-    await expect(second.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
+    await expect(second.getByRole('button', { name: 'Play this song' })).toBeDisabled();
     await second.getByRole('button', { name: 'Edit order', exact: true }).click();
     await second.getByRole('button', { name: 'Move Night Bus Home up', exact: true }).click();
     await expect(titles(second)).toHaveText(['Northern Lights', 'Night Bus Home', 'Late Summer']);

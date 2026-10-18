@@ -62,7 +62,7 @@ test('a delayed search leaves pause and finish available and retains its results
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
-    await expect(page.locator('.playback-card')).toHaveCount(0);
+    await expect(page.locator('.playback-card')).toContainText('Choose a song');
     search.release();
     await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'false');
     await expect(page.locator('.catalogue-results .track-row')).not.toHaveCount(0);
@@ -94,19 +94,20 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     expect(actions).toEqual([]); await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     start.release(); await expect(page.locator('.player-pending')).toHaveCount(0);
-    expect(actions).toEqual(['resume']);
+    await expect.poll(() => actions).toEqual(['resume']);
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
     await expect(page.locator('.playback-card').getByRole('button', { name: 'Finish turn', exact: true })).toBeEnabled();
     await expect(page.locator('.finish-turn')).toHaveCount(0);
-    await page.locator('.player-volume summary').click();
     await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
+    await expect(page.getByText('Updating player…', { exact: true })).toHaveCount(0);
     await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/player-pending-responsive.png', fullPage: true });
     await page.getByRole('button', { name: 'Resume', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
-    pause.release(); await expect(page.locator('.player-pending')).toHaveCount(0);
+    const resumed = page.waitForResponse(response => response.url().endsWith('/api/participant/control') && response.request().postDataJSON().action === 'resume');
+    pause.release(); await resumed;
     expect(actions).toEqual(['resume', 'pause', 'resume']);
     await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Fixture finish rejected.');
@@ -149,7 +150,7 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     await page.locator('#finish-my-turn').evaluate(node => { (node as HTMLButtonElement).click(); });
     expect(finishes).toBe(1);
     finish.release(); await expect(next.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
-    await expect(page.locator('.playback-card')).toHaveCount(0);
+    await expect(page.locator('.playback-card')).toContainText('Waiting for your turn');
     await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(0);
     await expect(f.tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     const after = await (await next.request.get('/api/participant/state')).json();
@@ -179,7 +180,6 @@ test('participant and host volume remain active, optimistic, and latest-only dur
   });
   try {
     await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
-    await page.locator('.player-volume summary').click();
     await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
     await page.getByRole('slider', { name: 'Volume', exact: true }).evaluate(node => { (node as HTMLElement).dataset.sameNode = 'yes'; });
     await volume(page, 55); await expect(page.locator('.volume-control output')).toHaveText('55%');

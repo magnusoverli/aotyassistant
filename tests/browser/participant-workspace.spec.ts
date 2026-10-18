@@ -54,7 +54,7 @@ test('participant typography, surfaces and desktop alignment match the host page
     await page.screenshot({ path: 'test-results/participant-coherent-mobile.png', fullPage: true });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('.catalogue-results .track-row').first().getByRole('button', { name: 'Play', exact: true }).click();
-    await expect(page.locator('.playback-card')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeEnabled();
     expect((await page.locator('.playback-card').boundingBox())!.width).toBe((await page.locator('.catalogue-panel').boundingBox())!.width);
     await page.screenshot({ path: 'test-results/participant-coherent-playing-desktop.png', fullPage: true });
     for (const width of [1440, 390, 320]) {

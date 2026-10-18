@@ -28,7 +28,7 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await second.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await second.getByRole('button', { name: 'Search', exact: true }).click();
     await second.getByRole('button', { name: 'View albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
     await saveChoice(second);
-    await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toHaveCount(0);
+    await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toBeDisabled();
     await expect(first.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
     const tv = await tvContext.newPage(); await tv.goto(display!); await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
     const privateState = await (await second.request.get('/api/participant/state')).json();
