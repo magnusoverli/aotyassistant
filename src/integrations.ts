@@ -182,12 +182,12 @@ export class IntegrationManager implements CatalogueProvider {
     return this.withArtwork({ ...item, id: this.seal(item.id, kind, context),
       ...(item.sources ? { sources: item.sources.map(source => this.catalogueItem(source, kind, context)) } : {}) }, context);
   }
-  async artwork(reference: string, context: string) {
+  async artwork(reference: string, context: string, size: 128 | 512 = 512) {
     const revision = this.catalogueRevision;
     try {
       return reference.startsWith('upload:') && this.uploads
         ? await this.uploads.artwork(this.unseal(reference.slice(7), 'upload-image', context))
-        : await this.getApi().artwork(this.unseal(reference, 'image', context));
+        : await this.getApi().artwork(this.unseal(reference, 'image', context), size);
     } finally {
       if (revision !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');
     }
@@ -240,11 +240,11 @@ export class IntegrationManager implements CatalogueProvider {
     if (revision !== this.state.revision || epoch !== this.catalogueRevision) throw new AppError(409, 'Playback setup changed during lookup. Your saved list was kept; review the destination and try again.');
     return { ...result, track: this.withArtwork({ ...result.track, id: trackId }, context), revision };
   }
-  async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork') {
+  async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: 128 | 512 = 512) {
     const saved = this.savedSource(selection); const epoch = this.catalogueRevision;
     const image = kind === 'artwork' ? saved.metadata.artworkId : saved.metadata.artistArtworkId;
     if (!image) throw new AppError(404, 'Artwork unavailable.');
-    try { return await this.getApi().artwork(image); }
+    try { return await this.getApi().artwork(image, size); }
     finally {
       this.savedSource(saved);
       if (epoch !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');

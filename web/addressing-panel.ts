@@ -14,12 +14,14 @@ export class AddressingPanel {
   private mediaDraft = '';
   private guestExpanded = false;
   private advanced = false;
+  private loading?: Promise<void>;
   constructor(private changed: () => void, private saved: (revision: number) => void, private blocked: () => boolean, private playbackBlocked = () => false) {}
   private async request(path = '', data?: unknown): Promise<AddressingView> {
     return requestJson<AddressingView>(`/api/host/addressing${path}`, data, 60_000);
   }
   private accept(view: AddressingView, drafts = false) {
     const previous = this.view;
+    if (previous && view.revision < previous.revision) return;
     this.view = view; this.saved(view.revision);
     setGuestOrigin(view.guestOrigin);
     if (drafts || !previous) {
@@ -36,15 +38,17 @@ export class AddressingPanel {
       try { this.accept(await this.request()); } catch { /* Retain last known addresses; never retry a write. */ }
     } finally { this.busy = false; this.changed(); }
   }
-  async load(automatic = true) {
-    await this.run(async () => {
+  load(automatic = true): Promise<void> {
+    if (this.loading) return this.loading;
+    const pending = this.run(async () => {
       this.accept(await this.request(), true);
       // Startup may already be checking. Read back that result instead of duplicating its MA request.
       for (let n = 0; this.view!.mediaCheck.status === 'checking' && n < 120; n++) {
         await new Promise(resolve => setTimeout(resolve, 250)); this.accept(await this.request());
       }
       if (automatic && this.view!.configured && this.view!.mediaCheck.status !== 'checking') await this.check();
-    });
+    }).finally(() => { if (this.loading === pending) this.loading = undefined; });
+    this.loading = pending; return pending;
   }
   private async check() {
     const view = this.view!;

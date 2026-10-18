@@ -86,22 +86,23 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const id = (images.find(i => i?.type === 'thumb') ?? images[0])?.proxy_id;
     return id && !id.includes(this.token) ? `image:${id}` : undefined;
   }
-  async artwork(id: string): Promise<ArtworkData> {
+  async artwork(id: string, size: 128 | 512 = 512): Promise<ArtworkData> {
     if (!/^image:[a-f0-9]{64}$/.test(id)) throw new AppError(404, 'Artwork unavailable.');
-    const cached = this.imageCache.get(id);
-    if (cached && cached.expires > Date.now()) { this.imageCache.delete(id); this.imageCache.set(id, cached); return cached.data; }
-    const pending = this.imageRequests.get(id); if (pending) return pending;
+    const key = `${id}:${size}`;
+    const cached = this.imageCache.get(key);
+    if (cached && cached.expires > Date.now()) { this.imageCache.delete(key); this.imageCache.set(key, cached); return cached.data; }
+    const pending = this.imageRequests.get(key); if (pending) return pending;
     if (this.imageRequests.size >= 16) throw new AppError(503, 'Artwork is busy.');
     const request = (async () => {
-      const data = await this.read(`/imageproxy/${id.slice(6)}?size=512&fmt=png`, undefined, {}, true) as ArtworkData;
-      this.imageCache.set(id, { data, expires: Date.now() + 5 * 60_000 });
+      const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=png`, undefined, {}, true) as ArtworkData;
+      this.imageCache.set(key, { data, expires: Date.now() + 5 * 60_000 });
       let bytes = [...this.imageCache.values()].reduce((sum, item) => sum + item.data.body.length, 0);
       while (this.imageCache.size > 64 || bytes > 20 * 1024 * 1024) {
         const key = this.imageCache.keys().next().value!; bytes -= this.imageCache.get(key)!.data.body.length; this.imageCache.delete(key);
       }
       return data;
     })();
-    this.imageRequests.set(id, request); try { return await request; } finally { this.imageRequests.delete(id); }
+    this.imageRequests.set(key, request); try { return await request; } finally { this.imageRequests.delete(key); }
   }
   private remember(kind: MediaRef['kind'], media: z.infer<typeof mediaSchema>, artistArtwork?: string): string {
     const uri = media.uri || `${media.provider}://${kind}/${media.item_id}`;

@@ -1,17 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { CatalogueTrack, View } from '../src/model.js';
+import type { CatalogueTrack, PlaybackProgress, View } from '../src/model.js';
 import { PlayerController } from '../web/player-controller.js';
 
 const track: CatalogueTrack = { id: 'private-track', title: 'My track', artist: 'My artist', album: 'My album', version: '', duration: 180, provider: 'fixture', available: true };
-function fixture(role: 'host' | 'participant' = 'participant') {
+function fixture(role: 'host' | 'participant' = 'participant', position?: (progress?: PlaybackProgress) => PlaybackProgress | undefined) {
   let view: View = { mode: 'music-assistant', connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: { id: 'alex', nickname: 'Alex' }, next: null,
     me: { id: 'alex', nickname: 'Alex' }, myTurn: true, ownPlayback: null, volume: { available: true, level: 30, revision: 'destination', generation: 0 } };
   let online = true; let resyncs = 0;
   const failures: string[] = [];
   const calls: { path: string; data: any; resolve(value: View): void; reject(error: Error): void }[] = [];
   const controller = new PlayerController({ role, getView: () => view, canSend: () => online,
+    position,
     request: (path, data) => new Promise<View>((resolve, reject) => calls.push({ path, data, resolve, reject })),
     accept: next => { view = next; controller.observe(next); }, resync: async () => { resyncs++; }, changed: () => {}, failed: message => failures.push(message),
   }); controller.observe(view);
@@ -34,6 +35,14 @@ test('the complete player projects immediately, queues dependent commands behind
   assert.equal(f.calls[2]!.path, '/api/participant/reveal');
   f.calls[2]!.resolve({ ...f.view, revision: 4, ownPlayback: { ...f.view.ownPlayback!, revealed: true } }); await delay(0);
   assert.deepEqual(f.controller.project(f.view), f.view); assert.equal(f.failures.length, 0);
+});
+
+test('pending Pause and Resume retain the displayed clock position instead of jumping back to the older server sample', () => {
+  const f = fixture('participant', progress => progress && { ...progress, elapsed: 20, fraction: 20 / 180 });
+  f.observe(f.playing());
+  f.controller.control('pause'); assert.equal(f.controller.project(f.view).progress!.elapsed, 20);
+  f.controller.control('resume'); assert.equal(f.controller.project(f.view).progress!.elapsed, 20);
+  assert.equal(f.view.progress!.elapsed, 18); f.controller.cancel();
 });
 
 test('optimistic pause/resume/stop remain interactive during slow replies and roll back on rejection without replaying writes', async () => {

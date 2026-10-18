@@ -7,7 +7,7 @@ import { avatar, vinyl } from './visuals';
 import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
 import { pageForPath } from './navigation';
-import { artwork, progressBar, updateProgress, volumeControl, updateVolume } from './media';
+import { artwork, progressBar, updateProgress, volumeControl, updateVolume, progressConnected, displayedProgress } from './media';
 import { PlayerController } from './player-controller';
 import { PublicRoom } from './public-room';
 import { PreparationController } from './preparation-controller';
@@ -16,6 +16,7 @@ import type { PreparedEntryView, PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
 import { catalogueSourceChoice, sourceName } from './catalogue-sources';
+import { participantEvents } from './participant-events';
 import { BrowseHistory } from './browse-history';
 import { copyButton } from './copy-text';
 import './style.css';
@@ -68,7 +69,7 @@ const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot,
   sourceChoices.clear(); for (const [key, value] of snapshot?.choices ?? []) sourceChoices.set(key, value);
   catalogueDetails = snapshot?.catalogueDetails ?? false; render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
 }) : undefined;
-let stream: EventSource | undefined;
+let stream: { close(): void } | undefined;
 let qrUrl = '';
 let qrImage = '';
 let nicknameDraft = '';
@@ -79,6 +80,7 @@ let settingsMounted = false;
 document.body.dataset.view = page;
 const player = new PlayerController({
   role: page === 'host' ? 'host' : 'participant', getView: () => view,
+  position: displayedProgress,
   canSend: () => (page === 'host' || page === 'participant') && realtime && Boolean(view?.connected),
   request: async (path, data) => {
     if (path === '/api/participant/preparations/play') {
@@ -95,7 +97,9 @@ const player = new PlayerController({
   },
   failed: message => { error = message; render(); },
 });
-const library = new PreparationController(() => render(), () => Boolean(view?.me));
+const library = new PreparationController(() => {
+  if (page === 'participant' && view?.me && root.querySelector('.preparation-list')) music.refresh(); else render();
+}, () => Boolean(view?.me));
 const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting,
   canPlay: () => realtime && Boolean(view?.connected && view.myTurn && view.catalogue?.playbackAvailable), changed: render,
   play: (entry: PreparedEntryView) => {
@@ -126,6 +130,7 @@ appHeader.element.append(listeningOrder.element);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(appHeader.element, pageContent);
 const updateHeader = () => {
+  progressConnected(realtime && Boolean(view?.connected));
   appHeader.update({ view });
   listeningOrder.update(view, realtime && navigator.onLine);
 };
@@ -221,7 +226,7 @@ function showCatalogueStart() {
   }
 }
 async function runCatalogue(action: CatalogueAction) {
-  if (catalogueBusy) return;
+  catalogue.cancel();
   const sequence = ++catalogueSequence;
   const focusId = document.activeElement instanceof HTMLElement ? document.activeElement.id : '';
   let newList = false;
@@ -246,7 +251,7 @@ async function runCatalogue(action: CatalogueAction) {
 }
 function catalogueButton(text: string, action: CatalogueAction, secondary = true) {
   const control = el('button', text, secondary ? 'secondary' : ''); control.type = 'button';
-  control.disabled = catalogueBusy || !realtime || !view?.connected;
+  control.disabled = !realtime || !view?.connected;
   control.onclick = () => { void runCatalogue(action); }; return control;
 }
 function participantLayoutKey(current: View) {
@@ -298,22 +303,29 @@ function accept(next: View) {
   render();
 }
 function subscribe(role: 'host' | 'participant' | 'display') {
-  stream?.close(); const connection = new EventSource(appPath(`/api/${role}/events`)); stream = connection;
-  connection.onopen = () => { /* Wait for the authenticated state snapshot before enabling controls. */ };
-  connection.addEventListener('state', event => {
+  stream?.close();
+  const state = (event: MessageEvent) => {
     if (stream !== connection || !navigator.onLine) return;
     const reconnecting = !realtime; realtime = true;
     accept(JSON.parse((event as MessageEvent).data) as View);
     if (reconnecting) render();
-  });
-  connection.addEventListener('revoked', () => {
+  };
+  const revoked = () => {
     if (stream !== connection) return;
     accessEnded = true;
     turnAnnouncement.textContent = 'You have been removed from the listening room.';
     error = '';
     participantAccess.revoke(); music.uploads.stop();
-  });
-  connection.onerror = () => { if (stream === connection) { realtime = false; player.cancel(); render(); } };
+  };
+  const failed = () => { if (stream === connection) { realtime = false; player.cancel(); render(); } };
+  const connection = role === 'participant'
+    ? { close: participantEvents.subscribe('room', { state, revoked, error: failed }) }
+    : new EventSource(appPath(`/api/${role}/events`));
+  stream = connection;
+  if (connection instanceof EventSource) {
+    connection.addEventListener('state', event => state(event as MessageEvent));
+    connection.addEventListener('revoked', revoked); connection.onerror = failed;
+  }
 }
 async function mutate(path: string, data: unknown) { accept(await api<View>(path, data)); }
 
@@ -467,7 +479,7 @@ function participant() {
   const input = el('input'); input.type = 'search'; input.enterKeyHint = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Song, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
   input.id = 'catalogue-search';
   input.setAttribute('aria-label', 'Search catalogue'); input.value = searchText; input.oninput = () => { searchText = input.value; };
-  const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = catalogueBusy || !realtime || !view.connected;
+  const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = !realtime || !view.connected;
   form.append(input, submit);
   form.onsubmit = event => {
     event.preventDefault(); if (submit.disabled) return;
@@ -566,7 +578,7 @@ function participant() {
     if (source.control) copy.append(source.control);
     if (source.item && !track.available) copy.append(el('p', 'Unavailable through this source', 'muted small'));
     const controls = el('div', undefined, 'row-actions');
-    const add = music.addButton(track); add.disabled ||= !source.item; controls.append(add);
+    const add = music.addButton(track); add.dataset.sourceSelectable = String(Boolean(source.item)); add.disabled ||= !source.item; controls.append(add);
     const play = playerButton(!source.item ? 'Choose a source' : !track.available ? 'Unavailable' : !view.catalogue?.playbackAvailable ? 'Choose a speaker' : 'Play', () => playTrack(track));
     play.disabled ||= !source.item || !track.available || !view.catalogue?.playbackAvailable;
     play.dataset.playerReady = String(!play.disabled); play.disabled ||= player.starting; controls.append(play);

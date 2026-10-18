@@ -104,6 +104,36 @@ test('saved catalogue entries/artwork survive expired references, fresh readers,
   assert.equal(plays.length, 1); assert.deepEqual(plays[0]!.args.media, [f.remote.track.uri]);
 });
 
+test('one participant stream separates room and owner events, keeps room access after private revocation and revokes removed membership', async t => {
+  const f = await fixture(t); const added = await f.add();
+  assert.equal((await f.request(prefix + '/live', undefined, f.first.privateCookie)).status, 401);
+  const events = await f.openStream(prefix + '/live', f.first.credentials);
+  const room = await events(); const list = await events();
+  assert.match(room, /event: state/); assert.ok(!room.includes(added.entryId)); assert.ok(!room.includes('upcoming'));
+  assert.match(list, /event: preparation\n/); assert.ok(list.includes(added.entryId)); assert.ok(!list.includes(f.second.preparation.ownerId));
+  const key = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: added.view.revision }, f.first.privateCookie);
+  assert.match(await events(), /event: preparation\n/);
+  const recovered = await f.request(prefix + '/recover', { recoveryKey: key.recoveryKey }); const newCookie = cookie(recovered); const view = await recovered.json() as PreparationView;
+  assert.match(await events(), /event: preparation\n/);
+  await f.json(prefix + '/revoke-devices', { revision: view.revision }, newCookie);
+  assert.match(await events(), /event: preparation-revoked/);
+  await f.running.engine.join('Late'); assert.match(await events(), /event: state/);
+  const host = f.running.engine.view({ kind: 'host' }); await f.running.engine.remove(host.current!.id, host.revision);
+  assert.match(await events(), /event: revoked/);
+});
+
+test('bounded thumbnail variants remain owner-authorized and independently cached', async t => {
+  const f = await fixture(t); const added = await f.add(); const url = added.view.upcoming[0]!.artwork!;
+  for (const size of [128, 512, 128]) {
+    const response = await f.request(`${url}?size=${size}`, undefined, f.first.privateCookie);
+    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store'); await response.arrayBuffer();
+  }
+  assert.equal(f.remote.imageCalls.filter(path => path.includes('size=128')).length, 1);
+  assert.equal(f.remote.imageCalls.filter(path => path.includes('size=512')).length, 1);
+  assert.equal((await f.request(`${url}?size=999`, undefined, f.first.privateCookie)).status, 400);
+  assert.equal((await f.request(`${url}?size=128`, undefined, f.second.privateCookie)).status, 404);
+});
+
 test('owner APIs and streams stay private across matching nicknames, recovery, device revocation and room removal', async t => {
   const f = await fixture(t);
   assert.notEqual(f.first.preparation.ownerId, f.second.preparation.ownerId);

@@ -177,6 +177,20 @@ test('storage failures fail closed, stop playback, and do not commit a turn tran
   await assert.rejects(f.engine.advance(f.host().turnId!), status(503));
 });
 
+test('a reservation rejected after slow resolution releases only the prepared selection and sends no Play', async t => {
+  const f = await fixture(); t.after(() => f.adapter.close());
+  let release!: () => void; let entered!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; }); const resolving = new Promise<void>(resolve => { entered = resolve; });
+  const resolve = f.adapter.resolve.bind(f.adapter); let discarded = 0; let plays = 0;
+  f.adapter.resolve = async id => { entered(); await held; return resolve(id); };
+  (f.adapter as PlaybackAdapter).discardSelection = () => { discarded++; };
+  f.adapter.play = async () => { plays++; };
+  t.after(() => release());
+  const playing = assert.rejects(f.engine.play(f.alex, f.host().turnId!, null, 'demo:aurora'), status(503));
+  await resolving; f.store.fail = true; await assert.rejects(f.engine.join('Storage failure'), status(503));
+  release(); await playing; assert.equal(discarded, 1); assert.equal(plays, 0);
+});
+
 test('restart restores membership/order, but not playback, reveal, or old action identities', async t => {
   const f = await fixture(); t.after(() => f.adapter.close());
   const turn = f.host().turnId!;

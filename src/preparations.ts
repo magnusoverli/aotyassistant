@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { open } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from './model.js';
@@ -64,32 +64,63 @@ type Entry = PreparationState['entries'][number];
 
 export interface PreparationStore {
   load(ownerId: string): Promise<PreparationState | null>;
+  snapshot?(ownerId: string): Promise<PreparationState | null>;
   save(state: PreparationState): Promise<void>;
 }
 export class PreparationFileStore implements PreparationStore {
   private directory: string;
+  private cache = new Map<string, { stamp: string; state: PreparationState; bytes: number }>();
+  private cachedBytes = 0;
   constructor(dataDirectory: string) { this.directory = join(dataDirectory, 'preparations'); }
   async load(ownerId: string): Promise<PreparationState | null> {
+    return structuredClone(await this.snapshot(ownerId));
+  }
+  private forget(ownerId: string) {
+    this.cachedBytes -= this.cache.get(ownerId)?.bytes ?? 0; this.cache.delete(ownerId);
+  }
+  /** Immutable validated snapshots; stat on every access detects replacement/corruption and revocation. */
+  async snapshot(ownerId: string): Promise<PreparationState | null> {
     ownerId = input(id, ownerId);
     try {
-      const file = await open(join(this.directory, `${ownerId}.json`), 'r');
+      const filename = join(this.directory, `${ownerId}.json`);
+      const stamp = (info: Awaited<ReturnType<typeof fileStat>>) => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+      const info = await fileStat(filename);
+      if (info.size > BigInt(maxPreparationBytes)) throw new Error('Oversized preparation state.');
+      const cached = this.cache.get(ownerId);
+      if (cached?.stamp === stamp(info)) { this.cache.delete(ownerId); this.cache.set(ownerId, cached); return cached.state; }
+      this.forget(ownerId);
+      const file = await open(filename, 'r');
       try {
-        if ((await file.stat()).size > maxPreparationBytes) throw new Error('Oversized preparation state.');
+        const before = await file.stat({ bigint: true });
+        if (before.size > BigInt(maxPreparationBytes)) throw new Error('Oversized preparation state.');
         const state = preparationStateSchema.parse(JSON.parse(await file.readFile('utf8')));
-        if (state.ownerId !== ownerId) throw new Error('Mismatching owner.');
+        if (state.ownerId !== ownerId || stamp(before) !== stamp(await file.stat({ bigint: true }))) throw new Error('Mismatching or changing owner file.');
+        freezeSnapshot(state);
+        const bytes = Number(before.size);
+        this.cache.set(ownerId, { stamp: stamp(before), state, bytes }); this.cachedBytes += bytes;
+        while (this.cache.size > 64 || this.cachedBytes > maxPreparationBytes) this.forget(this.cache.keys().next().value!);
         return state;
       } finally { await file.close(); }
     } catch (error) {
+      this.forget(ownerId);
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw new AppError(503, 'Saved preparation could not be read. Nothing was reset. Check the data directory or restore its backup.');
     }
   }
   async save(state: PreparationState): Promise<void> {
+    this.forget(state.ownerId);
     try {
       const checked = preparationStateSchema.parse(state);
       await writePrivateJson(this.directory, `${checked.ownerId}.json`, checked, maxPreparationBytes);
     } catch { throw new AppError(503, 'The preparation save could not be confirmed. Refresh your list before retrying.'); }
+    finally { this.forget(state.ownerId); }
   }
+}
+const fileStat = (filename: string) => stat(filename, { bigint: true });
+function freezeSnapshot(value: unknown): void {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return;
+  for (const child of Object.values(value)) freezeSnapshot(child);
+  Object.freeze(value);
 }
 
 export type PreparedEntryView = {
@@ -122,17 +153,19 @@ const fingerprint = (selection: SavedSelection) => hash(JSON.stringify(selection
 /** Independent private persistence. Never touches Engine transactions, playback readiness, or speaker commands. */
 export class PreparationManager {
   private queue = new KeyedSerialQueue();
+  private playing = new Set<string>();
   private events = new EventEmitter();
   constructor(private store: PreparationStore, private now = Date.now, private sourceAvailable?: (selection: SavedSelection) => boolean) { this.events.setMaxListeners(0); }
   private serial<T>(ownerId: string, work: () => Promise<T>): Promise<T> {
     return this.queue.run(ownerId, work);
   }
-  private async authorize(ownerId: string, secretHash: string) {
-    const state = await this.store.load(ownerId);
+  private async authorize(ownerId: string, secretHash: string, readonly = false) {
+    const state = await (readonly && this.store.snapshot ? this.store.snapshot(ownerId) : this.store.load(ownerId));
     if (!state || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Private preparation access is unavailable. Use your original browser or private recovery key.');
     return state;
   }
   private view(state: PreparationState): PreparationView {
+    const byId = new Map(state.entries.map(item => [item.id, item]));
     const entry = (item: Entry): PreparedEntryView => ({ id: item.id, source: item.selection.source,
       title: item.selection.metadata.title, artist: item.selection.metadata.artist, album: item.selection.metadata.album,
       version: item.selection.metadata.version, provider: item.selection.metadata.provider, duration: item.selection.metadata.duration,
@@ -142,7 +175,7 @@ export class PreparationManager {
       ...(item.selection.metadata.artistArtworkId ? { artistArtwork: `/api/participant/preparations/artwork/${item.id}/artistArtwork` } : {}),
       ...(this.sourceAvailable ? { sourceAvailable: this.sourceAvailable(item.selection) } : {}) });
     return { ownerId: state.ownerId, revision: state.revision, recoveryKeyCreated: Boolean(state.recoveryHash), capacity: { upcoming: preparationLimits.upcoming, entries: preparationLimits.entries },
-      upcoming: state.order.map(key => entry(state.entries.find(item => item.id === key)!)),
+      upcoming: state.order.map(key => entry(byId.get(key)!)),
       played: state.entries.filter(item => item.state === 'played').sort((a, b) => b.playedAt! - a.playedAt!).map(entry),
       removed: state.entries.filter(item => item.state === 'removed').sort((a, b) => b.removedAt! - a.removedAt!).map(entry),
       ...(state.pendingPlay ? { reviewEntryId: state.pendingPlay.entryId } : {}) };
@@ -159,13 +192,13 @@ export class PreparationManager {
     await this.save(state); return { credential, view: this.view(state) };
   }
   async read(credential: string): Promise<PreparationView> {
-    const access = identity(credential); return this.serial(access.ownerId, async () => this.view(await this.authorize(access.ownerId, access.secretHash)));
+    const access = identity(credential); return this.serial(access.ownerId, async () => this.view(await this.authorize(access.ownerId, access.secretHash, true)));
   }
   /** Owner-targeted events only. A null snapshot revokes a device; no global engine event is emitted. */
   async subscribe(credential: string, listener: (view: PreparationView | null) => void) {
     const access = identity(credential);
     return this.serial(access.ownerId, async () => {
-      await this.authorize(access.ownerId, access.secretHash);
+      await this.authorize(access.ownerId, access.secretHash, true);
       const send = (state: PreparationState) => {
         try { listener(state.credentials.some(item => sameHash(item.hash, access.secretHash)) ? this.view(state) : null); }
         catch { /* A disconnected subscriber must not turn a committed save into an error. */ }
@@ -192,6 +225,7 @@ export class PreparationManager {
       if (now - operation.issuedAt > preparationLimits.operationLifetime || operation.issuedAt - now > preparationLimits.futureClockTolerance) throw new AppError(409, 'This preparation change expired. Refresh your list before trying again.');
       if (operation.revision !== state.revision) throw new AppError(409, 'Your preparation list changed in another page. Refresh it before trying again.');
       if (state.pendingPlay && kind !== 'review') throw new AppError(409, 'A previous play attempt needs review. Your saved entry was kept.');
+      if (this.playing.has(access.ownerId)) throw new AppError(409, 'This saved track is still starting. Wait for the player before reviewing it.');
       state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
       if (state.receipts.length >= preparationLimits.receipts) throw new AppError(409, 'Preparation edit capacity is temporarily full. Your saved entries were kept.');
       const entryId = await change(state); state.revision++;
@@ -226,7 +260,7 @@ export class PreparationManager {
   /** Internal descriptor access for authorized artwork adapters. Never return this object as HTTP JSON. */
   async selection(credential: string, entryId: string): Promise<SavedSelection> {
     const access = identity(credential); entryId = input(id, entryId);
-    return this.serial(access.ownerId, async () => structuredClone(this.find(await this.authorize(access.ownerId, access.secretHash), entryId).selection));
+    return this.serial(access.ownerId, async () => structuredClone(this.find(await this.authorize(access.ownerId, access.secretHash, true), entryId).selection));
   }
   async acknowledgeReview(credential: string, operation: PreparationOperation, entryId: string) {
     entryId = input(id, entryId);
@@ -261,32 +295,42 @@ export class PreparationManager {
   async cleanupDeletedUploads(credential: string, remove: (ownerId: string, assetId: string) => Promise<void>) {
     const access = identity(credential);
     await this.serial(access.ownerId, async () => {
-      const state = await this.authorize(access.ownerId, access.secretHash);
+      const state = await this.authorize(access.ownerId, access.secretHash, true);
       for (const assetId of state.deletedUploads ?? []) await remove(state.ownerId, assetId);
     });
   }
-  /** Hold only this owner's list while resolving/starting its exact head. Never retry the work callback. */
+  /** Durably reserve the head, then release the owner lane during audio work. Never retry audio. */
   async playHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
     const access = identity(credential); entryId = input(id, entryId);
-    return this.serial(access.ownerId, async () => {
+    const selection = await this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
       if (state.revision !== expectedRevision || state.order[0] !== entryId) throw new AppError(409, 'The next prepared track changed. Review your list.');
       if (state.pendingPlay) throw new AppError(409, 'Review the previous play attempt before playing again.');
       const entry = this.find(state, entryId);
       if (entry.playbackIds.length >= 1000) throw new AppError(409, 'Playback history is full. The saved entry was kept.');
       state.pendingPlay = { entryId, startedAt: this.now() }; state.revision++; await this.save(state);
+      this.playing.add(access.ownerId); return structuredClone(entry.selection);
+    });
+    try {
       // A failed acknowledgement does not prove no audio started: leave the durable
       // marker for explicit review if work throws or the process exits here.
-      const result = await work(structuredClone(entry.selection));
-      entry.state = 'played'; entry.playedAt = this.now(); entry.playbackIds.push(input(id, result.playbackId));
-      state.order = state.order.filter(key => key !== entryId); delete state.pendingPlay; state.revision++;
-      try { await this.save(state); return { value: result.value, preparation: this.view(state), warning: undefined }; }
-      catch {
-        let preparation: PreparationView | undefined;
-        try { preparation = this.view(await this.authorize(access.ownerId, access.secretHash)); } catch { /* Audio succeeded; report bookkeeping uncertainty separately. */ }
-        return { value: result.value, preparation, warning: 'Playback started, but the saved-list update could not be confirmed. Check your list and player before trying again; never retry Play automatically.' };
-      }
-    });
+      const result = await work(selection);
+      return await this.serial(access.ownerId, async () => {
+        try {
+          const state = await this.authorize(access.ownerId, access.secretHash);
+          if (state.pendingPlay?.entryId !== entryId || state.order[0] !== entryId) throw new Error('Saved-play reservation changed.');
+          const entry = this.find(state, entryId);
+          entry.state = 'played'; entry.playedAt = this.now(); entry.playbackIds.push(input(id, result.playbackId));
+          state.order = state.order.filter(key => key !== entryId); delete state.pendingPlay; state.revision++;
+          await this.save(state); return { value: result.value, preparation: this.view(state), warning: undefined };
+        }
+        catch {
+          let preparation: PreparationView | undefined;
+          try { preparation = this.view(await this.authorize(access.ownerId, access.secretHash)); } catch { /* Audio succeeded; report bookkeeping uncertainty separately. */ }
+          return { value: result.value, preparation, warning: 'Playback started, but the saved-list update could not be confirmed. Check your list and player before trying again; never retry Play automatically.' };
+        }
+      });
+    } finally { this.playing.delete(access.ownerId); }
   }
   async move(credential: string, operation: PreparationOperation, entryId: string, beforeId: string | null) {
     entryId = input(id, entryId); beforeId = input(id.nullable(), beforeId);

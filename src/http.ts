@@ -19,6 +19,7 @@ import type { SetupManager } from './setup.js';
 import { durability } from './backup.js';
 import { errorPage, escapeHtml } from './error-page.js';
 import { maOperation } from './ma-operation.js';
+import { mountStaticAssets } from './static-assets.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -136,14 +137,16 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     app.get('/api/participant/artwork/:reference', async (req, res) => {
       const context = engine.catalogueContext(participantCredential(req));
       const reference = z.string().max(1500).parse(req.params.reference);
-      const image = await integrations.artwork(reference, context);
+      const size = z.enum(['128', '512']).default('512').parse(req.query.size);
+      const image = await integrations.artwork(reference, context, size === '128' ? 128 : 512);
       if (engine.catalogueContext(participantCredential(req)) !== context) throw new AppError(403, 'Artwork access expired.');
       res.type(image.contentType).send(image.body);
     });
     app.get('/api/display/artwork/:id/:kind', async (req, res) => {
       const id = turn.parse(req.params.id); const kind = z.enum(['artwork', 'artistArtwork']).parse(req.params.kind);
       const access = engine.displayArtwork(id, kind);
-      const image = await integrations.artwork(access.reference, access.context);
+      const size = z.enum(['128', '512']).default('512').parse(req.query.size);
+      const image = await integrations.artwork(access.reference, access.context, size === '128' ? 128 : 512);
       engine.displayArtwork(id, kind); // Revalidate reveal/turn after the network read.
       res.type(image.contentType).send(image.body);
     });
@@ -234,6 +237,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.get('/api/display/events', (_req, res) => events(res, { kind: 'display' }));
 
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'Unknown API endpoint.')));
+  mountStaticAssets(app, webDirectory);
   app.use(express.static(webDirectory, { index: false, etag: false, lastModified: false }));
   for (const path of ['/', '/join', '/participant', '/display', '/host', '/host/settings']) {
     app.get(path, async (req, res) => {

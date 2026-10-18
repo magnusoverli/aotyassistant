@@ -22,7 +22,7 @@ class EventStream {
   closed = false;
   private disposers = new Set<() => void>();
   private draining = false;
-  private pending?: string;
+  private pending = new Map<string, string>();
   private stall?: NodeJS.Timeout;
   constructor(private response: Response, private released: () => void) {
     response.once('close', this.release); response.on('drain', this.drain);
@@ -36,15 +36,18 @@ class EventStream {
     this.response.flushHeaders(); return true;
   }
 
-  send(event: 'state' | 'revoked', data: unknown) {
+  send(event: 'state' | 'revoked' | 'preparation' | 'preparation-revoked', data: unknown) {
     if (this.closed) return;
     const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    if (event === 'revoked') { this.pending = undefined; this.response.write(frame); this.end(); return; }
+    if (event === 'revoked') { this.pending.clear(); this.response.write(frame); this.end(); return; }
+    if (event === 'preparation-revoked') this.pending.delete('preparation');
     // A large valid snapshot can exceed the socket's high-water mark on its own.
     // Wait for drain and retain only the latest update, rather than reconnect forever.
-    if (this.draining) this.pending = frame;
+    if (this.draining) this.pending.set(event, frame);
     else this.write(frame);
   }
+
+  heartbeat() { if (!this.closed && !this.draining) this.write(': heartbeat\n\n'); }
 
   private write(frame: string) {
     if (this.response.write(frame)) return;
@@ -54,8 +57,10 @@ class EventStream {
 
   private drain = () => {
     clearTimeout(this.stall); this.draining = false;
-    const frame = this.pending; this.pending = undefined;
-    if (!this.closed && frame) this.write(frame);
+    for (const [event, frame] of this.pending) {
+      if (this.closed || this.draining) break;
+      this.pending.delete(event); this.write(frame);
+    }
   };
 
   every(work: () => void, interval: number) {
@@ -65,7 +70,7 @@ class EventStream {
 
   release = () => {
     if (this.closed) return;
-    this.closed = true; this.pending = undefined; clearTimeout(this.stall);
+    this.closed = true; this.pending.clear(); clearTimeout(this.stall);
     this.response.off('close', this.release); this.response.off('drain', this.drain); this.released();
     for (const dispose of this.disposers) dispose();
     this.disposers.clear();

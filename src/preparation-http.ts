@@ -138,7 +138,10 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     let image;
     if (selection.source === 'upload' && kind === 'artwork' && selection.artworkAssetId) {
       const owner = await manager.read(credential(req)); image = await uploads.artwork(selection.assetId, owner.ownerId);
-    } else if (integrations && selection.source === 'music-assistant') image = await integrations.savedArtwork(selection, kind);
+    } else if (integrations && selection.source === 'music-assistant') {
+      const size = z.enum(['128', '512']).default('512').parse(req.query.size);
+      image = await integrations.savedArtwork(selection, kind, size === '128' ? 128 : 512);
+    }
     else throw new AppError(404, 'Artwork unavailable.');
     const latest = await manager.selection(credential(req), entryId);
     if (JSON.stringify(selection) !== JSON.stringify(latest)) throw new AppError(403, 'Saved artwork access changed.');
@@ -160,14 +163,61 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.post(`${prefix}/revoke-devices`, async (req, res) => {
     const input = body(req, z.object({ revision: z.number().int().nonnegative() }).strict()); res.json(await manager.revokeOtherDevices(credential(req), input.revision));
   });
+  // This path receives both HttpOnly cookies. One connection carries independently filtered feeds.
+  app.get(`${prefix}/live`, async (req, res) => {
+    const role = { kind: 'participant' as const, credential: member(req) };
+    engine.view(role);
+    const stream = streams.reserve(res);
+    try {
+      let previousRoom = ''; let previousList = ''; let ready = false;
+      let pending: Awaited<ReturnType<PreparationManager['read']>> | null | undefined;
+      const sendRoom = () => {
+        try {
+          const view = engine.view(role); const key = JSON.stringify(view);
+          if (key !== previousRoom) { previousRoom = key; stream.send('state', view); }
+        } catch { stream.send('revoked', {}); }
+      };
+      const sendList = (view: Awaited<ReturnType<PreparationManager['read']>> | null) => {
+        if (!ready) { pending = view; return; }
+        if (!view) { stream.send('preparation-revoked', {}); return; }
+        const key = JSON.stringify(view);
+        if (key !== previousList) { previousList = key; stream.send('preparation', view); }
+      };
+      if (credential(req)) {
+        try {
+          const off = await manager.subscribe(credential(req), sendList); stream.onClose(off);
+          const latest = await manager.read(credential(req));
+          if (pending !== null && (!pending || pending.revision < latest.revision)) pending = latest;
+        } catch { pending = null; }
+      }
+      // Membership can be revoked while awaiting private authorization.
+      engine.view(role);
+      if (!stream.open()) return;
+      ready = true; sendRoom(); if (pending !== undefined) sendList(pending);
+      engine.on('change', sendRoom); stream.onClose(() => engine.off('change', sendRoom));
+      let reading = false;
+      stream.every(() => {
+        sendRoom(); stream.heartbeat();
+        if (!credential(req) || reading || stream.closed) return;
+        reading = true;
+        void manager.read(credential(req)).then(sendList).catch(() => sendList(null)).finally(() => { reading = false; });
+      }, 15_000);
+    } catch (error) { stream.release(); throw error; }
+  });
   app.get(`${prefix}/events`, async (req, res) => {
     const stream = streams.reserve(res);
     try {
       let ready = false; let queued: Awaited<ReturnType<PreparationManager['read']>> | null | undefined;
+      let previous = '';
+      const send = (view: Awaited<ReturnType<PreparationManager['read']>> | null) => {
+        if (!view) { stream.send('revoked', {}); return; }
+        const key = JSON.stringify(view);
+        if (key !== previous) { previous = key; stream.send('state', view); }
+      };
       const subscription = await manager.subscribe(credential(req), view => {
         if (stream.closed) return;
         if (!ready) { queued = view; return; }
-        stream.send(view ? 'state' : 'revoked', view ?? {});
+        send(view);
       });
       stream.onClose(subscription);
       if (stream.closed) return;
@@ -175,12 +225,13 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       if (!stream.open()) return;
       ready = true;
       if (queued === null) { stream.send('revoked', {}); return; }
-      stream.send('state', queued && queued.revision > latest.revision ? queued : latest);
+      send(queued && queued.revision > latest.revision ? queued : latest);
       let reading = false;
       stream.every(() => {
         if (reading) return;
         reading = true;
-        void manager.read(credential(req)).then(view => stream.send('state', view))
+        stream.heartbeat();
+        void manager.read(credential(req)).then(send)
           .catch(() => stream.send('revoked', {})).finally(() => { reading = false; });
       }, 15_000);
     } catch (error) { stream.release(); throw error; }

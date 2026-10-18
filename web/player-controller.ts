@@ -8,6 +8,7 @@ type Options = {
   role: 'host' | 'participant'; getView(): View | undefined; canSend(): boolean;
   request(path: string, data: unknown): Promise<View>; accept(view: View): void; resync(): Promise<void>;
   changed(kind: 'player' | 'volume'): void; failed(message: string): void; played?(track: CatalogueTrack): void;
+  position?(progress?: PlaybackProgress): PlaybackProgress | undefined;
 };
 
 /** Browser-only intent overlay. Server snapshots and all server permission checks remain authoritative. */
@@ -87,7 +88,7 @@ export class PlayerController {
     const last = this.commands.at(-1);
     if (intent.kind === 'reveal' && (view.ownPlayback.revealed || this.commands.some(command => command.kind === 'reveal' && command.target === target))) return;
     if (intent.kind === 'control' && view.ownPlayback.status === 'stopped') return;
-    const command = { ...intent, seq: ++this.seq, target, position: view.progress } as Command;
+    const command = { ...intent, seq: ++this.seq, target, position: this.options.position?.(view.progress) ?? view.progress } as Command;
     if (last?.kind === 'control' && intent.kind === 'control' && last.target === target && last !== this.current) this.commands[this.commands.length - 1] = command;
     else this.commands.push(command);
     this.options.changed('player'); void this.drain();

@@ -4,6 +4,7 @@
 @layer features {
 html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,90px) + 18px); }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.saved-track [hidden] { display:none; }
 .home-host { display:block; margin-top:24px; }
 .room-qr-link { display:block; }
 .room-join-link { display:block; margin-top:12px; font-size:14px; overflow-wrap:anywhere; }

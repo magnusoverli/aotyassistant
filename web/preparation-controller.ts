@@ -1,6 +1,7 @@
 import type { CatalogueTrack } from '../src/model';
 import type { PreparationView, PreparationResult, PreparationOperation } from '../src/preparations';
 import { requestJson, RequestError } from './request';
+import { participantEvents } from './participant-events';
 
 const prefix = '/api/participant/preparations';
 const accessNoticeKey = 'aoty.preparation-access-changed.v1';
@@ -33,7 +34,7 @@ export class PreparationController {
   lastSavedUploadId?: string;
   readonly added = new Set<string>();
   private addedEntries = new Map<string, string>();
-  private stream?: EventSource;
+  private stopStream?: () => void;
   private initializing?: Promise<void>;
   private epoch = 0;
   private loadSequence = 0;
@@ -109,16 +110,15 @@ export class PreparationController {
     }
   }
   private listen() {
-    this.stream?.close(); const stream = new EventSource(prefix + '/events'); this.stream = stream;
-    stream.addEventListener('state', event => { if (this.stream === stream) this.accept(JSON.parse((event as MessageEvent).data)); });
-    stream.addEventListener('revoked', () => {
-      if (this.stream !== stream) return;
-      this.stop(); this.view = undefined; this.missing = false; this.error = 'This device’s list access ended. Recover it with your private key.'; this.changed();
+    this.stopStream?.();
+    this.stopStream = participantEvents.subscribe('library', {
+      state: event => this.accept(JSON.parse(event.data)),
+      revoked: () => { this.stop(); this.view = undefined; this.missing = false; this.error = 'This device’s list access ended. Recover it with your private key.'; this.changed(); },
     });
   }
   stop() {
     this.epoch++; this.loadSequence++; this.saveSequence++;
-    this.stream?.close(); this.stream = undefined; this.recoveryKey = '';
+    this.stopStream?.(); this.stopStream = undefined; this.recoveryKey = '';
     this.loading = false; this.saving = false; this.initializing = undefined;
     this.recovered = false; this.accessChangedWhileLoading = false;
     if (typeof window !== 'undefined') {

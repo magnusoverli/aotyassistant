@@ -114,7 +114,7 @@ for (const latency of [0, 50, 200]) {
   } finally { await f.close(); }
 }
 
-// The engine's room transaction also holds joins behind the entire Play workflow.
+// Joins must remain responsive while the separate playback lane starts a track.
 {
   const f = await fixture();
   try {

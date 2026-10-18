@@ -37,7 +37,7 @@ export async function mountSettings(container: HTMLElement) {
     else error = 'Music Assistant sign-in could not finish. It may have expired, settings changed, or this browser blocked the return. Try Connect again or use advanced token setup.';
   }
   const addresses = new AddressingPanel(() => render(), revision => {
-    if (settings && settings.tokenConfigured === addresses.view?.configured) settings = { ...settings, revision };
+    if (settings && revision >= settings.revision && settings.tokenConfigured === addresses.view?.configured) settings = { ...settings, revision };
   }, () => busy, () => Boolean(settings?.settingsChangesBlocked));
 
   async function request(path: string, data?: unknown): Promise<IntegrationView> {
@@ -55,13 +55,15 @@ export async function mountSettings(container: HTMLElement) {
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
   }
   async function loadSetup(refresh = false) {
-    setup = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
+    const next = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
+    let changed = JSON.stringify(setup) !== JSON.stringify(next); setup = next;
     if (!settings?.tokenConfigured && !urlDraft && setup.servers.length === 1) {
-      urlDraft = setup.servers[0]!.url; browserDraft = setup.servers[0]!.browserUrl ?? '';
+      urlDraft = setup.servers[0]!.url; browserDraft = setup.servers[0]!.browserUrl ?? ''; changed = true;
     }
+    return changed;
   }
   function connectButton(text: string) {
-    const button = el('button', text, settings?.tokenConfigured ? 'secondary' : ''); button.type = 'button'; button.disabled = busy || addresses.busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked);
+    const button = el('button', text, settings?.tokenConfigured ? 'secondary' : ''); button.type = 'button'; button.disabled = busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked);
     button.onclick = () => {
       const popup = window.open('about:blank', '_blank'); if (popup) popup.opener = null;
       void run(async () => {
@@ -83,23 +85,23 @@ export async function mountSettings(container: HTMLElement) {
     catch (cause) { speakerError = cause instanceof Error ? cause.message : 'Speakers could not be loaded.'; }
   }
   async function run(work: () => Promise<void>) {
-    if (busy || addresses.busy) return;
+    if (busy) return;
+    const revision = settings?.revision;
     busy = true; error = ''; notice = ''; render();
     try { await work(); }
     catch (cause) {
       error = cause instanceof Error ? cause.message : 'The settings request failed.';
       // Read back only. Never automatically retry a settings mutation.
       try { apply(await request('')); } catch { online = false; }
-    } finally { busy = false; await addresses.load(!authPending); render(); }
+    } finally { busy = false; render(); if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending); }
   }
   function action(text: string, work: () => Promise<void>, secondary = false) {
     const b = el('button', text, secondary ? 'secondary' : ''); b.type = 'button';
     b.dataset.focusKey = text;
-    b.disabled = busy || addresses.busy || !online; b.onclick = () => { void run(work); }; return b;
+    b.disabled = busy || !online; b.onclick = () => { void run(work); }; return b;
   }
   function field(text: string, id: string, type: string, value: string, change: (value: string) => void) {
     const { group, input } = fieldControl(text, id, type); input.value = value; input.disabled = busy;
-    input.disabled ||= addresses.busy;
     input.oninput = () => change(input.value); return { group, input };
   }
   function panel(id: string, title: string, state?: string) {
@@ -144,7 +146,7 @@ export async function mountSettings(container: HTMLElement) {
         connection.append(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
         if (setup?.servers.length) {
           const label = el('label', 'Detected Music Assistant server'); label.htmlFor = 'ma-detected';
-          const select = el('select'); select.id = 'ma-detected'; select.disabled = busy || addresses.busy;
+          const select = el('select'); select.id = 'ma-detected'; select.disabled = busy;
           const manual = el('option', 'Enter another address'); manual.value = ''; select.append(manual);
           for (const server of setup.servers) {
             const option = el('option', `${server.name} · ${server.version}${server.ready ? '' : ' · sources/players setup pending'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
@@ -156,7 +158,7 @@ export async function mountSettings(container: HTMLElement) {
         }
       }
       const form = el('form', undefined, 'form-stack integration-form');
-      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || addresses.busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
+      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
       url.input.required = true; url.input.maxLength = 2048; url.input.placeholder = 'http://homeassistant.local:8095';
       connection.append(url.group);
       if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); connect.id = 'ma-connect'; connection.append(connect); }
@@ -171,7 +173,7 @@ export async function mountSettings(container: HTMLElement) {
       const tokenHelp = el('p', 'Create a token in Music Assistant → Settings → Profile.', 'muted field-hint'); tokenHelp.id = 'ma-token-help';
       token.input.setAttribute('aria-describedby', tokenHelp.id); token.group.append(tokenHelp);
       if (location.protocol !== 'https:') token.group.append(el('p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
-      const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || addresses.busy || !online || Boolean(settings.settingsChangesBlocked); save.id = 'ma-save';
+      const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || !online || Boolean(settings.settingsChangesBlocked); save.id = 'ma-save';
       const controls = actionGroup('form'); controls.append(save);
       form.append(token.group, controls);
       form.onsubmit = event => {
@@ -217,7 +219,7 @@ export async function mountSettings(container: HTMLElement) {
     if (settings?.report && (!settings.destination || editSpeaker || !settings.report.players.some(p => p.id === settings!.destination?.id && p.available))) {
       const report = settings.report;
       const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
-      const select = el('select'); select.id = 'ma-destination'; select.disabled = busy || addresses.busy || !online || Boolean(settings.settingsChangesBlocked);
+      const select = el('select'); select.id = 'ma-destination'; select.disabled = busy || !online || Boolean(settings.settingsChangesBlocked);
       const empty = el('option', 'Choose a speaker or group'); empty.value = ''; select.append(empty);
       for (const player of report.players) {
         const option = el('option', `${player.name}${player.available ? '' : ' (unavailable)'}`);
@@ -226,7 +228,7 @@ export async function mountSettings(container: HTMLElement) {
       select.value = destinationDraft || settings.destination?.id || '';
       const choose = action('Save speaker', async () => {
         if (!destinationDraft) throw new Error('Choose an available speaker or group first.');
-        apply(await request('/destination', { id: destinationDraft, revision: settings!.revision })); editSpeaker = false; await discover(); notice = 'Speaker saved.';
+        apply(await request('/destination', { id: destinationDraft, revision: settings!.revision })); editSpeaker = false; notice = 'Speaker saved.';
       });
       choose.disabled ||= !select.value || select.value === settings.destination?.id || Boolean(settings.settingsChangesBlocked);
       select.onchange = () => { destinationDraft = select.value; choose.disabled = select.disabled || !select.value || select.value === settings?.destination?.id; };
@@ -261,13 +263,16 @@ export async function mountSettings(container: HTMLElement) {
     window.scrollTo(0, scrollY);
   }
   render();
-  try { apply(await request(''), true); await loadSetup(); if (settings!.tokenConfigured) { render(); await run(discover); } else await addresses.load(); }
+  try {
+    apply(await request(''), true); render();
+    await Promise.all([loadSetup().then(render), settings!.tokenConfigured ? run(discover) : addresses.load()]);
+  }
   catch (cause) { error = cause instanceof Error ? cause.message : 'Cannot load integration settings.'; }
   render();
   let polls = 0;
   const poll = setInterval(() => {
     if (!main.isConnected || ++polls > 60 || setup?.status !== 'checking' && setup?.status !== 'idle') { clearInterval(poll); return; }
-    if (!busy && !addresses.busy) void loadSetup().then(() => render()).catch(() => {});
+    if (!busy && !addresses.busy) void loadSetup().then(changed => { if (changed) render(); }).catch(() => {});
   }, 2000);
   window.addEventListener('pagehide', () => clearInterval(poll), { once: true });
   const authTimer = setInterval(() => {
@@ -285,14 +290,14 @@ export async function mountSettings(container: HTMLElement) {
   });
   let refreshing = false;
   async function refreshSnapshot() {
-    if (busy || addresses.busy || refreshing || !navigator.onLine) return;
-    refreshing = true;
+    if (busy || refreshing || !navigator.onLine) return;
+    refreshing = true; let changed = false; const wasOnline = online;
     try {
       const next = await request('');
-      if (authPending && next.revision !== settings?.revision) { authPending = false; loginUrl = ''; apply(next, true); await discover(); notice = 'Music Assistant connected.'; }
-      else apply(next);
+      if (authPending && next.revision !== settings?.revision) { authPending = false; loginUrl = ''; apply(next, true); await discover(); notice = 'Music Assistant connected.'; changed = true; }
+      else if (JSON.stringify(next) !== JSON.stringify(settings)) { apply(next); changed = true; }
     } catch { /* Keep the current form and explicit retry; a read cannot replay a mutation. */ }
-    finally { refreshing = false; render(); }
+    finally { refreshing = false; if (changed || wasOnline !== online) render(); }
   }
   window.addEventListener('focus', () => { void refreshSnapshot(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSnapshot(); });

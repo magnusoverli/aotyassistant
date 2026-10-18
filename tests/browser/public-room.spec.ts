@@ -193,13 +193,14 @@ test('only the small sticker is personalized, its shuffled history survives refr
     await f.control('resume'); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     const otherScreen = await f.screen.newPage(); await otherScreen.goto('/display');
     await expect(otherScreen.locator('.room-record .vinyl-caption')).toHaveText(caption); await otherScreen.close();
-    const seen = new Set([caption]);
+    // The seeded caption exhausted the old bag. The new cycle must not repeat
+    // its own picks, but may use that caption again after the boundary pick.
+    const seen = new Set<string>(); let previous = caption;
     for (let i = 0; i < 5; i++) {
       await f.finish(); await f.play();
-      const previous = [...seen].at(-1);
       await expect.poll(async () => { const text = await tv.locator('.room-record .vinyl-caption').textContent(); return recordLabels.some(label => label === text) && text !== previous; }).toBe(true);
       const next = (await tv.locator('.room-record .vinyl-caption').textContent())!;
-      expect(recordLabels).toContain(next); expect(seen.has(next)).toBe(false); seen.add(next);
+      expect(recordLabels).toContain(next); expect(seen.has(next)).toBe(false); seen.add(next); previous = next;
     }
     const saved = await tv.evaluate(key => localStorage.getItem(key), recordLabelStorageKey);
     expect(saved).not.toContain(nickname); expect(saved).not.toContain('Northern Lights');

@@ -79,7 +79,7 @@ test('search exposes pending/results feedback and restores keyboard focus withou
   try {
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Summer');
     const search = page.locator('#catalogue-search-submit'); await search.focus(); await search.press('Enter');
-    await expect(search).toHaveText('Searching…'); await expect(search).toBeDisabled();
+    await expect(search).toHaveText('Searching…'); await expect(search).toBeEnabled();
     await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'true');
     release();
     await expect(search).toHaveText('Search'); await expect(search).toBeFocused();

@@ -53,3 +53,16 @@ test('large snapshots wait for drain, coalesce updates and revoke without sendin
   assert.ok(!response.frames.join('').includes('unsent')); assert.match(response.frames.at(-1)!, /event: revoked/);
   streams.close();
 });
+
+test('multiplexed feeds coalesce independently and private revocation removes queued list content', () => {
+  const streams = new EventStreams(1, 'Full'); const response = new SocketResponse(); const stream = streams.reserve(response.response);
+  stream.open(); response.writable = false;
+  stream.send('state', { revision: 0 }); stream.send('preparation', { revision: 1 }); stream.send('state', { revision: 2 });
+  response.writable = true; response.emit('drain');
+  assert.equal(response.frames.length, 3); assert.match(response.frames[1]!, /event: preparation/); assert.match(response.frames[2]!, /"revision":2/);
+  response.writable = false;
+  stream.send('state', { revision: 3 }); stream.send('preparation', { private: 'never-send' }); stream.send('preparation-revoked', {});
+  response.writable = true; response.emit('drain'); stream.heartbeat();
+  assert.ok(!response.frames.join('').includes('never-send')); assert.equal(response.writableEnded, false);
+  assert.match(response.frames.at(-2)!, /preparation-revoked/); assert.equal(response.frames.at(-1), ': heartbeat\n\n'); streams.close();
+});

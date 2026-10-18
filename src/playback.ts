@@ -12,6 +12,7 @@ export interface PlaybackAdapter {
   search(query: string): Promise<Track[]>;
   resolve(id: string, context?: string): Promise<Track>;
   resolveSaved?(selection: SavedSelection, context: string, trackId: string): Promise<Track>;
+  discardSelection?(track: Track): void;
   play(track: Track, playbackId: string): Promise<void>;
   control(action: 'pause' | 'resume' | 'stop'): Promise<void>;
   onComplete: (playbackId: string) => void;

@@ -204,6 +204,10 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     if (this.closed) { selection.release?.(); throw new AppError(503, 'Playback is shutting down.'); }
     this.pending = selection; return selection.track;
   }
+  discardSelection(track: Track) {
+    this.demoSelections.delete(track);
+    if (this.pending?.track === track) { this.pending.release?.(); this.pending = undefined; }
+  }
   private async resolveDemo(resolve: () => Promise<Track>) {
     const revision = this.integrations.configurationRevision;
     const track = await resolve();
