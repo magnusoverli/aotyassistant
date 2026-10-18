@@ -46,8 +46,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(alex.locator('.participant-hero h1')).toHaveText('Your turn.');
     await expect(sam.locator('.turn-distance')).toHaveText('You’re next');
     await expect(jordan.locator('.turn-distance')).toHaveText('2 turns away');
-    await expect(jordan.locator('.circle-panel')).toHaveJSProperty('open', false);
-    await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeHidden();
+    await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeVisible();
     for (const page of listeners.values()) {
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeInViewport();
       await expect(page.locator('.participant-hero p:not(.turn-distance)')).toHaveCount(0);
@@ -74,7 +73,6 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await jordan.screenshot({ path: 'test-results/participant-listening.png', fullPage: true });
     await riley.screenshot({ path: 'test-results/participant-later-turn.png', fullPage: true });
     await tv.screenshot({ path: 'test-results/display-concealed-1366.png' });
-    await jordan.locator('.circle-panel > summary').click();
     await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeVisible();
     await jordan.screenshot({ path: 'test-results/participant-circle.png', fullPage: true });
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern');
@@ -85,7 +83,6 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await showFind(jordan);
     await expect(tv.getByText('Northern Lights')).toHaveCount(0); await expect(host.getByText('Northern Lights')).toHaveCount(0);
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).focus();
-    await host.locator('.circle-panel > summary').click();
     await host.getByRole('button', { name: 'Manage people' }).click();
     await host.getByRole('button', { name: 'Move Jordan up', exact: true }).click();
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Jordan');
@@ -95,7 +92,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.getByRole('button', { name: 'Play this song', includeHidden: true })).toBeDisabled();
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
-    await expect(jordan.locator('.circle-panel')).toHaveJSProperty('open', true);
+    await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeVisible();
     await host.getByRole('button', { name: 'Skip turn' }).click();
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Jordan');
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
@@ -114,7 +111,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 5 });
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     await expect(riley.getByText('2 turns away', { exact: true })).toBeVisible();
-    // Keep the shared disclosure compact for a larger room without clipping the TV page.
+    // Keep the shared bar compact for a larger room without clipping the TV page.
     for (const name of ['A very long listener nickname for TV', 'Taylor', 'Morgan', 'Casey']) {
       const context = await browser.newContext(); contexts.push(context);
       await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: name } });

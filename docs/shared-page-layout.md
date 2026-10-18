@@ -104,6 +104,17 @@ Verification:
 - Logs: `/tmp/opencode/aoty-listening-order-unit.log`, `/tmp/opencode/aoty-listening-order-browser.log`, `/tmp/opencode/aoty-listening-order-recheck.log`, `/tmp/opencode/aoty-listening-order-final-targeted.log`.
 - Release 0.3.4 verification reran the production build, typecheck, all **193 unit/controller tests** and all **93 Chromium workflows** successfully. Release logs: `/tmp/opencode/aoty-0.3.4-unit.log` and `/tmp/opencode/aoty-0.3.4-browser.log`. Publication uses the `v0.3.4` image workflow, with anonymous amd64/arm64 verification before pushing the versioned store manifest to `main`.
 
+## Always-visible listening-order follow-up
+
+- Replace the listening-order disclosure with a compact, always-visible horizontal bar below the header; keep numbered seats, current/next/you markers and horizontal scrolling.
+- Retain host management in the bar and the shared names-only live updates.
+- Move shared avatar styling into the component layer so compact sizing is respected without overlapping names.
+- Remove the player shortcut from the participant's My list.
+- Simplify the navigation menu to page links, removing the readiness badge and menu Full screen control; discard the obsolete settings-to-header mode callback.
+- Verification complete: build/typecheck and all **93 Chromium workflows** passed, including cross-route visibility, compact sizing, avatar/name separation, menu layering, live-update persistence and participant workflows. Reviewed desktop host and phone participant captures; screenshots remain ignored. Log: `/tmp/opencode/aoty-order-bar-final-browser.log`.
+- Menu cleanup verification: build/typecheck, three navigation unit tests and all 15 targeted header/search/settings/ingress/listening-order workflows pass after removing obsolete settings-badge expectations. Logs: `/tmp/opencode/aoty-menu-cleanup-browser.log`, `/tmp/opencode/aoty-menu-cleanup-settings.log`.
+- Release 0.3.5 verification reran the production build, typecheck, all **192 unit/controller tests** and all **93 Chromium workflows** successfully. Release logs: `/tmp/opencode/aoty-0.3.5-unit.log` and `/tmp/opencode/aoty-0.3.5-browser.log`. Publication uses the `v0.3.5` image workflow, with anonymous amd64/arm64 verification before pushing the versioned store manifest to `main`.
+
 ## Completion criterion
 
 A shared layout/component change updates every consumer. Intentional differences are named variants, and cross-page browser checks catch drift. Playback, private-list, exact-source, ingress and uncertain-write behavior retain their existing controllers and contracts.

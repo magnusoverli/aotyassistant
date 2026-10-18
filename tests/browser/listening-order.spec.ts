@@ -21,9 +21,16 @@ test('every application route has one matching live listening order directly und
         await expect(current.locator('.listening-order')).toHaveCount(1);
         await expect(current.locator('main .rotation-list, .host-people, .room-turn-order')).toHaveCount(0);
         const bar = (await current.locator('.header-inner').boundingBox())!;
-        const summary = (await current.locator('.circle-panel > summary').boundingBox())!;
-        expect(Math.abs(summary.y - bar.y - bar.height)).toBeLessThan(1);
-        await current.locator('.circle-panel > summary').click();
+        const order = (await current.locator('.order-bar').boundingBox())!;
+        expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
+        expect(order.height).toBeLessThanOrEqual(76);
+        await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
+        await expect(current.locator('.rotation-list')).toBeVisible();
+        await expect(current.locator('.rotation-seat').first()).toBeInViewport();
+        const seat = current.locator('.rotation-seat').first();
+        const avatar = (await seat.locator('.avatar').boundingBox())!;
+        const name = (await seat.locator('strong').boundingBox())!;
+        expect(avatar.x + avatar.width).toBeLessThanOrEqual(name.x);
         const style = await current.locator('.rotation-seat').first().evaluate(node => {
           const style = getComputedStyle(node); return [style.width, style.padding, style.backgroundColor, style.borderRadius, style.fontFamily];
         });
@@ -36,7 +43,6 @@ test('every application route has one matching live listening order directly und
         expect(await link.evaluate(node => { const r = node.getBoundingClientRect(); return node.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); })).toBe(true);
         await current.keyboard.press('Escape');
         if (height === 900 && (width === 390 || width === 1440)) await current.screenshot({ path: `test-results/listening-order-${width}-${new URL(current.url()).pathname.replaceAll('/', '-') || 'home'}.png`, fullPage: true });
-        await current.locator('.circle-panel > summary').click();
       }
     }
     await expect(participant.locator('.rotation-seat.is-you strong')).toHaveText('My seat');
@@ -71,11 +77,10 @@ test('order feed exposes only names and placement even after a track is revealed
   } finally { controller.abort(); }
 });
 
-test('list expansion, focus and horizontal scroll survive unrelated updates and host management stays in the shared list', async ({ page, isolatedApp }) => {
+test('the visible bar preserves focus and horizontal scroll through updates and keeps host management in the shared list', async ({ page, isolatedApp }) => {
   for (let index = 0; index < 20; index++) await isolatedApp.engine.join(`Listener ${index}`);
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/host');
   await expect(page.locator('.rotation-seat')).toHaveCount(20);
-  await page.locator('.circle-panel > summary').click();
   const list = page.locator('.rotation-list'); await list.focus();
   await list.evaluate(node => { node.scrollLeft = 400; (window as any).orderList = node; (window as any).firstSeat = node.firstElementChild; });
   isolatedApp.engine.emit('change');
@@ -86,6 +91,6 @@ test('list expansion, focus and horizontal scroll survive unrelated updates and 
   await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 1');
   await page.getByRole('button', { name: 'Remove Listener 1', exact: true }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(19);
-  await expect(page.locator('.circle-panel')).toHaveJSProperty('open', true);
+  await expect(list).toBeVisible();
   await expect(page.locator('.order-feedback')).toContainText('Their saved music is kept.');
 });

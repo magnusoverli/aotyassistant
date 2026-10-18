@@ -56,7 +56,6 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     await expect(alex.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
     const late = await lateContext.newPage(); await late.goto(joinUrl!);
     await late.getByLabel('What should we call you?').fill('Jordan <img src=x>'); await late.getByRole('button', { name: 'Join room' }).click();
-    await host.locator('.circle-panel > summary').click();
     await expect(host.getByText('Jordan <img src=x>', { exact: true })).toBeVisible();
     await expect(host.locator('img[src="x"]')).toHaveCount(0);
     await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);

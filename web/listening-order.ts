@@ -5,10 +5,9 @@ import { appPath } from './paths';
 
 type Management = { disabled(): boolean; move(id: string, shift: number): void; remove(id: string): void };
 
-/** One persistent names-only disclosure, shared by every application route. */
+/** One persistent names-only bar, shared by every application route. */
 export class ListeningOrder {
   readonly element = el('div', undefined, 'listening-order');
-  private details = el('details', undefined, 'circle-panel');
   private list = el('ol', undefined, 'rotation-list');
   private status = el('span', undefined, 'order-status');
   private empty = el('p', 'Loading listening order…', 'muted order-empty');
@@ -21,13 +20,13 @@ export class ListeningOrder {
   private key = '';
 
   constructor(private management?: Management) {
-    const summary = el('summary'); summary.append(el('h2', 'Listening order'), this.status, el('span', '⌄', 'circle-caption'));
+    const bar = el('section', undefined, 'order-bar'); bar.setAttribute('aria-label', 'Listening order');
     this.list.setAttribute('aria-label', 'Participant rotation'); this.list.tabIndex = 0;
     this.manage.type = 'button'; this.manage.hidden = !management;
     this.manage.onclick = () => { this.managing = !this.managing; this.render(); };
     this.feedback.hidden = true; this.feedback.setAttribute('role', 'status');
-    this.details.append(summary, this.empty, this.manage, this.list, this.feedback);
-    this.element.append(this.details);
+    bar.append(this.empty, this.list, this.status, this.manage);
+    this.element.append(bar, this.feedback);
   }
 
   /** Authenticated pages already have a room stream; entry/settings use the public order feed. */

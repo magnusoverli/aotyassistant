@@ -15,8 +15,6 @@ test('participant searches privately with empty/errors but cannot play until a s
     const alice = await aliceContext.newPage(); await alice.goto(joinUrl!);
     await alice.getByLabel('What should we call you?').fill('Alice'); await alice.getByRole('button', { name: 'Join room' }).click();
     await expect(alice).toHaveURL(/\/participant$/);
-    await expect(alice.locator('header .mode-badge')).toHaveText('Playback unavailable');
-    await expect(host.locator('header .mode-badge')).toHaveText('Playback unavailable');
     expect((await (await host.request.get('/api/host/state')).json()).playbackAvailable).toBe(false);
     const waiting = await waitingContext.newPage(); await waiting.goto(joinUrl!);
     await waiting.getByLabel('What should we call you?').fill('Waiting listener'); await waiting.getByRole('button', { name: 'Join room' }).click();

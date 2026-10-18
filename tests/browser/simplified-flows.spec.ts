@@ -14,7 +14,7 @@ test('compact phone workspace keeps results visible, expands the list inline and
     await expect(page.locator('.turn-chip')).toHaveCount(0);
     await expect(page.locator('.catalogue-results')).toHaveCount(0);
     expect((await page.locator('.header-inner').boundingBox())!.height).toBeLessThanOrEqual(72);
-    expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(113);
+    expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(145);
     await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     const add = page.getByRole('button', { name: 'Add to my list', exact: true });
     await expect(add).toBeInViewport();
@@ -26,7 +26,7 @@ test('compact phone workspace keeps results visible, expands the list inline and
     await page.getByRole('button', { name: 'Close list', exact: true }).click();
     const before = await page.evaluate(() => scrollY);
     const state = await (await page.request.get('/api/host/state')).json(); await post('/api/host/advance', { turnId: state.turnId });
-    await expect(page.getByRole('link', { name: 'Your turn · Go to player' })).toBeVisible();
+    await expect(page.locator('.preparation-list a[href="#participant-player"]')).toHaveCount(0);
     await expect(page.getByRole('searchbox')).toHaveValue('Northern');
     expect(await page.evaluate(() => scrollY)).toBe(before);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
@@ -112,7 +112,6 @@ test('host invitations remain one action away with thirty people and consequenti
   await expect(page.locator('main')).not.toContainText('Northern Lights');
   page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Skip turn' }).click();
   expect((await (await page.request.get('/api/host/state')).json()).turnId).toBe(state.turnId);
-  await page.locator('.circle-panel > summary').click();
   await page.getByRole('button', { name: 'Manage people' }).click();
   page.once('dialog', dialog => dialog.dismiss()); await page.locator('.rotation-seat.is-current').getByRole('button', { name: /^Remove/ }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(30);

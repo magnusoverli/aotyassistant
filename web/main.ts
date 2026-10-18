@@ -75,7 +75,6 @@ let nicknameDraft = '';
 let joinError = '';
 let accessEnded = false;
 let publicRoom: PublicRoom | undefined;
-let settingsMode: View['mode'] | undefined;
 let settingsMounted = false;
 document.body.dataset.view = page;
 const player = new PlayerController({
@@ -127,7 +126,7 @@ appHeader.element.append(listeningOrder.element);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(appHeader.element, pageContent);
 const updateHeader = () => {
-  appHeader.update({ view, realtime, mode: page === 'settings' ? settingsMode : undefined });
+  appHeader.update({ view });
   listeningOrder.update(view, realtime && navigator.onLine);
 };
 const participantAccess = new ParticipantAccess(
@@ -654,8 +653,7 @@ function render() {
 async function init() {
   render();
   if (page === 'settings') {
-    // Settings owns its forms and reports only mode to the shared, route-independent header.
-    if (!settingsMounted) { settingsMounted = true; await mountSettings(pageContent, mode => { settingsMode = mode; updateHeader(); }); }
+    if (!settingsMounted) { settingsMounted = true; await mountSettings(pageContent); }
     return;
   }
   if (page === 'home') return;

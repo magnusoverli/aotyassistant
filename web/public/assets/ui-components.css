@@ -1,4 +1,11 @@
 @layer components {
+  .avatar { flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:50%; font-size:13px; line-height:1; font-weight:700; letter-spacing:-.02em; color:#263c2a; background:#bdd0a6; }
+  .avatar-1 { background:#e4c392; color:#61452a; }
+  .avatar-2 { background:#bcc9d6; color:#354d61; }
+  .avatar-3 { background:#d5b6b0; color:#704944; }
+  .avatar-4 { background:#c5b9d1; color:#54415f; }
+  .avatar-small { width:34px; height:34px; font-size:11px; }
+  .avatar-large { width:62px; height:62px; font-size:20px; }
   button,.button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:46px; padding:12px 19px; border:1px solid var(--accent); border-radius:9px; color:var(--button-ink); background:var(--accent); font-weight:650; font-size:14px; line-height:1.35; text-decoration:none; cursor:pointer; transition:background .15s,border-color .15s; }
   button:hover:not(:disabled),.button:hover { filter:brightness(1.09); }
   button:disabled { opacity:.45; cursor:not-allowed; }

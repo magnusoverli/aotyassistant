@@ -11,10 +11,6 @@ test('tabbing out of the menu exposes the focused join field and Escape works ou
   await openNavigation(page);
   await navigation.getByRole('link', { name: 'Room display', exact: true }).focus();
   await page.keyboard.press('Tab');
-  await expect(navigation.getByRole('button', { name: 'Full screen' })).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(page.locator('.circle-panel > summary')).toBeFocused();
-  await page.keyboard.press('Tab');
   await expect(page.getByLabel('What should we call you?')).toBeFocused();
   await expect(navigation).toBeHidden(); await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await openNavigation(page);
@@ -31,9 +27,9 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(page.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
     await openNavigation(page);
-    await expect(page.getByRole('button', { name: 'Full screen', exact: true })).toBeEnabled();
     const navigation = page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' });
     await expect(navigation).toBeVisible(); await expect(navigation.locator('.primary-links > li > a')).toHaveCount(4);
+    await expect(navigation.locator('button, .mode-badge')).toHaveCount(0);
     expect(await navigation.locator('a').evaluateAll(links => links.map(link => ({ text: link.textContent, href: link.getAttribute('href') })))).toEqual([
       { text: 'Host desk', href: '/host' }, { text: 'Settings', href: '/host/settings' },
       { text: 'My music', href: '/participant' }, { text: 'Room display', href: '/display' },
@@ -97,12 +93,12 @@ test('mobile header supports keyboard menus, stable focus across live updates, o
   await expect(page.locator('#main-content')).toBeFocused();
 });
 
-test('fullscreen uses the same control on every page without writes and gracefully hides when unsupported', async ({ page, browser, isolatedApp }) => {
+test('fullscreen is a display-only header control without writes and gracefully hides when unsupported', async ({ page, browser, isolatedApp }) => {
   const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
   for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
     await page.goto(path);
-    if (path !== '/display') await openNavigation(page);
     const fullscreen = page.locator('.header-fullscreen');
+    if (path !== '/display') { await expect(fullscreen).toHaveCount(0); continue; }
     await expect(fullscreen).toHaveText('Full screen'); await fullscreen.click();
     await expect(fullscreen).toHaveText('Exit full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
     await fullscreen.click(); await expect(fullscreen).toHaveText('Full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');

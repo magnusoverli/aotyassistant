@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.3.5] — 2026-10-18
+
+- Keep the shared listening order always visible as a compact horizontal bar beneath the header.
+- Remove the player shortcut from the participant's My list.
+- Simplify the navigation menu to page links by removing playback readiness and the Full screen button.
+
 ## [0.3.4] — 2026-10-18
 
 - Use one participant-style listening-order disclosure beneath the header on all application pages; move host management into it and replace the separate host and display lists.

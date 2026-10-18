@@ -76,7 +76,6 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await expectConfiguredConnection(page);
   await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
   expect(outgoing.some(url => url.endsWith('/playback'))).toBe(false);
-  await expect(page.locator('header .badge')).toHaveText('Music Assistant');
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 }); await noHorizontalOverflow(page);
   }
@@ -103,7 +102,6 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await expect(page.getByLabel('Music Assistant access token', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
-  await expect(page.locator('header .badge')).toHaveText('DEMO · NO AUDIO');
   const disconnected: IntegrationView = await (await page.request.get('/api/host/integrations')).json();
   expect(disconnected.tokenConfigured).toBe(false); expect(disconnected.destination).toBeNull(); expect(disconnected.playbackAvailable).toBe(false);
   await page.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);

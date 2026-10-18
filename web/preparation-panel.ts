@@ -1,6 +1,6 @@
 import type { CatalogueTrack, View } from '../src/model';
 import type { PreparedEntryView } from '../src/preparations';
-import { el, link } from './dom';
+import { el } from './dom';
 import { artwork } from './media';
 import { PreparationController } from './preparation-controller';
 import { UploadPanel } from './upload-panel';
@@ -96,9 +96,6 @@ export class PreparationPanel {
     preview.hidden = !attention && !snapshot?.upcoming.length;
     preview.title = preview.textContent ?? ''; summary.append(preview); heading.replaceChildren(summary);
     if (search) heading.append(expand);
-    const player = link(this.options.getView()?.myTurn ? 'Your turn · Go to player' : 'Go to player', '#participant-player', 'list-player-link');
-    player.onclick = event => { event.preventDefault(); document.getElementById('participant-player')?.scrollIntoView({ block: 'start' }); };
-    summary.append(player);
     const status = el('p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Private · saved when you add a song', 'list-save-status'); status.setAttribute('role', 'status');
     list.append(heading, status);
     const body = el('div', undefined, 'list-body'); body.id = 'music-list-body'; body.dataset.scrollKey = 'private-list';

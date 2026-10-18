@@ -38,7 +38,6 @@ test('the display uses the shared numbered listening order and retains it across
     await expect(tv.getByText('Scan the QR code to join.', { exact: true })).toHaveCount(0);
     await expect(tv.locator('.rotation-seat.is-current .seat-state')).toHaveText('Current turn');
     await expect(tv.locator('.rotation-seat.is-next')).toHaveCount(0);
-    await tv.locator('.circle-panel > summary').click();
     expect((await tv.locator('.rotation-seat').boundingBox())!.width).toBeLessThan(240);
     await expect(tv.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
     await expect(tv.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
@@ -62,7 +61,6 @@ test('the display uses the shared numbered listening order and retains it across
     await f.screen.setOffline(false); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     await f.control('resume');
     await list.evaluate(node => (node as HTMLElement).blur());
-    await tv.locator('.circle-panel > summary').click();
     for (const [width, height] of [[1366, 768], [1920, 1080], [1280, 720], [390, 844], [320, 700]]) {
       await tv.setViewportSize({ width: width!, height: height! });
       await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Alex');

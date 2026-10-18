@@ -68,9 +68,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     await openNavigation(login);
     await expect(login.getByRole('link', { name: 'Room display', exact: true })).toHaveAttribute('href', `${guest}/display`);
     await page.request.post(`${isolatedApp.origin}/api/participant/join`, { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Ingress listener' } });
-    await login.locator('.circle-panel > summary').click();
     await expect(login.getByText('Ingress listener', { exact: true }).first()).toBeVisible(); // Prefixed SSE delivered the live join.
-    await frame.locator('.circle-panel > summary').click();
     await expect(frame.locator('.rotation-seat strong')).toHaveText(['Ingress listener']); // Settings uses the names-only prefixed feed.
     expect(escaped.filter(path => path !== '/favicon.ico')).toEqual([]);
     expect(isolatedApp.calls.some(c => /play_media|cmd\/|\/stop$/.test(c.command))).toBe(false);

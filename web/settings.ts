@@ -7,7 +7,7 @@ import { pageFrame, workspaceGrid, slot } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
-export async function mountSettings(container: HTMLElement, modeChanged: (mode: 'demo' | 'music-assistant') => void) {
+export async function mountSettings(container: HTMLElement) {
   const main = pageFrame('workspace', 'settings-page'); container.append(main);
   let settings: IntegrationView | undefined;
   let urlDraft = '';
@@ -52,7 +52,6 @@ export async function mountSettings(container: HTMLElement, modeChanged: (mode: 
   function apply(next: IntegrationView, updateDraft = false) {
     settings = next;
     if (!next.tokenConfigured) speakerError = '';
-    modeChanged(next.tokenConfigured ? 'music-assistant' : 'demo');
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; destinationDraft = next.destination?.id ?? ''; }
   }
   async function loadSetup(refresh = false) {
