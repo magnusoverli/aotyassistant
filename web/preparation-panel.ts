@@ -54,6 +54,9 @@ export class PreparationPanel {
     const library = this.library;
     const access = el('section', undefined, 'entry-library-access'); access.setAttribute('aria-label', 'Saved music access');
     if (library.loading) { const status = el('p', 'Checking your saved music…', 'muted small'); status.setAttribute('role', 'status'); access.append(status); }
+    if (library.recovered) {
+      const status = el('p', 'Your list is recovered. Enter your name to join the room.', 'muted small'); status.setAttribute('role', 'status'); access.append(status);
+    }
     if (library.pending) {
       const notice = el('p', 'Your unsynced list change is kept. Join the room to review it.', 'muted small'); notice.setAttribute('role', 'status'); access.append(notice);
     } else if (library.error) {

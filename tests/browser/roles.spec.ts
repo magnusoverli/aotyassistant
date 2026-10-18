@@ -39,7 +39,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     await expect(jordan.getByRole('heading', { name: 'Seat 3 of 4', exact: true })).toBeVisible();
     await expect(jordan.getByText('2 turns away', { exact: true })).toBeVisible();
-    await expect(jordan.getByRole('heading', { name: 'Alex is sharing.', exact: true })).toBeVisible();
+    await expect(jordan.getByRole('heading', { name: 'Alex’s turn.', exact: true })).toBeVisible();
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     await expect(riley.getByRole('heading', { name: 'Seat 4 of 4', exact: true })).toBeVisible();
     await expect(riley.locator('.turn-chip')).toHaveText('LISTENING');
@@ -99,7 +99,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(tv.locator('.turn-person.is-next strong')).toHaveText('Sam');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');
     await expect(jordan.getByRole('button', { name: 'Play next prepared track', includeHidden: true })).toBeEnabled();
-    await expect(sam.getByRole('heading', { name: 'Jordan is sharing.', exact: true })).toBeVisible();
+    await expect(sam.getByRole('heading', { name: 'Jordan’s turn.', exact: true })).toBeVisible();
     // Direct late joining preserves the current turn and the host's reordered rotation.
     const beforeArrival = await (await host.request.get('/api/host/state')).json();
     const extra = await browser.newContext(); contexts.push(extra);

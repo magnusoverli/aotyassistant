@@ -22,7 +22,7 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     await expect(host.getByRole('button', { name: 'Start listening' })).toHaveCount(0);
     await expect(host.getByRole('heading', { name: 'Waiting to join', exact: true })).toHaveCount(0);
     await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
-    await expect(sam.getByRole('heading', { name: 'Alex is sharing.' })).toBeVisible();
+    await expect(sam.getByRole('heading', { name: 'Alex’s turn.' })).toBeVisible();
     const requests: string[] = []; tv.on('request', request => requests.push(request.url()));
     const payloads: string[] = [];
     tv.on('response', response => {

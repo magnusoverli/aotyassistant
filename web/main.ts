@@ -36,6 +36,10 @@ let results: CatalogueTrack[] = [];
 let searchText = '';
 let searchDone = false;
 let searching = false;
+let catalogueBusy = false;
+let catalogueError = '';
+let catalogueRetry: (() => Promise<void> | void) | undefined;
+let catalogueSequence = 0;
 let searchMode: 'tracks' | 'artists' = 'artists';
 let artists: CatalogueArtist[] = [];
 let albums: CatalogueAlbum[] = [];
@@ -49,6 +53,7 @@ let stream: EventSource | undefined;
 let qrUrl = '';
 let qrImage = '';
 let nicknameDraft = '';
+let joinError = '';
 let accessEnded = false;
 let circleExpanded = false;
 let publicRoom: PublicRoom | undefined;
@@ -78,16 +83,15 @@ const music = new PreparationPanel(library, { getView: () => view, starting: () 
   canPlay: () => realtime && Boolean(view?.connected && view.myTurn && view.catalogue?.playbackAvailable), changed: render,
   play: (entry: PreparedEntryView) => {
     if (!library.view) return;
-    if (view?.ownPlayback && view.ownPlayback.status !== 'stopped' && !confirm('Replace the current track with your next prepared choice?')) return;
     const track: CatalogueTrack = { id: `prepared:${entry.id}`, title: entry.title, artist: entry.artist, album: entry.album, version: entry.version,
       provider: entry.provider, duration: entry.duration, available: entry.sourceAvailable !== false, artwork: entry.artwork, artistArtwork: entry.artistArtwork };
-    player.play(track, { entryId: entry.id, revision: library.view.revision });
+    playTrack(track, { entryId: entry.id, revision: library.view.revision });
   },
 });
 const appHeader = new AppHeader(page, message => { error = message; render(); });
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(appHeader.element, pageContent);
-const updateHeader = () => appHeader.update({ view, mode: page === 'settings' ? settingsMode : undefined });
+const updateHeader = () => appHeader.update({ view, realtime, mode: page === 'settings' ? settingsMode : undefined });
 const participantAccess = new ParticipantAccess(
   () => api<View>('/api/participant/state'), () => navigator.onLine,
   next => {
@@ -96,6 +100,7 @@ const participantAccess = new ParticipantAccess(
   },
   () => {
     view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel();
+    resetCatalogueTask();
     results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
     searchAnnouncement.textContent = '';
@@ -154,12 +159,38 @@ async function run(action: () => Promise<void> | void) {
     if (focusId && document.activeElement === document.body) document.getElementById(focusId)?.focus({ preventScroll: true });
   }
 }
+function resetCatalogueTask() {
+  catalogueSequence++; catalogueBusy = false; searching = false; catalogueError = ''; catalogueRetry = undefined;
+}
+async function runCatalogue(action: () => Promise<void> | void) {
+  if (catalogueBusy) return;
+  const sequence = ++catalogueSequence;
+  const focusId = document.activeElement instanceof HTMLElement ? document.activeElement.id : '';
+  catalogueBusy = true; catalogueError = ''; catalogueRetry = undefined; render();
+  try { await action(); }
+  catch (cause) {
+    if (sequence !== catalogueSequence) return;
+    catalogueError = cause instanceof Error ? cause.message : 'Music could not be loaded. Try again.';
+    catalogueRetry = action;
+  } finally {
+    if (sequence === catalogueSequence) {
+      catalogueBusy = false; searching = false; render();
+      if (focusId && document.activeElement === document.body) document.getElementById(focusId)?.focus({ preventScroll: true });
+    }
+  }
+}
+function catalogueButton(text: string, action: () => Promise<void> | void, secondary = true) {
+  const control = el('button', text, secondary ? 'secondary' : ''); control.type = 'button';
+  control.disabled = catalogueBusy || !realtime || !view?.connected;
+  control.onclick = () => { void runCatalogue(action); }; return control;
+}
 function accept(next: View) {
   accessEnded = false;
   if (view?.roomId === next.roomId && view.revision > next.revision) return;
   if (view?.volume?.revision === next.volume?.revision && (view?.volume?.generation ?? 0) > (next.volume?.generation ?? 0)) next = { ...next, volume: view!.volume };
   if (catalogueIdentity(view) !== catalogueIdentity(next)) {
     catalogue.cancel();
+    resetCatalogueTask();
     results = []; searchText = ''; searchDone = false;
     artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
@@ -179,7 +210,7 @@ function accept(next: View) {
   if (page === 'participant' && next.me) {
     const position = next.position;
     const turnMessage = next.myTurn ? 'It’s your turn to share.'
-      : next.current ? `${next.current.nickname} is sharing. ${position?.turnsUntil === 1 ? 'You are up next.' : position?.turnsUntil != null ? `Your turn is ${position.turnsUntil} turns away.` : ''}`
+      : next.current ? `${next.current.nickname}’s turn. ${position?.turnsUntil === 1 ? 'You are up next.' : position?.turnsUntil != null ? `Your turn is ${position.turnsUntil} turns away.` : ''}`
       : 'The listening circle is ready.';
     const announcement = `${position?.seat ? `Seat ${position.seat} of ${position.total}. ` : ''}${turnMessage}`;
     if (turnAnnouncement.textContent !== announcement) turnAnnouncement.textContent = announcement;
@@ -309,7 +340,7 @@ function participant() {
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   main.dataset.turnState = state;
   const hero = el('section', undefined, `participant-hero is-${state}`); hero.setAttribute('aria-label', 'Your turn status');
-  hero.append(el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname} is sharing.` : 'Listening circle'));
+  hero.append(el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'));
   const circle = rotation(view, false, circleExpanded);
   circle.addEventListener('toggle', () => { if (circle.isConnected && circle instanceof HTMLDetailsElement) circleExpanded = circle.open; });
   main.append(hero, circle);
@@ -352,7 +383,7 @@ function participant() {
   if (realCatalogue) {
     const modes = el('div', undefined, 'actions search-tabs');
     for (const mode of ['artists', 'tracks'] as const) {
-      const tab = button(mode === 'tracks' ? 'Search tracks' : 'Search artists', () => {
+      const tab = catalogueButton(mode === 'tracks' ? 'Search tracks' : 'Search artists', () => {
         searchMode = mode; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
         sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
       }, searchMode !== mode); tab.id = `catalogue-mode-${mode}`; tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
@@ -365,30 +396,28 @@ function participant() {
   const input = el('input'); input.type = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Track, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
   input.id = 'catalogue-search';
   input.setAttribute('aria-label', 'Search catalogue'); input.value = searchText; input.oninput = () => { searchText = input.value; };
-  const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = busy || !realtime || !view.connected;
+  const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = catalogueBusy || !realtime || !view.connected;
   form.append(input, submit);
   form.onsubmit = event => {
-    event.preventDefault(); if (busy) return;
+    event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
-    if (!query) { error = 'Enter a track title, artist, or album to search.'; render(); return; }
+    if (!query) { catalogueError = 'Enter a track title, artist, or album to search.'; catalogueRetry = undefined; render(); return; }
     searching = true; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
-    void run(async () => {
-      try {
-        if (realCatalogue && searchMode === 'artists') {
-          const response = await catalogue.browse('artists', query);
-          if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; }
-        } else {
-          const response = await catalogue.search(query);
-          if (response && view?.catalogue?.source === response.source) {
-            results = response.tracks; trackNotices = response.notices ?? []; searchDone = true;
-          }
+    void runCatalogue(async () => {
+      if (realCatalogue && searchMode === 'artists') {
+        const response = await catalogue.browse('artists', query);
+        if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; }
+      } else {
+        const response = await catalogue.search(query);
+        if (response && view?.catalogue?.source === response.source) {
+          results = response.tracks; trackNotices = response.notices ?? []; searchDone = true;
         }
-      } finally { searching = false; }
+      }
     });
   }; search.append(form);
   const found = el('section', undefined, 'panel catalogue-results'); found.setAttribute('aria-labelledby', 'music-results-title');
-  found.setAttribute('aria-busy', String(busy || searching));
+  found.setAttribute('aria-busy', String(catalogueBusy));
   const resultsHeading = el('div', undefined, 'section-heading'); const resultsTitle = el('h2', chosenArtist ? 'Browse music' : 'Results'); resultsTitle.id = 'music-results-title'; resultsHeading.append(resultsTitle); found.append(resultsHeading);
   const resultKind = searchMode === 'artists' && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
@@ -400,13 +429,19 @@ function participant() {
   const coverageUnconfirmed = notices.length > 0 || allNotices.length > notices.length;
   const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.${coverageUnconfirmed ? ' Source coverage unconfirmed.' : ''}` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
-  if (!searchDone && !searching) found.append(el('p', 'Search for music to add to your private list.', 'muted small'));
+  if (catalogueError) {
+    const notice = el('div', undefined, 'list-notice'); const message = el('p', catalogueError); message.setAttribute('role', 'alert'); notice.append(message);
+    if (catalogueRetry) { const retry = catalogueRetry; const control = catalogueButton('Try again', retry); control.id = 'catalogue-retry'; notice.append(control); }
+    found.append(notice);
+  }
+  if (!searchDone && !searching && !catalogueError) found.append(el('p', 'Search for music to add to your private list.', 'muted small'));
   if (searching) { const status = el('p', 'Searching…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
+  else if (catalogueBusy) { const status = el('p', 'Loading music…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
   for (const notice of notices) { const status = el('p', notice, 'catalogue-notice'); status.setAttribute('role', 'status'); found.append(status); }
   if (chosenArtist) {
     const crumbs = el('div', undefined, 'actions browse-crumbs');
-    const backToArtists = button('← Artists', () => { chosenArtist = undefined; chosenAlbum = undefined; albums = []; results = []; }, true); backToArtists.id = 'browse-artists'; crumbs.append(backToArtists);
-    if (chosenAlbum) { const backToAlbums = button('← Albums', () => { chosenAlbum = undefined; results = []; }, true); backToAlbums.id = 'browse-albums'; crumbs.append(backToAlbums); }
+    const backToArtists = catalogueButton('← Artists', () => { chosenArtist = undefined; chosenAlbum = undefined; albums = []; results = []; }); backToArtists.id = 'browse-artists'; crumbs.append(backToArtists);
+    if (chosenAlbum) { const backToAlbums = catalogueButton('← Albums', () => { chosenAlbum = undefined; results = []; }); backToAlbums.id = 'browse-albums'; crumbs.append(backToAlbums); }
     found.append(crumbs, el('h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`),
       el('p', chosenAlbum?.provider ?? chosenArtist.provider, 'muted small'));
   }
@@ -415,7 +450,7 @@ function participant() {
     const shown = source.item ?? artist;
     const row = el('div', undefined, 'track-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name), el('p', artist.provider, 'muted')); info.append(artwork(artist.matchKind === 'metadata' && !source.item ? undefined : shown.artwork, 'Artist image', 'result-artwork artist-portrait'), copy);
     if (source.control) copy.append(source.control);
-    const browse = button('View albums', async () => {
+    const browse = catalogueButton('View albums', async () => {
       if (!source.item) return;
       const response = await catalogue.browse('albums', source.item!.id);
       if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; }
@@ -428,7 +463,7 @@ function participant() {
       el('p', [unchosen ? null : shown.year, shown.version, album.provider].filter(Boolean).join(' · '), 'muted'));
     info.append(artwork(unchosen ? undefined : shown.artwork, 'Album artwork', 'result-artwork'), copy);
     if (source.control) copy.append(source.control);
-    const browse = button('View tracks', async () => {
+    const browse = catalogueButton('View tracks', async () => {
       if (!source.item) return;
       const response = await catalogue.browse('tracks', source.item!.id);
       if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; }
@@ -468,14 +503,20 @@ function participant() {
   }
   return main;
 }
-function playTrack(track: CatalogueTrack) { player.play(track); }
+function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }) {
+  if (view?.ownPlayback && view.ownPlayback.status !== 'stopped' && !confirm('Replace the current song? Playing this song will stop the current one.')) return;
+  player.play(track, prepared);
+}
 function joinForm() {
-  return joinPanel({ nickname: nicknameDraft, busy, disabled: !navigator.onLine,
+  return joinPanel({ nickname: nicknameDraft, busy, disabled: !navigator.onLine, error: joinError,
     notice: participantAccess.removed ? 'You’re no longer in the listening order. Join again when you’re ready. Your saved music is kept.' : undefined,
-    changed: value => { nicknameDraft = value; },
+    changed: value => { nicknameDraft = value; joinError = ''; },
     submit: nickname => { void run(async () => {
-      const next = await api<View>('/api/participant/join', { nickname });
-      if (page === 'join') location.replace(appPath('/participant')); else participantAccess.enter(next);
+      joinError = '';
+      try {
+        const next = await api<View>('/api/participant/join', { nickname });
+        if (page === 'join') location.replace(appPath('/participant')); else participantAccess.enter(next);
+      } catch (cause) { joinError = cause instanceof Error ? cause.message : 'Could not join the room. Try again.'; }
     }); },
   });
 }
@@ -497,9 +538,7 @@ function participantEntry() {
     }
     layout.append(status);
   }
-  if (page === 'participant') {
-    layout.firstElementChild!.append(music.renderEntry());
-  }
+  layout.firstElementChild!.append(music.renderEntry());
   main.append(layout); return main;
 }
 function render() {
@@ -554,7 +593,7 @@ async function init() {
     catch { error = 'Cannot reach the backend. Reload when it is available.'; render(); }
   } else {
     if (page === 'join') history.replaceState(null, '', '/join');
-    if (page === 'participant') void library.start();
+    void library.start();
     await participantAccess.check();
   }
 }

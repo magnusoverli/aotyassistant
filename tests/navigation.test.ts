@@ -42,3 +42,11 @@ test('header state stays presentation-only, with literal nicknames, accurate tur
   assert.ok(!JSON.stringify(headerModel('participant', { view: withPrivateData })).includes('SECRET TITLE'));
   assert.ok(!JSON.stringify(headerModel('host', { view: withPrivateData })).includes('PRIVATE LIST'));
 });
+
+test('header readiness uses server availability, never an assumed speaker or a stale connection', () => {
+  assert.equal(headerModel('host', { view }).modeText, 'Music Assistant');
+  assert.equal(headerModel('host', { view: { ...view, playbackAvailable: false } }).modeText, 'Playback unavailable');
+  assert.equal(headerModel('host', { view: { ...view, playbackAvailable: true } }).modeText, 'Playback ready');
+  assert.equal(headerModel('participant', { view: { ...view, playbackAvailable: true }, realtime: false }).modeText, 'Reconnecting…');
+  assert.equal(headerModel('participant', { view }).turn?.title, 'Other’s turn');
+});

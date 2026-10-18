@@ -3,6 +3,7 @@ import type { PreparationView, PreparationResult, PreparationOperation } from '.
 import { requestJson, RequestError } from './request';
 
 const prefix = '/api/participant/preparations';
+const accessNoticeKey = 'aoty.preparation-access-changed.v1';
 type Path = 'add' | 'add-upload' | 'purge-upload' | 'move' | 'remove' | 'restore' | 'review';
 type Edit = { trackId?: string; entryId?: string; beforeId?: string | null; uploadId?: string; text?: { title: string; artist: string; album: string } };
 type Pending = { ownerId: string; path: Path; body: Edit & { operation: PreparationOperation }; title: string };
@@ -27,6 +28,7 @@ export class PreparationController {
   pending?: Pending;
   conflict = false;
   recoveryKey = '';
+  recovered = false;
   undoId?: string;
   lastSavedUploadId?: string;
   readonly added = new Set<string>();
@@ -36,6 +38,7 @@ export class PreparationController {
   private epoch = 0;
   private loadSequence = 0;
   private saveSequence = 0;
+  private accessChangedWhileLoading = false;
   constructor(private changed: () => void, private isMember: () => boolean, private request = preparationRequest) {}
   private storageKey(ownerId: string) { return `aoty.preparation-pending.v1.${ownerId}`; }
   private persist() {
@@ -66,15 +69,35 @@ export class PreparationController {
   }
   async start() {
     if (!navigator.onLine || this.loading) return;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', this.accessChanged);
+      window.addEventListener('focus', this.checkMissingAccess);
+    }
     const epoch = this.epoch; const sequence = ++this.loadSequence; this.loading = true; this.changed();
     try { const view = await this.request<PreparationView>('/state'); if (epoch !== this.epoch) return; if (!this.pending) this.error = ''; this.accept(view); this.listen(); }
     catch (error) {
       if (epoch !== this.epoch) return;
       this.missing = error instanceof RequestError && error.code === 'missing-library';
       if (!this.missing) this.error = error instanceof Error ? error.message : 'Your private list could not be loaded.';
-      if (error instanceof RequestError && error.status === 401) { this.stop(); this.view = undefined; }
-    } finally { if (sequence === this.loadSequence) this.loading = false; this.changed(); }
+      if (error instanceof RequestError && error.status === 401) { if (!this.missing) this.stop(); this.view = undefined; }
+    } finally {
+      if (sequence === this.loadSequence) {
+        this.loading = false;
+        if (this.accessChangedWhileLoading) { this.accessChangedWhileLoading = false; this.checkMissingAccess(); }
+      }
+      this.changed();
+    }
   }
+  // Notify other tabs to read the shared HttpOnly cookie; never broadcast list data or credentials.
+  private notifyAccessChanged() {
+    try { localStorage.setItem(accessNoticeKey, operationId()); } catch { /* Focus rechecks missing access when storage is unavailable. */ }
+  }
+  private accessChanged = (event: StorageEvent) => {
+    if (event.key !== accessNoticeKey || this.view) return;
+    if (this.loading) this.accessChangedWhileLoading = true;
+    else this.checkMissingAccess();
+  };
+  private checkMissingAccess = () => { if (this.missing && !this.view) void this.start(); };
   async refresh() {
     if (!this.view || !navigator.onLine) return;
     const epoch = this.epoch;
@@ -97,6 +120,10 @@ export class PreparationController {
     this.epoch++; this.loadSequence++; this.saveSequence++;
     this.stream?.close(); this.stream = undefined; this.recoveryKey = '';
     this.loading = false; this.saving = false; this.initializing = undefined;
+    this.recovered = false; this.accessChangedWhileLoading = false;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', this.accessChanged); window.removeEventListener('focus', this.checkMissingAccess);
+    }
   }
   async ensureOwner() {
     if (this.view) return;
@@ -105,7 +132,7 @@ export class PreparationController {
       const epoch = this.epoch;
       const pending = this.request<PreparationView>('/init', {}).then(view => {
         if (epoch !== this.epoch) throw new Error('Private-list access changed. Refresh before adding a track.');
-        this.accept(view); this.listen();
+        this.accept(view); this.listen(); this.notifyAccessChanged();
       }).finally(() => { if (this.initializing === pending) this.initializing = undefined; });
       this.initializing = pending;
     }
@@ -172,7 +199,7 @@ export class PreparationController {
       const view = await this.request<PreparationView>('/recover', { recoveryKey, replace });
       if (!current()) return;
       this.error = this.pending?.ownerId === view.ownerId ? 'A previous list change needs confirmation. Retry it to check whether it was saved.' : '';
-      this.accept(view); this.listen();
+      this.accept(view); this.listen(); this.recovered = true; this.notifyAccessChanged();
     });
   }
   async revokeOtherDevices() {

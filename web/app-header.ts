@@ -28,7 +28,7 @@ export class AppHeader {
       event.preventDefault(); content.focus({ preventScroll: true }); content.scrollIntoView({ block: 'start' });
     };
     const inner = el('div', undefined, 'header-inner');
-    const brand = link('', routes.home, 'brand'); brand.setAttribute('aria-label', 'Albums of the Year · Home');
+    const brand = link('', routes.home, 'brand');
     if (page === 'home') brand.setAttribute('aria-current', 'page');
     const mark = el('span', '◉', 'brand-mark'); mark.setAttribute('aria-hidden', 'true');
     const wordmark = el('div'); wordmark.append(el('strong', 'Albums of the Year'), this.subtitle); brand.append(mark, wordmark);
@@ -40,7 +40,8 @@ export class AppHeader {
     this.fullscreen.type = 'button'; this.fullscreen.onclick = () => { void this.toggleFullscreen(); };
     inner.append(brand, this.meta, this.toggle, this.navigation); this.element.append(skip, inner);
     this.element.dataset.header = 'shared';
-    this.element.addEventListener('keydown', this.keydown);
+    document.addEventListener('keydown', this.keydown);
+    document.addEventListener('focusin', this.focusChanged);
     this.navigation.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target.closest('a') : null;
       if (!target) return;
@@ -93,6 +94,9 @@ export class AppHeader {
   private outside = (event: PointerEvent) => {
     if (!this.element.contains(event.target as Node)) this.setExpanded(false);
   };
+  private focusChanged = (event: FocusEvent) => {
+    if (this.expanded && event.target !== this.toggle && !this.navigation.contains(event.target as Node)) this.setExpanded(false);
+  };
   private fullscreenChanged = () => this.updateFullscreen();
   private addressChanged = () => this.update(this.lastState);
   private updateFullscreen() {
@@ -111,6 +115,7 @@ export class AppHeader {
   }
   destroy() {
     this.resize?.disconnect();
+    document.removeEventListener('keydown', this.keydown); document.removeEventListener('focusin', this.focusChanged);
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);
     document.removeEventListener('aoty-address-changed', this.addressChanged);
   }

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.2.9] — 2026-10-18
+
+- Replace the hard-coded speaker/live badge with truthful playback availability and describe idle participants by whose turn it is.
+- Offer private-list recovery on both joining pages, acknowledge recovery, and show nickname errors beside the field.
+- Keep playback and turn controls usable during searches, with search failures and retry beside the results.
+- Confirm active or paused song replacement consistently from search results and the private list.
+- Synchronize the first saved list with already-open tabs without reload or automatic playback.
+- Fix menu dismissal when keyboard focus leaves it and improve mobile input readability.
+- Add the UI/UX audit and remaining implementation plan; keep generated screenshots outside version control.
+
+## Earlier development releases
+
 - Release 0.2.8 with grouped multi-provider artist, album, and track results, explicit source choices, and preserved recording/version distinctions.
 - Show ID-less multi-provider matches once with an unverified label and exact source choices, without merging artist or saved-recording identities.
 - Group Music Assistant duplicates by explicit identity, browse listed sources, and require exact track-source choices with clear incomplete-result notices.

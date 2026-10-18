@@ -360,6 +360,8 @@ input,select { min-width:0; min-height:46px; padding:12px; background:var(--bg);
 .settings-card input,.settings-card select { background:#111b14; border-color:#40503a; font-size:13px; }
 .settings-card input::placeholder { color:#a1ad99; }
 .field-hint { font-size:11px; margin:0; }
+.field-error { color:#ffdad1; font-size:.875rem; margin:0; }
+.field-error[hidden] { display:none; }
 .settings-security-note { color:#d1bb91; font-size:11px; line-height:1.6; margin:0; }
 .settings-form-actions { gap:10px; margin:0; }
 .settings-form-actions button { font-size:12px; }
@@ -580,3 +582,8 @@ body[data-short-viewport='true'] .preparation-list:not(.is-expanded) .list-empty
 .catalogue-help { margin-block: .75rem; }
 .catalogue-help summary { cursor: pointer; font-size: .85rem; }
 .catalogue-notice { padding: .8rem; border-left: 3px solid var(--accent); background: #ffffff08; color: var(--muted); font-size: .82rem; line-height: 1.5; }
+@media(max-width:999px) {
+  input,select,textarea,
+  .search-form input,.settings-card input,.settings-card select,
+  .list-recovery-form input,.list-disclosure textarea { font-size:1rem; }
+}

@@ -106,16 +106,18 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
   } finally { await r.context.close(); }
 });
 
-test('recovering a saved list does not join the room and inline joining retains that same private owner and music', async ({ browser, isolatedApp }) => {
+for (const entryPath of ['/participant', '/join']) test(`recovering through ${entryPath} keeps the list private until explicit joining`, async ({ browser, isolatedApp }) => {
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 2);
   const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
     const key = await r.post('/api/participant/preparations/recovery-key', { revision: r.library.revision });
-    const page = await fresh.newPage(); await page.goto(isolatedApp.origin + '/participant');
+    const page = await fresh.newPage(); await page.goto(isolatedApp.origin + entryPath);
     await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await page.getByText('Recover a saved list', { exact: true }).click();
     await page.getByLabel('Recover with a private key').fill(key.recoveryKey); await page.getByRole('button', { name: 'Recover my list', exact: true }).click();
     await expect.poll(async () => (await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
+    await expect(page.getByRole('status').filter({ hasText: 'Your list is recovered. Enter your name to join the room.' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('Saved selection');
     await expect(page.locator('.preparation-list')).toHaveCount(0);
     expect((await page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
     expect(page.url()).not.toContain(key.recoveryKey); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(key.recoveryKey);
@@ -126,6 +128,22 @@ test('recovering a saved list does not join the room and inline joining retains 
     expect(library.ownerId).toBe(r.library.ownerId); expect(library.upcoming).toHaveLength(2);
     expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeUndefined();
   } finally { await fresh.close(); await r.context.close(); }
+});
+
+test('join errors stay with the nickname, preserve the draft, and whitespace sends no request', async ({ page }) => {
+  await page.goto('/join'); const input = page.getByLabel('What should we call you?');
+  let joins = 0;
+  await page.route('**/api/participant/join', async route => {
+    joins++; await route.fulfill({ status: 422, json: { error: 'This name could not be accepted. Try another name.' } });
+  });
+  await input.fill('   '); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+  await expect(input).toBeFocused(); await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(input).toHaveAccessibleDescription('Enter a name to join the room.'); expect(joins).toBe(0);
+  await input.fill('Retained name'); await expect(input).toHaveAttribute('aria-invalid', 'false');
+  await input.press('Enter');
+  await expect(page.locator('.join-panel').getByRole('alert')).toHaveText('This name could not be accepted. Try another name.');
+  await expect(input).toHaveValue('Retained name'); await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(input).toHaveAccessibleDescription('This name could not be accepted. Try another name.'); expect(joins).toBe(1);
 });
 
 test('revocation shows one calm entry notice, and saved music survives refresh and explicit rejoining', async ({ browser, page: host, isolatedApp }) => {

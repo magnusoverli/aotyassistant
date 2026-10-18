@@ -26,6 +26,26 @@ async function add(page: Page, query: string) {
 const titles = (page: Page) => page.locator('.saved-tracks[aria-label="Your prepared tracks"] .saved-track strong');
 const state = async (page: Page) => (await page.request.get('/api/participant/preparations/state')).json();
 
+test('the first save reaches an already-open tab without reload, extra writes, or private broadcast data', async ({ page, isolatedApp }) => {
+  await page.request.post('/api/participant/join', { data: { nickname: 'Two tabs' }, headers: { Origin: isolatedApp.origin } });
+  await page.goto('/participant'); await expect(page.locator('.list-save-status')).toHaveText('Private · saved when you add a track');
+  const other = await page.context().newPage();
+  try {
+    await other.goto(isolatedApp.origin + '/participant'); await expect(other.locator('.list-save-status')).toHaveText('Private · saved when you add a track');
+    const writes: string[] = []; other.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
+    await other.evaluate(() => { (window as any).originalDocument = document; });
+    await add(page, 'Northern');
+    await expect(other.locator('.list-count')).toHaveText(' · 1');
+    await expect(titles(other)).toHaveText(['Northern Lights']);
+    await add(page, 'Summer'); await expect(other.locator('.list-count')).toHaveText(' · 2');
+    expect(await other.evaluate(() => (window as any).originalDocument === document)).toBe(true);
+    expect(writes).toEqual([]);
+    const library = await state(page); const storage = await other.evaluate(() => JSON.stringify(localStorage));
+    expect(storage).not.toContain(library.ownerId); expect(storage).not.toContain('Northern Lights');
+    expect((await (await other.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
+  } finally { await other.close(); }
+});
+
 test('compact private lists reorder, undo, survive removal/rejoining, recover on another phone, and never autoplay', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const second = r.second;
   try {

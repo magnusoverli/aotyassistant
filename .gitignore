@@ -6,3 +6,7 @@ data/
 !.env.example
 playwright-report/
 test-results/
+# Generated screenshots stay local; application icons remain tracked.
+screenshots/
+**/screenshots/
+docs/ui-ux-audit-assets/

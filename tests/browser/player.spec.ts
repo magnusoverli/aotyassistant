@@ -22,6 +22,52 @@ async function volume(page: Page, level: number) {
   }, level);
 }
 
+for (const paused of [false, true]) test(`direct and prepared replacement both require confirmation while ${paused ? 'paused' : 'playing'}`, async ({ browser, page: host }) => {
+  const f = await setup(browser, host); const page = f.participant;
+  try {
+    const plays: string[] = []; page.on('request', request => { if (/\/participant\/(play|preparations\/play)$/.test(new URL(request.url()).pathname)) plays.push(request.url()); });
+    await page.getByRole('button', { name: 'Add to my list', exact: true }).click();
+    await expect(page.locator('.list-count')).toHaveText(' · 1');
+    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
+    await expect(page.locator('.player-pending')).toHaveCount(0);
+    if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
+    const original = await (await page.request.get('/api/participant/state')).json();
+    const prompts: string[] = [];
+    for (const name of ['Play', 'Play next prepared track']) {
+      page.once('dialog', async dialog => { prompts.push(dialog.message()); await dialog.dismiss(); });
+      await page.getByRole('button', { name, exact: true }).click();
+      expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).toBe(original.ownPlayback.id);
+    }
+    expect(prompts).toEqual(Array(2).fill('Replace the current song? Playing this song will stop the current one.'));
+    expect(plays).toHaveLength(1);
+    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await expect(page.locator('.player-pending')).toHaveCount(0);
+    await expect.poll(async () => (await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).not.toBe(original.ownPlayback.id);
+    expect(plays).toHaveLength(2);
+  } finally { await f.close(); }
+});
+
+test('a delayed search leaves pause and finish available and retains its results across a turn change', async ({ browser, page: host }) => {
+  const f = await setup(browser, host); const page = f.participant; const search = gate();
+  try {
+    await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
+    await page.route('**/api/participant/search', async route => { await search.promise; await route.continue(); });
+    await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Night');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'true');
+    await expect(page.getByRole('button', { name: 'Finish my turn', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Pause', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Finish my turn', exact: true }).click();
+    await expect(page.locator('.playback-card')).toHaveCount(0);
+    search.release();
+    await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'false');
+    await expect(page.locator('.catalogue-results .track-row')).not.toHaveCount(0);
+    await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Night');
+  } finally { search.release(); await f.close(); }
+});
+
 test('the participant player stays responsive through slow play/pause/reveal replies and rolls back rejected actions', async ({ browser, page: host }) => {
   const f = await setup(browser, host); const { participant: page, tv } = f;
   const start = gate(); const pause = gate(); const reveal = gate(); const actions: string[] = [];
@@ -79,7 +125,7 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     const origin = new URL(page.url()).origin;
     await nextContext.request.post(origin + '/api/participant/join', { headers: { Origin: origin }, data: { nickname: 'Next listener' } });
     const next = await nextContext.newPage(); await next.goto(origin + '/participant');
-    await expect(next.getByRole('heading', { name: 'Alex is sharing.' })).toBeVisible();
+    await expect(next.getByRole('heading', { name: 'Alex’s turn.' })).toBeVisible();
     await expect(next.getByRole('button', { name: 'Finish my turn', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }

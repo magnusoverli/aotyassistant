@@ -112,6 +112,7 @@ export class Engine extends EventEmitter {
       const p = room.participants.find(p => p.id === id); return p ? { id: p.id, nickname: p.nickname } : null;
     };
     const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id,
+      playbackAvailable: this.ready && this.catalogueState.playbackAvailable,
       revision: room.revision, turnId: room.turnId, current: person(room.currentId),
       next: room.currentId && room.active.length ? person(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) : null,
       rotation: room.active.map(id => person(id)!), // Names/order only, never selections or credentials.

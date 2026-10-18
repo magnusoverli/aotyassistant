@@ -73,7 +73,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await expectConfiguredConnection(page);
   await expect(page.getByText('Saved destination: Living room', { exact: true })).toBeVisible();
   expect(outgoing.some(url => url.endsWith('/playback'))).toBe(false);
-  await expect(page.locator('header .badge')).toHaveText('LIVE · SONOS');
+  await expect(page.locator('header .badge')).toHaveText('Music Assistant');
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 }); await noHorizontalOverflow(page);
   }

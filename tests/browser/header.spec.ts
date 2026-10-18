@@ -4,6 +4,20 @@ import { openNavigation } from './navigation-helpers';
 
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
+test('tabbing out of the menu exposes the focused join field and Escape works outside the header', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/join');
+  const navigation = page.locator('#app-navigation'); const menu = page.locator('.header-menu-toggle');
+  await expect(page.getByLabel('What should we call you?')).toBeVisible();
+  await openNavigation(page);
+  await navigation.getByRole('link', { name: 'Listening room', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByLabel('What should we call you?')).toBeFocused();
+  await expect(navigation).toBeHidden(); await expect(menu).toHaveAttribute('aria-expanded', 'false');
+  await openNavigation(page);
+  await page.locator('body').dispatchEvent('keydown', { key: 'Escape', bubbles: true });
+  await expect(navigation).toBeHidden(); await expect(menu).toBeFocused();
+});
+
 test('every page uses the shared header with centralized navigation, current-page semantics, and no duplicate body navigation', async ({ page }) => {
   const session = await (await page.request.get('/api/host/state')).json();
   for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Connections & settings'], ['/participant', 'My seat'], [session.joinUrl, null], [session.displayUrl, 'Listening room']] as const) {
@@ -22,7 +36,9 @@ test('every page uses the shared header with centralized navigation, current-pag
     ]);
     if (current) await expect(navigation.getByRole('link', { name: current, exact: true })).toHaveAttribute('aria-current', 'page');
     else await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
-    await expect(page.getByRole('link', { name: 'Albums of the Year · Home', exact: true })).toHaveAttribute('href', '/');
+    const brand = page.locator('a.brand');
+    await expect(brand).toHaveAttribute('href', '/');
+    await expect(brand).toHaveAccessibleName(`Albums of the Year ${await brand.locator('.brand-subtitle').textContent()}`);
     await expect(page.locator('.host-sidebar, .host-nav, .session-navigation, main .back-link, main .display-link')).toHaveCount(0);
     const html = await page.getByRole('banner').innerHTML(); expect(html).not.toContain('#access='); expect(html).not.toContain('#invite=');
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);

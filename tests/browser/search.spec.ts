@@ -15,6 +15,9 @@ test('participant searches privately with empty/errors but cannot play until a s
     const alice = await aliceContext.newPage(); await alice.goto(joinUrl!);
     await alice.getByLabel('What should we call you?').fill('Alice'); await alice.getByRole('button', { name: 'Join room' }).click();
     await expect(alice).toHaveURL(/\/participant$/);
+    await expect(alice.locator('header .mode-badge')).toHaveText('Playback unavailable');
+    await expect(host.locator('header .mode-badge')).toHaveText('Playback unavailable');
+    expect((await (await host.request.get('/api/host/state')).json()).playbackAvailable).toBe(false);
     const waiting = await waitingContext.newPage(); await waiting.goto(joinUrl!);
     await waiting.getByLabel('What should we call you?').fill('Waiting listener'); await waiting.getByRole('button', { name: 'Join room' }).click();
     const tv = await tvContext.newPage(); await tv.goto(displayUrl!);
@@ -58,6 +61,8 @@ test('participant searches privately with empty/errors but cannot play until a s
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('failure'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(alice.getByRole('alert')).toContainText('Music Assistant did not accept');
+    await expect(alice.locator('.catalogue-results').getByRole('alert')).toContainText('Music Assistant did not accept');
+    await expect(alice.locator('.catalogue-results').getByRole('button', { name: 'Try again', exact: true })).toBeEnabled();
     await expect(alice.getByText('PRIVATE FIXTURE ERROR')).toHaveCount(0);
     await expect(alice.getByRole('button', { name: 'Finish my turn' })).toBeEnabled();
     // The demo catalogue is not used as a silent fallback after an upstream failure.
