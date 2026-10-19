@@ -68,7 +68,7 @@ test('single-file metadata review, private save/reload/recovery and reversible/p
     await expect(page.getByLabel('Album', { exact: true })).toBeFocused();
     await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My private file title');
     await page.screenshot({ path: 'test-results/participant-upload-review-320.png', fullPage: true });
-    await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list', exact: true }).click();
+    await page.locator('.upload-preview').getByRole('button', { name: 'Add to list', exact: true }).click();
     await showList(page);
     await expect(page.locator('.saved-track strong')).toHaveText('My private file title');
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
@@ -106,7 +106,7 @@ test('lost upload and add acknowledgements recover through read-only checks and 
     await page.unroute(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/);
     let adds = 0;
     await page.route('**/api/participant/preparations/add-upload', async route => { adds++; await route.fetch(); await route.abort('failed'); });
-    await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list' }).click();
+    await page.locator('.upload-preview').getByRole('button', { name: 'Add to list' }).click();
     await expect(page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     expect((await list(page)).upcoming).toHaveLength(1);
     await page.reload(); await showList(page); await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible(); expect(adds).toBe(1);
@@ -123,7 +123,7 @@ test('an uploaded file uses the normal explicit player and never exposes Music A
     const settings = await (await host.request.get('/api/host/integrations')).json();
     await r.post('/api/host/integrations/destination', { id: 'sonos:room', revision: settings.revision });
     await selectFile(page); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
-    await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list' }).click();
+    await page.locator('.upload-preview').getByRole('button', { name: 'Add to list' }).click();
     await showList(page);
     await expect(page.getByRole('button', { name: 'Play this song' })).toBeEnabled();
     await page.getByRole('button', { name: 'Play this song' }).click();

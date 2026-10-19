@@ -29,7 +29,7 @@ test('all pages have stable navigation without display credentials or lifecycle 
 });
 
 test('header state stays presentation-only with literal nicknames', () => {
-  assert.equal(headerModel('participant', {}).subtitle, 'My music');
+  assert.equal(headerModel('participant', {}).subtitle, 'Music');
   const participant = headerModel('participant', { view }); assert.equal(participant.subtitle, 'Literal <name>');
   assert.ok(!('turn' in participant), 'Turn status belongs in the workspace, not repeated in the header.');
   const withPrivateData = { ...view, ownPlayback: { track: { title: 'SECRET TITLE' } }, preparations: ['PRIVATE LIST'] };

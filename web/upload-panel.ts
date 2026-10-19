@@ -163,7 +163,7 @@ export class UploadPanel {
         });
         prop(input, 'value', this.text[key]); prop(input, 'disabled', disabled); fields.push(group);
       }
-      const add = v.get('add', () => { const node = el('button', 'Add to my list'); node.type = 'submit'; return node; });
+      const add = v.get('add', () => { const node = el('button', 'Add to list'); node.type = 'submit'; return node; });
       prop(add, 'disabled', disabled || Boolean(this.library.view?.reviewEntryId));
       children(form, v.el('preview-title', 'h3', 'Review uploaded song'), heading, ...fields,
         v.el('unsaved', 'p', 'Uploaded, not yet saved. Artist and album are optional.', 'muted small'), add);

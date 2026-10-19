@@ -12,7 +12,7 @@ test('multi-provider artists, releases and tracks stay grouped with explicit exa
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await page.goto('/host');
   const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
-  await page.getByLabel('What should we call you?').fill('Multi source listener'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
+  await page.getByLabel('Display name').fill('Multi source listener'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
   const privateResponses: string[] = [];
   page.on('response', response => {
     if (/\/api\/participant\/(browse|search)$/.test(response.url())) void response.text().then(text => privateResponses.push(text)).catch(() => {});
@@ -35,7 +35,7 @@ test('multi-provider artists, releases and tracks stay grouped with explicit exa
   await release.getByRole('button', { name: 'View tracks' }).click();
   const recording = page.locator('.catalogue-results .track-row');
   await expect(recording).toHaveCount(1);
-  await expect(recording.getByRole('button', { name: 'Add to my list' })).toBeDisabled();
+  await expect(recording.getByRole('button', { name: 'Add to list' })).toBeDisabled();
   await expect(recording.getByRole('button', { name: 'Choose a source' })).toBeDisabled();
   const source = recording.getByRole('combobox', { name: 'Source for The same recording' });
   await chooseSource(source, 'Spotify');
@@ -47,8 +47,8 @@ test('multi-provider artists, releases and tracks stay grouped with explicit exa
   await chooseSource(source, 'Tidal');
   await expect(source).toBeFocused();
   await expect(recording.getByText('Unavailable through this source')).toHaveCount(0);
-  await expect(recording.getByRole('button', { name: 'Add to my list' })).toBeEnabled();
-  await recording.getByRole('button', { name: 'Add to my list' }).click();
+  await expect(recording.getByRole('button', { name: 'Add to list' })).toBeEnabled();
+  await recording.getByRole('button', { name: 'Add to list' }).click();
   await expect(page.locator('.saved-track .saved-source')).toHaveText('tidal');
   for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -77,7 +77,7 @@ test('partial provider browse is explicit, and full failure is not shown as an e
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await page.goto('/host'); const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
-  await page.getByLabel('What should we call you?').fill('Source failures'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
+  await page.getByLabel('Display name').fill('Source failures'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
   const search = async (query: string) => { await page.getByRole('searchbox', { name: 'Search catalogue' }).fill(query); await page.getByRole('button', { name: 'Search', exact: true }).click(); };
   await search('multi-provider-partial');
   await expect(page.locator('.catalogue-results .catalogue-notice')).toHaveCount(0);
@@ -100,7 +100,7 @@ test('real-world ID-less artist searches use one unverified display row and requ
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await page.goto('/host'); const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
-  await page.getByLabel('What should we call you?').fill('Metadata listener'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
+  await page.getByLabel('Display name').fill('Metadata listener'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
   const search = async (query: string) => { await page.getByRole('searchbox', { name: 'Search catalogue' }).fill(query); await page.getByRole('button', { name: 'Search', exact: true }).click(); };
   await page.setViewportSize({ width: 390, height: 1000 });
   for (const name of ['Metallica', 'Iron Maiden', 'Megadeth', 'Slayer', 'Metallica']) {
@@ -133,10 +133,10 @@ test('real-world ID-less artist searches use one unverified display row and requ
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(2); // Live remains distinct.
   const original = page.locator('.catalogue-results .track-row').first();
   await expect(original).toContainText('These results may be different versions. Choose a source to continue.');
-  await expect(original.getByRole('button', { name: 'Add to my list', exact: true })).toBeDisabled();
+  await expect(original.getByRole('button', { name: 'Add to list', exact: true })).toBeDisabled();
   await expect(original.getByRole('button', { name: 'Choose a source', exact: true })).toBeDisabled();
   await chooseSource(original.getByRole('combobox', { name: 'Source for The same recording', exact: true }), 'Tidal');
-  await original.getByRole('button', { name: 'Add to my list', exact: true }).click();
+  await original.getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.locator('.saved-track .saved-source')).toHaveText('tidal');
   expect(isolatedApp.calls.filter(c => c.command === 'player_queues/play_media')).toHaveLength(0);
 });
@@ -145,7 +145,7 @@ test('metadata-only album groups cannot union browse, while verified artist grou
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await page.goto('/host'); const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
-  await page.getByLabel('What should we call you?').fill('Release choices'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
+  await page.getByLabel('Display name').fill('Release choices'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
   await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('multi-provider-metadata-albums'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
@@ -169,7 +169,7 @@ test('only the chosen exact source reaches simulated playback, and reveal remain
   const tvContext = await browser.newContext();
   try {
     const tv = await tvContext.newPage(); await tv.goto(display!); await page.goto(join!);
-    await page.getByLabel('What should we call you?').fill('Exact-source listener'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
+    await page.getByLabel('Display name').fill('Exact-source listener'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
     await page.getByRole('button', { name: 'Songs', exact: true }).click();
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('multi-provider'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     const grouped = (await (await post('/api/participant/search', { turnId: (await (await page.request.get('/api/participant/state')).json()).turnId, query: 'multi-provider' })).json()).tracks[0];

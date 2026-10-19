@@ -8,7 +8,7 @@ test('mobile shortcuts expose preparation and source choices fit narrow screens'
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   const shortcuts = page.getByRole('navigation', { name: 'Your music shortcuts' });
   await expect(shortcuts).toBeInViewport();
-  await shortcuts.getByRole('button', { name: 'My list', exact: true }).click();
+  await shortcuts.getByRole('button', { name: 'Saved list', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Close list', exact: true })).toBeInViewport();
   await page.getByRole('button', { name: 'Close list', exact: true }).click();
   await shortcuts.getByRole('link', { name: 'Find music', exact: true }).click();

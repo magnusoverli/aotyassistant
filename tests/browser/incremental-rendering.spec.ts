@@ -142,7 +142,7 @@ test('unchanged membership revalidation and list edits retain the workspace and 
     window.EventSource = class extends Original { constructor(url: string | URL, options?: EventSourceInit) { super(url, options); state.eventConnections++; } };
   });
   await join(page, isolatedApp.origin); await search(page, 'Northern');
-  await page.getByRole('button', { name: 'Add to my list', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
   await page.locator('#list-recovery').click(); await page.getByLabel('Recover with a private key').fill('draft-recovery-key');
   await page.locator('#preparation-recovery-key').evaluate((node: HTMLInputElement) => node.setSelectionRange(3, 7));

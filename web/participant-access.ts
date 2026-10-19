@@ -21,7 +21,7 @@ export class ParticipantAccess {
     if (this.state !== 'member') { this.state = 'checking'; this.message = ''; this.changed(); }
     const pending = Promise.resolve().then(() => this.request()).then(view => {
       if (epoch !== this.epoch) return;
-      if (!view.me) throw new Error('The room returned an incomplete membership response.');
+      if (!view.me) throw new Error('Room membership could not be confirmed. Try again.');
       this.enter(view);
     }).catch(error => {
       if (epoch !== this.epoch) return;

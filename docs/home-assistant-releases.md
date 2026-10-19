@@ -4,9 +4,9 @@ The store follows `main`. The published app is `ghcr.io/magnusoverli/aotyassista
 
 ## Prepare
 
-1. Finish the change and its **Unreleased** changelog entries. Review [release readiness](release-readiness.md), especially migrations and physical-device evidence.
+1. Complete the intended changes and their **Unreleased** changelog entries. Review [testing and validation](testing.md), including upgrade compatibility and physical-device coverage.
 2. Create `release/<version>`. Set the same version in `config.yaml`, `package.json`, the lockfile, and `Dockerfile`.
-3. Move the completed changelog entries under a dated release heading. Keep an empty **Unreleased** section.
+3. When publication is scheduled, move the completed changelog entries under a dated release heading. Keep an empty **Unreleased** section.
 4. Run the [contributor checks](../CONTRIBUTING.md#verify-a-change), including `npm run check:release`. Commit and push the release branch.
 
 Use semantic versions: patches for compatible fixes, minor versions for compatible features, major versions for incompatible contracts. Describe required user action and data migrations explicitly. Never overwrite a released Git tag or image version.

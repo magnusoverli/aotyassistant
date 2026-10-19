@@ -14,10 +14,10 @@ export function headerModel(page: Page, state: HeaderState) {
   const primary: NavigationItem[] = [
     { id: 'host', text: 'Host desk', href: routes.host, current: page === 'host' },
     { id: 'settings', text: 'Settings', href: routes.settings, current: page === 'settings' },
-    { id: 'participant', text: 'My music', href: routes.participant, current: page === 'participant' },
+    { id: 'participant', text: 'Music', href: routes.participant, current: page === 'participant' },
     { id: 'display', text: 'Room display', href: routes.display, current: page === 'display' },
   ];
   const subtitle = page === 'participant' && view?.me ? view.me.nickname : page === 'display' ? 'Room display'
-    : page === 'settings' ? 'Settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : page === 'participant' ? 'My music' : 'Home';
+    : page === 'settings' ? 'Settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : page === 'participant' ? 'Music' : 'Home';
   return { primary, subtitle };
 }

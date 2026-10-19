@@ -24,11 +24,11 @@ const noOverflow = async (page: Page) => expect(await page.evaluate(() => docume
 
 test('a first visit offers the shared inline join form and optional recovery, without a fake empty workspace or automatic writes', async ({ page }) => {
   const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
-  await page.goto('/join'); await expect(page.getByLabel('What should we call you?')).toBeVisible();
+  await page.goto('/join'); await expect(page.getByLabel('Display name')).toBeVisible();
   const form = await page.locator('.join-panel > form').innerHTML();
   await page.goto('/participant'); await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
   expect(await page.locator('.join-panel > form').innerHTML()).toBe(form);
-  await expect(page.locator('.brand-subtitle')).toHaveText('My music');
+  await expect(page.locator('.brand-subtitle')).toHaveText('Music');
   await expect(page.locator('.preparation-list, .catalogue-panel, .playback-card')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Recover with a private key')).toBeHidden();
@@ -38,7 +38,7 @@ test('a first visit offers the shared inline join form and optional recovery, wi
     if (width === 1440 || width === 390 && height === 844) await page.screenshot({ path: `test-results/participant-entry-fresh-${width}.png`, fullPage: true });
   }
   expect(writes).toEqual([]);
-  await page.getByLabel('What should we call you?').fill('New listener');
+  await page.getByLabel('Display name').fill('New listener');
   await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   await expect(page).toHaveURL('/participant');
@@ -51,7 +51,7 @@ test('checking valid membership never flashes a join form and failed checks requ
   await page.route('**/api/participant/state', async route => { await gate; await route.continue(); });
   try {
     await page.goto('/participant'); await expect(page.getByRole('heading', { name: 'Checking your place in the room…' })).toBeVisible();
-    await expect(page.getByLabel('What should we call you?')).toHaveCount(0);
+    await expect(page.getByLabel('Display name')).toHaveCount(0);
     await expect(page.locator('.list-count')).toHaveCount(0);
     release(); await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   } finally { release(); await page.unroute('**/api/participant/state'); }
@@ -63,20 +63,20 @@ test('checking valid membership never flashes a join form and failed checks requ
   });
   await page.reload(); await expect(page.getByRole('heading', { name: 'Can’t reach the room.' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveText('Room temporarily unavailable.');
-  await expect(page.getByLabel('What should we call you?')).toHaveCount(0);
+  await expect(page.getByLabel('Display name')).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); expect(writes).toEqual([]);
 });
 
 test('offline entry retains the nickname and returns to the join form after reconnecting without joining automatically', async ({ page }) => {
-  await page.goto('/participant'); const input = page.getByLabel('What should we call you?'); await input.fill('Keep my name');
+  await page.goto('/participant'); const input = page.getByLabel('Display name'); await input.fill('Keep my name');
   await page.context().setOffline(true);
   await expect(page.getByRole('heading', { name: 'You’re offline.' })).toBeVisible(); await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeDisabled();
   await page.context().setOffline(false); await expect(input).toBeVisible(); await expect(input).toHaveValue('Keep my name');
   await expect(page.locator('.participant-hero')).toHaveCount(0);
 });
 
-for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks see no My list until they explicitly join`, async ({ browser, isolatedApp }) => {
+for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks see no Saved list until they explicitly join`, async ({ browser, isolatedApp }) => {
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, count);
   try {
     const writes: string[] = []; r.page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
@@ -96,7 +96,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     await r.context.setOffline(false); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     expect(writes).toEqual([]);
-    await r.page.getByLabel('What should we call you?').fill('Returning listener');
+    await r.page.getByLabel('Display name').fill('Returning listener');
     await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.locator('.participant-hero')).toBeVisible();
     await showList(r.page); await expect(r.page.locator('.list-count')).toHaveText(` · ${count}`);
@@ -114,14 +114,14 @@ for (const entryPath of ['/participant', '/join']) test(`recovering through ${en
     const page = await fresh.newPage(); await page.goto(isolatedApp.origin + entryPath);
     await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await page.getByText('Recover a saved list', { exact: true }).click();
-    await page.getByLabel('Recover with a private key').fill(key.recoveryKey); await page.getByRole('button', { name: 'Recover my list', exact: true }).click();
+    await page.getByLabel('Recover with a private key').fill(key.recoveryKey); await page.getByRole('button', { name: 'Recover list', exact: true }).click();
     await expect.poll(async () => (await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
-    await expect(page.getByRole('status').filter({ hasText: 'Your list is recovered. Enter your name to join the room.' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'List recovered. Enter a display name to join the room.' })).toBeVisible();
     await expect(page.locator('body')).not.toContainText('Saved selection');
     await expect(page.locator('.preparation-list')).toHaveCount(0);
     expect((await page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
     expect(page.url()).not.toContain(key.recoveryKey); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(key.recoveryKey);
-    await page.getByLabel('What should we call you?').fill('Recovered listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await page.getByLabel('Display name').fill('Recovered listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(page.locator('.participant-hero')).toBeVisible();
     await expect(page.locator('.list-count')).toHaveText(' · 2');
     const library = await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
@@ -131,7 +131,7 @@ for (const entryPath of ['/participant', '/join']) test(`recovering through ${en
 });
 
 test('join errors stay with the nickname, preserve the draft, and whitespace sends no request', async ({ page }) => {
-  await page.goto('/join'); const input = page.getByLabel('What should we call you?');
+  await page.goto('/join'); const input = page.getByLabel('Display name');
   let joins = 0;
   await page.route('**/api/participant/join', async route => {
     joins++; await route.fulfill({ status: 422, json: { error: 'This name could not be accepted. Try another name.' } });
@@ -157,7 +157,7 @@ test('revocation shows one calm entry notice, and saved music survives refresh a
     await expect(r.page.getByRole('alert')).toHaveCount(0); await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     await r.page.reload(); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
-    await r.page.getByLabel('What should we call you?').fill('Back again'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await r.page.getByLabel('Display name').fill('Back again'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     await expect(r.page.locator('.list-count')).toHaveText(' · 2');
     expect((await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
@@ -178,7 +178,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     expect(moves).toBe(1); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await r.page.unroute('**/api/participant/preparations/move');
-    await r.page.getByLabel('What should we call you?').fill('Retained draft'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await r.page.getByLabel('Display name').fill('Retained draft'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await showList(r.page); await expect(r.page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
     await r.page.getByRole('button', { name: 'Retry save', exact: true }).click();
     await expect(r.page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
@@ -201,7 +201,7 @@ test('unfinished uploads remain recoverable before joining, and rejoining does n
   await expect(page.getByLabel('Track title', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Choose another file', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Discard upload draft', exact: true })).toBeEnabled();
-  await page.getByLabel('What should we call you?').fill('Upload listener again'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+  await page.getByLabel('Display name').fill('Upload listener again'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByLabel('Track title', { exact: true })).toBeEnabled(); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My edited upload');
   expect(uploads).toBe(1); expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });

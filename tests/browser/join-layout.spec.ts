@@ -24,7 +24,7 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
     await page.goto(isolatedApp.origin + '/join');
     const title = page.getByRole('heading', { name: 'Join room', exact: true });
     const card = page.getByRole('region', { name: 'Join room', exact: true });
-    const input = page.getByLabel('What should we call you?');
+    const input = page.getByLabel('Display name');
     const submit = page.getByRole('button', { name: 'Join room', exact: true });
     await expect(title).toBeVisible();
     expect(await title.evaluate(typography)).toEqual(titleStyle);
@@ -59,7 +59,7 @@ test('join failures keep the nickname and keyboard focus available for an explic
     else await route.continue();
   });
   await page.setViewportSize({ width: 320, height: 700 }); await page.goto('/join');
-  const input = page.getByLabel('What should we call you?'); const submit = page.getByRole('button', { name: 'Join room', exact: true });
+  const input = page.getByLabel('Display name'); const submit = page.getByRole('button', { name: 'Join room', exact: true });
   await input.fill('Retry listener'); await submit.focus(); await submit.press('Enter');
   await expect(page.getByRole('alert')).toHaveText('The room could not be joined. Try again.');
   await expect(input).toHaveValue('Retry listener'); await expect(submit).toBeFocused(); await expect(submit).toBeEnabled();

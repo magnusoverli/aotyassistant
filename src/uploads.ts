@@ -222,7 +222,7 @@ export class UploadAssets {
           try { manifest = await this.load(name); }
           catch (error) { if (!(error instanceof AppError && error.status === 404)) return; }
           if (manifest?.retained || this.busy(name)) return;
-          // A missing/corrupt manifest is not proof of an abandoned upload. Only our durable receiving marker establishes that.
+          // A missing/corrupt manifest is not proof of an abandoned upload. Only a durable receiving marker establishes that.
           const receiving = manifest ? undefined : z.object({ id, ownerId: id, createdAt: z.number().int().nonnegative() }).strict()
             .parse(JSON.parse(await readFile(join(this.path(name), 'receiving.json'), 'utf8')));
           if (receiving && receiving.id !== name) return;

@@ -13,8 +13,8 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await host.goto('/host');
     const join = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
     const display = await host.getByRole('link', { name: 'Open public display' }).getAttribute('href');
-    const first = await firstContext.newPage(); await first.goto(join!); await first.getByLabel('What should we call you?').fill('First'); await first.getByRole('button', { name: 'Join room' }).click();
-    const second = await secondContext.newPage(); await second.goto(join!); await second.getByLabel('What should we call you?').fill('Second'); await second.getByRole('button', { name: 'Join room' }).click();
+    const first = await firstContext.newPage(); await first.goto(join!); await first.getByLabel('Display name').fill('First'); await first.getByRole('button', { name: 'Join room' }).click();
+    const second = await secondContext.newPage(); await second.goto(join!); await second.getByLabel('Display name').fill('Second'); await second.getByRole('button', { name: 'Join room' }).click();
     await showFind(second);
     await expect(second.getByRole('button', { name: 'Artists', exact: true })).toBeEnabled();
     await expect(second.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -42,7 +42,7 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await showFind(second);
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
     await expect(second.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await expect(second.getByRole('button', { name: 'Add to my list', exact: true })).toBeVisible();
+    await expect(second.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
     await second.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
     await second.screenshot({ path: 'test-results/participant-change-song.png', fullPage: true });

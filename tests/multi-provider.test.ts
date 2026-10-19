@@ -259,7 +259,7 @@ test('deployed ID-less artist shapes share one metadata-only display row, never 
     assert.equal(group.matchKind, 'metadata'); assert.equal(group.name, name);
     assert.deepEqual(group.sources!.map(source => source.provider), ['spotify', 'tidal']);
     const before = calls.length;
-    await assert.rejects(client.albums(group.id), error => error instanceof AppError && error.status === 422 && /not a verified identity/.test(error.message));
+    await assert.rejects(client.albums(group.id), error => error instanceof AppError && error.status === 422 && /Choose a source before browsing/.test(error.message));
     assert.equal(calls.length, before); // No guessed union, matching lookup or upstream request.
     assert.ok(!JSON.stringify(group).includes('private-instance'));
   }
@@ -281,7 +281,7 @@ test('metadata album/track presentation retains all exact choices and cannot bro
   assert.equal(artistGroup.matchKind, 'identity');
   const albums = await client.albums(artistGroup.id); assert.equal(albums.items.length, 1);
   const release = albums.items[0]!; assert.equal(release.matchKind, 'metadata');
-  let before = calls.length; await assert.rejects(client.tracks(release.id), /Choose an exact source before browsing/); assert.equal(calls.length, before);
+  let before = calls.length; await assert.rejects(client.tracks(release.id), /Choose a source before browsing/); assert.equal(calls.length, before);
   const tidalAlbum = release.sources!.find(a => a.provider === 'tidal')!;
   await client.tracks(tidalAlbum.id); assert.equal(calls.at(-1)!.args.provider_instance_id_or_domain, 'tidal');
   const group = (await client.search('Sandman'))[0]!; assert.equal(group.matchKind, 'metadata');
@@ -342,7 +342,7 @@ test('metadata group references remain opaque, participant-bound and revoked whi
   assert.equal(group.matchKind, 'metadata');
   for (const secret of ['display:', 'PRIVATE', 'private-instance', 'spotify://', 'provider_mappings']) assert.ok(!JSON.stringify(group).includes(secret));
   await assert.rejects(manager.browse('albums', group.id, 'bob'), /another participant/);
-  await assert.rejects(manager.browse('albums', group.id, 'alice'), /not a verified identity/);
+  await assert.rejects(manager.browse('albums', group.id, 'alice'), /Choose a source before browsing/);
   const source = group.sources!.find(a => a.provider === 'tidal')!;
   assert.deepEqual((await manager.browse('albums', source.id, 'alice')).albums, []);
   await manager.save('http://localhost:8095', 'new-token', 1);

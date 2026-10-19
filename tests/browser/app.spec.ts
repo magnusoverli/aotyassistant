@@ -14,10 +14,10 @@ test('QR invitation, direct joining without startup, mobile controls, private re
   const lateContext = await browser.newContext();
   const alex = await alexContext.newPage(); const sam = await samContext.newPage(); const tv = await tvContext.newPage();
   try {
-    await alex.goto(joinUrl!); await alex.getByLabel('What should we call you?').fill('Alex');
+    await alex.goto(joinUrl!); await alex.getByLabel('Display name').fill('Alex');
     await alex.getByRole('button', { name: 'Join room' }).click();
     await expect(alex).toHaveURL(/\/participant$/);
-    await sam.goto(joinUrl!); await sam.getByLabel('What should we call you?').fill('Sam'); await sam.getByRole('button', { name: 'Join room' }).click();
+    await sam.goto(joinUrl!); await sam.getByLabel('Display name').fill('Sam'); await sam.getByRole('button', { name: 'Join room' }).click();
     await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);
     await expect(host.getByRole('button', { name: 'Start listening' })).toHaveCount(0);
     await expect(host.getByRole('heading', { name: 'Waiting to join', exact: true })).toHaveCount(0);
@@ -55,7 +55,7 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     await alex.reload(); await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
     await expect(alex.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
     const late = await lateContext.newPage(); await late.goto(joinUrl!);
-    await late.getByLabel('What should we call you?').fill('Jordan <img src=x>'); await late.getByRole('button', { name: 'Join room' }).click();
+    await late.getByLabel('Display name').fill('Jordan <img src=x>'); await late.getByRole('button', { name: 'Join room' }).click();
     await expect(host.getByText('Jordan <img src=x>', { exact: true })).toBeVisible();
     await expect(host.locator('img[src="x"]')).toHaveCount(0);
     await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);

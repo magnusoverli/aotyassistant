@@ -6,13 +6,13 @@ Check that the repository was added, reload the store, and confirm Home Assistan
 
 ## Open web UI works, but the QR code does not
 
-Ingress and guest access are separate. Enable the app’s `3000/tcp` port under **Network** and check **Application addresses** in the web UI. Open the join link directly on a phone on the same trusted LAN. Guest Wi-Fi isolation and a changed host port are common causes. Home Assistant remote access does not publish the guest port.
+Ingress and guest access are separate. Enable the app’s `3000/tcp` port under **Network** and check **Settings → Guest access** in the web UI. Open the join link directly on a phone on the same trusted LAN. Guest Wi-Fi isolation and a changed host port are common causes. Home Assistant remote access does not publish the guest port.
 
 ## Music Assistant is not found or sign-in cannot open
 
 Choose **Find Music Assistant**. If discovery fails, enter its direct API origin, normally `http://<ma-host>:8095`. Do not paste a Home Assistant dashboard/Ingress path.
 
-If the detected internal address works for the app but not your browser, expand **Advanced: token or separate login address** and use a browser-reachable login address, or enter a token from Music Assistant’s profile settings. Allow the sign-in tab/callback to complete. Cancelled or expired login leaves existing settings intact.
+If the detected internal address works for the app but not the browser, expand **Advanced: token or separate login address** and use a browser-reachable login address, or enter a token from Music Assistant’s profile settings. Allow the sign-in tab/callback to complete. Cancelled or expired login leaves existing settings intact.
 
 ## The connection needs attention
 
@@ -26,7 +26,7 @@ If Settings reports an unsupported API, note the installed MA version/schema and
 
 ## An uploaded file is saved but will not play
 
-Open **Application addresses → Test file connection**. Music Assistant must be able to fetch a protected file from the app. Check the suggested address and network reachability; use a verified advanced override only if needed. Also check Music Assistant/speaker readiness and that the file is a [supported format](uploaded-audio.md#supported-formats).
+Open **Settings → Guest access → Test file connection**. Music Assistant must be able to fetch a protected file from the app. Check the suggested address and network reachability; use a verified advanced override only if needed. Also check Music Assistant/speaker readiness and that the file is a [supported format](uploaded-audio.md#supported-formats).
 
 ## Playback controls need recovery
 
@@ -34,13 +34,13 @@ Open Settings and choose **Recover playback controls**. The app checks ownership
 
 ## A private list disappeared
 
-Use the same guest address and browser as before, or **Keep or recover your list** with your recovery key. A matching nickname is not proof of ownership. Clearing browser data or switching HTTP/HTTPS, hostnames, or ports changes browser access. The host cannot inspect or recover another person’s list.
+Use the same guest address and browser as before, or open **Recover a saved list** and enter its recovery key. After joining, recovery is also available under **List access**. A matching nickname is not proof of ownership. Clearing browser data or switching HTTP/HTTPS, hostnames, or ports changes browser access. The host cannot inspect or recover another person’s list.
 
 ## Saving or backup fails
 
 Check free disk space in Home Assistant. Uploads have no storage quota. **Saved** is only shown after durable acknowledgement; keep an unsynced change for explicit retry rather than clearing browser data.
 
-If a failed backup leaves writes paused, restart the app and retry when uploads have finished. If startup reports unreadable or unsupported stored data, preserve your backup and logs. Do not delete data files to force a fresh start. Restore a known-good matching-version backup or report the failure.
+If a failed backup leaves writes paused, restart the app and retry when uploads have finished. If startup reports unreadable or unsupported stored data, preserve the backup and logs. Do not delete data files to force a fresh start. Restore a known-good matching-version backup or report the failure.
 
 ## Report a problem
 

@@ -1,6 +1,6 @@
 # Uploaded audio
 
-Upload one audio file from your phone or computer, review its title, artist, album, and embedded cover, then add it to **My list**. The Home Assistant app includes the required audio-analysis tools.
+Upload one audio file from a phone or computer, review its title, artist, album, and embedded cover, then add it to **Saved list**. The Home Assistant app includes the required audio-analysis tools.
 
 ## Supported formats
 
@@ -16,11 +16,11 @@ Supported extensions are `.mp3`, `.m4a`, `.flac`, `.wav`, `.aif`, `.aiff`, `.ogg
 
 ## Upload and play
 
-1. Join the room and choose **Upload a track**.
+1. Join the room and choose **Upload a song**.
 2. Select one file and wait for upload and processing to finish.
 3. Review the details and correct the text if needed.
-4. Choose **Add uploaded track to my list** and wait for **Saved**.
-5. On your turn, use **Play next**.
+4. Choose **Add to list** and wait for **Saved**.
+5. During the current participant’s turn, select **Play this song** to play the first entry in the list.
 
 Upload completion alone is not a saved list entry. Uploading does not change the turn or start audio. Once saved, the phone can disconnect; the file is stored by the app. Text corrections do not rewrite the original audio.
 
@@ -36,7 +36,7 @@ A reload can check a completed upload and recover review text. An incomplete tra
 
 There are no configured file-size, per-person, or total upload-storage quotas. Available Home Assistant disk space remains the limit; monitor storage and keep backups. Uploads are part of the app’s private `/data` and its Home Assistant backup.
 
-**Remove** is reversible and retains the file. To reclaim its storage, open **History → Removed**, choose **Delete file permanently**, and confirm. This removes that file and its entries from your list/history. Deletion is blocked while the app is starting, playing, pausing, or recovering ownership of that file. Deleting here cannot remove copies from existing backups.
+**Remove** is reversible and retains the file. To reclaim its storage, open **History → Removed**, choose **Delete file permanently**, and confirm. This removes that file and its entries from the private list/history. Deletion is blocked while the file is starting, playing, paused, or awaiting playback recovery. Deleting here cannot remove copies from existing backups.
 
 Only the owner can access private upload previews and artwork. The display gets artwork only after reveal. Music Assistant receives a protected, playback-specific file URL; it is revoked when playback is released or the app restarts. Independently accessible Music Assistant/speaker interfaces may still show track information.
 

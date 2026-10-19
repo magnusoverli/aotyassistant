@@ -2,7 +2,7 @@
 
 **A Home Assistant app for sharing favourite music, one person and one song at a time.**
 
-Gather your friends, scan the room’s QR code, and take turns playing a song from a favourite album. Everyone prepares their choices privately on their phone. A shared display keeps the song hidden until the current listener reveals it.
+Participants join by scanning the room’s QR code and take turns playing a song from a favourite album. Each participant prepares selections privately on a phone. A shared display hides the song’s details until the current participant reveals them.
 
 [![Release](https://img.shields.io/github/v/release/magnusoverli/aotyassistant)](https://github.com/magnusoverli/aotyassistant/releases/latest)
 [![Application checks](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml)
@@ -11,17 +11,17 @@ Gather your friends, scan the room’s QR code, and take turns playing a song fr
 ## What it does
 
 - **Take turns:** join with a nickname, see who is up next, and let the host arrange the listening order.
-- **Find your music:** search artists, albums, and tracks across the sources configured in Music Assistant.
-- **Prepare privately:** save and reorder your picks, upload a track, and keep your list between gatherings.
-- **Play and reveal:** control your song during your turn, then reveal its title, artist, and artwork on the shared display.
+- **Browse music:** search artists, albums, and tracks across the sources configured in Music Assistant.
+- **Prepare privately:** save and reorder selections, upload a track, and retain a private list between gatherings.
+- **Play and reveal:** the current participant controls playback and can reveal the song’s title, artist, and artwork on the shared display.
 - **Keep the room moving:** confirmed track completion advances the turn; the next song starts only when someone presses Play.
-- **Use the screens you have:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
+- **Use existing devices:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
 
 ## Requirements
 
 - **Home Assistant OS**, with Home Assistant **2026.10.0 or later** and the app store.
 - An **amd64** or **aarch64** system.
-- **Music Assistant**, with a configured music source and speaker or group. Playback currently supports **API schema 65**; Settings reports compatibility with your installed server.
+- **Music Assistant**, with a configured music source and speaker or group. Playback supports **API schema 65**; Settings reports compatibility with the connected server.
 - A trusted local network that lets guest devices reach the app’s published port, **3000** by default.
 
 **Home Assistant is the only supported deployment.** See [Music Assistant compatibility](docs/music-assistant.md) for player and provider limitations.
@@ -35,14 +35,14 @@ Gather your friends, scan the room’s QR code, and take turns playing a song fr
    https://github.com/magnusoverli/aotyassistant
    ```
 2. Install **Albums of the Year**, start it, and select **Open web UI**.
-3. Open **Connections & settings**, connect Music Assistant, and choose your speaker or group.
-4. Share the host desk’s join QR code and open its **Listening room** link on your shared display.
+3. Open **Settings**, connect Music Assistant, and choose a speaker or group.
+4. Share the host desk’s join QR code and open **Room display** on a shared screen.
 
 The app discovers local addresses and Music Assistant automatically. Setup checks do not start music. For the full walkthrough, options, updates, and backups, see the **[installation guide](DOCS.md)**.
 
 ## A listening evening
 
-The host opens **Host desk** to share invitations and arrange people. Each guest joins on their phone, then browses **Find music**, adds songs to **My list**, or uploads an audio file. On their turn, they choose **Play** or **Play next**, and **Reveal** when they are ready to show the song. **Finish my turn** passes to the next person.
+The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, browse **Find music**, add songs to **Saved list**, or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play this song** from the list, then **Reveal song** to show its details. **Finish turn** passes control to the next person.
 
 There is one persistent room. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, or advancing a turn never starts the next song automatically.
 

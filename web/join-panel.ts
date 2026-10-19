@@ -8,7 +8,7 @@ export function joinPanel(options: { nickname: string; busy: boolean; disabled: 
   const content: Node[] = [title, v.el('hint', 'p', 'Choose a name, find your songs, and share one when it’s your turn.', 'muted')];
   if (options.notice) { const notice = v.el('notice', 'p', options.notice, 'muted join-notice'); attr(notice, 'role', 'status'); content.push(notice); }
   const form = v.el('form', 'form', undefined, 'form-stack');
-  const { group: field, input } = v.get('field', () => { const field = fieldControl('What should we call you?', 'nickname'); field.input.name = 'nickname'; field.input.required = true; field.input.maxLength = 40; field.input.setAttribute('autocomplete', 'nickname'); return field; });
+  const { group: field, input } = v.get('field', () => { const field = fieldControl('Display name', 'nickname'); field.input.name = 'nickname'; field.input.required = true; field.input.maxLength = 40; field.input.setAttribute('autocomplete', 'nickname'); return field; });
   const error = v.el('error', 'p', options.error ?? '', 'field-error'); prop(error, 'id', 'nickname-error'); prop(error, 'hidden', !options.error); attr(error, 'role', 'alert');
   attr(input, 'aria-describedby', error.id); attr(input, 'aria-invalid', String(Boolean(options.error)));
   prop(input, 'value', options.nickname); prop(input, 'disabled', options.busy); input.oninput = () => {

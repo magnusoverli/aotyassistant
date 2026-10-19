@@ -115,7 +115,7 @@ export class PreparationFileStore implements PreparationStore {
     try {
       const checked = preparationStateSchema.parse(state);
       await writePrivateJson(this.directory, `${checked.ownerId}.json`, checked, maxPreparationBytes);
-    } catch { throw new AppError(503, 'The preparation save could not be confirmed. Refresh your list before retrying.'); }
+    } catch { throw new AppError(503, 'The list save could not be confirmed. Refresh the list before retrying.'); }
     finally { this.forget(state.ownerId); }
   }
 }
@@ -144,9 +144,9 @@ function input<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value); if (!parsed.success) throw new AppError(400, 'Invalid preparation request.'); return parsed.data;
 }
 function identity(credential: string) {
-  if (typeof credential !== 'string' || credential.length > 100) throw new AppError(401, 'Private preparation access is unavailable. Use your original browser or private recovery key.');
+  if (typeof credential !== 'string' || credential.length > 100) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
   const [ownerId, secret, extra] = credential.split('.');
-  if (extra !== undefined || !id.safeParse(ownerId).success || !secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError(401, 'Private preparation access is unavailable. Use your original browser or private recovery key.');
+  if (extra !== undefined || !id.safeParse(ownerId).success || !secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
   return { ownerId: ownerId!, secretHash: hash(credential) };
 }
 const newCredential = (ownerId: string) => `${ownerId}.${randomBytes(32).toString('base64url')}`;
@@ -173,7 +173,7 @@ export class PreparationManager {
   }
   private async authorize(ownerId: string, secretHash: string, readonly = false) {
     const state = await (readonly && this.store.snapshot ? this.store.snapshot(ownerId) : this.store.load(ownerId));
-    if (!state || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Private preparation access is unavailable. Use your original browser or private recovery key.');
+    if (!state || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
     return state;
   }
   private view(state: PreparationState): PreparationView {
@@ -194,7 +194,7 @@ export class PreparationManager {
   }
   private async save(state: PreparationState) {
     try { await this.store.save(state); }
-    catch { throw new AppError(503, 'The preparation save could not be confirmed. Refresh your list before retrying.'); }
+    catch { throw new AppError(503, 'The list save could not be confirmed. Refresh the list before retrying.'); }
     this.events.emit(state.ownerId, state);
   }
   async createOwner() {
@@ -224,12 +224,12 @@ export class PreparationManager {
   private validateMutation(state: PreparationState, operation: PreparationOperation, intent: string, kind: string) {
     const previous = state.receipts.find(receipt => receipt.id === operation.id);
     if (previous) {
-      if (previous.intent !== intent) throw new AppError(409, 'This preparation operation was already used for a different change.');
+      if (previous.intent !== intent) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
       return previous;
     }
     const now = this.now();
-    if (now - operation.issuedAt > preparationLimits.operationLifetime || operation.issuedAt - now > preparationLimits.futureClockTolerance) throw new AppError(409, 'This preparation change expired. Refresh your list before trying again.');
-    if (operation.revision !== state.revision) throw new AppError(409, 'Your preparation list changed in another page. Refresh it before trying again.');
+    if (now - operation.issuedAt > preparationLimits.operationLifetime || operation.issuedAt - now > preparationLimits.futureClockTolerance) throw new AppError(409, 'This list change expired. Refresh the list before trying again.');
+    if (operation.revision !== state.revision) throw new AppError(409, 'The saved list changed in another page. Refresh it before trying again.');
     if (state.pendingPlay && kind !== 'review') throw new AppError(409, 'A previous play attempt needs review. Your saved entry was kept.');
     if (this.playing.has(state.ownerId)) throw new AppError(409, 'This saved track is still starting. Wait for the player before reviewing it.');
     state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
@@ -267,7 +267,7 @@ export class PreparationManager {
       const state = await this.authorize(access.ownerId, access.secretHash);
       if (this.validateMutation(state, operation, intent, 'capture')) return undefined;
       const existing = this.captures.get(key);
-      if (existing && existing.intent !== intent) throw new AppError(409, 'This preparation operation was already used for a different change.');
+      if (existing && existing.intent !== intent) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
       if (!existing && this.captures.size >= 64) throw new AppError(429, 'Too many tracks are being captured. Try again when the current additions finish.');
       const pending = existing ?? { intent, selection: Promise.resolve().then(capture) };
       // Attach a rejection observer before releasing the owner lane.
@@ -286,7 +286,7 @@ export class PreparationManager {
     const key = fingerprint(selection);
     const existing = state.entries.find(item => item.state === 'upcoming' && fingerprint(item.selection) === key);
     if (existing) return existing.id;
-    if (state.order.length >= preparationLimits.upcoming || state.entries.length >= preparationLimits.entries) throw new AppError(409, 'Your preparation list is full. No saved entries or history were removed.');
+    if (state.order.length >= preparationLimits.upcoming || state.entries.length >= preparationLimits.entries) throw new AppError(409, 'The saved list is full. No saved entries or history were removed.');
     const entryId = randomUUID();
     state.entries.push({ id: entryId, selection, state: 'upcoming', addedAt: this.now(), playbackIds: [] });
     state.order.push(entryId); return entryId;
@@ -393,7 +393,7 @@ export class PreparationManager {
         catch {
           let preparation: PreparationView | undefined;
           try { preparation = this.view(await this.authorize(access.ownerId, access.secretHash)); } catch { /* Audio succeeded; report bookkeeping uncertainty separately. */ }
-          return { value: result.value, preparation, warning: 'Playback started, but the saved-list update could not be confirmed. Check your list and player before trying again; never retry Play automatically.' };
+          return { value: result.value, preparation, warning: 'Playback started, but the saved-list update could not be confirmed. Check the list and player before choosing Play again.' };
         }
       });
     } finally { this.playing.delete(access.ownerId); }
@@ -433,7 +433,7 @@ export class PreparationManager {
     const access = identity(credential);
     return this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
-      if (state.revision !== expectedRevision) throw new AppError(409, 'Your preparation list changed. Refresh before creating a recovery key.');
+      if (state.revision !== expectedRevision) throw new AppError(409, 'The saved list changed. Refresh before creating a recovery key.');
       const recoveryKey = newCredential(state.ownerId); state.recoveryHash = hash(recoveryKey); state.revision++;
       await this.save(state); return { recoveryKey, view: this.view(state) };
     });
@@ -442,8 +442,8 @@ export class PreparationManager {
     const access = identity(recoveryKey);
     return this.serial(access.ownerId, async () => {
       const state = await this.store.load(access.ownerId);
-      if (!state?.recoveryHash || !sameHash(state.recoveryHash, access.secretHash)) throw new AppError(401, 'The private preparation recovery key is invalid or unavailable.');
-      if (state.credentials.length >= preparationLimits.devices) throw new AppError(409, 'Preparation device capacity is full. Use an existing device to revoke other device access first.');
+      if (!state?.recoveryHash || !sameHash(state.recoveryHash, access.secretHash)) throw new AppError(401, 'The private recovery key is invalid or unavailable.');
+      if (state.credentials.length >= preparationLimits.devices) throw new AppError(409, 'The list’s device limit has been reached. Use an existing device to revoke other device access first.');
       const credential = newCredential(state.ownerId); state.credentials.push({ hash: hash(credential), createdAt: this.now() }); state.revision++;
       await this.save(state); return { credential, view: this.view(state) };
     });
@@ -452,7 +452,7 @@ export class PreparationManager {
     const access = identity(credential);
     return this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
-      if (state.revision !== expectedRevision) throw new AppError(409, 'Your preparation list changed. Refresh before changing device access.');
+      if (state.revision !== expectedRevision) throw new AppError(409, 'The saved list changed. Refresh before changing device access.');
       state.credentials = state.credentials.filter(item => sameHash(item.hash, access.secretHash)); state.revision++;
       await this.save(state); return this.view(state);
     });

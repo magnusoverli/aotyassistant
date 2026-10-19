@@ -12,7 +12,7 @@ Guest phones ─────────── LAN listener ──┼─ backend
 Shared display ──────── LAN listener ───┘     └─ private /data
 ```
 
-Only one process may own a data directory. JSON stores serialize mutations and use private temporary files, atomic replacement, and filesystem synchronization before acknowledging saves. Unknown or corrupt records fail closed. Release changes must preserve acknowledged data or provide an explicit migration/recovery path; the old development permission to discard room state no longer applies.
+Only one process may own a data directory. JSON stores serialize mutations and use private temporary files, atomic replacement, and filesystem synchronization before acknowledging saves. Unknown or corrupt records stop startup without replacing saved data. Storage-format changes require a documented migration or recovery path that preserves acknowledged data.
 
 ## Main boundaries
 
@@ -40,7 +40,7 @@ Room changes and audio commands have distinct serialization boundaries. Network 
 
 ## Privacy contract
 
-Membership credentials and private-list credentials are separate HttpOnly cookies. Recovery keys authorize list recovery, not room membership. Host controls are deliberately open on the LAN listener; this is documented, not an authentication boundary.
+Membership credentials and private-list credentials are separate HttpOnly cookies. Recovery keys authorize list recovery, not room membership. Host controls on the LAN listener are unauthenticated and require a trusted network.
 
 Role-filtered HTTP and server-sent events exclude unrevealed title/artist/artwork from public views and another person’s list from all other roles. Public artwork requires the exact revealed playback, checked before and after the upstream read. Upload streams use scoped capabilities; original media URLs and MA tokens remain server-side.
 

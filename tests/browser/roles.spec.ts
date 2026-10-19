@@ -23,7 +23,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     for (const name of ['Alex', 'Sam', 'Jordan', 'Riley']) {
       const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); contexts.push(context);
       const page = await context.newPage(); listeners.set(name, page); await page.goto(state.joinUrl);
-      await page.getByLabel('What should we call you?').fill(name); await page.getByRole('button', { name: 'Join room' }).click();
+      await page.getByLabel('Display name').fill(name); await page.getByRole('button', { name: 'Join room' }).click();
       await expect(page).toHaveURL(/\/participant$/);
     }
     state = await (await host.request.get('/api/host/state')).json();

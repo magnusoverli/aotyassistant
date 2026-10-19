@@ -43,13 +43,13 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000
     await expectListStart(page);
     const album = page.getByRole('button', { name: 'View tracks', exact: true }).nth(19);
     await album.scrollIntoViewIfNeeded(); const albumScroll = await page.evaluate(() => scrollY);
-    await album.click(); await expect(page.getByRole('button', { name: 'Add to my list', exact: true })).toHaveCount(24);
+    await album.click(); await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toHaveCount(24);
     await expectListStart(page);
     await page.locator('.catalogue-results .track-row').nth(12).scrollIntoViewIfNeeded();
     const trackScroll = await page.evaluate(() => scrollY);
     await page.goBack(); await expect(page.getByRole('button', { name: 'View tracks', exact: true })).toHaveCount(24);
     await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(albumScroll, 0);
-    await page.goForward(); await expect(page.getByRole('button', { name: 'Add to my list', exact: true })).toHaveCount(24);
+    await page.goForward(); await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toHaveCount(24);
     await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(trackScroll, 0);
     await page.getByRole('button', { name: '← Albums' }).click();
     await page.getByRole('button', { name: '← Artists' }).click();
@@ -59,7 +59,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000
     await expect(page.locator('.catalogue-results .track-row')).toHaveCount(24); await expectListStart(page);
     await page.getByRole('button', { name: 'Songs', exact: true }).click();
     await page.getByRole('searchbox').fill('Fixture'); await page.getByRole('searchbox').press('Enter');
-    await expect(page.getByRole('button', { name: 'Add to my list', exact: true })).toHaveCount(24);
+    await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toHaveCount(24);
     await expectListStart(page);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
   });

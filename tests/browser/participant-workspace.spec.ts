@@ -118,7 +118,7 @@ test('search and one private list share desktop/phone layouts, including long me
         await page.getByRole('button', { name: 'Close list', exact: true }).click();
       }
       // Keyboard focus must not be obscured by either sticky surface.
-      const add = page.locator('.catalogue-results .track-row').nth(12).getByRole('button', { name: 'Add to my list', exact: true });
+      const add = page.locator('.catalogue-results .track-row').nth(12).getByRole('button', { name: 'Add to list', exact: true });
       await add.focus();
       await expect.poll(() => add.evaluate(node => {
         const rect = node.getBoundingClientRect(); const list = document.querySelector('.preparation-list')!.getBoundingClientRect();
@@ -166,7 +166,7 @@ test('adding from results keeps compact list, query, focus and scroll without st
     await page.setViewportSize({ width: 390, height: 844 });
     const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Summer');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
-    const add = page.getByRole('button', { name: 'Add to my list', exact: true }); await add.focus(); await expect(add).toBeFocused();
+    const add = page.getByRole('button', { name: 'Add to list', exact: true }); await add.focus(); await expect(add).toBeFocused();
     const before = await page.evaluate(() => scrollY); const buttonTop = (await add.boundingBox())!.y; await add.press('Enter');
     const added = page.getByRole('button', { name: 'Added ✓', exact: true }); await expect(added).toBeFocused();
     await expect(added).toHaveAttribute('aria-disabled', 'true');

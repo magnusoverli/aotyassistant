@@ -15,7 +15,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
   try {
     const first = await firstContext.newPage(); const second = await secondContext.newPage();
     const join = async (page: Page, name: string) => {
-      await page.goto(state.joinUrl); await page.getByLabel('What should we call you?').fill(name); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+      await page.goto(state.joinUrl); await page.getByLabel('Display name').fill(name); await page.getByRole('button', { name: 'Join room', exact: true }).click();
       await expect(page).toHaveURL(/\/participant$/);
     };
     await join(first, 'Alex'); state = await (await host.request.get('/api/host/state')).json();
@@ -65,7 +65,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0); await expect(host.getByText('Real catalogue fixture')).toHaveCount(0);
     // Old artist/album references must remain genuinely usable, not just visible in a stale UI.
     await second.getByRole('button', { name: '← Albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
-    await expect(second.getByRole('button', { name: 'Add to my list', exact: true })).toBeVisible();
+    await expect(second.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
     await showList(first); await showList(second);
     await expect(first.getByRole('button', { name: 'Play this song', exact: true })).toBeEnabled();
     await expect(second.getByRole('button', { name: 'Play this song', exact: true })).toBeDisabled();

@@ -9,7 +9,7 @@ async function setup(browser: Browser, host: Page) {
   const settings = await (await host.request.get('/api/host/integrations')).json();
   if (settings.tokenConfigured) await post('/api/host/integrations/clear', { revision: settings.revision });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const participant = await context.newPage();
-  await participant.goto(state.joinUrl); await participant.getByLabel('What should we call you?').fill('Alex'); await participant.getByRole('button', { name: 'Join room' }).click();
+  await participant.goto(state.joinUrl); await participant.getByLabel('Display name').fill('Alex'); await participant.getByRole('button', { name: 'Join room' }).click();
   await expect(participant).toHaveURL(/\/participant$/);
   state = await (await host.request.get('/api/host/state')).json();
   await host.goto('/host'); const tv = await context.newPage(); await tv.goto(state.displayUrl);
@@ -27,7 +27,7 @@ for (const paused of [false, true]) test(`direct and prepared replacement both r
   const f = await setup(browser, host); const page = f.participant;
   try {
     const plays: string[] = []; page.on('request', request => { if (/\/participant\/(play|preparations\/play)$/.test(new URL(request.url()).pathname)) plays.push(request.url()); });
-    await page.getByRole('button', { name: 'Add to my list', exact: true }).click();
+    await page.getByRole('button', { name: 'Add to list', exact: true }).click();
     await expect(page.locator('.list-count')).toHaveText(' · 1');
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();

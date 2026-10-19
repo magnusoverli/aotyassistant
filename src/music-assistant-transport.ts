@@ -76,7 +76,7 @@ export class MusicAssistantTransport {
           response.destroy();
           if (status === 401 || status === 403) fail(502, 'Music Assistant rejected the token or its permissions. Replace the token and check again.');
           else if (status >= 300 && status < 400) fail(502, 'Music Assistant redirected the request. Use its direct LAN API origin; redirects are not followed.');
-          else fail(502, 'Music Assistant did not accept the request. Check setup and the deployed API documentation.');
+          else fail(502, 'Music Assistant did not accept the request. Check the connection in Settings and confirm version compatibility.');
           return;
         }
         const chunks: Buffer[] = []; let size = 0;
@@ -98,7 +98,7 @@ export class MusicAssistantTransport {
             resolve({ body, contentType } satisfies ArtworkData); return;
           }
           try { resolve(JSON.parse(body.toString('utf8'))); }
-          catch { fail(502, 'Music Assistant returned an unsupported response. Check the deployed API documentation.'); }
+          catch { fail(502, 'Music Assistant returned an unsupported response. Check for app updates; if the problem persists, report the app and Music Assistant versions.'); }
         });
       });
       // Absolute request deadline, including the response body; activity cannot extend it.

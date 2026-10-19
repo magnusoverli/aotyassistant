@@ -205,7 +205,7 @@ export async function mountSettings(container: HTMLElement) {
       attr(token.input, 'spellcheck', 'false'); prop(token.input, 'required', true);
       const tokenHelp = v.el('token-help', 'p', 'Create a token in Music Assistant → Settings → Profile.', 'muted field-hint'); prop(tokenHelp, 'id', 'ma-token-help');
       attr(token.input, 'aria-describedby', tokenHelp.id);
-      children(token.group, token.group.firstElementChild!, token.input, tokenHelp, location.protocol !== 'https:' && v.el('token-security', 'p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
+      children(token.group, token.group.firstElementChild!, token.input, tokenHelp, location.protocol !== 'https:' && v.el('token-security', 'p', 'This connection uses HTTP. Use HTTPS to protect the access token on shared Wi-Fi.', 'settings-security-note'));
       const save = v.el('save', 'button', 'Save connection'); prop(save, 'type', 'submit'); prop(save, 'disabled', busy || !online || Boolean(settings.settingsChangesBlocked)); prop(save, 'id', 'ma-save');
       const controls = v.get('save-actions', () => actionGroup('form')); children(controls, save);
       children(form, token.group, controls);

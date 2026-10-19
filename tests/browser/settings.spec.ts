@@ -59,7 +59,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await expect(page.getByRole('button', { name: 'Save connection', exact: true })).toBeEnabled();
   await page.locator('.settings-help > summary').click();
   await expect(page.getByText('Host access is open:')).toHaveCount(0);
-  await expect(page.getByText('HTTP connection — use HTTPS')).toBeVisible();
+  await expect(page.getByText('This connection uses HTTP. Use HTTPS')).toBeVisible();
   await noHorizontalOverflow(page);
   await page.screenshot({ path: 'test-results/settings-unconfigured.png', fullPage: true });
   await page.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);

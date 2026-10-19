@@ -9,4 +9,4 @@ configuration:
     name: Demo track length
     description: Simulated track length before Music Assistant is connected. This setting does not affect real music.
 network:
-  3000/tcp: Guest phones, public display, uploaded media, and intentionally open LAN host controls
+  3000/tcp: Guests, room display, uploaded audio, and unauthenticated LAN host controls

@@ -34,8 +34,8 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     const recovery = req.path === '/recover' || req.path === '/init';
     const key = recovery ? `identity:${req.socket.remoteAddress}` : `owner:${createHash('sha256').update(credential(req)).digest('hex')}`;
     const now = Date.now(); let rate = rates.get(key); if (!rate || now - rate.start > 60_000) rate = { count: 0, start: now };
-    if (rates.size > 5000) return next(new AppError(503, 'Preparation is busy. Try again shortly.'));
-    rates.set(key, rate); rate.count++; next(rate.count > (recovery ? 20 : 180) ? new AppError(429, 'Too many preparation changes. Wait a minute; saved entries were kept.') : undefined);
+    if (rates.size > 5000) return next(new AppError(503, 'Private lists are busy. Try again shortly.'));
+    rates.set(key, rate); rate.count++; next(rate.count > (recovery ? 20 : 180) ? new AppError(429, 'Too many list changes. Wait a minute; saved entries were kept.') : undefined);
   });
   app.get(`${prefix}/state`, async (req, res) => {
     if (!credential(req)) { res.status(401).json({ code: 'missing-library', error: 'No private list is linked to this browser. Add a track to create one, or recover your existing list.' }); return; }

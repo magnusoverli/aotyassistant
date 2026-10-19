@@ -7,7 +7,7 @@ Albums of the Year is distributed and supported as a **Home Assistant app**. Use
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
 1. Add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
-2. Install **Albums of the Year**. Supervisor downloads the published image for your architecture.
+2. Install **Albums of the Year**. Supervisor downloads the published image for the system’s architecture.
 3. Keep the app’s **Network** port enabled: container port `3000/tcp` is published as port `3000` by default. Choose another free host port if necessary.
 4. Start the app and select **Open web UI**. The host desk opens inside Home Assistant through Ingress. Enable **Show in sidebar** if desired.
 
@@ -15,21 +15,21 @@ Albums of the Year is distributed and supported as a **Home Assistant app**. Use
 
 ## Connect Music Assistant
 
-1. Open **Connections & settings** and select a detected server. Use **Find Music Assistant** to search again. If needed, enter the server’s direct API address, normally `http://<ma-host>:8095`, rather than its Home Assistant dashboard/Ingress URL.
+1. Open **Settings** and select a detected server. Use **Find Music Assistant** to search again. If needed, enter the server’s direct API address, normally `http://<ma-host>:8095`, rather than its Home Assistant dashboard/Ingress URL.
 2. Choose **Connect Music Assistant**, complete sign-in in the new tab, and return to Settings.
 3. Choose an available **Speaker or group**. Selection is checked and saved immediately.
-4. Check **Application addresses**, then open the host desk’s join/display links from a guest device.
+4. Check **Guest access**, then open the host desk’s join/display links from a guest device.
 
 Discovery, connection checks, speaker selection, and file-access checks do not play audio or change volume. An explicit Play action replaces the selected destination’s queue with one song and may interrupt music already playing there.
 
-**Advanced: token or separate login address** supports a browser-reachable MA login address when the detected internal hostname cannot open on your device, or manual token entry from MA’s profile settings. A cancelled sign-in keeps existing settings. You do not need to create a Home Assistant access token.
+**Advanced: token or separate login address** supports a browser-reachable MA login address when the detected internal hostname is inaccessible from the browser, or manual token entry from MA’s profile settings. A cancelled sign-in keeps existing settings. A Home Assistant access token is not required.
 
 Use **Reconnect Music Assistant** to renew authorization for the same server while retaining saved music identity and speaker selection. Use **Disconnect** when replacing the server. Disconnecting removes this app’s saved token; revoke it in Music Assistant separately if needed. See [connection and compatibility details](docs/music-assistant.md).
 
 ## Guest and display access
 
-- **Host desk / Connections & settings:** available through Home Assistant Ingress and the published LAN port.
-- **My seat / Join / Listening room:** use the separate guest address, without Home Assistant accounts.
+- **Host desk / Settings:** available through Home Assistant Ingress and the published LAN port.
+- **Music / Join room / Room display:** use the separate guest address, without Home Assistant accounts.
 
 Supervisor supplies LAN-address and published-port suggestions. Choose a stable address in Settings if several interfaces are available. Phones and the display must be able to reach that address; isolated guest Wi-Fi may block it. Home Assistant remote access does not automatically expose the guest port.
 
@@ -39,7 +39,7 @@ Keep the address stable. Changing its hostname, IP, port, or HTTP/HTTPS scheme c
 
 ## App options
 
-Normal setup takes place in **Connections & settings**. The Home Assistant Configuration tab contains only these advanced/compatibility options:
+Normal setup takes place in **Settings**. The Home Assistant Configuration tab contains these advanced/compatibility options:
 
 | Option | Default | Purpose |
 | --- | --- | --- |
@@ -54,13 +54,13 @@ Normal setup takes place in **Connections & settings**. The Home Assistant Confi
 3. Check the app store for updates, read the [changelog](CHANGELOG.md), and install the update.
 4. Refresh open browser pages and check the Music Assistant/speaker status in Settings.
 
-The stable app uses the same repository and slug as 0.3.16: update the existing installation; do not uninstall it. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue independently if you leave a song playing.
+Update the existing installation from the same repository; uninstalling is not required. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue playing independently if playback was active before the restart.
 
-Obsolete room schemas from early development builds are not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the upgrade path](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records likewise stop startup rather than replacing saved state.
+Room data in legacy schemas 1 and 2 is not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the installed and target versions](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records also stop startup rather than replacing saved state.
 
 ## Backups and restore
 
-Include **Albums of the Year** in your Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
+Include **Albums of the Year** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
 
 Hot-backup hooks coordinate persistent writes while Supervisor archives the data. Existing read-only pages and audio streams remain available. If a backup fails and writes remain paused, restart the app and retry the backup. Avoid large uploads during backups.
 

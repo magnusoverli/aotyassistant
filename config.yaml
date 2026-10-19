@@ -29,7 +29,7 @@ backup_post: "node /app/dist/server/backup-hook.js thaw"
 ports:
   3000/tcp: 3000
 ports_description:
-  3000/tcp: LAN guest/display endpoint and intentionally open host controls
+  3000/tcp: Guests, room display, uploaded audio, and unauthenticated LAN host controls
 webui: "http://[HOST]:[PORT:3000]/host"
 environment:
   HA_ADDON: "1"

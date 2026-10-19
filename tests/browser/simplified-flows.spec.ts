@@ -16,7 +16,7 @@ test('compact phone workspace keeps results visible, expands the list inline and
     expect((await page.locator('.header-inner').boundingBox())!.height).toBeLessThanOrEqual(72);
     expect((await page.locator('header').boundingBox())!.height).toBeLessThanOrEqual(169);
     await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-    const add = page.getByRole('button', { name: 'Add to my list', exact: true });
+    const add = page.getByRole('button', { name: 'Add to list', exact: true });
     await expect(add).toBeInViewport();
     expect((await page.locator('.preparation-list').boundingBox())!.height).toBeLessThanOrEqual(88);
     await add.click(); await expect(page.locator('.list-count')).toHaveText(' · 1');
@@ -60,7 +60,7 @@ test('browser and in-page Back restore private browsing without putting results 
   await page.getByRole('searchbox').fill('Fixture'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'View albums', exact: true }).click();
   await page.getByRole('button', { name: 'View tracks', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Add to my list', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
   expect(await page.evaluate(() => Object.keys(history.state))).toEqual(['aotyBrowse']);
   expect(new URL(page.url()).pathname).toBe('/participant');
   await page.goBack(); await expect(page.getByRole('button', { name: 'View tracks', exact: true })).toBeVisible();
@@ -81,7 +81,7 @@ test('upload review, history restoration and recovery-key copy fallback keep sav
   page.once('dialog', dialog => dialog.dismiss());
   await page.locator('#track-upload-file').setInputFiles({ name: 'other.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
   await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Keep this draft');
-  await page.locator('.upload-preview').getByRole('button', { name: 'Add to my list', exact: true }).click();
+  await page.locator('.upload-preview').getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.locator('.list-count')).toHaveText(' · 1');
   await page.getByRole('button', { name: 'Open list' }).click();
   await page.getByLabel('Options for Keep this draft', { exact: true }).click();
@@ -172,7 +172,7 @@ test('sign-in cancellation and expiry keep saved connection and expose a usable 
 
 test('home, error pages and display invitations provide concrete routes while API errors stay JSON', async ({ page }) => {
   await page.goto('/'); await expect(page).toHaveTitle('Home · Albums of the Year');
-  for (const name of ['Join room', 'My music', 'Room display', 'Host desk']) await expect(page.locator('main').getByRole('link', { name, exact: true })).toBeVisible();
+  for (const name of ['Join room', 'Music', 'Room display', 'Host desk']) await expect(page.locator('main').getByRole('link', { name, exact: true })).toBeVisible();
   const missing = await page.goto('/missing-page'); expect(missing?.status()).toBe(404);
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
   expect(await page.locator('html').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(16, 23, 19)');
@@ -180,7 +180,7 @@ test('home, error pages and display invitations provide concrete routes while AP
   await page.goto('/display'); await expect(page).toHaveTitle('Room display · Albums of the Year');
   await expect(page.locator('.room-qr-link')).toHaveAttribute('href', /\/join$/);
   await expect(page.locator('.room-join-link')).toBeVisible();
-  await page.locator('.room-qr-link').click(); await expect(page.getByLabel('What should we call you?')).toBeVisible();
+  await page.locator('.room-qr-link').click(); await expect(page.getByLabel('Display name')).toBeVisible();
 });
 
 test('initial settings failure can retry and an empty speaker inventory keeps the visible selector disabled', async ({ page }) => {

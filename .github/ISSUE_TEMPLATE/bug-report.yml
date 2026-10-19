@@ -4,7 +4,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Support is for the Home Assistant app. Please check the troubleshooting guide first.
+        Support covers the Home Assistant app. Check the troubleshooting guide before reporting a problem.
         Do not include tokens, cookies, recovery keys, backups, protected media URLs, or private music.
         Report sensitive security issues through the repository's Security tab.
   - type: input
@@ -24,7 +24,7 @@ body:
     id: reproduction
     attributes:
       label: Steps to reproduce
-      description: Include what you expected and what happened instead.
+      description: Include the expected result and the actual result.
     validations:
       required: true
   - type: textarea

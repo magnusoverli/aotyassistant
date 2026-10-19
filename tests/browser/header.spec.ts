@@ -7,11 +7,11 @@ const noOverflow = async (page: Page) => expect(await page.evaluate(() => docume
 test('tabbing out of the menu exposes the focused join field and Escape works outside the header', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/join');
   const navigation = page.locator('#app-navigation'); const menu = page.locator('.header-menu-toggle');
-  await expect(page.getByLabel('What should we call you?')).toBeVisible();
+  await expect(page.getByLabel('Display name')).toBeVisible();
   await openNavigation(page);
   await navigation.getByRole('link', { name: 'Room display', exact: true }).focus();
   await page.keyboard.press('Tab');
-  await expect(page.getByLabel('What should we call you?')).toBeFocused();
+  await expect(page.getByLabel('Display name')).toBeFocused();
   await expect(navigation).toBeHidden(); await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await openNavigation(page);
   await page.locator('body').dispatchEvent('keydown', { key: 'Escape', bubbles: true });
@@ -20,7 +20,7 @@ test('tabbing out of the menu exposes the focused join field and Escape works ou
 
 test('every page uses the shared header with centralized navigation, current-page semantics, and no duplicate body navigation', async ({ page }) => {
   const session = await (await page.request.get('/api/host/state')).json();
-  for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Settings'], ['/participant', 'My music'], [session.joinUrl, null], [session.displayUrl, 'Room display']] as const) {
+  for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Settings'], ['/participant', 'Music'], [session.joinUrl, null], [session.displayUrl, 'Room display']] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(path);
     await expect(page.getByRole('banner')).toHaveCount(1); await expect(page.locator('header[data-header="shared"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
@@ -32,7 +32,7 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(navigation.locator('button, .mode-badge')).toHaveCount(0);
     expect(await navigation.locator('a').evaluateAll(links => links.map(link => ({ text: link.textContent, href: link.getAttribute('href') })))).toEqual([
       { text: 'Host desk', href: '/host' }, { text: 'Settings', href: '/host/settings' },
-      { text: 'My music', href: '/participant' }, { text: 'Room display', href: '/display' },
+      { text: 'Music', href: '/participant' }, { text: 'Room display', href: '/display' },
     ]);
     if (current) await expect(navigation.getByRole('link', { name: current, exact: true })).toHaveAttribute('aria-current', 'page');
     else await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
@@ -87,7 +87,7 @@ test('mobile header supports keyboard menus, stable focus across live updates, o
   await page.setViewportSize({ width: 320, height: 740 }); await expect(navigation).toBeVisible(); await expect(settings).toBeFocused();
   await page.keyboard.press('Escape'); await expect(menu).toBeFocused();
   await openNavigation(page); await page.screenshot({ path: 'test-results/shared-header-menu-320.png', fullPage: true });
-  await navigation.getByRole('link', { name: 'My music', exact: true }).click();
+  await navigation.getByRole('link', { name: 'Music', exact: true }).click();
   await expect(page).toHaveURL('/participant'); await expect(navigation).toBeHidden(); await noOverflow(page);
   await page.goto('/host'); const skip = page.getByRole('link', { name: 'Skip to content', exact: true }); await skip.focus(); await skip.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
@@ -146,9 +146,9 @@ test('skip navigation preserves a stable join URL and menu access never triggers
   await page.setViewportSize({ width: 320, height: 740 }); await page.goto(session.joinUrl);
   const skip = page.getByRole('link', { name: 'Skip to content', exact: true }); await skip.focus(); await skip.press('Enter');
   expect(page.url()).toBe(session.joinUrl); await expect(page.locator('#main-content')).toBeFocused();
-  await openNavigation(page); await page.keyboard.press('Escape'); await expect(page.getByLabel('What should we call you?')).toBeVisible();
+  await openNavigation(page); await page.keyboard.press('Escape'); await expect(page.getByLabel('Display name')).toBeVisible();
   expect(writes).toEqual([]);
-  await page.getByLabel('What should we call you?').fill('Keyboard listener'); await page.getByRole('button', { name: 'Join room' }).click();
+  await page.getByLabel('Display name').fill('Keyboard listener'); await page.getByRole('button', { name: 'Join room' }).click();
   await expect(page).toHaveURL('/participant'); await expect(page.getByRole('banner')).toContainText('Keyboard listener');
   expect(writes).toEqual(['/api/participant/join']);
 });

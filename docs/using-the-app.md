@@ -2,28 +2,28 @@
 
 ## Set up the room
 
-Connect Music Assistant and choose a speaker in **Connections & settings**. Open **Host desk**, share its join QR/link, and open **Listening room** on a TV or other shared browser. Full screen is available where the browser supports it.
+Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**, share its join QR/link, and open **Room display** on a TV or other shared browser. Full screen is available where the browser supports it.
 
 The room is always ready. Participants join with a nickname and enter the end of the listening order; the first person gets the first turn. Joining never starts music.
 
 **Manage people** lets the host reorder or remove people. Reordering does not replace the current listener. Advancing a turn stops only playback still owned by this app, then gives the next person control. Names and turn order are public; private song lists are not.
 
-## Prepare your choices
+## Prepare selections
 
-On your phone, open **My seat** after joining:
+Open **Music** after joining:
 
 1. Search artists or tracks in **Find music**. Browse an artist’s albums, then choose a song.
-2. If several services provide a result, select the source/version you want. The app does not silently substitute a different recording.
-3. Use **Add to my list** to save a choice for later. You can prepare while someone else is playing.
-4. Use **Upload a track** for an audio file on your device. Review its details and add it to your list.
+2. If several services provide a result, select the intended source/version. The app does not silently substitute a different recording.
+3. Use **Add to list** to save a choice for later. Preparation remains available while another participant is playing.
+4. Use **Upload a song** for an audio file on the device. Review its details and add it to the private list.
 
 See [private lists](private-lists.md) and [uploaded audio](uploaded-audio.md). Without a Music Assistant connection, the app offers a simulated demo catalogue; it does not play real audio.
 
-## Play your turn
+## Play a turn
 
-Only the current listener can start/control their song, reveal it, or finish their turn. Choose **Play** from a track or **Play next** from your list. This takes over the chosen Music Assistant destination with one song, replacing its existing queue and disabling repeat, shuffle, and autoplay.
+Only the current participant can start/control their song, reveal it, or finish their turn. Choose **Play** from a search result or **Play this song** from **Saved list**. This takes over the chosen Music Assistant destination with one song, replacing its existing queue and disabling repeat, shuffle, and autoplay.
 
-The shared display hides the title, artist, and cover until you choose **Reveal**. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish my turn** to stop your app-owned song and pass to the next person; you can also pass without playing anything.
+The shared display hides the title, artist, and cover until the current participant selects **Reveal song**. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the song controlled by the app and pass to the next person, or **Pass turn** to advance without playing a song.
 
 Confirmed natural completion advances once. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next person’s song never starts automatically.
 

@@ -19,7 +19,7 @@ async function room(browser: Browser, host: Page, origin: string) {
 async function add(page: Page, query: string) {
   await showFind(page); await page.getByRole('searchbox', { name: 'Search catalogue' }).fill(query);
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.getByRole('button', { name: 'Add to my list', exact: true }).click();
+  await page.getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue(query);
 }
@@ -87,7 +87,7 @@ test('compact private lists reorder, restore from history, survive removal/rejoi
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); r.contexts.push(context);
     const phone = await context.newPage(); await phone.goto(isolatedApp.origin + '/participant');
     await phone.locator('#list-recovery').click(); await phone.getByLabel('Recover with a private key').fill(key);
-    await phone.getByRole('button', { name: 'Recover my list', exact: true }).click();
+    await phone.getByRole('button', { name: 'Recover list', exact: true }).click();
     await expect.poll(async () => (await state(phone)).ownerId).toBe((await state(second)).ownerId);
     await expect(titles(phone)).toHaveCount(0);
     await expect(phone.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
@@ -95,7 +95,7 @@ test('compact private lists reorder, restore from history, survive removal/rejoi
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });
     await expect(second.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(titles(second)).toHaveCount(0);
-    await second.goto(isolatedApp.origin + '/join'); await second.getByLabel('What should we call you?').fill('Second again'); await second.getByRole('button', { name: 'Join room', exact: true }).click();
+    await second.goto(isolatedApp.origin + '/join'); await second.getByLabel('Display name').fill('Second again'); await second.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(second).toHaveURL(/\/participant$/); await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
     expect((await state(phone)).ownerId).toBe((await state(second)).ownerId);
   } finally { await r.close(); }
@@ -107,7 +107,7 @@ test('lost save replies retain a reload-safe draft and conflicts require explici
     let calls = 0;
     await page.route('**/api/participant/preparations/add', async route => { calls++; await route.fetch(); await route.abort('failed'); });
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await page.getByRole('button', { name: 'Add to my list' }).click();
+    await page.getByRole('button', { name: 'Add to list' }).click();
     await expect(page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     expect((await state(page)).upcoming).toHaveLength(1); expect(calls).toBe(1);
     await page.reload(); await showList(page); await expect(page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();

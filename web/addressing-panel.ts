@@ -85,7 +85,7 @@ export class AddressingPanel {
       const guestNodes: Node[] = [v.el('guest-summary', 'summary', 'Change guest address')];
       guestSettings.ontoggle = () => { if (guestSettings.isConnected) this.guestExpanded = guestSettings.open; };
       guestNodes.push(v.el('guest-warning', 'p', 'Changing address may require people to rejoin or recover their private lists. Keep recovery keys before switching.', 'muted small'));
-      if (!inIngress()) guestNodes.push(this.button('Use the address I opened for guest links', async () => {
+      if (!inIngress()) guestNodes.push(this.button('Use this browser address for guest links', async () => {
         if (!this.confirmGuestChange(location.origin)) return;
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
         this.notice = 'Guest address saved.';
@@ -107,7 +107,7 @@ export class AddressingPanel {
       const message = v.el('file-status', 'p', status,
         `small ${view.mediaCheck.status === 'failed' ? 'error' : view.mediaCheck.status === 'verified' ? 'success' : 'muted'}`);
       attr(message, 'role', 'status'); content.push(message);
-      if (view.mediaCheck.status === 'verified' && view.mediaCheck.origin !== view.effectiveMediaOrigin) content.push(v.el('candidate', 'p', 'The candidate works but has not replaced the selected address. Finish owned playback or review the manual override before changing it.', 'muted small'));
+      if (view.mediaCheck.status === 'verified' && view.mediaCheck.origin !== view.effectiveMediaOrigin) content.push(v.el('candidate', 'p', 'This address passed the file check but is not selected. Finish the current song or review the manual override before changing it.', 'muted small'));
       const test = this.button('Test file connection', async () => {
         this.view = { ...this.view!, mediaCheck: { ...this.view!.mediaCheck, status: 'unchecked' } }; await this.check();
       }); prop(test, 'disabled', test.disabled || !view.configured); if (view.configured) content.push(test);

@@ -138,7 +138,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     return id;
   }
   private browseSources(id: string, kind: 'artist' | 'album'): MediaRef[] {
-    if (id.startsWith('display:')) throw new AppError(422, 'These are metadata-only matches, not a verified identity. Choose an exact source before browsing.');
+    if (id.startsWith('display:')) throw new AppError(422, 'These results may represent different versions. Choose a source before browsing.');
     if (!id.startsWith('group:')) return [this.reference(id, kind)];
     const group = this.groups.get(id);
     if (!group || group.kind !== kind || group.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search or browse again.');
@@ -254,7 +254,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
         ...(info.server_id && !info.server_id.includes(this.token) ? { serverId: info.server_id } : {}) };
     } catch (error) {
       if (error instanceof AppError) throw error;
-      throw new AppError(502, 'Music Assistant returned an incompatible API response. Review the deployed API documentation.');
+      throw new AppError(502, 'Music Assistant returned an incompatible response. Check for app updates; if the problem persists, report the app and Music Assistant versions.');
     }
   }
   async activeQueue(playerId: string): Promise<string> {
@@ -266,7 +266,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
       return queue.queue_id;
     } catch (error) {
       if (error instanceof AppError) throw error;
-      throw new AppError(502, 'The destination queue response is incompatible. Review the deployed API documentation.');
+      throw new AppError(502, 'The speaker’s queue could not be read. Check Music Assistant and the app’s version compatibility.');
     }
   }
   async search(query: string): Promise<CatalogueTrack[]> {
@@ -279,7 +279,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
       return this.grouped('track', result.tracks, track => this.track(track));
     } catch (error) {
       if (error instanceof AppError) throw error;
-      throw new AppError(502, 'Music Assistant returned an incompatible search response. Check the connected sources and deployed API documentation.');
+      throw new AppError(502, 'Music Assistant returned an incompatible search response. Check its music sources and version compatibility.');
     }
   }
   async artists(query: string): Promise<CataloguePage<CatalogueArtist>> {
@@ -364,7 +364,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   async playbackCapability(playerId: string): Promise<QueueSnapshot> {
     const info = z.object({ schema_version: z.number() }).parse(await this.read('/info'));
-    if (!supportsPlaybackSchema(info.schema_version)) throw new AppError(422, `Live playback currently requires the verified Music Assistant API schema ${verifiedPlaybackSchemas.join(', ')}. Browsing remains available.`);
+    if (!supportsPlaybackSchema(info.schema_version)) throw new AppError(422, `Playback requires Music Assistant API schema ${verifiedPlaybackSchemas.join(', ')}. Compatible catalogue browsing remains available.`);
     return this.queue(playerId);
   }
   async queue(playerId: string): Promise<QueueSnapshot> {

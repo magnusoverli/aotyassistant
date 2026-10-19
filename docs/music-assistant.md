@@ -4,11 +4,11 @@ Albums of the Year uses Music Assistant for catalogue search, artwork, speaker d
 
 ## Supported API
 
-**Playback currently supports Music Assistant API schema 65**, used by the reviewed MA 2.10.6/2.10.7 releases. Core, Supervisor, Music Assistant, and this app have independent version numbers. A higher MA version number alone is not proof of playback compatibility.
+**Playback supports Music Assistant API schema 65**, used by MA 2.10.6 and 2.10.7. Core, Supervisor, Music Assistant, and this app have independent version numbers. A higher MA version number alone is not proof of playback compatibility.
 
 Settings reports the installed MA version/schema and distinguishes an unsupported playback API from an offline speaker. Read-only browsing may remain available on other compatible schemas; unsupported playback is blocked before queue changes. Check for an app update when Settings reports incompatibility.
 
-Sonos is the original playback target. The app selects speakers/groups exposed by Music Assistant, but does not certify every player integration or provider. Search coverage, artist albums, availability, seeking, and volume depend on the provider/player. See [verification coverage](release-readiness.md) for the remaining physical-device checks.
+The app selects speakers and groups exposed by Music Assistant. Search coverage, artist albums, availability, seeking, and volume depend on the provider/player. Compatibility has not been established for every player integration or provider. See [testing coverage and limitations](testing.md).
 
 ## Search and saved recordings
 

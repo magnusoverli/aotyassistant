@@ -16,7 +16,7 @@
 - [Contributions and verification](../CONTRIBUTING.md)
 - [Architecture and data contracts](architecture.md)
 - [Publishing releases](home-assistant-releases.md)
-- [Release readiness and remaining work](release-readiness.md)
+- [Testing and validation](testing.md)
 - [Changelog](../CHANGELOG.md)
 
-Completed implementation plans, design studies, deployment logs, and audit reports are preserved in the [0.3.16 documentation snapshot](https://github.com/magnusoverli/aotyassistant/tree/v0.3.16/docs) and [historical implementation plan](https://github.com/magnusoverli/aotyassistant/blob/v0.3.16/PLAN.md). They describe that stage of the project, not current deployment support or permission to reset installed data. Current installation support is Home Assistant only.
+Documentation for published versions is available through the repository’s [release tags](https://github.com/magnusoverli/aotyassistant/tags).

@@ -11,7 +11,7 @@ For a bug, use the [issue form](https://github.com/magnusoverli/aotyassistant/is
 - `tests/`: backend/controller tests, synthetic fixtures, and isolated Chromium workflows.
 - `scripts/`: release validation, packaged-app smoke tests, and diagnostic audits.
 - `config.yaml`, `Dockerfile`, `translations/`: Home Assistant packaging.
-- `docs/`: current user and maintainer guides. Completed work logs live in Git history.
+- `docs/`: product, architecture, testing, and maintenance documentation.
 
 ## Verify a change
 
@@ -40,9 +40,17 @@ CI runs both suites on native amd64 and aarch64 runners. They exercise actual pa
 
 - Keep changes focused and use the surrounding TypeScript patterns.
 - Add regression coverage for behaviour changes; retain privacy, exact-recording, turn, and playback-ownership checks.
-- Preserve acknowledged data. Do not silently reset stored records, discard lists, or reuse development-era restart/data-loss permissions.
+- Preserve acknowledged data. Storage-format changes require a documented migration or recovery path.
 - Treat simulator results and physical-device results as different evidence. Record untested behaviour honestly.
 - Update user documentation and add a short entry under **Unreleased** in `CHANGELOG.md`.
 - Keep screenshots, traces, generated builds, credentials, private data, and machine-specific deployment notes out of Git. Share only sanitized reproductions.
 
-Before a release, follow [the publishing guide](docs/home-assistant-releases.md) and review [remaining validation work](docs/release-readiness.md). Contributions are provided under the project’s [MIT license](LICENSE).
+## Documentation style
+
+- Describe product behaviour in the present tense. Use neutral language and direct instructions, such as “Select a speaker”.
+- Use exact interface labels in procedures. Distinguish participant, host, and public-display access.
+- Keep internal discussions, personal accounts, and temporary progress reports out of product documentation.
+- State support requirements and known limitations explicitly. Describe test coverage separately from verified compatibility.
+- Keep unpublished changes under **Unreleased**. Add a version and release date only when publication is scheduled.
+
+Before a release, follow [the publishing guide](docs/home-assistant-releases.md) and complete the applicable [validation procedures](docs/testing.md). Contributions are provided under the project’s [MIT license](LICENSE).

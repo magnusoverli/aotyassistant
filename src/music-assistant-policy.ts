@@ -6,5 +6,5 @@ export const supportsReadOnlySchema = (schema: number, minimum: number) => schem
 export function playbackCompatibility(schemaVersion: number, serverVersion: string) {
   const supported = supportsPlaybackSchema(schemaVersion);
   return { supported, schemaVersion, serverVersion, verifiedSchemas: [...verifiedPlaybackSchemas],
-    message: supported ? '' : `Music Assistant ${serverVersion} uses API schema ${schemaVersion}. Live playback is verified for schema ${verifiedPlaybackSchemas.join(', ')}. Update Albums of the Year for support; browsing remains available.` };
+    message: supported ? '' : `Music Assistant ${serverVersion} uses API schema ${schemaVersion}. Playback supports schema ${verifiedPlaybackSchemas.join(', ')}. Check for an Albums of the Year update that supports this schema. Compatible catalogue browsing remains available.` };
 }

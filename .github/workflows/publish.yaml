@@ -106,4 +106,4 @@ jobs:
           path: config.prebuilt.yaml
       - name: Release instructions
         run: |
-          echo 'Image published. Make the GHCR package public, verify an anonymous pull, then replace config.yaml with the published-store-manifest artifact and commit it. This ordering avoids pointing installations at a missing/private image.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Public amd64/aarch64 images verified. Download the published-store-manifest artifact and compare config.prebuilt.yaml with the release branch manifest. Apply any required difference before updating the store branch. The store version must reference the verified image.' >> "$GITHUB_STEP_SUMMARY"

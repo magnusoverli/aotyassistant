@@ -31,7 +31,7 @@ import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
 import { panel, pageHeading, sectionHeading, notice } from './ui-components';
 
 const page = pageForPath(pagePath(location.pathname));
-document.title = `${({ home: 'Home', join: 'Join room', participant: 'My music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · Albums of the Year`;
+document.title = `${({ home: 'Home', join: 'Join room', participant: 'Music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · Albums of the Year`;
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const turnAnnouncement = el('div', undefined, 'sr-only');
 turnAnnouncement.setAttribute('role', 'status'); turnAnnouncement.setAttribute('aria-live', 'polite'); turnAnnouncement.setAttribute('aria-atomic', 'true');
@@ -482,7 +482,7 @@ function participant() {
   const shortcuts = v.el('shortcuts', 'nav', undefined, 'music-shortcuts'); attr(shortcuts, 'aria-label', 'Your music shortcuts');
   const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));
   find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
-  const list = v.el('list-shortcut', 'button', 'My list', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
+  const list = v.el('list-shortcut', 'button', 'Saved list', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
   children(shortcuts, find, list); children(hero, title, distance, shortcuts);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
   const searchHeading = v.get('search-heading', () => { const node = sectionHeading('Find music', 'music-find-title'); node.append(el('span', 'Private search', 'privacy-tag')); return node; });
@@ -666,7 +666,7 @@ function render() {
   else if (page === 'participant' || page === 'join') content.push(participant());
   else {
     const main = pageFrame('compact', 'home-page');
-    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('My music', '/participant'), link('Room display', '/display'));
+    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('Music', '/participant'), link('Room display', '/display'));
     main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.push(main);
   }
   children(pageContent, ...content);
@@ -696,7 +696,7 @@ async function init() {
     } catch (cause) { error = (cause as Error).message; render(); }
   } else if (page === 'host') {
     try { accept(await api<View>('/api/host/state')); subscribe('host'); }
-    catch { error = 'Cannot reach the backend. Reload when it is available.'; render(); }
+    catch { error = 'Cannot connect to the app. Check the connection and reload.'; render(); }
   } else {
     if (page === 'join') history.replaceState(null, '', '/join');
     void library.start();

@@ -1,23 +1,23 @@
 # Private lists and recovery
 
-**My list** is your ordered set of saved choices. It is private to your browser credentials, not your nickname. Other participants, the host, and the public display do not receive its contents or counts.
+**Saved list** contains a participant’s ordered song selections. Access is tied to private browser credentials, not a nickname. Other participants, the host, and the public display do not receive its contents or counts.
 
 ## Save and arrange
 
-- **Add to my list** saves the selected recording/source. The next choice is at the top.
+- **Add to list** saves the selected recording/source. The next choice is at the top.
 - **Edit order** provides drag handles and up/down controls. **Make next** moves a choice to the front.
 - **Remove** moves a choice to **History → Removed**. Choose **Add back** to restore it.
-- Successful playback keeps the choice in **History → Played**.
+- Successful playback keeps the choice in **History → Previously played**. This means playback started, not necessarily that the song finished.
 
-The app never autoplays your list or sends the whole list to Music Assistant. Failed or uncertain playback keeps the entry for explicit review.
+The app never autoplays a list or sends the whole list to Music Assistant. Failed or uncertain playback keeps the entry for explicit review.
 
-**Saved** means the server acknowledged durable storage. **Saving** and **Not synced** do not. A pending edit is retained in that browser for explicit retry/review, not automatically replayed. If another tab changed the list, the latest saved list is loaded before retrying your change.
+**Saved** means the server acknowledged durable storage. **Saving** and **Save not confirmed** do not. A pending edit is retained in that browser for explicit retry/review, not automatically replayed. If another tab changed the list, the latest saved list is loaded before retrying the change.
 
 Lists allow 200 upcoming choices, 1,000 retained entries including history, and 10 authorized devices. Capacity errors leave existing work intact. Save-operation retries are retained for seven days.
 
 ## Keep access when changing devices
 
-Open **Keep or recover your list** and create a recovery key. Keep it private: anyone with the key can access your saved list. On another browser/device, use the recovery option with that key. Revoke old devices from the list’s recovery controls if needed.
+Open **List access → Create recovery key**. Keep the key private: anyone with it can access the saved list. On another browser/device, open **Recover a saved list**, enter the key, and select **Recover list**. Use **Revoke other devices** to remove other browsers’ access if needed.
 
 - A nickname does not recover a list.
 - Removing a person from the listening order does not delete their music.

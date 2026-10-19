@@ -67,7 +67,7 @@ export class PreparationPanel {
   }
   addButton(track: CatalogueTrack) {
     const added = this.library.added.has(track.id);
-    const button = this.button(added ? 'Added ✓' : 'Add to my list', async () => {
+    const button = this.button(added ? 'Added ✓' : 'Add to list', async () => {
       if (this.library.added.has(track.id)) return;
       await this.library.add(track);
       if (this.library.added.has(track.id)) this.feedback.textContent = `Added ${track.title} to your list.`;
@@ -85,7 +85,7 @@ export class PreparationPanel {
     const access = v.el('entry', 'section', undefined, 'entry-library-access'); attr(access, 'aria-label', 'Saved music access'); const content: Node[] = [];
     if (library.loading) { const status = v.el('entry-loading', 'p', 'Checking your saved music…', 'muted small'); attr(status, 'role', 'status'); content.push(status); }
     if (library.recovered) {
-      const status = v.el('entry-recovered', 'p', 'Your list is recovered. Enter your name to join the room.', 'muted small'); attr(status, 'role', 'status'); content.push(status);
+      const status = v.el('entry-recovered', 'p', 'List recovered. Enter a display name to join the room.', 'muted small'); attr(status, 'role', 'status'); content.push(status);
     }
     if (library.pending) {
       const notice = v.el('entry-pending', 'p', 'Your unsynced list change is kept. Join the room to review it.', 'muted small'); attr(notice, 'role', 'status'); content.push(notice);
@@ -142,7 +142,7 @@ export class PreparationPanel {
   }
   updateAddButton(button: HTMLButtonElement) {
       const added = this.library.added.has(button.dataset.preparationTrack!);
-      text(button, added ? 'Added ✓' : 'Add to my list');
+      text(button, added ? 'Added ✓' : 'Add to list');
       attr(button, 'aria-disabled', added ? 'true' : undefined);
       prop(button, 'disabled', this.library.saving || !navigator.onLine || Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading ||
         (!this.library.view && !this.library.missing) || button.dataset.sourceSelectable === 'false');
@@ -159,7 +159,7 @@ export class PreparationPanel {
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
     list.classList.toggle('is-expanded', expanded); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
     const heading = v.el('heading', 'div', undefined, 'list-heading');
-    const title = v.get('title', () => { const node = el('h2', 'My list'); node.id = 'music-list-title'; node.append(el('span', '', 'list-count')); return node; });
+    const title = v.get('title', () => { const node = el('h2', 'Saved list'); node.id = 'music-list-title'; node.append(el('span', '', 'list-count')); return node; });
     text(title.querySelector('.list-count')!, ` · ${snapshot?.upcoming.length ?? 0}`);
     const expand = v.el('expand', 'button', expanded ? 'Close list' : 'Open list', 'secondary list-expand'); prop(expand, 'type', 'button'); prop(expand, 'id', 'music-list-expand');
     attr(expand, 'aria-expanded', String(expanded)); attr(expand, 'aria-controls', 'music-list-body');
@@ -187,7 +187,7 @@ export class PreparationPanel {
     if (library.warning) bodyNodes.push(v.el('warning', 'p', library.warning, 'muted small list-note'));
     if (snapshot?.reviewEntryId && !this.options.starting()) {
       const review = v.el('review', 'div', undefined, 'list-notice'); children(review, v.el('review-message', 'p', 'A previous play attempt needs review. The track is still saved; check the player before trying again.'),
-        this.control('review', 'Keep it in my list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
+        this.control('review', 'Keep in list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
     }
     if (!snapshot?.upcoming.length) bodyNodes.push(v.el('empty', 'p', 'Add songs as you browse.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
@@ -303,7 +303,7 @@ export class PreparationPanel {
     const form = v.el('recovery-form', 'form', undefined, 'list-recovery-form');
     const input = v.get('recovery-input', () => { const node = el('input'); node.type = 'password'; node.autocomplete = 'off'; node.maxLength = 100; node.placeholder = 'Private recovery key'; node.id = 'preparation-recovery-key'; node.setAttribute('aria-label', 'Recover with a private key'); node.oninput = () => { this.recoveryDraft = node.value; }; return node; });
     prop(input, 'value', this.recoveryDraft);
-    const recover = v.el('recovery-submit', 'button', 'Recover my list', compact ? 'secondary' : ''); prop(recover, 'type', 'submit'); prop(recover, 'disabled', library.loading || library.saving || !navigator.onLine); children(form, input, recover);
+    const recover = v.el('recovery-submit', 'button', 'Recover list', compact ? 'secondary' : ''); prop(recover, 'type', 'submit'); prop(recover, 'disabled', library.loading || library.saving || !navigator.onLine); children(form, input, recover);
     form.onsubmit = event => { event.preventDefault(); if (snapshot && !confirm('Replace this browser’s list access? Save its recovery key first; its saved tracks will not be deleted.')) return; const key = input.value; this.recoveryDraft = ''; void library.recover(key, Boolean(snapshot)); };
     content.push(form);
     if (snapshot) content.push(v.el('devices-title', 'h3', 'Other devices'), this.control('revoke', 'Revoke other devices', () => { if (confirm('End private-list access on your other devices? Their saved songs will be kept.')) return library.revokeOtherDevices(); }));

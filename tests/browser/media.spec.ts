@@ -22,7 +22,7 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
   try {
     const first = await firstContext.newPage(); const second = await secondContext.newPage();
     for (const [page, name] of [[first, 'Alex'], [second, 'Sam']] as const) {
-      await page.goto(state.joinUrl); await page.getByLabel('What should we call you?').fill(name); await page.getByRole('button', { name: 'Join room' }).click();
+      await page.goto(state.joinUrl); await page.getByLabel('Display name').fill(name); await page.getByRole('button', { name: 'Join room' }).click();
       await expect(page).toHaveURL(/\/participant$/);
     }
     state = await (await host.request.get('/api/host/state')).json();

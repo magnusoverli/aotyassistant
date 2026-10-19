@@ -93,7 +93,7 @@ test('an unsupported schema identifies compatibility while retaining a healthy s
   await page.goto('/host/settings');
   await expect(page.locator('.settings-connection .settings-state')).toHaveText('Connected');
   await expect(page.locator('.settings-connection')).toContainText('uses API schema 66');
-  await expect(page.locator('.settings-connection')).toContainText('Update Albums of the Year');
+  await expect(page.locator('.settings-connection')).toContainText('Check for an Albums of the Year update');
   await expect(page.locator('.settings-destination .settings-state')).toHaveText('Playback unsupported');
   await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:room');
   await expect(page.locator('.settings-destination')).not.toContainText('Living room is unavailable');
@@ -124,7 +124,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
   try {
     await page.goto(origin); const frame = page.frameLocator('iframe');
     await expect(frame.getByRole('heading', { name: 'Settings' })).toBeVisible();
-    await expect(frame.getByRole('button', { name: 'Use the address I opened for guest links' })).toHaveCount(0);
+    await expect(frame.getByRole('button', { name: 'Use this browser address for guest links' })).toHaveCount(0);
     await expect(frame.getByLabel('Guest address', { exact: true })).toHaveValue(guest);
     await frame.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
     const popupPromise = page.waitForEvent('popup'); await frame.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();

@@ -50,7 +50,7 @@ test('unknown LAN hosts get scoped setup only; explicit guest selection updates 
     const help = await f.request(path, undefined, f.alternate);
     assert.equal(help.status, 403); assert.match(help.headers.get('content-type')!, /text\/html/);
     const html = await help.text(); assert.ok(html.includes(`href="http://obsolete.local:3000${path}"`));
-    assert.ok(html.includes('href="/host/settings"')); assert.ok(html.includes('Use the address I opened for guest links'));
+    assert.ok(html.includes('href="/host/settings"')); assert.ok(html.includes('Use this browser address for guest links'));
   }
   assert.equal((await f.request('/api/host/addressing', undefined, f.alternate)).status, 200);
   assert.equal((await f.request('/api/host/create', {}, f.alternate)).status, 403);

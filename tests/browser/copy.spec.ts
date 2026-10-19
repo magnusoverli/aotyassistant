@@ -20,16 +20,16 @@ test('pages use plain functional copy without host banners or slogans while join
     await host.goto('/'); await expect(host.getByRole('heading', { name: 'Albums of the Year', exact: true })).toBeVisible(); await plainCopy(host);
     await host.goto('/host'); await expect(host.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible(); await plainCopy(host);
     await host.goto('/host/settings'); await expect(host.getByLabel('Music Assistant URL', { exact: true })).toBeVisible(); await plainCopy(host);
-    // The cleanup removes the repeated open-host notice, not real error/security feedback.
+    // Connection-security guidance remains visible in advanced setup.
     await host.getByText('Advanced: token or separate login address', { exact: true }).click();
-    await expect(host.getByText('HTTP connection — use HTTPS')).toBeVisible();
+    await expect(host.getByText('This connection uses HTTP. Use HTTPS')).toBeVisible();
     await host.screenshot({ path: 'test-results/settings-plain-copy.png', fullPage: true });
     const listener = await participantContext.newPage(); await listener.goto(isolatedApp.origin + '/participant');
     await expect(listener.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); await plainCopy(listener);
     let session = await (await host.request.get('/api/host/state')).json(); await host.goto('/host');
     await expect(host.getByRole('button', { name: 'Start listening', exact: true })).toHaveCount(0); await plainCopy(host);
     await listener.goto(session.joinUrl); await expect(listener.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); await plainCopy(listener);
-    await listener.getByLabel('What should we call you?').fill('Listener'); await listener.getByRole('button', { name: 'Join room', exact: true }).click();
+    await listener.getByLabel('Display name').fill('Listener'); await listener.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(listener.locator('.participant-hero')).toContainText('Your turn.'); await plainCopy(listener);
     session = await (await host.request.get('/api/host/state')).json();
     await expect(listener.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible(); await plainCopy(listener);

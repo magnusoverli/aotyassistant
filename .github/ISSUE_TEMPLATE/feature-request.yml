@@ -12,4 +12,4 @@ body:
     id: proposal
     attributes:
       label: Suggested change
-      description: Include alternatives you have tried, if relevant.
+      description: Include relevant alternatives and their limitations.

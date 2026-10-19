@@ -37,7 +37,7 @@ export function guestAddressHelp(origin: string, path: string) {
   return errorPage('This address needs setup', `
 <p>The listening room is using a different guest address. Your saved room and lists are still available.</p>
 <p><a href="${escape(origin + path)}">Continue at the saved address (${escape(origin)})</a></p>
-<p>If that address no longer works, the host can <a href="/host/settings">open address settings</a> and choose <strong>Use the address I opened for guest links</strong>.</p>
+<p>If that address no longer works, the host can <a href="/host/settings">open address settings</a> and choose <strong>Use this browser address for guest links</strong>.</p>
 `);
 }
 
