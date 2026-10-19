@@ -3,6 +3,7 @@ import type { SavedSelection } from './preparations.js';
 
 export interface PlaybackAdapter {
   readonly mode: 'demo' | 'music-assistant';
+  /** Playback controls are usable; this is not process liveness or catalogue health. */
   readonly connected: boolean;
   readonly issue?: string;
   readonly volume?: VolumeState;

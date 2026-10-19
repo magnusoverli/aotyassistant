@@ -241,6 +241,10 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .settings-output .settings-card > p { font-size:12px; }
 .settings-output .settings-card > button { width:100%; font-size:12px; }
 .settings-output .settings-card > button + button { margin-top:10px; }
+.speaker-refresh { position:relative; padding-inline:40px; }
+.speaker-refresh[aria-busy="true"] { opacity:.8; cursor:progress; }
+.speaker-refresh[aria-busy="true"]:before { content:''; position:absolute; left:16px; top:calc(50% - 8px); width:16px; height:16px; border:2px dotted var(--accent); border-right-color:transparent; border-radius:50%; animation:speaker-refresh-spin 1.2s linear infinite; }
+@keyframes speaker-refresh-spin { to { transform:rotate(360deg); } }
 .settings-output .settings-card > p:last-child { margin-bottom:0; }
 .settings-recovery .warning { margin:18px 0; padding:14px; }
 .settings-notice { margin-bottom:var(--workspace-gap); }

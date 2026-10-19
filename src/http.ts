@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { AppError, type Role, type ListeningOrderView } from './model.js';
-import type { Engine } from './engine.js';
+import type { Engine, EngineChange } from './engine.js';
 import type { Config } from './config.js';
 import type { IntegrationManager } from './integrations.js';
 import { PreparationManager, PreparationFileStore } from './preparations.js';
@@ -20,6 +20,7 @@ import { durability } from './backup.js';
 import { errorPage, escapeHtml } from './error-page.js';
 import { maOperation } from './ma-operation.js';
 import { mountStaticAssets } from './static-assets.js';
+import { diagnostics } from './diagnostics.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -62,10 +63,12 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors ${ingress ? "'self'" : "'none'"}; form-action 'self'`,
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
-    // Readiness is independent of MA and guest Host configuration; Supervisor uses the internal IP.
+    // Supervisor checks process liveness, never speaker recovery or dependency readiness.
     if (req.path === '/api/health' && ['GET', 'HEAD'].includes(req.method)) {
-      res.status(engine.ready ? 200 : 503).json({ ok: engine.ready, mode: engine.adapter.mode, backupPaused: durability.paused }); return;
+      res.status(engine.live ? 200 : 503).json({ ok: engine.live, storageAvailable: engine.storageAvailable,
+        playbackAvailable: engine.playbackAvailable, mode: engine.adapter.mode, backupPaused: durability.paused }); return;
     }
+    if (!engine.live) return next(new AppError(503, 'The application is shutting down. Try again after it restarts.'));
     if (ingress) {
       if (['/', '/join', '/participant', '/display'].includes(req.path) && ['GET', 'HEAD'].includes(req.method)) {
         res.redirect(req.path === '/' ? `${ingress.base}/host` : /^(localhost|127\.|\[::1\])/.test(new URL(config.guestUrl).hostname)
@@ -122,6 +125,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const participantCredential = (req: Request) => cookie(req, 'aoty_participant');
 
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
+  app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
   let closeAuthorization = () => {};
   let closeIntegrations = () => {};
   if (integrations) {
@@ -200,21 +204,27 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
 
   const streams = new EventStreams(500, 'Too many live connections. Close unused tabs and try again.');
   app.get('/api/listening-order/events', (_req, res) => {
-    const snapshot = (): ListeningOrderView => {
-      const view = engine.view({ kind: 'display' });
-      return { roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [] };
-    };
+    const snapshot = (): ListeningOrderView => engine.listeningOrder();
     const initial = snapshot(); const stream = streams.reserve(res); if (!stream.open()) return;
     let previous = '';
     const send = (view = snapshot()) => {
       const key = JSON.stringify(view); if (key === previous) return;
-      previous = key; stream.send('state', view);
+      previous = key; stream.sendEncoded('state', key);
     };
-    const changed = () => { send(); };
+    const changed = (kind?: EngineChange) => { if (!kind || kind === 'room') send(); };
     send(initial); engine.on('change', changed);
     stream.onClose(() => engine.off('change', changed));
     stream.every(() => { stream.send('state', snapshot()); }, 15_000);
   });
+  // Public-role projections may be shared; participant authorization always runs per recipient.
+  const publicSnapshots = new Map<'host' | 'display', string>();
+  const invalidatePublic = () => publicSnapshots.clear(); engine.on('change', invalidatePublic);
+  const encodedView = (role: Role) => {
+    if (role.kind === 'participant') return JSON.stringify(engine.view(role));
+    let encoded = publicSnapshots.get(role.kind);
+    if (encoded === undefined) { encoded = JSON.stringify(engine.view(role)); publicSnapshots.set(role.kind, encoded); }
+    return encoded;
+  };
   const events = (res: Response, role: Role) => {
     const initial = engine.view(role); // Authorize before streaming headers.
     const stream = streams.reserve(res);
@@ -222,14 +232,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const send = () => {
       try {
         // Role-specific serialization is executed for every event, including removals.
-        stream.send('state', engine.view(role));
+        stream.sendEncoded('state', encodedView(role));
       } catch { stream.send('revoked', {}); }
     };
     stream.send('state', initial);
     engine.on('change', send);
     stream.onClose(() => engine.off('change', send));
     // Periodic filtered snapshots keep idle displays and reconnecting browsers in sync.
-    stream.every(send, 15_000);
+    stream.every(() => { invalidatePublic(); send(); }, 15_000);
   };
   app.get('/api/host/events', (_req, res) => events(res, { kind: 'host' }));
   app.get('/api/participant/events', (req, res) => events(res, participant(req)));
@@ -250,6 +260,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   }
   app.use((_req, _res, next) => next(new AppError(404, 'Page not found.')));
   app.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
+    if (error instanceof AppError) {
+      if (error.status >= 500 || error.status === 429 || error.status === 499) diagnostics.failure(error.status === 504 ? 'TIMEOUT'
+        : error.status === 499 ? 'CANCELLED' : error.status === 429 ? 'BUSY' : error.status === 502 ? 'UPSTREAM' : 'INTERNAL');
+    } else if (!(error instanceof z.ZodError || error instanceof SyntaxError)) diagnostics.failure('INTERNAL');
     if (res.headersSent) { res.end(); return; }
     if (['GET', 'HEAD'].includes(req.method) && !req.path.startsWith('/api/') && req.accepts('html')) {
       const status = error instanceof AppError ? error.status : 500;
@@ -263,5 +277,5 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, close: () => { closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, drain: () => preparations!.drain(), close: () => { engine.off('change', invalidatePublic); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
 }

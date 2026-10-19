@@ -1,6 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { fork } from 'node:child_process';
-import { mkdir, open, readFile, readdir, rm, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform, Writable, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,20 +7,17 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { AppError } from './model.js';
 import { writePrivateJson } from './store.js';
-import { PreparationFileStore, type SavedSelection } from './preparations.js';
+import { PreparationFileStore, type PreparationStore, type SavedSelection } from './preparations.js';
 import { KeyedSerialQueue } from './serial.js';
 import { mediaRange } from './http-utils.js';
 import { durability } from './backup.js';
+import { analyzeUpload, analysisSchema } from './upload-analysis.js';
+export { analyzeUpload, type UploadAnalysis } from './upload-analysis.js';
 
 export const uploadExtensions = ['mp3', 'm4a', 'flac', 'wav', 'aif', 'aiff', 'ogg', 'oga', 'opus'] as const;
 export const uploadTextSchema = z.object({ title: z.string().trim().min(1).max(1000), artist: z.string().trim().max(1000), album: z.string().trim().max(1000) }).strict()
   .refine(value => Object.values(value).every(text => !/[\x00-\x1f\x7f]/.test(text)), 'Use plain text without control characters.');
 const id = z.string().uuid().regex(/^[a-f0-9-]+$/);
-const metadata = z.object({ title: z.string().min(1).max(1000), artist: z.string().max(1000), album: z.string().max(1000),
-  version: z.string().max(500), provider: z.literal('Uploaded file'), duration: z.number().finite().positive() }).strict();
-const analysisSchema = z.object({ extension: z.enum(['mp3', 'm4a', 'flac', 'wav', 'aiff', 'ogg', 'opus']),
-  contentType: z.enum(['audio/mpeg', 'audio/mp4', 'audio/flac', 'audio/wav', 'audio/aiff', 'audio/ogg']), artwork: z.boolean(), metadata }).strict();
-export type UploadAnalysis = z.infer<typeof analysisSchema>;
 const manifestSchema = analysisSchema.extend({ schema: z.literal(1), id, ownerId: id, filename: z.string().min(1).max(1000),
   sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), createdAt: z.number().int().nonnegative(), retained: z.boolean() }).strict();
 type Manifest = z.infer<typeof manifestSchema>;
@@ -29,48 +25,22 @@ export type UploadPreview = { id: string; filename: string; title: string; artis
 export type UploadSelection = Extract<SavedSelection, { source: 'upload' }>;
 type Lease = { assetId: string; origin: string; key: string; active: boolean; observed: boolean; connections: Set<() => void> };
 
-export async function analyzeUpload(directory: string, filename: string, signal?: AbortSignal): Promise<UploadAnalysis> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) { reject(new AppError(400, 'File analysis was canceled.')); return; }
-    const worker = fork(new URL(import.meta.url.endsWith('.ts') ? './upload-worker.ts' : './upload-worker.js', import.meta.url), [], {
-      stdio: ['ignore', 'ignore', 'ignore', 'ipc'], detached: process.platform !== 'win32', env: { PATH: process.env.PATH, NODE_ENV: process.env.NODE_ENV },
-      execArgv: [...process.execArgv, '--max-old-space-size=128'],
-    });
-    let settled = false;
-    const finish = (error?: AppError, value?: UploadAnalysis) => {
-      if (settled) return; settled = true; clearTimeout(timer); signal?.removeEventListener('abort', aborted);
-      try { if (process.platform !== 'win32' && worker.pid) process.kill(-worker.pid, 'SIGKILL'); else worker.kill('SIGKILL'); } catch { /* Already exited. */ }
-      if (error) reject(error); else resolve(value!);
-    };
-    const timer = setTimeout(() => finish(new AppError(422, 'Audio analysis took too long. Try a different copy of this file.')), 60_000); timer.unref();
-    const aborted = () => finish(new AppError(400, 'File analysis was canceled.'));
-    signal?.addEventListener('abort', aborted, { once: true });
-    worker.once('message', (message: { ok?: boolean; error?: string; value?: unknown }) => {
-      const checked = analysisSchema.safeParse(message.value);
-      if (message.ok && checked.success) finish(undefined, checked.data);
-      else finish(new AppError(message.error === 'missing-probe' ? 503 : 422, message.error === 'missing-probe'
-        ? 'File analysis needs FFprobe on the application server. Ask the host to check the installation.'
-        : 'This is not a supported, readable audio file. Use MP3, M4A, FLAC, WAV, AIFF, Ogg Vorbis or Opus. Standalone AAC is not supported.'));
-    });
-    worker.once('error', () => finish(new AppError(503, 'File analysis is temporarily unavailable.')));
-    worker.once('exit', () => finish(new AppError(422, 'This file could not be analyzed safely.')));
-    worker.send({ directory, filename });
-  });
-}
-
 /** Private, immutable media bytes. File size/storage is not quota-limited. Single-process ownership matches the app store. */
 export class UploadAssets {
   private directory: string;
+  private staging: string;
   private receiving = new Set<string>();
   private queue = new KeyedSerialQueue();
   private leases = new Set<Lease>();
   private closed = false;
   private shutdown = new AbortController();
-  private preparations: PreparationFileStore;
-  constructor(dataDirectory: string, private analyze = analyzeUpload, private now = Date.now) { this.directory = join(dataDirectory, 'uploads'); this.preparations = new PreparationFileStore(dataDirectory); }
+  constructor(private dataDirectory: string, private analyze = analyzeUpload, private now = Date.now,
+    private preparations: Pick<PreparationStore, 'load'> = new PreparationFileStore(dataDirectory)) {
+    this.directory = join(dataDirectory, 'uploads'); this.staging = join(dataDirectory, 'upload-staging');
+  }
   private path(assetId: string) { return join(this.directory, id.parse(assetId)); }
   private async serial<T>(assetId: string, work: () => Promise<T>) {
-    return this.queue.run(assetId, () => durability.run(work));
+    return this.queue.run(assetId, work);
   }
   private async load(assetId: string, ownerId?: string): Promise<Manifest> {
     try {
@@ -100,13 +70,20 @@ export class UploadAssets {
     this.receiving.add(ownerId);
     try {
       return await this.serial(assetId, async () => {
+        signal.throwIfAborted();
         let previous: Manifest | undefined;
-        try { previous = await this.load(assetId, ownerId); } catch (error) { if (!(error instanceof AppError && error.status === 404)) throw error; }
-        const directory = this.path(assetId);
+        try { previous = await this.load(assetId); } catch (error) { if (!(error instanceof AppError && error.status === 404)) throw error; }
+        if (previous && previous.ownerId !== ownerId) throw new AppError(409, 'This upload identifier is already in use. Select the file again.');
+        if (!previous && await stat(this.path(assetId)).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; })) {
+          throw new AppError(409, 'This upload is unfinished or already in progress. Select the file again to start a new upload.');
+        }
+        // Staging bytes are disposable after restart/restore and never referenced by a
+        // list or media lease. Long transfers/analysis do not hold the backup barrier.
+        const directory = join(this.staging, assetId);
         let created = false;
         try {
           if (!previous) {
-            await mkdir(this.directory, { recursive: true, mode: 0o700 });
+            await mkdir(this.staging, { recursive: true, mode: 0o700 });
             try { await mkdir(directory, { mode: 0o700 }); created = true; }
             catch { throw new AppError(409, 'This upload is unfinished or already in progress. Select the file again to start a new upload.'); }
             await writePrivateJson(directory, 'receiving.json', { id: assetId, ownerId, createdAt: this.now() });
@@ -135,6 +112,14 @@ export class UploadAssets {
           await writePrivateJson(directory, 'manifest.json', manifest);
           await unlink(join(directory, 'receiving.json'));
           const parent = await open(directory, 'r'); try { await parent.sync(); } finally { await parent.close(); }
+          await durability.run(async () => {
+            signal.throwIfAborted();
+            await mkdir(this.directory, { recursive: true, mode: 0o700 });
+            await rename(directory, this.path(assetId));
+            for (const path of [this.directory, this.staging, this.dataDirectory]) {
+              const parent = await open(path, 'r'); try { await parent.sync(); } finally { await parent.close(); }
+            }
+          });
           return this.preview(manifest);
         } catch (error) {
           if (created) await rm(directory, { recursive: true, force: true }).catch(() => {}); // Only this attempt's newly created, validated UUID directory.
@@ -170,10 +155,20 @@ export class UploadAssets {
   busy(assetId: string) { return [...this.leases].some(lease => lease.assetId === assetId); }
   async remove(ownerId: string, assetId: string) {
     await this.serial(assetId, async () => {
-      let value;
-      try { value = await this.load(assetId, ownerId); } catch (error) { if (error instanceof AppError && error.status === 404) return; throw error; }
+      let value: Manifest | undefined;
+      try { value = await this.load(assetId, ownerId); }
+      catch (error) {
+        if (!(error instanceof AppError && error.status === 404)) throw error;
+        // Missing metadata is not proof that bytes were durably deleted.
+        const exists = await stat(this.path(assetId)).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });
+        if (exists) throw new AppError(503, 'Uploaded file deletion could not be confirmed. Check its stored record.');
+      }
       if (this.busy(assetId)) throw new AppError(409, 'Stop or finish this file before permanently deleting it.');
-      await rm(this.path(value.id), { recursive: true, force: true });
+      await durability.run(async () => {
+        if (value) await rm(this.path(value.id), { recursive: true, force: true });
+        const directory = await open(this.directory, 'r').catch(error => { if (error.code === 'ENOENT') return null; throw error; });
+        if (directory) { try { await directory.sync(); } finally { await directory.close(); } }
+      });
     });
   }
   async lease(assetId: string, origin: string, expectedHash?: string) {
@@ -210,8 +205,16 @@ export class UploadAssets {
   }
   /** Only incomplete/staged assets expire; retained originals never do. Called off the player lane. */
   async cleanup() {
+    // Unpublished bytes are never restored as usable assets. Active receivers own
+    // their asset lane, including while final publication waits for a backup.
+    const staged = await readdir(this.staging).catch(() => [] as string[]);
+    for (const name of staged) {
+      if (this.closed) return;
+      if (id.safeParse(name).success && !this.queue.has(name)) await this.serial(name, () => rm(join(this.staging, name), { recursive: true, force: true })).catch(() => {});
+    }
     let names: string[]; try { names = await readdir(this.directory); } catch { return; }
     for (const name of names) {
+      if (this.closed) return;
       if (!id.safeParse(name).success || this.queue.has(name)) continue;
       await this.serial(name, async () => {
         try {
@@ -229,10 +232,12 @@ export class UploadAssets {
           // Fail closed on inconsistent/partial backups: never delete bytes referenced by an acknowledged list.
           const owner = await this.preparations.load(ownerId);
           if (owner?.entries.some(entry => entry.selection.source === 'upload' && entry.selection.assetId === name)) return;
-          await rm(this.path(name), { recursive: true, force: true });
+          await durability.run(() => rm(this.path(name), { recursive: true, force: true }));
         } catch { /* Cleanup failure must never affect playback or acknowledged assets. */ }
       });
     }
   }
-  close() { this.closed = true; this.shutdown.abort(); for (const lease of this.leases) { lease.active = false; for (const stop of lease.connections) stop(); } this.leases.clear(); }
+  stopReceiving() { this.closed = true; this.shutdown.abort(); }
+  drain() { return this.queue.drain(); }
+  close() { this.stopReceiving(); for (const lease of this.leases) { lease.active = false; for (const stop of lease.connections) stop(); } this.leases.clear(); }
 }

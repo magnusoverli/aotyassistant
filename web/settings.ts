@@ -14,6 +14,7 @@ export async function mountSettings(container: HTMLElement) {
   let urlDraft = '';
   let tokenDraft = '';
   let pendingDestination = '';
+  let refreshingSpeakers = false;
   let queuedSnapshot: IntegrationView | undefined;
   let live: EventSource | undefined;
   let busy = false;
@@ -88,9 +89,10 @@ export async function mountSettings(container: HTMLElement) {
   }
   async function discover() {
     if (!settings?.tokenConfigured) return;
-    speakerError = '';
+    speakerError = ''; refreshingSpeakers = true; render();
     try { apply(await request('/destinations')); }
     catch (cause) { speakerError = cause instanceof Error ? cause.message : 'Speakers could not be loaded.'; }
+    finally { refreshingSpeakers = false; render(); }
   }
   async function run(work: () => Promise<void>, scope: 'connection' | 'speaker' = 'connection') {
     if (busy) return;
@@ -277,7 +279,11 @@ export async function mountSettings(container: HTMLElement) {
     if (speakerFailure) { const failure = el('p', speakerFailure, 'error'); failure.setAttribute('role', 'alert'); destination.append(failure); }
     else if (activeOutput?.state === 'unconfirmed') destination.append(el('p', 'Speaker status will update when Music Assistant reconnects.', 'muted small'));
     if (report && report.schemaVersion !== 65) destination.append(el('p', 'Live playback requires Music Assistant API schema 65.', 'muted small'));
-    if (settings?.tokenConfigured) destination.append(action('Refresh speakers', discover, true, 'speaker'));
+    if (settings?.tokenConfigured) {
+      const refresh = action('Refresh speakers', discover, true, 'speaker');
+      refresh.classList.add('speaker-refresh'); refresh.setAttribute('aria-busy', String(refreshingSpeakers));
+      destination.append(refresh);
+    }
     if (settings?.settingsChangesBlocked) destination.append(el('p', 'Finish the current song before changing speakers.', 'muted small'));
     if (settings?.destination) destination.append(el('p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
     output.append(destination);

@@ -6,7 +6,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { AddressInfo } from 'node:net';
 import { Engine } from '../src/engine.js';
-import { FileStore } from '../src/store.js';
+import { FileStore, PersistenceError } from '../src/store.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { ManagedPlayback } from '../src/live-playback.js';
 import { DemoAdapter } from '../src/playback.js';
@@ -17,7 +17,7 @@ import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 async function fixture() {
   const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-destination-');
   const file = new IntegrationFileStore(dir); let failStore = false;
-  const manager = new IntegrationManager({ load: () => file.load(), save: async state => { if (failStore) throw new Error('Synthetic store failure'); await file.save(state); } });
+  const manager = new IntegrationManager({ load: () => file.load(), save: async state => { if (failStore) throw new PersistenceError('not-committed'); await file.save(state); } });
   await manager.init(); await manager.save(remote.origin, 'fixture-token', 0); await manager.selectDestination('sonos:room', manager.view().revision);
   const adapter = new ManagedPlayback(new DemoAdapter(), manager, 20);
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');

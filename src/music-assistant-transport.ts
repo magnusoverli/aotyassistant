@@ -1,40 +1,24 @@
 import { randomUUID } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
 import { Agent as HttpAgent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { performance } from 'node:perf_hooks';
-import { isIP } from 'node:net';
-import ipaddr from 'ipaddr.js';
-import { z } from 'zod';
 import { AppError } from './model.js';
 import { maRemaining, maSignal, maStage, maTiming } from './ma-operation.js';
+import { requestPriority } from './operation.js';
+import { musicAssistantUrl, lookupAll, resolveLanAddresses } from './lan-network.js';
+export { musicAssistantUrl, maToken, isAllowedAddress } from './lan-network.js';
 
-export const musicAssistantUrl = z.string().trim().max(2048).url().transform((value, context) => {
-  const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash || url.hostname.toLowerCase() === 'supervisor') {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Use the Music Assistant HTTP(S) origin, without credentials, paths, query, or fragment.' });
-    return z.NEVER;
-  }
-  return url.origin;
-});
-export const maToken = z.string().trim().min(1).max(8192).regex(/^[\x21-\x7e]+$/);
 export type ArtworkData = { body: Buffer; contentType: string };
 export type ArtworkSize = 160 | 512 | 1024;
 type Path = '/info' | '/api-docs' | '/api' | `/imageproxy/${string}`;
 
-export function isAllowedAddress(value: string): boolean {
-  if (!ipaddr.isValid(value)) return false;
-  let address = ipaddr.parse(value);
-  if (address.kind() === 'ipv6' && (address as ipaddr.IPv6).isIPv4MappedAddress()) address = (address as ipaddr.IPv6).toIPv4Address();
-  return ['private', 'loopback', 'uniqueLocal'].includes(address.range());
-}
 
 /** Network policy only: pinned LAN DNS, bounded responses/deadlines and sanitized failures. */
 export class MusicAssistantTransport {
   private agents = new Map<string, HttpAgent>();
   private closed = false;
   constructor(private origin: string, private token: string, private timeoutMs = 8000,
-    private resolveHost = (hostname: string) => lookup(hostname, { all: true }), private playbackTimeoutMs = 20_000) {}
+    private resolveHost = lookupAll, private playbackTimeoutMs = 20_000) {}
 
   close() { this.closed = true; for (const agent of this.agents.values()) agent.destroy(); this.agents.clear(); }
 
@@ -43,7 +27,7 @@ export class MusicAssistantTransport {
     let agent = this.agents.get(key);
     if (!agent) {
       const Agent = protocol === 'https:' ? HttpsAgent : HttpAgent;
-      agent = new Agent({ keepAlive: true, maxSockets: 4, maxTotalSockets: 8, maxFreeSockets: 2, timeout: 30_000 });
+      agent = new Agent({ keepAlive: true, maxSockets: lane === 'resolution' ? 2 : 4, maxTotalSockets: 8, maxFreeSockets: 2, timeout: 30_000 });
       const getName = agent.getName.bind(agent);
       // Include every validated address in the pool key. A DNS change cannot reuse
       // a socket to an old address, and the pinned lookup retains IPv4/IPv6 fallback.
@@ -66,26 +50,20 @@ export class MusicAssistantTransport {
     const url = new URL(path, musicAssistantUrl.parse(this.origin));
     const hostname = url.hostname.replace(/^\[|\]$/g, '');
     let addresses: { address: string; family: number }[];
-    let dnsTimer: NodeJS.Timeout | undefined;
     try {
-      addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }]
-        : await Promise.race([
-          this.resolveHost(hostname),
-          new Promise<never>((_resolve, reject) => { dnsTimer = setTimeout(() => reject(new Error()), Math.max(1, deadline - performance.now())); dnsTimer.unref(); }),
-        ]);
-    } catch { throw new AppError(502, 'Cannot resolve the Music Assistant hostname. Check its LAN address.'); }
-    finally { clearTimeout(dnsTimer); maTiming('dns', start); }
+      addresses = await resolveLanAddresses(hostname, deadline - performance.now(), this.resolveHost, maSignal());
+    } finally { maTiming('dns', start); }
     if (this.closed) throw new AppError(503, 'Music Assistant connection was closed. Refresh before trying again.');
     const remaining = Math.min(maRemaining(timeout), deadline - performance.now());
     if (remaining <= 0) throw new AppError(504, 'Music Assistant did not respond in time. Check LAN connectivity.');
-    if (!addresses.length || addresses.some(a => !isAllowedAddress(a.address))) throw new AppError(422, 'Use a private LAN or loopback Music Assistant address. Public, link-local, and metadata-service addresses are blocked.');
     const target = addresses[0]!;
     const payload = command ? JSON.stringify({ message_id: randomUUID(), command, args }) : undefined;
     return new Promise((resolve, reject) => {
       const fail = (status: number, message: string) => reject(new AppError(status, message));
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
         signal: maSignal(),
-        method: command ? 'POST' : 'GET', agent: this.agent(url.protocol, binary ? 'artwork' : command?.startsWith('music/') || path === '/api-docs' ? 'catalogue' : 'control'),
+        method: command ? 'POST' : 'GET', agent: this.agent(url.protocol, binary ? 'artwork' : command?.startsWith('music/')
+          ? requestPriority() === 'playback' ? 'resolution' : 'catalogue' : path === '/api-docs' ? 'catalogue' : 'control'),
         ...{ pinnedAddresses: addresses.map(a => `${a.family}:${a.address}`).sort().join(',') },
         // A checked DNS result is used by the socket, preventing a second/rebound lookup.
         lookup: (_hostname, options, callback) => options.all ? callback(null, addresses) : callback(null, target.address, target.family),

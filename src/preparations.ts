@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppError } from './model.js';
 import { writePrivateJson } from './store.js';
 import { KeyedSerialQueue } from './serial.js';
+import { diagnostics } from './diagnostics.js';
 
 export const preparationLimits = {
   upcoming: 200, entries: 1000, devices: 10, receipts: 5000,
@@ -47,12 +48,14 @@ export const preparationStateSchema = z.object({
   order: z.array(id).max(preparationLimits.upcoming), receipts: z.array(receipt).max(preparationLimits.receipts),
   pendingPlay: z.object({ entryId: id, startedAt: timestamp }).strict().optional(),
   deletedUploads: z.array(id).optional(), // Durable deletion intents/tombstones; never exposed in private views.
+  pendingUploadDeletions: z.array(id).optional(), // Absent on older records; migrated on first cleanup.
 }).strict().superRefine((state, context) => {
   const unique = (values: string[]) => new Set(values).size === values.length;
   const upcoming = state.entries.filter(item => item.state === 'upcoming').map(item => item.id);
   if (!unique(state.entries.map(item => item.id)) || !unique(state.order) || state.order.length !== upcoming.length || state.order.some(key => !upcoming.includes(key)) ||
     !unique(state.credentials.map(item => item.hash)) || !unique(state.receipts.map(item => item.id)) ||
-    !unique(state.entries.flatMap(item => item.playbackIds)) || !unique(state.deletedUploads ?? []) || state.receipts.some(item => item.revision > state.revision) ||
+    !unique(state.entries.flatMap(item => item.playbackIds)) || !unique(state.deletedUploads ?? []) || !unique(state.pendingUploadDeletions ?? []) ||
+    state.pendingUploadDeletions?.some(asset => !state.deletedUploads?.includes(asset)) || state.receipts.some(item => item.revision > state.revision) ||
     state.entries.some(item => item.selection.source === 'upload' && state.deletedUploads?.includes(item.selection.assetId)) ||
     (state.pendingPlay && !upcoming.includes(state.pendingPlay.entryId)) ||
     state.entries.some(item => (item.state === 'played' && (item.playedAt === undefined || !item.playbackIds.length)) || (item.state === 'removed' && item.removedAt === undefined))) {
@@ -155,6 +158,15 @@ export class PreparationManager {
   private queue = new KeyedSerialQueue();
   private playing = new Set<string>();
   private events = new EventEmitter();
+  private captures = new Map<string, { intent: string; selection: Promise<SavedSelection> }>();
+  private pending = new Set<Promise<unknown>>();
+  private cleanups = new Map<string, Promise<void>>();
+  private track<T>(work: Promise<T>): Promise<T> {
+    this.pending.add(work);
+    void work.then(() => this.pending.delete(work), () => this.pending.delete(work));
+    return work;
+  }
+  async drain() { while (this.pending.size) await Promise.allSettled([...this.pending]); await this.queue.drain(); }
   constructor(private store: PreparationStore, private now = Date.now, private sourceAvailable?: (selection: SavedSelection) => boolean) { this.events.setMaxListeners(0); }
   private serial<T>(ownerId: string, work: () => Promise<T>): Promise<T> {
     return this.queue.run(ownerId, work);
@@ -209,31 +221,33 @@ export class PreparationManager {
   private find(state: PreparationState, entryId: string) {
     const entry = state.entries.find(item => item.id === entryId); if (!entry) throw new AppError(404, 'Saved track not found.'); return entry;
   }
-  private async mutate(credential: string, operation: PreparationOperation, kind: string, payload: unknown, change: (state: PreparationState) => string | Promise<string>, afterSave?: (state: PreparationState) => Promise<void>): Promise<PreparationResult> {
+  private validateMutation(state: PreparationState, operation: PreparationOperation, intent: string, kind: string) {
+    const previous = state.receipts.find(receipt => receipt.id === operation.id);
+    if (previous) {
+      if (previous.intent !== intent) throw new AppError(409, 'This preparation operation was already used for a different change.');
+      return previous;
+    }
+    const now = this.now();
+    if (now - operation.issuedAt > preparationLimits.operationLifetime || operation.issuedAt - now > preparationLimits.futureClockTolerance) throw new AppError(409, 'This preparation change expired. Refresh your list before trying again.');
+    if (operation.revision !== state.revision) throw new AppError(409, 'Your preparation list changed in another page. Refresh it before trying again.');
+    if (state.pendingPlay && kind !== 'review') throw new AppError(409, 'A previous play attempt needs review. Your saved entry was kept.');
+    if (this.playing.has(state.ownerId)) throw new AppError(409, 'This saved track is still starting. Wait for the player before reviewing it.');
+    state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
+    if (state.receipts.length >= preparationLimits.receipts) throw new AppError(409, 'Preparation edit capacity is temporarily full. Your saved entries were kept.');
+  }
+  private async mutate(credential: string, operation: PreparationOperation, kind: string, payload: unknown, change: (state: PreparationState) => string | Promise<string>): Promise<PreparationResult> {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);
     const intent = hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload]));
     return this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
-      const previous = state.receipts.find(receipt => receipt.id === operation.id);
+      const previous = this.validateMutation(state, operation, intent, kind);
       if (previous) {
-        if (previous.intent !== intent) throw new AppError(409, 'This preparation operation was already used for a different change.');
-        let warning: string | undefined;
-        try { await afterSave?.(state); } catch { warning = 'The list change was saved, but file deletion needs another attempt. Retry the same operation or refresh your list.'; }
-        return { view: this.view(state), entryId: previous.entryId, replayed: true, ...(warning ? { warning } : {}) };
+        return { view: this.view(state), entryId: previous.entryId, replayed: true };
       }
-      const now = this.now();
-      if (now - operation.issuedAt > preparationLimits.operationLifetime || operation.issuedAt - now > preparationLimits.futureClockTolerance) throw new AppError(409, 'This preparation change expired. Refresh your list before trying again.');
-      if (operation.revision !== state.revision) throw new AppError(409, 'Your preparation list changed in another page. Refresh it before trying again.');
-      if (state.pendingPlay && kind !== 'review') throw new AppError(409, 'A previous play attempt needs review. Your saved entry was kept.');
-      if (this.playing.has(access.ownerId)) throw new AppError(409, 'This saved track is still starting. Wait for the player before reviewing it.');
-      state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
-      if (state.receipts.length >= preparationLimits.receipts) throw new AppError(409, 'Preparation edit capacity is temporarily full. Your saved entries were kept.');
       const entryId = await change(state); state.revision++;
       state.receipts.push({ id: operation.id, intent, issuedAt: operation.issuedAt, revision: state.revision, entryId });
       await this.save(state);
-      let warning: string | undefined;
-      try { await afterSave?.(state); } catch { warning = 'The list change was saved, but file deletion needs another attempt. Refresh your list to retry cleanup.'; }
-      return { view: this.view(state), entryId, replayed: false, ...(warning ? { warning } : {}) };
+      return { view: this.view(state), entryId, replayed: false };
     });
   }
   /** Accept descriptors captured/validated by the backend, never raw request bodies from a browser. */
@@ -242,10 +256,30 @@ export class PreparationManager {
     return this.mutate(credential, operation, 'add', selection, state => this.appendSelection(state, selection));
   }
   /** Capture runs only for a new operation: lost acknowledgements remain retryable even after browse references expire. */
-  async addCaptured(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
-    return this.mutate(credential, operation, 'capture', hash(reference), async state => {
-      return this.appendSelection(state, input(savedSelectionSchema, await capture()));
+  addCaptured(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
+    return this.track(this.captureOutsideTransaction(credential, operation, reference, capture));
+  }
+  private async captureOutsideTransaction(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
+    const access = identity(credential); operation = input(preparationOperationSchema, operation);
+    const payload = hash(reference); const intent = hash(JSON.stringify(['capture', operation.revision, operation.issuedAt, payload]));
+    const key = `${access.ownerId}:${operation.id}`;
+    const reservation = await this.serial(access.ownerId, async () => {
+      const state = await this.authorize(access.ownerId, access.secretHash);
+      if (this.validateMutation(state, operation, intent, 'capture')) return undefined;
+      const existing = this.captures.get(key);
+      if (existing && existing.intent !== intent) throw new AppError(409, 'This preparation operation was already used for a different change.');
+      if (!existing && this.captures.size >= 64) throw new AppError(429, 'Too many tracks are being captured. Try again when the current additions finish.');
+      const pending = existing ?? { intent, selection: Promise.resolve().then(capture) };
+      // Attach a rejection observer before releasing the owner lane.
+      void pending.selection.catch(() => {}); this.captures.set(key, pending); return pending;
     });
+    try {
+      const selection = reservation ? input(savedSelectionSchema, await reservation.selection) : undefined;
+      return await this.mutate(credential, operation, 'capture', payload, state => {
+        if (!selection) throw new AppError(409, 'The saved operation changed. Refresh your list.');
+        return this.appendSelection(state, selection);
+      });
+    } finally { if (reservation && this.captures.get(key) === reservation) this.captures.delete(key); }
   }
   private appendSelection(state: PreparationState, selection: SavedSelection) {
     if (selection.source === 'upload' && state.deletedUploads?.includes(selection.assetId)) throw new AppError(410, 'This uploaded file was permanently deleted. Select the file again.');
@@ -275,32 +309,64 @@ export class PreparationManager {
     return this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
       if (state.entries.some(entry => entry.selection.source === 'upload' && entry.selection.assetId === assetId)) return false;
+      // Capture intentionally releases this lane while validating bytes/provider
+      // metadata. Do not delete a draft before that capture can attach it durably.
+      if ([...this.captures.keys()].some(key => key.startsWith(`${access.ownerId}:`))) throw new AppError(409, 'A track is being saved. Wait for it to finish before discarding an upload.');
       await discard(state.ownerId, assetId); return true;
     });
   }
-  async purgeUpload(credential: string, operation: PreparationOperation, entryId: string, busy: (assetId: string) => boolean, remove: (ownerId: string, assetId: string) => Promise<void>) {
+  purgeUpload(credential: string, operation: PreparationOperation, entryId: string, busy: (assetId: string) => boolean, remove: (ownerId: string, assetId: string) => Promise<void>) {
+    return this.track(this.purgeUploadedEntry(credential, operation, entryId, busy, remove));
+  }
+  private async purgeUploadedEntry(credential: string, operation: PreparationOperation, entryId: string, busy: (assetId: string) => boolean, remove: (ownerId: string, assetId: string) => Promise<void>) {
     entryId = input(id, entryId);
-    return this.mutate(credential, operation, 'purge-upload', { entryId }, state => {
+    const result = await this.mutate(credential, operation, 'purge-upload', { entryId }, state => {
       const selected = this.find(state, entryId);
       if (selected.selection.source !== 'upload' || selected.state !== 'removed') throw new AppError(409, 'Remove an uploaded file before permanently deleting it.');
       const assetId = selected.selection.assetId;
       if (busy(assetId)) throw new AppError(409, 'Stop or finish this file before permanently deleting it.');
       const deleted = new Set(state.entries.filter(item => item.selection.source === 'upload' && item.selection.assetId === assetId).map(item => item.id));
       state.entries = state.entries.filter(item => !deleted.has(item.id)); state.order = state.order.filter(key => !deleted.has(key));
+      state.pendingUploadDeletions = [...new Set([assetId, ...(state.pendingUploadDeletions ?? state.deletedUploads ?? [])])];
       state.deletedUploads = [...new Set([...(state.deletedUploads ?? []), assetId])];
       // Old receipts intentionally outlive purged entries so lost acknowledgements remain idempotent.
       return entryId;
-    }, async state => { for (const assetId of state.deletedUploads ?? []) await remove(state.ownerId, assetId); });
-  }
-  async cleanupDeletedUploads(credential: string, remove: (ownerId: string, assetId: string) => Promise<void>) {
-    const access = identity(credential);
-    await this.serial(access.ownerId, async () => {
-      const state = await this.authorize(access.ownerId, access.secretHash, true);
-      for (const assetId of state.deletedUploads ?? []) await remove(state.ownerId, assetId);
     });
+    try { await this.cleanupDeletedUploads(credential, remove); }
+    catch { result.warning = 'The list change was saved, but file deletion needs another attempt. Refresh your list to retry cleanup.'; }
+    result.view = await this.read(credential); return result;
+  }
+  cleanupDeletedUploads(credential: string, remove: (ownerId: string, assetId: string) => Promise<void>): Promise<void> {
+    const access = identity(credential);
+    const existing = this.cleanups.get(access.ownerId); if (existing) return existing;
+    const work = this.track(this.cleanupBatch(credential, remove)); this.cleanups.set(access.ownerId, work);
+    const done = () => { if (this.cleanups.get(access.ownerId) === work) this.cleanups.delete(access.ownerId); };
+    void work.then(done, done); return work;
+  }
+  private async cleanupBatch(credential: string, remove: (ownerId: string, assetId: string) => Promise<void>) {
+    const access = identity(credential);
+    const batch = await this.serial(access.ownerId, async () => {
+      const state = await this.authorize(access.ownerId, access.secretHash, true);
+      diagnostics.record('cleanup-backlog', (state.pendingUploadDeletions ?? state.deletedUploads ?? []).length);
+      return (state.pendingUploadDeletions ?? state.deletedUploads ?? []).slice(0, 16);
+    });
+    if (!batch.length) return;
+    const completed = new Set<string>();
+    try { for (const assetId of batch) { await remove(access.ownerId, assetId); completed.add(assetId); } }
+    finally {
+      if (completed.size) await this.serial(access.ownerId, async () => {
+        const state = await this.authorize(access.ownerId, access.secretHash);
+        state.pendingUploadDeletions = (state.pendingUploadDeletions ?? state.deletedUploads ?? []).filter(asset => !completed.has(asset));
+        // Internal housekeeping does not change list revisions or operation receipts.
+        await this.store.save(state);
+      });
+    }
   }
   /** Durably reserve the head, then release the owner lane during audio work. Never retry audio. */
-  async playHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
+  playHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
+    return this.track(this.playReservedHead(credential, entryId, expectedRevision, work));
+  }
+  private async playReservedHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
     const access = identity(credential); entryId = input(id, entryId);
     const selection = await this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);

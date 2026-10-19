@@ -3,7 +3,11 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { stateSchema, type State } from './model.js';
 import { durability } from './backup.js';
-import { maStage } from './ma-operation.js';
+import { stage } from './operation.js';
+
+export class PersistenceError extends Error {
+  constructor(readonly outcome: 'not-committed' | 'uncertain') { super('Persistent save could not be confirmed.'); }
+}
 
 export interface Store { load(): Promise<State>; save(state: State): Promise<void> }
 
@@ -29,7 +33,8 @@ export class FileStore implements Store {
 
 /** Shared atomic persistence for application-owned files, including integration secrets. */
 export async function writePrivateJson(directory: string, filename: string, data: unknown, maxBytes = Infinity): Promise<void> {
-  return maStage('persistence', () => durability.run(() => commitPrivateJson(directory, filename, data, maxBytes)));
+  try { return await stage('persistence', () => durability.run(() => commitPrivateJson(directory, filename, data, maxBytes))); }
+  catch (error) { throw error instanceof PersistenceError ? error : new PersistenceError('not-committed'); }
 }
 async function commitPrivateJson(directory: string, filename: string, data: unknown, maxBytes: number): Promise<void> {
   const json = JSON.stringify(data);
@@ -43,7 +48,9 @@ async function commitPrivateJson(directory: string, filename: string, data: unkn
       await handle.sync();
     } finally { await handle.close(); }
     await rename(temporary, join(directory, filename));
-    const directoryHandle = await open(directory, 'r');
-    try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+    try {
+      const directoryHandle = await open(directory, 'r');
+      try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
+    } catch { throw new PersistenceError('uncertain'); }
   } finally { await unlink(temporary).catch(() => {}); }
 }

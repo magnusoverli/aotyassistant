@@ -39,8 +39,8 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   });
   app.get(`${prefix}/state`, async (req, res) => {
     if (!credential(req)) { res.status(401).json({ code: 'missing-library', error: 'No private list is linked to this browser. Add a track to create one, or recover your existing list.' }); return; }
-    await manager.cleanupDeletedUploads(credential(req), (ownerId, assetId) => uploads.remove(ownerId, assetId)).catch(() => {});
     const view = await manager.read(credential(req)); setCookie(res, credential(req)); res.json(view);
+    void manager.cleanupDeletedUploads(credential(req), (ownerId, assetId) => uploads.remove(ownerId, assetId)).catch(() => {});
   });
   app.post(`${prefix}/init`, async (req, res) => {
     body(req, empty);
@@ -173,14 +173,14 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       const sendRoom = () => {
         try {
           const view = engine.view(role); const key = JSON.stringify(view);
-          if (key !== previousRoom) { previousRoom = key; stream.send('state', view); }
+          if (key !== previousRoom) { previousRoom = key; stream.sendEncoded('state', key); }
         } catch { stream.send('revoked', {}); }
       };
       const sendList = (view: Awaited<ReturnType<PreparationManager['read']>> | null) => {
         if (!ready) { pending = view; return; }
         if (!view) { stream.send('preparation-revoked', {}); return; }
         const key = JSON.stringify(view);
-        if (key !== previousList) { previousList = key; stream.send('preparation', view); }
+        if (key !== previousList) { previousList = key; stream.sendEncoded('preparation', key); }
       };
       if (credential(req)) {
         try {
@@ -211,7 +211,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       const send = (view: Awaited<ReturnType<PreparationManager['read']>> | null) => {
         if (!view) { stream.send('revoked', {}); return; }
         const key = JSON.stringify(view);
-        if (key !== previous) { previous = key; stream.send('state', view); }
+        if (key !== previous) { previous = key; stream.sendEncoded('state', key); }
       };
       const subscription = await manager.subscribe(credential(req), view => {
         if (stream.closed) return;

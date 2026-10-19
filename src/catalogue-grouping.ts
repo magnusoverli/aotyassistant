@@ -61,14 +61,17 @@ export function groupCatalogueItems<T extends IdentityMedia>(kind: Kind, items: 
   const index = new Map<string, Set<T[]>>();
   const order = new Map<T[], number>();
   const types = kind === 'artist' ? ['musicbrainz_artistid'] : kind === 'album' ? ['musicbrainz_albumid'] : ['musicbrainz_recordingid', 'isrc'];
+  let comparisons = 0;
   for (const item of items) {
+    // Splitting choices is safe when evidence work is excessive; guessing a union is not.
+    if (comparisons >= 20_000) { groups.push([item]); continue; }
     const keys = [...mappings(item)].map(key => `mapping:${key}`);
     for (const type of types) for (const id of ids(item, type)) keys.push(`${type}:${id}`);
     const candidates = new Set<T[]>();
     for (const key of keys) for (const candidate of index.get(key) ?? []) candidates.add(candidate);
     // Only compare groups sharing authoritative evidence; name collisions do not cause quadratic scans.
     let group = [...candidates].sort((a, b) => order.get(a)! - order.get(b)!)
-      .find(members => members.every(member => sameCatalogueItem(kind, member, item)));
+      .find(members => members.every(member => ++comparisons <= 20_000 && sameCatalogueItem(kind, member, item)));
     if (group) group.push(item);
     else { group = [item]; order.set(group, groups.length); groups.push(group); }
     for (const key of keys) { if (!index.has(key)) index.set(key, new Set()); index.get(key)!.add(group); }
@@ -123,24 +126,36 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
     if (!buckets.has(key)) buckets.set(key, []); buckets.get(key)!.push(group);
   }
   const result: CataloguePresentation<T>[] = [];
-  const complete = (groups: T[][]) => groups.every((group, index) => groups.slice(index + 1)
-    .every(other => group.every(a => other.every(b => sameMetadataPresentation(kind, a, b)))));
-  const emit = (groups: T[][]) => {
+  const profiles = new Map(items.map(item => [item, evidenceProfile(item)]));
+  let comparisons = 0;
+  const complete = (groups: T[][]) => {
+    if (groups.length < 2) return true;
+    // Multi-group buckets contain only singleton identity groups with the same
+    // normalized metadata key. Equal evidence profiles need one comparison, not n².
+    const representatives = [...new Map(groups.flat().map(item => [profiles.get(item)!, item])).values()];
+    for (let i = 0; i < representatives.length; i++) {
+      for (let j = i; j < representatives.length; j++) {
+        if (++comparisons > 20_000 || !sameMetadataPresentation(kind, representatives[i]!, representatives[j]!)) return false;
+      }
+    }
+    return true;
+  };
+  const emit = (groups: T[][], verified = false) => {
     const members = groups.flat();
-    if (groups.length > 1 && new Set(members.map(item => item.provider)).size > 1 && complete(groups)) {
+    if (groups.length > 1 && new Set(members.map(item => item.provider)).size > 1 && (verified || complete(groups))) {
       result.push({ items: members, matchKind: 'metadata' });
     } else for (const group of groups) result.push({ items: group, matchKind: 'identity' });
   };
   for (const groups of buckets.values()) {
-    if (complete(groups)) { emit(groups); continue; }
+    if (complete(groups)) { emit(groups, true); continue; }
     // An unknown bridge must not be assigned arbitrarily to one of two conflicting artists/editions.
     // Keep those known identities separate; only equally evidenced unknown matches may share a display row.
-    const profiles = new Map<string, T[][]>();
+    const byProfile = new Map<string, T[][]>();
     for (const group of groups) {
-      const key = JSON.stringify([...new Set(group.map(evidenceProfile))].sort());
-      if (!profiles.has(key)) profiles.set(key, []); profiles.get(key)!.push(group);
+      const key = JSON.stringify([...new Set(group.map(item => profiles.get(item)))].sort());
+      if (!byProfile.has(key)) byProfile.set(key, []); byProfile.get(key)!.push(group);
     }
-    for (const profile of profiles.values()) emit(profile);
+    for (const profile of byProfile.values()) emit(profile);
   }
   return result.sort((a, b) => Math.min(...a.items.map(item => order.get(item)!)) - Math.min(...b.items.map(item => order.get(item)!)));
 }

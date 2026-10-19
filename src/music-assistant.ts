@@ -5,6 +5,7 @@ import { presentCatalogueItems } from './catalogue-grouping.js';
 import type { SavedSelection } from './preparations.js';
 import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
+import { verifiedPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
 export type Destination = { id: string; name: string; available: boolean };
@@ -12,13 +13,16 @@ export type ConnectionReport = {
   checkedAt: number; serverVersion: string; schemaVersion: number;
   docsAvailable: boolean; players: Destination[]; serverId?: string;
 };
-export interface MusicAssistantReader {
+export interface InventoryReader {
   inspect(options?: { documentation?: boolean }): Promise<ConnectionReport>;
   close?(): void;
   subscribePlayback?(listener: (event: PlaybackEvent) => void): () => void;
   activeQueue(playerId: string): Promise<string>;
+}
+export interface CatalogueReader {
   search(query: string): Promise<CatalogueTrack[]>;
 }
+export interface MusicAssistantReader extends InventoryReader, CatalogueReader {}
 
 const imageSchema = z.object({ proxy_id: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), type: z.string().optional() });
 const imageFields = { image: imageSchema.nullable().optional().catch(undefined),
@@ -234,7 +238,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   async inspect(options: { documentation?: boolean } = {}): Promise<ConnectionReport> {
     try {
       const info = z.object({ server_id: z.string().min(1).max(200).optional(), server_version: z.string().max(80), schema_version: z.number().int(), min_supported_schema_version: z.number().int() }).parse(await this.read('/info'));
-      if (info.schema_version < 28 || info.min_supported_schema_version > 46) throw new AppError(422, 'This Music Assistant API schema is not supported by the read-only setup check. Update the app or server.');
+      if (!supportsReadOnlySchema(info.schema_version, info.min_supported_schema_version)) throw new AppError(422, 'This Music Assistant API schema is not supported by the read-only setup check. Update the app or server.');
       // HTTP /api returns the command result directly, not the WebSocket result envelope.
       const players = z.array(z.object({ player_id: z.string().min(1).max(500), name: z.string().min(1).max(200), available: z.boolean() })).max(500)
         .parse(await this.read('/api', 'players/all'))
@@ -360,7 +364,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   async playbackCapability(playerId: string): Promise<QueueSnapshot> {
     const info = z.object({ schema_version: z.number() }).parse(await this.read('/info'));
-    if (info.schema_version !== 65) throw new AppError(422, 'Live playback currently requires the verified Music Assistant API schema 65. Browsing remains available.');
+    if (info.schema_version !== verifiedPlaybackSchema) throw new AppError(422, `Live playback currently requires the verified Music Assistant API schema ${verifiedPlaybackSchema}. Browsing remains available.`);
     return this.queue(playerId);
   }
   async queue(playerId: string): Promise<QueueSnapshot> {

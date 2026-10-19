@@ -1,27 +1,19 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState } from './model.js';
-import { writePrivateJson } from './store.js';
+import { PersistenceError } from './store.js';
 import { MusicAssistantClient, musicAssistantUrl, maToken, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
 import type { UploadAssets, UploadSelection } from './uploads.js';
 import { applicationOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
 import { SerialQueue } from './serial.js';
-import { maBackground, maOperation } from './ma-operation.js';
+import { maOperation } from './ma-operation.js';
+import { CatalogueReferences } from './catalogue-references.js';
+import { OutputMonitor } from './output-monitor.js';
+import { verifiedPlaybackSchema } from './music-assistant-policy.js';
+import type { IntegrationState, IntegrationStore } from './integration-store.js';
+export { integrationSchema, IntegrationFileStore, type IntegrationStore } from './integration-store.js';
 
-export const integrationSchema = z.object({
-  schema: z.literal(1), revision: z.number().int().nonnegative(),
-  mediaOrigin: applicationOrigin.nullable().optional(),
-  guestOrigin: applicationOrigin.optional(), automaticMediaOrigin: applicationOrigin.optional(),
-  musicAssistant: z.object({ url: musicAssistantUrl, accessToken: maToken,
-    sourceBindingId: z.string().uuid().optional(),
-    serverId: z.string().min(1).max(200).optional(), browserUrl: musicAssistantUrl.optional(), tokenExpiresAt: z.number().int().positive().optional(),
-    destination: z.object({ id: z.string(), name: z.string() }).strict().nullable(),
-  }).strict().nullable(),
-}).strict();
-type IntegrationState = z.infer<typeof integrationSchema>;
 export type IntegrationView = {
   revision: number; url: string | null; tokenConfigured: boolean;
   destination: { id: string; name: string } | null;
@@ -42,18 +34,6 @@ export interface PlaybackController {
   configurationChanged(): void;
   recover(): Promise<void>;
 }
-export interface IntegrationStore { load(): Promise<IntegrationState>; save(state: IntegrationState): Promise<void> }
-export class IntegrationFileStore implements IntegrationStore {
-  constructor(private directory: string) {}
-  async load(): Promise<IntegrationState> {
-    try { return integrationSchema.parse(JSON.parse(await readFile(join(this.directory, 'integrations.json'), 'utf8'))); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { schema: 1, revision: 0, musicAssistant: null };
-      throw new Error('Integration settings could not be loaded. Check the application data directory; nothing was overwritten.');
-    }
-  }
-  async save(state: IntegrationState): Promise<void> { await writePrivateJson(this.directory, 'integrations.json', state); }
-}
 
 export class IntegrationManager implements CatalogueProvider {
   private state: IntegrationState = { schema: 1, revision: 0, musicAssistant: null };
@@ -63,8 +43,7 @@ export class IntegrationManager implements CatalogueProvider {
   private destinationCheckedAt: number | null = null;
   private queue = new SerialQueue();
   private cachedReader?: MusicAssistantReader;
-  private referenceKey = randomBytes(32);
-  private catalogueEpoch = randomBytes(16).toString('base64url');
+  private references = new CatalogueReferences();
   private runtimeId = randomBytes(16).toString('base64url');
   private playback?: PlaybackController;
   private uploads?: UploadAssets;
@@ -75,14 +54,13 @@ export class IntegrationManager implements CatalogueProvider {
   private inspection?: { revision: number; pending: Promise<IntegrationView> };
   private observation = 0;
   private listeners = new Set<() => void>();
-  private monitoring = false;
-  private unsubscribeOutput?: () => void;
-  private outputTimer?: NodeJS.Timeout;
-  private outputInterval?: NodeJS.Timeout;
-  private outputRefreshing = false;
-  private outputDirty = false;
+  private monitor = new OutputMonitor(() => this.configured && !this.settingsUncertain && !this.closed ? this.getReader() : undefined,
+    id => this.report?.players.find(player => player.id === id), () => this.configured ? this.check(this.state.revision) : Promise.resolve(), () => this.changed());
+  private playbackKey = '';
   private lastView = '';
   private sequence = 0;
+  private settingsUncertain = false;
+  private closed = false;
   private mediaCheck: MediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Not checked since startup. No audio has been started.' };
   constructor(private store: IntegrationStore, private reader = (url: string, token: string): MusicAssistantReader => new MusicAssistantClient(url, token)) {}
   async init(): Promise<void> {
@@ -92,17 +70,18 @@ export class IntegrationManager implements CatalogueProvider {
       await this.store.save(next); this.state = next; // Private startup migration; no audio, discovery, or revision change.
     }
   }
-  get configured(): boolean { return this.state.musicAssistant !== null; }
+  // An ambiguous first save must not silently fall back to demo playback.
+  get configured(): boolean { return this.settingsUncertain || this.state.musicAssistant !== null; }
   get configurationRevision(): string { return `${this.state.revision}:${this.runtimeId}`; }
   /** Catalogue identity changes only with credentials/origin (or a new process), never with speaker routing. */
-  get catalogueRevision(): string { return this.catalogueEpoch; }
+  get catalogueRevision(): string { return this.references.revision; }
   get sourceBindingId(): string | null { return this.state.musicAssistant?.sourceBindingId ?? null; }
   get serverId(): string | undefined { return this.state.musicAssistant?.serverId; }
   assertSetupRevision(revision: number) {
     this.expected(revision);
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
   }
-  get routeConfigured(): boolean { return Boolean(this.state.musicAssistant?.destination && this.playback); }
+  get routeConfigured(): boolean { return !this.settingsUncertain && Boolean(this.state.musicAssistant?.destination && this.playback); }
   get playbackAvailable(): boolean { return this.routeConfigured && this.output.state === 'ready'; }
   get uploadPlaybackAvailable(): boolean { return Boolean(this.uploads && this.routeConfigured); }
   private get freshReport() { return this.report && Date.now() - this.report.checkedAt < 45_000 ? this.report : null; }
@@ -111,46 +90,19 @@ export class IntegrationManager implements CatalogueProvider {
     const selected = this.state.musicAssistant?.destination;
     const report = this.freshReport;
     const player = report?.players.find(player => player.id === selected?.id);
-    const state = !selected ? 'none' : this.playback?.requiresRecovery ? 'recovery' : this.failure ? 'unconfirmed'
+    const state = this.settingsUncertain ? 'unconfirmed' : !selected ? 'none' : this.playback?.requiresRecovery ? 'recovery' : this.failure ? 'unconfirmed'
       : !report ? 'checking' : !player?.available ? 'unavailable' : !this.destinationFresh || this.destinationFailure === null ? 'checking'
-      : this.destinationFailure || report.schemaVersion !== 65 ? 'unavailable' : 'ready';
+      : this.destinationFailure || report.schemaVersion !== verifiedPlaybackSchema ? 'unavailable' : 'ready';
     return { name: player?.name ?? selected?.name ?? null, state, checkedAt: selected ? this.destinationCheckedAt : report?.checkedAt ?? null };
   }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private changed() { for (const listener of this.listeners) listener(); }
-  /** One shared read-only monitor, independent of browser count and selected output. */
-  startMonitoring(interval = 15_000) {
-    if (this.monitoring) return;
-    this.monitoring = true; this.watchOutput();
-    this.outputInterval = setInterval(() => { this.changed(); this.refreshOutputSoon(); }, interval); this.outputInterval.unref();
-  }
-  stopMonitoring() {
-    this.monitoring = false; this.outputDirty = false; clearTimeout(this.outputTimer); this.outputTimer = undefined;
-    clearInterval(this.outputInterval); this.unsubscribeOutput?.(); this.unsubscribeOutput = undefined;
-  }
-  refreshOutputSoon() {
-    if (!this.monitoring || !this.configured) return;
-    this.outputDirty = true;
-    if (this.outputTimer || this.outputRefreshing) return;
-    this.outputTimer = setTimeout(() => {
-      this.outputTimer = undefined; this.outputRefreshing = true; this.outputDirty = false;
-      maBackground(() => { void this.check(this.state.revision).catch(() => {}).finally(() => {
-        this.outputRefreshing = false;
-        if (this.outputDirty) this.refreshOutputSoon();
-      }); });
-    }, 250); this.outputTimer.unref();
-  }
-  private watchOutput() {
-    this.unsubscribeOutput?.(); this.unsubscribeOutput = undefined;
-    if (!this.monitoring || !this.configured) return;
-    this.unsubscribeOutput = this.getReader().subscribePlayback?.(hint => {
-      if (!hint.kind) { this.refreshOutputSoon(); return; }
-      if (hint.kind === 'player_added' || hint.kind === 'player_removed' || hint.kind === 'queue_added') { this.refreshOutputSoon(); return; }
-      if (hint.kind !== 'player_updated') return; // Queue progress must not cause inventory scans.
-      const previous = this.report?.players.find(player => player.id === hint.objectId);
-      if (!previous || hint.available !== undefined && hint.available !== previous.available || hint.name !== undefined && hint.name !== previous.name) this.refreshOutputSoon();
-    });
-    this.refreshOutputSoon();
+  startMonitoring(interval = 15_000) { if (!this.closed) this.monitor.start(interval); }
+  stopMonitoring() { this.monitor.stop(); }
+  refreshOutputSoon() { if (this.configured && !this.closed) this.monitor.refreshSoon(); }
+  playbackChanged() {
+    const key = JSON.stringify([this.playback?.ownsPlayback, this.playback?.requiresRecovery, this.playback?.issue]);
+    if (key !== this.playbackKey) { this.playbackKey = key; this.changed(); }
   }
   attachUploads(uploads: UploadAssets, guestUrl: string) { this.uploads = uploads; this.defaultMediaOrigin = guestUrl; }
   attachMediaChecks(checks: MediaChecks) { this.checks = checks; }
@@ -182,6 +134,9 @@ export class IntegrationManager implements CatalogueProvider {
   }
   /** Separate diagnostic lane: never holds the player/volume serializer during network I/O. */
   async checkMediaOrigins(origins: string[], revision: number, automatic = false): Promise<AddressingView> {
+    return maOperation('media-check', () => this.inspectMediaOrigins(origins, revision, automatic));
+  }
+  private async inspectMediaOrigins(origins: string[], revision: number, automatic: boolean): Promise<AddressingView> {
     this.expected(revision);
     if (!this.configured || !this.checks) throw new AppError(409, 'Save a Music Assistant connection before testing file access.');
     if (this.checking) throw new AppError(429, 'A file connection check is already running.');
@@ -214,8 +169,11 @@ export class IntegrationManager implements CatalogueProvider {
     } finally { this.checking = false; }
   }
   attachPlayback(playback: PlaybackController): void { this.playback = playback; }
-  close() { this.stopMonitoring(); this.observation++; this.cachedReader?.close?.(); this.cachedReader = undefined; }
+  close() { this.closed = true; this.stopMonitoring(); this.observation++; this.cachedReader?.close?.(); this.cachedReader = undefined; }
+  async drain() { await this.inspection?.pending.catch(() => {}); await this.queue.drain(); }
   private getReader(): MusicAssistantReader {
+    if (this.closed) throw new AppError(503, 'The music connection is shutting down.');
+    if (this.settingsUncertain) throw new AppError(503, 'Saved settings are uncertain. Refresh speakers to reconcile them before continuing.');
     const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(409, 'The catalogue connection changed. Search again.');
     return this.cachedReader ??= this.reader(ma.url, ma.accessToken);
@@ -226,19 +184,10 @@ export class IntegrationManager implements CatalogueProvider {
     return api;
   }
   private seal(id: string, kind: string, context: string): string {
-    const nonce = randomBytes(12); const cipher = createCipheriv('aes-256-gcm', this.referenceKey, nonce);
-    const data = Buffer.concat([cipher.update(JSON.stringify({ id, kind, context, revision: this.catalogueRevision, expires: kind === 'upload-image' ? Number.MAX_SAFE_INTEGER : Date.now() + 12 * 60 * 60_000 })), cipher.final()]);
-    return `ref:${Buffer.concat([nonce, cipher.getAuthTag(), data]).toString('base64url')}`;
+    return this.references.seal(id, kind, context);
   }
   private unseal(value: string, kind: string, context: string): string {
-    try {
-      if (!value.startsWith('ref:') || value.length > 1000) throw new Error();
-      const raw = Buffer.from(value.slice(4), 'base64url');
-      const decipher = createDecipheriv('aes-256-gcm', this.referenceKey, raw.subarray(0, 12)); decipher.setAuthTag(raw.subarray(12, 28));
-      const ref = JSON.parse(Buffer.concat([decipher.update(raw.subarray(28)), decipher.final()]).toString('utf8'));
-      if (ref.context !== context || ref.kind !== kind || ref.revision !== this.catalogueRevision || ref.expires < Date.now() || typeof ref.id !== 'string') throw new Error();
-      return ref.id;
-    } catch { throw new AppError(409, 'This catalogue selection expired or belongs to another participant. Browse again.'); }
+    return this.references.unseal(value, kind, context);
   }
   private withArtwork<T extends { artwork?: string; artistArtwork?: string }>(item: T, context: string): T {
     const url = (id?: string) => id && /^image:[a-f0-9]{64}$/.test(id) ? `/api/participant/artwork/${encodeURIComponent(this.seal(id, 'image', context))}` : undefined;
@@ -367,27 +316,38 @@ export class IntegrationManager implements CatalogueProvider {
     return this.queue.run(work, 'integration');
   }
   private expected(revision: number) {
+    if (this.closed) throw new AppError(503, 'The music connection is shutting down.');
+    if (this.settingsUncertain) throw new AppError(503, 'Saved settings are uncertain. Refresh speakers to reconcile them before continuing.');
     if (revision !== this.state.revision) throw new AppError(409, 'Integration settings changed in another browser. Reload them before trying again.');
   }
   private async commit(next: IntegrationState) {
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
+    try { await this.store.save(next); }
+    catch (error) {
+      if (!(error instanceof PersistenceError) || error.outcome === 'uncertain') {
+        this.settingsUncertain = true; this.observation++; this.report = null; this.destinationCheckedAt = null;
+        this.failure = 'The settings save could not be confirmed. Refresh speakers to reconcile saved settings before playback.';
+        this.playback?.configurationChanged(); this.changed(); this.refreshOutputSoon();
+      }
+      throw new AppError(503, 'Integration settings could not be saved. Check the application data directory.');
+    }
+    this.installConfiguration(next);
+  }
+  private installConfiguration(next: IntegrationState) {
     const connectionChanged = this.state.musicAssistant?.url !== next.musicAssistant?.url || this.state.musicAssistant?.accessToken !== next.musicAssistant?.accessToken;
     const destinationChanged = this.state.musicAssistant?.destination?.id !== next.musicAssistant?.destination?.id;
-    try { await this.store.save(next); } catch { throw new AppError(503, 'Integration settings could not be saved. Check the application data directory.'); }
     this.state = next;
     this.observation++;
     if (connectionChanged) { this.report = null; this.failure = ''; }
     if (connectionChanged || destinationChanged) { this.destinationFailure = null; this.destinationCheckedAt = null; }
     this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Addresses or settings changed. Check file access again; no audio has been started.' };
     if (connectionChanged) {
-      this.unsubscribeOutput?.(); this.unsubscribeOutput = undefined;
       this.cachedReader?.close?.(); this.cachedReader = undefined;
-      this.catalogueEpoch = randomBytes(16).toString('base64url');
-      this.referenceKey = randomBytes(32);
+      this.references = new CatalogueReferences();
     }
     // Configuration writes invalidate pending routing/volume intents, never start audio.
     this.playback?.configurationChanged();
-    if (connectionChanged) this.watchOutput();
+    if (connectionChanged) this.monitor.watch();
     this.changed();
   }
   /** Explicit allowlist. Tokens, queue payloads, and internal exceptions never enter the view. */
@@ -403,9 +363,9 @@ export class IntegrationManager implements CatalogueProvider {
     const result: IntegrationView = { revision: this.state.revision, url: ma?.url ?? null, tokenConfigured: Boolean(ma?.accessToken), output: this.output,
       settingsChangesBlocked: Boolean(this.playback?.ownsPlayback),
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
-      status: !ma ? 'not-configured' : this.failure ? 'error' : report ? 'checked' : 'not-checked',
+      status: this.settingsUncertain ? 'error' : !ma ? 'not-configured' : this.failure ? 'error' : report ? 'checked' : 'not-checked',
       destinationStatus, destinationMessage,
-      message: !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (report
+      message: this.settingsUncertain ? this.failure : !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (report
         ? 'Music Assistant is connected and authorized.'
         : 'Music Assistant is configured. Its connection has not been checked.'),
       report: structuredClone(report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
@@ -445,6 +405,9 @@ export class IntegrationManager implements CatalogueProvider {
   }
   /** Only Supervisor/mDNS-verified candidates matching a persisted server ID reach here. */
   async relocate(url: string, serverId: string, revision: number) {
+    return maOperation('server-relocation', () => this.relocateServer(url, serverId, revision));
+  }
+  private async relocateServer(url: string, serverId: string, revision: number) {
     this.assertSetupRevision(revision); const previous = this.state.musicAssistant;
     if (!previous?.serverId || previous.serverId !== serverId || previous.url === url) return;
     url = musicAssistantUrl.parse(url);
@@ -463,6 +426,18 @@ export class IntegrationManager implements CatalogueProvider {
     });
   }
   async check(revision: number): Promise<IntegrationView> {
+    if (this.settingsUncertain) {
+      await this.serial(async () => {
+        if (!this.settingsUncertain) return;
+        if (this.closed) throw new AppError(503, 'The music connection is shutting down.');
+        // A successful durable rewrite, not merely a read, resolves an ambiguous commit.
+        const persisted = await this.store.load(); await this.store.save(persisted);
+        this.settingsUncertain = false; this.failure = ''; this.destinationFailure = null; this.destinationCheckedAt = null;
+        this.installConfiguration(persisted);
+      });
+      revision = this.state.revision;
+      if (!this.configured) return this.view();
+    }
     this.expected(revision);
     if (this.inspection?.revision === revision) return this.inspection.pending;
     const pending = maOperation('settings-discovery', () => this.inspectSettings(revision));
@@ -504,15 +479,25 @@ export class IntegrationManager implements CatalogueProvider {
     return this.serial(async () => {
       this.expected(revision);
       if (observation !== this.observation) return this.view();
-      if (!ma.serverId && report?.serverId) {
+      if (!ma.serverId && report?.serverId && !this.playback?.ownsPlayback) {
         const next = { ...this.state, musicAssistant: { ...ma, serverId: report.serverId } };
-        await this.store.save(next); this.state = next; // Identity enrichment does not alter routing/revision.
+        try { await this.store.save(next); this.state = next; }
+        catch (error) {
+          if (!(error instanceof PersistenceError) || error.outcome === 'uncertain') {
+            this.settingsUncertain = true; this.report = null; this.destinationCheckedAt = null;
+            this.failure = 'Saved settings could not be confirmed. Refresh speakers to reconcile them.'; this.changed();
+          }
+          throw new AppError(503, 'Integration identity could not be saved. Check the data directory.');
+        }
       }
       this.report = report; this.failure = failure; this.destinationFailure = destinationFailure;
       this.destinationCheckedAt = report && ma.destination ? Date.now() : null; this.changed(); return this.view();
     });
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
+    return maOperation('speaker-selection', () => this.validateDestination(id, revision));
+  }
+  private async validateDestination(id: string, revision: number): Promise<IntegrationView> {
     this.expected(revision); const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(409, 'Refresh this page and select an available destination.');
     // Discovery must not delay Stop or other playback controls. Revalidate settings

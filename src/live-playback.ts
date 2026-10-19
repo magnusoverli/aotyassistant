@@ -4,8 +4,11 @@ import { type IntegrationManager, type PlaybackController } from './integrations
 import type { MusicAssistantApi, QueueSnapshot } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
 import { maBackground, maBudget, maOperation, maRemaining, maStage } from './ma-operation.js';
+import { diagnostics } from './diagnostics.js';
 
 type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?: () => void; suspend?: () => void; uploaded?: boolean };
+type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configurationRevision' | 'routeConfigured' | 'playbackAvailable' |
+  'withPlayback' | 'withDemoPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
 type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback'>;
 type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
   position?: { elapsed: number; duration: number; at: number } };
@@ -14,6 +17,7 @@ type Ownership = Selection & { appId: string; api: PlaybackApi; destination: str
 export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   issue = '';
   private closed = false;
+  private draining = false;
   private capabilityRevision?: string;
   private failed = false;
   private own?: Ownership;
@@ -62,10 +66,11 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       maRemaining(Infinity);
       this.commandGeneration++; this.commanding = true; clearTimeout(this.timer);
       try { return await work(api, destination, revision); }
-      finally { this.commanding = false; if (this.own && !this.failed) this.schedule(); }
+      finally { this.commanding = false; this.integrations.playbackChanged(); if (this.own && !this.failed) this.schedule(); }
     }));
   }
   private watchEvents(api: PlaybackApi, destination: string) {
+    if (this.draining) return;
     const revision = this.integrations.configurationRevision;
     if (this.eventRevision === revision) return;
     this.unsubscribeEvents?.(); this.eventRevision = revision;
@@ -126,6 +131,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   private scheduleVolumeConfirmation(api: PlaybackApi, destination: string) {
     clearTimeout(this.volumeConfirmation);
+    if (this.draining) return;
     this.volumeConfirmation = setTimeout(() => { maBackground(() => { void this.refreshVolume(api, destination); }); }, 300); this.volumeConfirmation.unref();
   }
   async setVolume(level: number, playbackId?: string) {
@@ -164,7 +170,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   get ownsPlayback() { return Boolean(this.own || this.demoId); }
   get requiresRecovery() { return this.failed; }
 
-  constructor(private demo: DemoAdapter, private integrations: IntegrationManager, private pollMs = 1500) {
+  constructor(private demo: DemoAdapter, private integrations: PlaybackIntegration, private pollMs = 1500) {
     integrations.attachPlayback(this);
     demo.onComplete = id => { if (this.demoId === id) { this.demoId = undefined; this.onComplete(id); } };
     demo.onProgress = () => this.onProgress();
@@ -178,7 +184,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.pending?.release?.(); this.pending = undefined; this.failed = false; this.issue = ''; this.capabilityRevision = undefined;
     this.volumeEpoch++; this.volumeGeneration++; this.volumeTarget = undefined; clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
     this.volumeState = { available: false, level: null };
-    if (this.available) {
+    if (this.available && !this.draining) {
       maBackground(() => { void this.refresh(); });
       this.volumeTimer = setInterval(() => { maBackground(() => { if (!this.own) void this.refresh(); }); }, 5000); this.volumeTimer.unref();
     }
@@ -260,12 +266,14 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     });
   }
   private invalidate(message: string, fatal: boolean): void {
+    if (fatal && !this.failed) diagnostics.record('recovery', 1);
     this.commandGeneration++;
     const id = this.own?.appId;
     this.issue = message; this.failed = fatal; clearTimeout(this.timer);
     this.integrations.refreshOutputSoon();
     if (fatal && this.own?.suspend) this.own.suspend(); else this.own?.release?.();
     if (!fatal) this.own = undefined;
+    this.integrations.playbackChanged();
     if (id) this.onInvalidated(id, message);
   }
   async play(track: Track, appId: string): Promise<void> {
@@ -362,7 +370,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   private schedule(ms = this.eventsConnected && this.pollMs === 1500 ? 3000 : this.pollMs): void {
     clearTimeout(this.timer);
-    if (this.closed) return;
+    if (this.closed || this.draining) return;
     this.timer = setTimeout(() => { maBackground(() => { void this.poll(); }); }, ms); this.timer.unref();
   }
   private async poll(): Promise<void> {
@@ -374,7 +382,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       const snapshot = await this.integrations.withPlayback(async () => ({ own: this.own, generation: this.commandGeneration, revision: this.integrations.configurationRevision }));
       generation = snapshot.generation; observed = snapshot.own;
       const own = snapshot.own; if (!own || this.failed || this.closed) return;
-      const current = () => !this.closed && !this.failed && this.own === own && snapshot.generation === this.commandGeneration && snapshot.revision === this.integrations.configurationRevision;
+      const current = () => !this.closed && !this.draining && !this.failed && this.own === own && snapshot.generation === this.commandGeneration && snapshot.revision === this.integrations.configurationRevision;
       let q: QueueSnapshot; let parked: boolean;
       try {
         q = await own.api.queue(own.destination);
@@ -399,6 +407,11 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
           if (!this.isOwned(q, own)) { this.invalidate('Playback changed outside this app. Its audio was left untouched.', false); return; }
           if (this.safeQueue(q)) return;
           await own.api.controlQueue(own.queueId, 'stop');
+          try { await this.confirmTransport(own, 'stop'); }
+          catch (error) {
+            if (error instanceof AppError && error.status === 409) return;
+            this.invalidate('The single-track queue policy changed. Stopping could not be confirmed; host recovery is required.', true); return;
+          }
           this.invalidate('The single-track queue policy changed. Playback was stopped; host recovery is required.', true); return;
         }
         if (q.ended && q.state === 'idle' && own.seenPlaying && own.status === 'playing') {
@@ -411,7 +424,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         this.onProgress();
       });
     } catch { if (!this.closed && this.own && this.own === observed && generation === this.commandGeneration && !this.failed) this.invalidate('Playback connection was lost. Controls are disabled until host recovery.', true); }
-    finally { this.polling = false; if (this.own && !this.failed) { if (this.eventPollPending) this.schedule(50); else this.schedule(); } }
+    finally { this.polling = false; this.integrations.playbackChanged(); if (this.own && !this.failed) { if (this.eventPollPending) this.schedule(50); else this.schedule(); } }
   }
   async recover(): Promise<void> {
     this.commandGeneration++;
@@ -429,6 +442,11 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       this.onInvalidated(own.appId, 'Playback controls recovered. Select a track to start again.');
     }
     this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.failed = false; this.issue = ''; clearTimeout(this.timer);
+    this.integrations.playbackChanged();
+  }
+  beginShutdown() {
+    this.draining = true; this.commandGeneration++; this.unsubscribeEvents?.(); this.unsubscribeEvents = undefined;
+    clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
   }
   close(): void { this.closed = true; this.unsubscribeEvents?.(); for (const wake of this.eventWaiters) wake(); clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer); this.volumeEpoch++; this.volumeTarget = undefined; this.demo.close(); this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.demoId = undefined; }
 }

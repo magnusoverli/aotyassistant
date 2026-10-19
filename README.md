@@ -64,7 +64,7 @@ Seat numbers reflect the host’s ordered rotation—not album ranks or physical
 
 Artist results use artist images; albums, tracks, prepared choices, and your current track use album artwork when supplied by the provider. Missing/unsupported images fall back to the generic record. Browsers contact only this app: an authorized proxy retrieves bounded raster thumbnails from the configured Music Assistant image proxy, never arbitrary artwork URLs. Private image references are bound to participant/session/catalogue connection, not the selected speaker; public image requests require the exact currently revealed playback and are rechecked after the download. Responses are `no-store`; a bounded server-side cache does not bypass authorization.
 
-Uploaded covers are extracted locally into private raster thumbnails and follow the same owner/reveal checks; tag-embedded external URLs are never fetched. Original uploads live under `DATA_DIR/uploads/`; include this directory with private lists in backups. Saved audio survives event/server changes and does not depend on an expiring Music Assistant URL. Only uncommitted staging data expires after seven days.
+Uploaded covers are extracted locally into private raster thumbnails and follow the same owner/reveal checks; tag-embedded external URLs are never fetched. Original uploads live under `DATA_DIR/uploads/`; include this directory with private lists in backups. Saved audio survives event/server changes and does not depend on an expiring Music Assistant URL. Published drafts expire after seven days; incomplete `upload-staging/` data is disposable after restart/restore.
 
 The **host** and **current playing participant** have a volume slider. Real volume control is available automatically for a configured, supported destination; unsupported/unavailable destinations show a disabled control. Commands target only the saved destination, use group volume for groups, and reject stale turns/playback/destination revisions. Participant volume also revalidates current queue ownership. Demo sliders are synthetic and change no speaker volume. Automatic capability/volume checks are read-only, never volume changes.
 
@@ -96,16 +96,20 @@ The participant player responds optimistically: play, pause/resume, stop, and re
 | `DATA_DIR` | `./data` | Application-owned persistent directory |
 | `PLAYBACK_MODE` | `demo` | Fallback without a Music Assistant connection; configured connections use their selected speaker automatically |
 | `DEMO_TRACK_SECONDS` | `30` | Synthetic track duration, 1–3600 seconds |
+| `AOTY_TIMINGS` | unset | Set to `1` for sanitized correlated operation timings; `AOTY_MA_TIMINGS` remains an alias |
+| `AOTY_DIAGNOSTICS` | unset | Set to `1` for once-per-minute numeric backend diagnostics |
 
 `.env` files are not loaded implicitly. See `.env.example`; with an existing `.env`, start the built server using `node --env-file=.env dist/server/index.js`.
 
 Room state is atomically persisted to `DATA_DIR/state.json` (schema 3) with restrictive permissions. Restart restores participants/order but clears playback/reveal and rotates the turn identity; music never starts automatically. Old development session records (schema 1/2) are discarded, not migrated, as requested; private lists/uploads/settings remain intact. Corrupt/unsupported current room state fails startup. Run only **one application process per data directory**.
 
-Integration settings are stored separately in `DATA_DIR/integrations.json`, also with mode `0600`. Tokens are stored server-side in plaintext in that protected file, **not encrypted**; secure the host, volume, and backups. The application does not put tokens in browser storage or return them in responses. Restart retains the connection/destination and playback availability, resets discovery status, and starts only read-only capability/volume refreshes for a saved destination—never audio or volume commands.
+Integration settings are stored separately in `DATA_DIR/integrations.json`, also with mode `0600`. Tokens are stored server-side in plaintext in that protected file, **not encrypted**; secure the host, volume, and backups. The application does not put tokens in browser storage or return them in responses. Restart retains the connection/destination and revalidates output readiness through read-only capability/inventory/volume checks—never audio or volume commands. An uncertain settings save disables routing until durable reconciliation and fresh validation succeed.
 
 Private lists live independently in `DATA_DIR/preparations/<owner-id>.json`, with mode `0600` under a `0700` directory. Include the whole data directory in backups. Files contain exact recording descriptors, metadata, history, and credential/recovery **hashes**, never raw owner/recovery secrets. Unknown/corrupt data fails closed without resetting lists or stopping another participant's audio. Existing connection files receive a private source-binding ID on first startup. Restarts/speaker changes and token-only updates retain this binding; disconnecting/replacing the connection creates a new one. Old entries remain saved but are not silently rebound. Same-binding playback still requires fresh exact provider/item/URI/version verification; an origin alone is not proof of a recording's identity.
 
 Private-list JSON snapshots have a 32 MiB read/write bound. A change that would exceed it fails before replacing the last saved list; this metadata bound is separate from uploaded audio storage, which has no configured size quota.
+
+`/api/health` reports process liveness independently of playback recovery, with separate storage/playback availability fields. `/api/host/diagnostics` exposes fixed numeric operational aggregates under the existing host-access policy. See [backend reliability, architecture, and measurements](docs/backend-hardening.md).
 
 ## Connect Music Assistant from the host browser
 

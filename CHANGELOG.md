@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [0.3.14] — 2026-10-19
+
+- Keep playback recovery independent of app health, confirm automatic stops, reconcile uncertain settings saves, and reduce list/catalogue latency with bounded work and backup-safe uploads.
+- Add focused backend modules, sanitized diagnostics, and graceful shutdown draining while preserving private lists and exact-source playback.
+- Show a subtle animated dotted spinner inside Refresh speakers for the duration of discovery.
+
 ## [0.3.13] — 2026-10-19
 
 - Make speaker selection a live active output, with automatic availability updates, restart revalidation, and synchronized speaker names in Settings and playback controls.

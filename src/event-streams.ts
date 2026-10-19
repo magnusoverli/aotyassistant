@@ -37,8 +37,12 @@ class EventStream {
   }
 
   send(event: 'state' | 'revoked' | 'preparation' | 'preparation-revoked', data: unknown) {
+    this.sendEncoded(event, JSON.stringify(data));
+  }
+  /** Accept only JSON produced from an already authorized/filtered projection. */
+  sendEncoded(event: 'state' | 'revoked' | 'preparation' | 'preparation-revoked', json: string) {
     if (this.closed) return;
-    const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    const frame = `event: ${event}\ndata: ${json}\n\n`;
     if (event === 'revoked') { this.pending.clear(); this.response.write(frame); this.end(); return; }
     if (event === 'preparation-revoked') this.pending.delete('preparation');
     // A large valid snapshot can exceed the socket's high-water mark on its own.

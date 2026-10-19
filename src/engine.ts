@@ -1,20 +1,24 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, roomSchema, catalogueSearchNotice, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track } from './model.js';
+import { AppError, roomSchema, catalogueSearchNotice, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track, type ListeningOrderView } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
 import { SerialQueue } from './serial.js';
-import { maOperation, maRemaining, maStage } from './ma-operation.js';
+import { maBackground, maOperation, maRemaining, maStage } from './ma-operation.js';
+import { playbackResolution } from './operation.js';
 
 const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+export type EngineChange = 'room' | 'playback' | 'output';
 
 export class Engine extends EventEmitter {
   private state: State = { schema: 3, room: null };
   private queue = new SerialQueue();
   private audioQueue = new SerialQueue();
   private storageHealthy = true;
+  private initialized = false;
+  private stopping = false;
   private concealPlayback = false;
   private controlEpoch = 0;
   private invalidationEpoch = 0;
@@ -24,33 +28,38 @@ export class Engine extends EventEmitter {
     super();
     this.setMaxListeners(0); // Multiple phones/displays subscribe; HTTP caps the actual stream count.
     adapter.onComplete = id => { void this.complete(id).catch(() => { this.emit('change'); }); };
-    adapter.onProgress = () => this.emit('change');
+    adapter.onProgress = () => this.emit('change', 'playback');
     adapter.onInvalidated = id => {
       if (id !== this.startingPlayback?.id && id !== this.state.room?.playback?.id) return;
       this.invalidationEpoch++;
       const affectedId = this.startingPlayback?.id === id ? this.startingPlayback.previousId : id;
       const affectedTurn = this.startingPlayback?.id === id ? this.startingPlayback.turnId : this.state.room?.turnId;
       this.concealPlayback = true; this.emit('change');
-      void this.serial(async () => {
+      void maBackground(() => this.serial(async () => {
         if (!affectedId || this.state.room?.playback?.id !== affectedId || this.state.room.turnId !== affectedTurn) return;
         const next = structuredClone(this.state); next.room!.playback = null; next.room!.revision++;
         try { await this.store.save(next); this.state = next; } catch { this.storageHealthy = false; }
         this.emit('change');
-      });
+      })).catch(() => { this.storageHealthy = false; this.emit('change'); });
     };
     adapter.onStatus = (id, status) => {
       const epoch = this.controlEpoch;
-      void this.serial(async () => {
+      void maBackground(() => this.serial(async () => {
         if (this.state.room?.playback?.id !== id || this.state.room.playback.status === 'stopped' ||
           this.state.room.playback.status === status || epoch !== this.controlEpoch) return;
         const next = structuredClone(this.state); next.room!.playback!.status = status; next.room!.revision++;
         try { await this.store.save(next); this.state = next; }
         catch { this.storageHealthy = false; this.concealPlayback = true; await this.adapter.control('stop').catch(() => {}); }
         this.emit('change');
-      });
+      })).catch(() => { this.storageHealthy = false; this.concealPlayback = true; this.emit('change'); });
     };
   }
   get ready(): boolean { return this.adapter.connected && this.storageHealthy; }
+  get playbackAvailable(): boolean { return this.ready && this.catalogueState.playbackAvailable; }
+  get live(): boolean { return this.initialized && !this.stopping; }
+  get storageAvailable(): boolean { return this.storageHealthy; }
+  beginShutdown() { this.stopping = true; }
+  async drain() { await this.audioQueue.drain(); await this.queue.drain(); }
   setGuestOrigin(origin: string) { this.guestUrl = origin; this.emit('change'); }
   private get catalogueState() {
     return this.catalogue?.configured ? { source: 'music-assistant' as const, playbackAvailable: this.catalogue.playbackAvailable ?? false, revision: this.catalogue.catalogueRevision ?? this.catalogue.configurationRevision ?? 0 }
@@ -63,6 +72,7 @@ export class Engine extends EventEmitter {
     // Keep the room and memberships, but invalidate pending playback actions on restart.
     this.state.room.turnId = randomUUID(); this.state.room.playback = null; this.state.room.revision++;
     await this.store.save(this.state);
+    this.initialized = true;
   }
   private serial<T>(work: () => Promise<T>): Promise<T> {
     return this.queue.run(work, 'engine');
@@ -77,10 +87,10 @@ export class Engine extends EventEmitter {
       return work(this.room());
     });
   }
-  private async transaction<T>(work: (state: State) => Promise<T>): Promise<T> {
+  private async transaction<T>(work: (state: State) => Promise<T>, playback = false): Promise<T> {
     return this.serial(async () => {
       maRemaining(Infinity);
-      if (!this.ready) throw new AppError(503, 'Playback or storage connectivity is uncertain. Controls are disabled.');
+      if (!this.storageHealthy || playback && !this.adapter.connected) throw new AppError(503, 'Playback or storage connectivity is uncertain. Controls are disabled.');
       const state = structuredClone(this.state); const result = await work(state);
       const room = this.room(state); room.revision++; roomSchema.parse(room);
       try { await this.store.save(state); }
@@ -117,13 +127,20 @@ export class Engine extends EventEmitter {
     room.currentId = room.active.length ? room.active[(index + 1) % room.active.length]! : null;
     room.turnId = randomUUID(); room.playback = null;
   }
+  listeningOrder(): ListeningOrderView {
+    const room = this.room();
+    const people = new Map(room.participants.map(({ id, nickname }) => [id, { id, nickname }]));
+    return { roomId: room.id, revision: room.revision, current: people.get(room.currentId ?? '') ?? null,
+      next: room.currentId && room.active.length ? people.get(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) ?? null : null,
+      rotation: room.active.map(id => people.get(id)!) };
+  }
   view(role: Role): View {
     const room = this.room();
     if (role.kind === 'participant') this.participant(role.credential, room);
     const people = new Map(room.participants.map(p => [p.id, { id: p.id, nickname: p.nickname }]));
     const person = (id: string | null) => id ? people.get(id) ?? null : null;
     const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id,
-      playbackAvailable: this.ready && this.catalogueState.playbackAvailable,
+      playbackAvailable: this.playbackAvailable,
       ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
       revision: room.revision, turnId: room.turnId, current: person(room.currentId),
       next: room.currentId && room.active.length ? person(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) : null,
@@ -244,7 +261,7 @@ export class Engine extends EventEmitter {
     }));
   }
   async search(credential: string, _turnId: string, query: string): Promise<CatalogueSearch> {
-    if (!this.ready) throw new AppError(503, 'Playback connectivity is uncertain.');
+    if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');
     const room = this.room(); const participant = this.participant(credential, room); const context = `${room.id}:${participant.id}`;
     const catalogue = this.catalogueState;
     const tracks = catalogue.source === 'music-assistant' ? await this.catalogue!.search(query, context)
@@ -257,7 +274,7 @@ export class Engine extends EventEmitter {
     return { ...currentCatalogue, tracks, ...(catalogue.source === 'music-assistant' ? { notices: [catalogueSearchNotice] } : {}) };
   }
   async browse(credential: string, kind: 'artists' | 'albums' | 'tracks', value: string): Promise<CatalogueBrowse> {
-    if (!this.ready) throw new AppError(503, 'Playback connectivity is uncertain.');
+    if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');
     const room = this.room(); const member = this.participant(credential, room); const context = `${room.id}:${member.id}`;
     const catalogue = this.catalogueState;
     if (!this.catalogue?.configured || !this.catalogue.browse) throw new AppError(422, 'Artist/album browsing requires a Music Assistant connection.');
@@ -287,7 +304,7 @@ export class Engine extends EventEmitter {
         }
         return `${room.id}:${this.participant(credential, room).id}`;
       });
-      const track = await maStage('resolve', () => resolve(context)); const id = randomUUID();
+      const track = await maStage('resolve', () => playbackResolution(() => resolve(context))); const id = randomUUID();
       const concealed = this.concealPlayback; const epoch = this.invalidationEpoch;
       try {
         await this.inspect(room => {
@@ -303,7 +320,7 @@ export class Engine extends EventEmitter {
           const room = this.room(state); check(room);
           if (epoch !== this.invalidationEpoch) throw new AppError(409, 'Playback changed while the track was starting.');
           room.playback = { id, turnId, track, status: 'playing', revealed: false };
-        });
+        }, true);
       }
       catch (error) {
         if (started) await this.adapter.control('stop').catch(() => {});
@@ -334,7 +351,7 @@ export class Engine extends EventEmitter {
       const room = this.room(state); this.current(credential, turnId, room); this.expectedPlayback(room, playbackId);
       if (!room.playback) throw new AppError(409, 'Play a track before revealing.');
       room.playback.revealed = true;
-    });
+    }, true);
   }
   async complete(playbackId: string): Promise<void> {
     // No-op for stale, duplicated, paused, stopped, or recovered completion events.

@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { lookup } from 'node:dns/promises';
-import { isIP } from 'node:net';
 import WebSocket from 'ws';
 import { z } from 'zod';
-import { isAllowedAddress, musicAssistantUrl } from './music-assistant-transport.js';
+import { musicAssistantUrl, resolveLanAddresses } from './lan-network.js';
+import { verifiedPlaybackSchema } from './music-assistant-policy.js';
 
 export type PlaybackEvent = { connected: boolean; objectId?: string; kind?: string; available?: boolean; name?: string };
-const info = z.object({ schema_version: z.literal(65) });
+const info = z.object({ schema_version: z.literal(verifiedPlaybackSchema) });
 const event = z.object({ event: z.enum(['queue_updated', 'queue_items_updated', 'player_added', 'player_updated', 'player_removed', 'queue_added']), object_id: z.string().min(1).max(500),
   data: z.object({ available: z.boolean().optional(), name: z.string().max(200).optional() }).nullish().catch(undefined) });
 
@@ -44,15 +43,10 @@ export class MusicAssistantEvents {
     this.timer.unref();
   }
   private async connect(generation: number) {
-    let dnsTimer: NodeJS.Timeout | undefined;
     try {
       const url = new URL('/ws', musicAssistantUrl.parse(this.origin));
       const hostname = url.hostname.replace(/^\[|\]$/g, '');
-      const addresses = isIP(hostname) ? [{ address: hostname, family: isIP(hostname) }] : await Promise.race([
-        lookup(hostname, { all: true }),
-        new Promise<never>((_resolve, reject) => { dnsTimer = setTimeout(() => reject(new Error()), 8000); dnsTimer.unref(); }),
-      ]);
-      if (!addresses.length || addresses.some(a => !isAllowedAddress(a.address))) throw new Error();
+      const addresses = await resolveLanAddresses(hostname, 8000);
       if (generation !== this.generation || this.closed || !this.listeners.size) return;
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       const socket = new WebSocket(url, { agent: false, followRedirects: false, handshakeTimeout: 8000, maxPayload: 2 * 1024 * 1024, perMessageDeflate: false,
@@ -87,6 +81,5 @@ export class MusicAssistantEvents {
       socket.on('error', () => { /* Closure schedules reconnection; never expose raw upstream errors. */ });
       socket.on('close', () => { if (current()) { this.socket = undefined; this.retry(generation); } });
     } catch { this.retry(generation); }
-    finally { clearTimeout(dnsTimer); }
   }
 }

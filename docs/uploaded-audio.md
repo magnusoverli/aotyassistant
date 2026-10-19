@@ -26,7 +26,7 @@ Uploads and normal list/player commands have separate request lanes. A file-proc
 - Reload can check whether the upload finished using a read-only request. An incomplete transfer may require choosing the file again. Neither upload bytes nor audio commands are automatically replayed.
 - Add-to-list uses the existing durable operation receipt/revision mechanism. Lost acknowledgements are retried explicitly and do not append another entry. Conflicts retain the uploaded asset for explicit reconciliation. Exact byte-identical upcoming uploads are deduplicated within that private list, not across owners.
 - **Discard upload draft** deletes only an unreferenced draft. If an earlier save actually succeeded, the saved entry/file is preserved and only the local draft is forgotten.
-- Uncommitted staged files expire after seven days; incomplete files are removed on failed/canceled attempts or conservatively cleaned up later using durable receiving markers. Retained saved assets never expire. Cleanup refuses to delete bytes referenced by a saved list, including after an inconsistent/partial backup.
+- Published upload drafts expire after seven days. Incomplete transfers/analysis use disposable `upload-staging/` directories and publish atomically into `uploads/` only after completion; abandoned staging is removed after restart/restore. Retained saved assets never expire. Cleanup refuses to delete published bytes referenced by a saved list, including after an inconsistent/partial backup.
 
 ## Retention, deletion, storage, and backup
 
@@ -34,7 +34,9 @@ There are **no upload file-size, per-owner storage, or total-storage quotas**. U
 
 Saved files survive refreshes, new events, app restarts, connection/server changes, and private-library recovery. Played history and reversible Removed entries keep their audio/covers. To reclaim a file, Remove it, open **Removed**, then choose **Delete file permanently** and confirm. This deletes that asset's entries from the owner's list/history and its audio/artwork. It is blocked while the file is starting, playing, paused, or pinned by uncertain ownership awaiting recovery.
 
-List deletion intents are durable before physical file deletion. If deletion fails or the process exits between stages, the next authorized list read retries cleanup; an acknowledged deletion never resurrects the entry. Old operation receipts remain idempotent. Permanent deletion cannot undo existing external backups; backup retention is managed separately.
+List deletion intents are durable before physical file deletion. If deletion fails or the process exits between stages, an authorized list read schedules a bounded cleanup batch after returning the list; an acknowledged deletion never resurrects the entry. Completed deletion checkpoints prevent repeated filesystem work while anti-replay tombstones and old operation receipts remain durable. Permanent deletion cannot undo existing external backups; backup retention is managed separately.
+
+Long transfers and analysis do not hold the hot-backup barrier. Final publication waits for backup thaw and synchronizes the published asset directory before acknowledgement. Unpublished staging copied by a backup is disposable, never a recoverable saved selection. See [backend hardening](backend-hardening.md).
 
 Storage layout, inside the existing `DATA_DIR`:
 

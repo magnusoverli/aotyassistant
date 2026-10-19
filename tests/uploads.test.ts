@@ -259,7 +259,7 @@ test('large streamed files have no storage quota, and slow processing/device rev
   assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/stop').length, 0);
 });
 
-test('an unconfirmed permanent-delete cleanup is durable and safely finishes on the next authorized read', async t => {
+test('an unconfirmed permanent-delete cleanup is durable and safely resumes after the next authorized read', async t => {
   const f = await fixture(t); const added = await f.add();
   const removed = await f.json<PreparationResult>(prefix + '/remove', { entryId: added.entryId, operation: op(added.view.revision) }, f.first.library);
   const remove = f.uploads.remove.bind(f.uploads); f.uploads.remove = async () => { throw new Error('Synthetic storage failure'); };
@@ -267,6 +267,7 @@ test('an unconfirmed permanent-delete cleanup is durable and safely finishes on 
   assert.equal(deleted.view.removed.length, 0); assert.ok(deleted.warning); await stat(join(f.directory, 'uploads', added.body.uploadId, 'audio'));
   f.uploads.remove = remove;
   assert.equal((await f.request(prefix + '/state', undefined, f.first.library)).status, 200);
+  for (let i = 0; i < 100 && await stat(join(f.directory, 'uploads', added.body.uploadId)).then(() => true, () => false); i++) await delay(5);
   await assert.rejects(stat(join(f.directory, 'uploads', added.body.uploadId)));
 });
 

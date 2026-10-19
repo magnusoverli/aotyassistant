@@ -14,17 +14,16 @@ const revision = z.number().int().nonnegative();
 /** Host integration/addressing routes. Global HTTP origin/content-type policy is mounted first. */
 export function mountIntegrations(app: Express, engine: Engine, integrations: IntegrationManager, setup?: SetupManager) {
   const streams = new EventStreams(100, 'Too many Settings connections. Close unused tabs and try again.');
-  const unsubscribe = integrations.subscribe(() => engine.emit('change'));
+  const unsubscribe = integrations.subscribe(() => engine.emit('change', 'output'));
   integrations.startMonitoring();
   app.get('/api/host/integrations/events', (_req, res) => {
     const stream = streams.reserve(res); if (!stream.open()) return;
     let previous = '';
     const send = () => {
       const view = integrations.view(); const key = JSON.stringify(view);
-      if (key !== previous) { previous = key; stream.send('state', view); }
+      if (key !== previous) { previous = key; stream.sendEncoded('state', key); }
     };
-    send(); engine.on('change', send);
-    stream.onClose(() => engine.off('change', send));
+    send(); stream.onClose(integrations.subscribe(send));
     stream.every(() => { send(); stream.heartbeat(); }, 15_000);
     integrations.refreshOutputSoon();
   });
