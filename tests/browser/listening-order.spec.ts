@@ -23,14 +23,22 @@ test('every application route has one matching live listening order directly und
         const bar = (await current.locator('.header-inner').boundingBox())!;
         const order = (await current.locator('.order-bar').boundingBox())!;
         expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
-        expect(order.height).toBeLessThanOrEqual(104);
+        expect(order.height).toBeLessThanOrEqual(width < 1100 ? 56 : 104);
         await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
         await expect(current.locator('.rotation-list')).toBeVisible();
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();
         const seat = current.locator('.rotation-seat').first();
-        const avatar = (await seat.locator('.avatar').boundingBox())!;
-        const name = (await seat.locator('strong').boundingBox())!;
-        expect(avatar.x + avatar.width).toBeLessThanOrEqual(name.x);
+        if (width < 1100) {
+          await expect(seat.locator('.avatar')).toBeHidden();
+          await expect(current.locator('.rotation-seat').nth(1)).toBeInViewport({ ratio: 1 });
+          await expect(seat.locator('.seat-state:visible')).toHaveText('Now');
+          if (current === page) await expect(current.locator('.workspace-heading').getByRole('button', { name: 'Manage people' })).toBeVisible();
+        } else {
+          const avatar = (await seat.locator('.avatar').boundingBox())!;
+          const name = (await seat.locator('strong').boundingBox())!;
+          expect(avatar.x + avatar.width).toBeLessThanOrEqual(name.x);
+          if (current === page) await expect(current.locator('.order-bar').getByRole('button', { name: 'Manage people' })).toBeVisible();
+        }
         const style = await current.locator('.rotation-seat').first().evaluate(node => {
           const style = getComputedStyle(node); return [style.width, style.padding, style.backgroundColor, style.borderRadius, style.fontFamily];
         });
@@ -46,10 +54,12 @@ test('every application route has one matching live listening order directly und
       }
     }
     await expect(participant.locator('.rotation-seat.is-you strong')).toHaveText('My seat');
+    await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('You');
     for (const current of pages.slice(0, -1)) await expect(current.locator('.rotation-seat.is-you')).toHaveCount(0);
     const state = isolatedApp.engine.view({ kind: 'participant', credential: first });
     await isolatedApp.engine.advance(state.turnId!, first);
     for (const current of pages) await expect(current.locator('.rotation-seat.is-current strong')).toHaveText('Second');
+    await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('Next · You');
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
     await guest.setOffline(false);
@@ -79,7 +89,7 @@ test('order feed exposes only names and placement even after a track is revealed
 
 test('the visible bar preserves focus and horizontal scroll through updates and keeps host management in the shared list', async ({ page, isolatedApp }) => {
   for (let index = 0; index < 20; index++) await isolatedApp.engine.join(`Listener ${index}`);
-  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/host');
+  await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/host');
   await expect(page.locator('.rotation-seat')).toHaveCount(20);
   const list = page.locator('.rotation-list'); await list.focus();
   await list.evaluate(node => { node.scrollLeft = 400; (window as any).orderList = node; (window as any).firstSeat = node.firstElementChild; });
@@ -87,10 +97,23 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
   await expect(list).toBeFocused(); await expect(list).toHaveJSProperty('scrollLeft', 400);
   expect(await list.evaluate(node => node === (window as any).orderList && node.firstElementChild === (window as any).firstSeat)).toBe(true);
   await page.getByRole('button', { name: 'Manage people' }).click();
+  const controls = page.locator('.rotation-seat').nth(1);
+  await controls.scrollIntoViewIfNeeded();
+  await expect(controls).toBeInViewport({ ratio: 1 });
+  const seatBox = (await controls.boundingBox())!;
+  for (const action of await controls.getByRole('button').all()) {
+    const box = (await action.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.x).toBeGreaterThanOrEqual(seatBox.x); expect(box.x + box.width).toBeLessThanOrEqual(seatBox.x + seatBox.width);
+  }
   await page.getByRole('button', { name: 'Move Listener 1 up', exact: true }).click();
   await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 1');
   await page.getByRole('button', { name: 'Remove Listener 1', exact: true }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(19);
   await expect(list).toBeVisible();
   await expect(page.locator('.order-feedback')).toContainText('Their saved music is kept.');
+  await page.getByRole('button', { name: 'Done managing' }).click();
+  await expect(page.locator('.order-actions')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Manage people' })).toBeFocused();
+  expect((await page.locator('.order-bar').boundingBox())!.height).toBeLessThanOrEqual(56);
 });

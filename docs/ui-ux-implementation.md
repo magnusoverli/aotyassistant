@@ -10,6 +10,26 @@ Release checks rerun at version 0.2.9: build/typecheck, 194 unit/controller test
 
 ## Delivery plan
 
+### Mobile refinements — 19 October 2026
+
+Follow-up to the owner's fresh, interactive mobile UI review. All six findings and the compact listening-order follow-up are included in release **0.3.11**.
+
+- **Task priority:** a compact mobile player retains its geometry through waiting, starting, playing, paused and stopped states. Short landscape layouts place controls beside the track/progress so the whole player fits comfortably. Find music and My list shortcuts are immediately available; the list shortcut opens the existing inline list. The compact turn toolbar replaces the duplicated mobile headline, while the shared names-only listening order stays visible.
+- **Source selection:** artist/album browse actions wrap beneath the identity on narrow phones. Source prompts/selects span the row instead of being squeezed between artwork and a button. Exact-source requirements and distinct recordings are retained.
+- **Playback handoff:** `web/player-return.ts` supplies a mobile navigation link when the player is off-screen, with Starting versus authoritative Playing/Paused/Stopped and Hidden/Revealed status. It preserves browsing position and performs no playback mutation. Failures lead to the actual error; the link hides when its target is visible and while typing in a field. Bottom clearance allows the final content to scroll above the shortcut.
+- **Setup spacing:** discovery, detected-server selection, URL and Connect use a consistent form stack; the advanced token form retains its own submit behavior.
+- **Hosting:** link copying precedes the smaller QR on stacked layouts. The mobile Manage/Done control sits beside Host desk. Management expands the shared horizontal list's entries to keep the reorder/removal controls comfortably sized.
+- **Listening order follow-up:** the owner-approved compact strip is 55px high on stacked layouts, with 130–150px entries, no avatars and short Now/Next/You labels. Two entries fit fully at 320px; additional people remain horizontally scrollable. Desktop keeps the avatar cards and inline management control. Live-update focus/scroll preservation and names-only privacy are retained.
+- **Type and touch:** mobile menu labels, source explanations, saved metadata and player labels are larger. Volume sliders and upload/source-help disclosures have at least 44px hit heights.
+
+Visual review uses the current app in an interactive Chromium browser at 390px/320px and 844×390 landscape, with isolated demo/MA services. Existing automated layout checks also cover desktop, tablet and short phone heights. Verification: production build/typecheck, **227 backend/controller tests**, the full **107-workflow Chromium suite**, and **11 focused rechecks** after the final landscape refinement passed. The focused pass includes a new landscape geometry case, bringing the suite to 108 workflows. New regression cases cover direct preparation access, readable source selection, pending versus confirmed playback, reveal status, read-only return navigation, failures and no automatic retry. The clock test now waits for the authoritative pause correction before asserting a frozen value.
+
+Actual iOS/Android keyboards, native file pickers, Safari and Home Assistant's mobile wrapper still require physical-device review. Screenshots remain outside the repository.
+
+Compact-order follow-up verification: manual review at 320px and 390px, including host management; production build/typecheck and **17 targeted Chromium workflows** passed. Checks cover two complete mobile entries, the heading-level management control, 44px management targets, shared-route consistency, live updates, public display and stable player geometry.
+
+**0.3.11 release verification:** production build/typecheck, **227 backend/controller tests** and the full **108-workflow Chromium suite** passed. Publication uses the versioned image workflow and anonymous amd64/arm64 verification before the Home Assistant store-branch update.
+
 **Subsequent owner-requested scope:** the [shared page-layout plan and progress tracker](shared-page-layout.md) extends the original batches with a common layout/component foundation. Its explicit shared-layout work supersedes the earlier restriction against a stylesheet-organisation project for this follow-up.
 
 This sequence supersedes the audit's four implementation phases and the earlier estimate of 7–9 remaining batches. The audit remains supporting evidence, not a requirement to implement all 90 recommendations. Scope below is deliberate; related audit IDs do not imply every sub-suggestion will be implemented.

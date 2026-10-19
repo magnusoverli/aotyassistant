@@ -23,4 +23,19 @@
   .rotation-seat.is-current .seat-number { color:#c9e8b1; font-weight:700; }
   .order-actions { grid-column:1 / -1; display:flex; justify-content:center; gap:6px; margin-top:6px; }
   .order-actions button { min-width:44px; min-height:44px; padding:8px; font-size:11px; }
+  .seat-state-compact,.order-manage-mobile { display:none; }
+  @media(max-width:1099px) {
+    .order-bar { flex-wrap:wrap; gap:4px; min-height:55px; padding-block:5px; }
+    .rotation-list { flex-basis:100%; gap:8px; }
+    .rotation-seat { flex-basis:clamp(130px,calc(50% - 4px),150px); grid-template-columns:18px minmax(0,1fr); min-height:44px; padding:3px 8px; column-gap:6px; row-gap:0; border-color:transparent; border-radius:6px; background:transparent; }
+    .rotation-seat .avatar,.seat-state:not(.seat-state-compact),.order-manage-desktop { display:none; }
+    .rotation-seat .seat-number { grid-row:1; }
+    .rotation-seat strong { grid-column:2; }
+    .seat-state-compact { display:block; grid-column:2; font-size:12px; }
+    .rotation-list.is-managing .rotation-seat { flex-basis:240px; max-width:100%; }
+    .order-manage-mobile:not([hidden]) { display:inline-flex; flex-shrink:0; min-height:44px; padding:8px; font-size:13px; }
+    .host-page > .workspace-heading { align-items:center; gap:8px; }
+    .order-status { flex-basis:100%; font-size:13px; }
+    .order-actions button { font-size:13px; }
+  }
 }

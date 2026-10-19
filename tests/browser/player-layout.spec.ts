@@ -7,7 +7,7 @@ const layout = (page: Page) => page.evaluate(() =>
     return { top: rect.top + scrollY, height: rect.height, width: rect.width };
   }));
 
-for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }, { width: 320, height: 700 }, { width: 390, height: 440 }]) {
+for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }, { width: 320, height: 700 }, { width: 390, height: 440 }, { width: 844, height: 390 }]) {
   test(`playback and turn changes keep the workspace in place at ${viewport.width}×${viewport.height}`, async ({ page, browser, isolatedApp }) => {
     await page.setViewportSize(viewport);
     isolatedApp.demo.catalogue.push({ id: 'demo:layout', title: 'Layout song with a deliberately long title that wraps across several lines on a phone',

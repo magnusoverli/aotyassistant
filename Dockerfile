@@ -8,7 +8,7 @@ COPY web ./web
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-alpine
-ARG BUILD_VERSION=0.3.9
+ARG BUILD_VERSION=0.3.11
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="$BUILD_VERSION" io.hass.type="app" io.hass.arch="$BUILD_ARCH" \
       org.opencontainers.image.source="https://github.com/magnusoverli/aotyassistant" \

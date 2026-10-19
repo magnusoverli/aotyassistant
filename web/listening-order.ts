@@ -8,10 +8,11 @@ type Management = { disabled(): boolean; move(id: string, shift: number): void; 
 /** One persistent names-only bar, shared by every application route. */
 export class ListeningOrder {
   readonly element = el('div', undefined, 'listening-order');
+  readonly mobileManagement = el('button', 'Manage people', 'secondary order-manage-mobile');
   private list = el('ol', undefined, 'rotation-list');
   private status = el('span', undefined, 'order-status');
   private empty = el('p', 'Loading listening order…', 'muted order-empty');
-  private manage = el('button', 'Manage people', 'secondary');
+  private manage = el('button', 'Manage people', 'secondary order-manage-desktop');
   private feedback = el('p', undefined, 'muted small order-feedback');
   private managing = false;
   private snapshot?: ListeningOrderView;
@@ -21,9 +22,12 @@ export class ListeningOrder {
 
   constructor(private management?: Management) {
     const bar = el('section', undefined, 'order-bar'); bar.setAttribute('aria-label', 'Listening order');
-    this.list.setAttribute('aria-label', 'Participant rotation'); this.list.tabIndex = 0;
-    this.manage.type = 'button'; this.manage.hidden = !management;
-    this.manage.onclick = () => { this.managing = !this.managing; this.render(); };
+    this.list.setAttribute('aria-label', 'Participant rotation'); this.list.tabIndex = 0; this.list.id = 'participant-rotation';
+    this.mobileManagement.id = 'manage-people-mobile';
+    for (const button of [this.manage, this.mobileManagement]) {
+      button.type = 'button'; button.hidden = !management; button.setAttribute('aria-controls', this.list.id);
+      button.onclick = () => { this.managing = !this.managing; this.render(); };
+    }
     this.feedback.hidden = true; this.feedback.setAttribute('role', 'status');
     bar.append(this.empty, this.list, this.status, this.manage);
     this.element.append(bar, this.feedback);
@@ -67,7 +71,7 @@ export class ListeningOrder {
 
   private updateControls() {
     const disabled = !this.management || this.management.disabled() || this.element.dataset.online !== 'true';
-    this.manage.disabled = disabled;
+    for (const button of [this.manage, this.mobileManagement]) button.disabled = disabled;
     for (const button of this.list.querySelectorAll('button')) button.disabled = disabled;
   }
 
@@ -75,8 +79,12 @@ export class ListeningOrder {
     const view = this.snapshot; const people = view?.rotation ?? [];
     this.empty.textContent = view ? 'No participants have joined.' : 'Loading listening order…';
     this.empty.hidden = people.length > 0; this.list.hidden = !people.length;
-    this.manage.hidden = !this.management || !people.length;
-    this.manage.textContent = this.managing ? 'Done managing' : 'Manage people';
+    for (const button of [this.manage, this.mobileManagement]) {
+      button.hidden = !this.management || !people.length;
+      button.textContent = this.managing ? 'Done managing' : 'Manage people';
+      button.setAttribute('aria-expanded', String(this.managing));
+    }
+    this.list.classList.toggle('is-managing', this.managing);
     const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id, this.managing]);
     if (key !== this.key) {
       this.key = key;
@@ -89,7 +97,8 @@ export class ListeningOrder {
         row.dataset.personId = person.id; if (current) row.setAttribute('aria-current', 'step');
         const name = el('strong', person.nickname); name.title = person.nickname;
         row.append(el('span', String(index + 1).padStart(2, '0'), 'seat-number'), avatar(person), name,
-          el('span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'));
+          el('span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'),
+          el('span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : 'Listening', 'seat-state seat-state-compact'));
         if (this.managing && this.management) {
           const actions = el('div', undefined, 'order-actions');
           const action = (text: string, key: string, label: string, work: () => void) => {

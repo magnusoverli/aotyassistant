@@ -9,6 +9,7 @@ import { AppHeader } from './app-header';
 import { pageForPath } from './navigation';
 import { artwork, progressBar, updateProgress, volumeControl, updateVolume, progressConnected, displayedProgress } from './media';
 import { PlayerController } from './player-controller';
+import { PlayerReturn } from './player-return';
 import { PublicRoom } from './public-room';
 import { PreparationController } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
@@ -129,6 +130,9 @@ const listeningOrder = new ListeningOrder(page === 'host' ? {
 appHeader.element.append(listeningOrder.element);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(appHeader.element, pageContent);
+const playerReturn = page === 'participant' ? new PlayerReturn() : undefined;
+if (playerReturn) root.append(playerReturn.element);
+const updatePlayerReturn = () => playerReturn?.update(view, player.starting, realtime && Boolean(view?.connected), error);
 const updateHeader = () => {
   progressConnected(realtime && Boolean(view?.connected));
   appHeader.update({ view });
@@ -334,10 +338,11 @@ function qrCard() {
   card.append(el('h2', 'Invite people'));
   if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Choose a guest address in Settings before sharing the room.'), link('Configure guest access', '/host/settings')); return card; }
   if (view?.joinUrl) {
-    if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; card.append(img); }
-    card.append(el('p', 'Scan the QR code to join.', 'muted'));
+    const qr = el('div', undefined, 'invitation-qr');
+    if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; qr.append(img); }
+    qr.append(el('p', 'Scan the QR code to join.', 'muted')); card.append(qr);
     const address = el('input'); address.value = view.joinUrl; address.readOnly = true; address.setAttribute('aria-label', 'Join link'); address.className = 'join-link-field';
-    card.append(address, copyButton('Copy join link', address));
+    const sharing = el('div', undefined, 'invitation-sharing'); sharing.append(address, copyButton('Copy join link', address)); card.append(sharing);
     const invitation = link('Open guest invitation ↗', view.joinUrl); invitation.target = '_blank'; invitation.rel = 'noopener noreferrer'; card.append(invitation);
   }
   if (view?.displayUrl) {
@@ -368,7 +373,7 @@ function closedRoom() {
 function host() {
   const main = pageFrame('workspace', 'host-page');
   main.setAttribute('aria-label', 'Host desk');
-  main.append(pageHeading('Host desk'));
+  main.append(pageHeading('Host desk', listeningOrder.mobileManagement));
   const grid = workspaceGrid('sidebar');
   const workspace = slot(el('div', undefined, 'host-workspace stack'), 'primary'); workspace.id = 'overview';
   const aside = slot(el('aside', undefined, 'host-invitations'), 'secondary'); aside.id = 'room-invitation'; aside.append(qrCard());
@@ -407,6 +412,7 @@ function renderParticipantPlayer() {
   const focused = document.activeElement instanceof HTMLElement && card.contains(document.activeElement) ? document.activeElement.id : '';
   const top = scrollY;
   card.replaceWith(participantPlayer(view));
+  updatePlayerReturn();
   // Starting a track changes availability, not the search/list layout or their DOM state.
   for (const control of root.querySelectorAll<HTMLButtonElement>('[data-player-ready]')) control.disabled = control.dataset.playerReady !== 'true' || player.starting;
   if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
@@ -415,6 +421,7 @@ function renderParticipantPlayer() {
 function participantPlayer(current: View) {
   const shown = player.project(current); const playback = current.myTurn ? shown.ownPlayback : undefined;
   const card = slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player'); card.id = 'participant-player'; card.setAttribute('aria-label', 'Your player');
+  card.tabIndex = -1;
   const now = el('div', undefined, 'private-now-playing');
   const track = el('div'); const title = el('h2', playback?.track.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
   title.title = title.textContent!; track.append(title);
@@ -454,6 +461,11 @@ function participant() {
   const hero = el('section', undefined, `participant-hero is-${state}`); hero.setAttribute('aria-label', 'Your turn status');
   const title = el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'); title.title = title.textContent!;
   hero.append(title, el('p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance'));
+  const shortcuts = el('nav', undefined, 'music-shortcuts'); shortcuts.setAttribute('aria-label', 'Your music shortcuts');
+  const find = link('Find music', '#music-find', 'secondary button');
+  find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
+  const list = el('button', 'My list', 'secondary'); list.type = 'button'; list.onclick = () => music.openList();
+  shortcuts.append(find, list); hero.append(shortcuts);
   main.append(hero);
   const search = el('section', undefined, 'catalogue-panel');
   search.setAttribute('aria-labelledby', 'music-find-title');
@@ -651,6 +663,7 @@ function render() {
     main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.append(main);
   }
   pageContent.replaceChildren(content);
+  updatePlayerReturn();
   for (const [key, top] of scrollRegions) { const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(node => node.dataset.scrollKey === key); if (region) region.scrollTop = top; }
   const replacement = focused?.id ? document.getElementById(focused.id)
     : focused?.dataset.focusKey ? [...root.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey) : null;

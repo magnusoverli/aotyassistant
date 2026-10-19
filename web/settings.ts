@@ -145,9 +145,10 @@ export async function mountSettings(container: HTMLElement) {
       if (settings.tokenExpiresAt) connection.append(el('p', `Authorization expires ${new Date(settings.tokenExpiresAt).toLocaleDateString()}.`, 'muted small'));
     }
     if (settings && (!settings.tokenConfigured || editConnection)) {
+      const setupFields = el('div', undefined, 'form-stack connection-fields');
       if (!settings.tokenConfigured) {
-        if (!setup?.servers.length) connection.append(el('p', setup?.status === 'waiting' ? 'No server found. Enter its address below.' : 'Looking for Music Assistant…', 'muted small'));
-        connection.append(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
+        if (!setup?.servers.length) setupFields.append(el('p', setup?.status === 'waiting' ? 'No server found. Enter its address below.' : 'Looking for Music Assistant…', 'muted small'));
+        setupFields.append(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
         if (setup?.servers.length) {
           const label = el('label', 'Detected Music Assistant server'); label.htmlFor = 'ma-detected';
           const select = el('select'); select.id = 'ma-detected'; select.disabled = busy;
@@ -158,14 +159,15 @@ export async function mountSettings(container: HTMLElement) {
           }
           select.value = setup.servers.some(s => s.url === urlDraft) ? urlDraft : '';
           select.onchange = () => { const server = setup?.servers.find(s => s.url === select.value); urlDraft = server?.url ?? ''; browserDraft = server?.browserUrl ?? ''; render(); };
-          connection.append(label, select);
+          const detected = el('div', undefined, 'field'); detected.append(label, select); setupFields.append(detected);
         }
       }
       const form = el('form', undefined, 'form-stack integration-form');
       const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
       url.input.required = true; url.input.maxLength = 2048; url.input.placeholder = 'http://homeassistant.local:8095';
-      connection.append(url.group);
-      if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); connect.id = 'ma-connect'; connection.append(connect); }
+      setupFields.append(url.group);
+      if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); connect.id = 'ma-connect'; setupFields.append(connect); }
+      connection.append(setupFields);
       const advanced = el('details', undefined, 'settings-advanced'); advanced.open = manualExpanded;
       advanced.append(el('summary', 'Advanced: token or separate login address'));
       advanced.ontoggle = () => { if (advanced.isConnected) manualExpanded = advanced.open; };

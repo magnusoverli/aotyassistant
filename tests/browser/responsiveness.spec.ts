@@ -85,6 +85,9 @@ test('the player clock moves between server samples, freezes on pause and stays 
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
     await expect.poll(async () => (await (await page.request.get('/api/participant/state')).json()).ownPlayback.status).toBe('paused');
+    // Pause first freezes the local estimate; its response may then correct that position.
+    const paused = await (await page.request.get('/api/participant/state')).json();
+    await expect.poll(async () => Number(await page.locator('.playback-card progress').getAttribute('value'))).toBeCloseTo(paused.progress.fraction, 8);
     const frozen = await page.locator('.playback-card progress').getAttribute('value');
     await page.waitForTimeout(1100); expect(await page.locator('.playback-card progress').getAttribute('value')).toBe(frozen);
     await page.getByRole('button', { name: 'Resume', exact: true }).click();

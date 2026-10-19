@@ -91,6 +91,13 @@ export class PreparationPanel {
     if (search) search.append(uploads); else panel.append(uploads);
     return panel;
   }
+  /** The phone shortcut opens the same list, retaining the current browse context. */
+  openList() {
+    this.expanded = true; this.refresh();
+    this.list?.querySelector<HTMLButtonElement>('.list-expand')?.focus({ preventScroll: true });
+    this.list?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }
+
   /** List changes never replace the search form, result rows, or private player. */
   refresh() {
     const focused = document.activeElement instanceof HTMLElement && document.activeElement.closest('.music-workspace') ? document.activeElement : undefined;

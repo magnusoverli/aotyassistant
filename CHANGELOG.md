@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.3.11] — 2026-10-19
+
+- Refine the mobile workspace with a smaller stable player, a compact listening-order strip, and direct Find music/My list shortcuts. Improve secondary text and touch targets.
+- Reflow artist/album rows and source choices at phone widths so source prompts remain readable and browse actions have their own space.
+- Show a mobile playback-status/return link when the player is off-screen. Distinguish starting, confirmed playback/reveal and errors without replaying actions or moving the browsing position.
+- Space initial music setup controls consistently, put link copying before the QR on phones, and give host participant management the full width of the order strip.
+- Make the mobile listening order a compact names-only strip with shorter Now/Next labels and two fully visible entries at 320px. Move Manage people beside Host desk, expanding entries only while managing.
+
 ## [0.3.10] — 2026-10-18
 
 - Restore artist, album and track thumbnails by using Music Assistant's supported 160px size; normalize older 128px requests. Use 1024px high-quality album artwork on the display after reveal, with small artist portraits and size-specific caching.
