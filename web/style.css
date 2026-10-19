@@ -87,7 +87,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .vinyl-label.is-personalized > span { width:86%; line-height:1.15; text-align:center; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
 .vinyl-label.is-personalized .vinyl-owner { font-size:clamp(7px,4cqw,20px); text-transform:uppercase; }
 .vinyl-label.is-personalized .vinyl-owner.is-long { font-size:clamp(5px,2.4cqw,13px); }
-.vinyl-label.is-personalized .vinyl-caption { font-size:clamp(5px,3.1cqw,15px); letter-spacing:.035em; }
+.vinyl-label.is-personalized .vinyl-caption { font-size:clamp(5px,2.7cqw,13px); letter-spacing:.035em; }
 .vinyl-label.is-personalized .vinyl-hole { flex-shrink:0; }
 .room-record { animation:room-spin 60s linear infinite; animation-play-state:paused; }
 .room-record > .vinyl-label { width:36%; height:36%; gap:7%; }

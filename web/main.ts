@@ -403,7 +403,7 @@ function host() {
   }
   const audio = v.get('audio', () => panel('host-audio')); const audioTitle = v.el('audio-title', 'div');
   const output = v.get('output', () => outputLabel(view!.output, realtime)); updateOutputLabel(output, view.output, realtime);
-  const hint = v.get('volume-hint', () => { const node = el('p', undefined, 'muted small'); node.append('Volume is unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link')); return node; });
+  const hint = v.get('volume-hint', () => { const node = el('p', undefined, 'muted small'); node.append('Unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link')); return node; });
   children(audioTitle, v.el('volume-title', 'h2', 'Speaker volume'), output, !view.volume?.available && hint);
   const volume = v.get('volume', () => volumeControl(undefined, (level, commit) => player.volume(level, commit), true));
   updateVolume(volume, player.project(view).volume); prop(volume.querySelector('input')!, 'disabled', !realtime || !view.connected || !view.volume?.available);

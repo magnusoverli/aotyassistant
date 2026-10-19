@@ -9,6 +9,7 @@
 - Allow graceful shutdown to finish and preserve unsupported legacy room files instead of silently resetting them.
 - Gate image publication on browser and packaged-app checks, consistent release metadata, and anonymous image verification.
 - Standardize documentation and interface copy with neutral terminology, current control labels, and clear compatibility guidance.
+- Keep speaker-status guidance compact and record-sticker captions readable across system fonts.
 
 ## [0.3.16] — 2026-10-19
 

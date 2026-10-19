@@ -211,6 +211,31 @@ test('only the small sticker is personalized, its shuffled history survives refr
   } finally { await f.close(); }
 });
 
+test('record captions fit with different system fonts and display sizes', async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp.origin, 'A long participant display name'); const tv = f.tv;
+  try {
+    await f.play(); await expect(tv.locator('.vinyl-caption')).toBeVisible();
+    for (const [width, height] of [[1366, 768], [1920, 1080], [390, 844], [320, 700]]) {
+      await tv.setViewportSize({ width: width!, height: height! });
+      const clipped = await tv.locator('.vinyl-caption').evaluate((node, captions) => {
+        const originalText = node.textContent; const originalFont = document.documentElement.style.fontFamily;
+        const failures: string[] = [];
+        try {
+          for (const font of ['', 'Arial', 'DejaVu Sans']) {
+            document.documentElement.style.fontFamily = font;
+            for (const caption of captions) {
+              node.textContent = caption;
+              if (node.scrollHeight > node.clientHeight + 1 || node.scrollWidth > node.clientWidth + 1) failures.push(`${font || 'system font'}: ${caption}`);
+            }
+          }
+        } finally { node.textContent = originalText; document.documentElement.style.fontFamily = originalFont; }
+        return failures;
+      }, recordLabels);
+      expect(clipped, `Captions must remain readable at ${width}×${height}`).toEqual([]);
+    }
+  } finally { await f.close(); }
+});
+
 test('the visible sticker text turns with the record instead of only advancing an invisible rotation clock', async ({ browser, page: host, isolatedApp }) => {
   const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
   try {

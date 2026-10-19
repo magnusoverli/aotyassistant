@@ -44,11 +44,14 @@ test('unavailable host volume links directly to speaker settings without changin
   const settings = page.locator('.host-audio').getByRole('link', { name: 'Check speaker settings', exact: true });
   await expect(settings).toHaveAttribute('href', '/host/settings');
   await expect(page.locator('.host-audio').getByRole('slider')).toBeDisabled();
-  for (const width of [1440, 800, 701, 390, 320]) {
-    await page.setViewportSize({ width, height: 844 });
-    await expect(settings).toBeVisible();
-    expect((await page.locator('.host-audio').boundingBox())!.height).toBeLessThan(150);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  for (const font of ['', 'Arial', 'DejaVu Sans']) {
+    await page.evaluate(font => document.documentElement.style.fontFamily = font, font);
+    for (const width of [1440, 800, 701, 390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(settings).toBeVisible();
+      expect((await page.locator('.host-audio').boundingBox())!.height, `${font || 'system font'} at ${width}px`).toBeLessThan(150);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    }
   }
   await settings.click();
   await expect(page).toHaveURL('/host/settings');
