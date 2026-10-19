@@ -15,6 +15,7 @@ export type ConnectionReport = {
 export interface MusicAssistantReader {
   inspect(options?: { documentation?: boolean }): Promise<ConnectionReport>;
   close?(): void;
+  subscribePlayback?(listener: (event: PlaybackEvent) => void): () => void;
   activeQueue(playerId: string): Promise<string>;
   search(query: string): Promise<CatalogueTrack[]>;
 }

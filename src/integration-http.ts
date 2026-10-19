@@ -7,11 +7,27 @@ import { applicationOrigin } from './addressing.js';
 import { body } from './http-utils.js';
 import type { SetupManager } from './setup.js';
 import { emptyHints } from './supervisor.js';
+import { EventStreams } from './event-streams.js';
 
 const revision = z.number().int().nonnegative();
 
 /** Host integration/addressing routes. Global HTTP origin/content-type policy is mounted first. */
 export function mountIntegrations(app: Express, engine: Engine, integrations: IntegrationManager, setup?: SetupManager) {
+  const streams = new EventStreams(100, 'Too many Settings connections. Close unused tabs and try again.');
+  const unsubscribe = integrations.subscribe(() => engine.emit('change'));
+  integrations.startMonitoring();
+  app.get('/api/host/integrations/events', (_req, res) => {
+    const stream = streams.reserve(res); if (!stream.open()) return;
+    let previous = '';
+    const send = () => {
+      const view = integrations.view(); const key = JSON.stringify(view);
+      if (key !== previous) { previous = key; stream.send('state', view); }
+    };
+    send(); engine.on('change', send);
+    stream.onClose(() => engine.off('change', send));
+    stream.every(() => { send(); stream.heartbeat(); }, 15_000);
+    integrations.refreshOutputSoon();
+  });
   app.get('/api/host/setup', (_req, res) => res.json(setup?.view() ?? { status: 'idle', message: 'Enter the Music Assistant address below.', supervisor: emptyHints(), servers: [] }));
   app.post('/api/host/setup/refresh', async (req, res) => {
     body(req, z.object({}).strict());
@@ -52,4 +68,5 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
       engine.emit('change'); res.json(result);
     });
   }
+  return () => { unsubscribe(); integrations.stopMonitoring(); streams.close(); };
 }

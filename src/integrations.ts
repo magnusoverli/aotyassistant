@@ -2,14 +2,14 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse } from './model.js';
+import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState } from './model.js';
 import { writePrivateJson } from './store.js';
 import { MusicAssistantClient, musicAssistantUrl, maToken, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
 import type { UploadAssets, UploadSelection } from './uploads.js';
 import { applicationOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
 import { SerialQueue } from './serial.js';
-import { maOperation } from './ma-operation.js';
+import { maBackground, maOperation } from './ma-operation.js';
 
 export const integrationSchema = z.object({
   schema: z.literal(1), revision: z.number().int().nonnegative(),
@@ -32,9 +32,13 @@ export type IntegrationView = {
   mediaOrigin?: string | null;
   browserUrl?: string; tokenExpiresAt?: number;
   settingsChangesBlocked?: boolean;
+  output: OutputState;
+  sequence?: number;
+  instanceId?: string;
 };
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
+  readonly requiresRecovery?: boolean;
   configurationChanged(): void;
   recover(): Promise<void>;
 }
@@ -56,6 +60,7 @@ export class IntegrationManager implements CatalogueProvider {
   private report: ConnectionReport | null = null;
   private failure = '';
   private destinationFailure: string | null = null;
+  private destinationCheckedAt: number | null = null;
   private queue = new SerialQueue();
   private cachedReader?: MusicAssistantReader;
   private referenceKey = randomBytes(32);
@@ -68,6 +73,16 @@ export class IntegrationManager implements CatalogueProvider {
   private environmentMediaOrigins: string[] = [];
   private checking = false;
   private inspection?: { revision: number; pending: Promise<IntegrationView> };
+  private observation = 0;
+  private listeners = new Set<() => void>();
+  private monitoring = false;
+  private unsubscribeOutput?: () => void;
+  private outputTimer?: NodeJS.Timeout;
+  private outputInterval?: NodeJS.Timeout;
+  private outputRefreshing = false;
+  private outputDirty = false;
+  private lastView = '';
+  private sequence = 0;
   private mediaCheck: MediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Not checked since startup. No audio has been started.' };
   constructor(private store: IntegrationStore, private reader = (url: string, token: string): MusicAssistantReader => new MusicAssistantClient(url, token)) {}
   async init(): Promise<void> {
@@ -87,8 +102,56 @@ export class IntegrationManager implements CatalogueProvider {
     this.expected(revision);
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
   }
-  get playbackAvailable(): boolean { return Boolean(this.state.musicAssistant?.destination && this.playback); }
-  get uploadPlaybackAvailable(): boolean { return Boolean(this.uploads && this.playbackAvailable); }
+  get routeConfigured(): boolean { return Boolean(this.state.musicAssistant?.destination && this.playback); }
+  get playbackAvailable(): boolean { return this.routeConfigured && this.output.state === 'ready'; }
+  get uploadPlaybackAvailable(): boolean { return Boolean(this.uploads && this.routeConfigured); }
+  private get freshReport() { return this.report && Date.now() - this.report.checkedAt < 45_000 ? this.report : null; }
+  private get destinationFresh() { return this.destinationCheckedAt !== null && Date.now() - this.destinationCheckedAt < 45_000; }
+  get output(): OutputState {
+    const selected = this.state.musicAssistant?.destination;
+    const report = this.freshReport;
+    const player = report?.players.find(player => player.id === selected?.id);
+    const state = !selected ? 'none' : this.playback?.requiresRecovery ? 'recovery' : this.failure ? 'unconfirmed'
+      : !report ? 'checking' : !player?.available ? 'unavailable' : !this.destinationFresh || this.destinationFailure === null ? 'checking'
+      : this.destinationFailure || report.schemaVersion !== 65 ? 'unavailable' : 'ready';
+    return { name: player?.name ?? selected?.name ?? null, state, checkedAt: selected ? this.destinationCheckedAt : report?.checkedAt ?? null };
+  }
+  subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+  private changed() { for (const listener of this.listeners) listener(); }
+  /** One shared read-only monitor, independent of browser count and selected output. */
+  startMonitoring(interval = 15_000) {
+    if (this.monitoring) return;
+    this.monitoring = true; this.watchOutput();
+    this.outputInterval = setInterval(() => { this.changed(); this.refreshOutputSoon(); }, interval); this.outputInterval.unref();
+  }
+  stopMonitoring() {
+    this.monitoring = false; this.outputDirty = false; clearTimeout(this.outputTimer); this.outputTimer = undefined;
+    clearInterval(this.outputInterval); this.unsubscribeOutput?.(); this.unsubscribeOutput = undefined;
+  }
+  refreshOutputSoon() {
+    if (!this.monitoring || !this.configured) return;
+    this.outputDirty = true;
+    if (this.outputTimer || this.outputRefreshing) return;
+    this.outputTimer = setTimeout(() => {
+      this.outputTimer = undefined; this.outputRefreshing = true; this.outputDirty = false;
+      maBackground(() => { void this.check(this.state.revision).catch(() => {}).finally(() => {
+        this.outputRefreshing = false;
+        if (this.outputDirty) this.refreshOutputSoon();
+      }); });
+    }, 250); this.outputTimer.unref();
+  }
+  private watchOutput() {
+    this.unsubscribeOutput?.(); this.unsubscribeOutput = undefined;
+    if (!this.monitoring || !this.configured) return;
+    this.unsubscribeOutput = this.getReader().subscribePlayback?.(hint => {
+      if (!hint.kind) { this.refreshOutputSoon(); return; }
+      if (hint.kind === 'player_added' || hint.kind === 'player_removed' || hint.kind === 'queue_added') { this.refreshOutputSoon(); return; }
+      if (hint.kind !== 'player_updated') return; // Queue progress must not cause inventory scans.
+      const previous = this.report?.players.find(player => player.id === hint.objectId);
+      if (!previous || hint.available !== undefined && hint.available !== previous.available || hint.name !== undefined && hint.name !== previous.name) this.refreshOutputSoon();
+    });
+    this.refreshOutputSoon();
+  }
   attachUploads(uploads: UploadAssets, guestUrl: string) { this.uploads = uploads; this.defaultMediaOrigin = guestUrl; }
   attachMediaChecks(checks: MediaChecks) { this.checks = checks; }
   get guestOrigin() { return this.state.guestOrigin || this.defaultMediaOrigin; }
@@ -151,7 +214,7 @@ export class IntegrationManager implements CatalogueProvider {
     } finally { this.checking = false; }
   }
   attachPlayback(playback: PlaybackController): void { this.playback = playback; }
-  close() { this.cachedReader?.close?.(); this.cachedReader = undefined; }
+  close() { this.stopMonitoring(); this.observation++; this.cachedReader?.close?.(); this.cachedReader = undefined; }
   private getReader(): MusicAssistantReader {
     const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(409, 'The catalogue connection changed. Search again.');
@@ -312,36 +375,44 @@ export class IntegrationManager implements CatalogueProvider {
     const destinationChanged = this.state.musicAssistant?.destination?.id !== next.musicAssistant?.destination?.id;
     try { await this.store.save(next); } catch { throw new AppError(503, 'Integration settings could not be saved. Check the application data directory.'); }
     this.state = next;
+    this.observation++;
     if (connectionChanged) { this.report = null; this.failure = ''; }
-    if (connectionChanged || destinationChanged) this.destinationFailure = null;
+    if (connectionChanged || destinationChanged) { this.destinationFailure = null; this.destinationCheckedAt = null; }
     this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Addresses or settings changed. Check file access again; no audio has been started.' };
     if (connectionChanged) {
-      this.close();
+      this.unsubscribeOutput?.(); this.unsubscribeOutput = undefined;
+      this.cachedReader?.close?.(); this.cachedReader = undefined;
       this.catalogueEpoch = randomBytes(16).toString('base64url');
       this.referenceKey = randomBytes(32);
     }
     // Configuration writes invalidate pending routing/volume intents, never start audio.
     this.playback?.configurationChanged();
+    if (connectionChanged) this.watchOutput();
+    this.changed();
   }
   /** Explicit allowlist. Tokens, queue payloads, and internal exceptions never enter the view. */
   view(): IntegrationView {
     const ma = this.state.musicAssistant;
-    const missingSpeaker = ma?.destination && this.report && !this.failure && !this.report.players.some(player => player.id === ma.destination!.id && player.available);
-    const destinationStatus = !ma?.destination ? 'not-selected' : !this.report || this.failure ? 'not-checked'
-      : missingSpeaker || this.destinationFailure ? 'error' : this.destinationFailure === null ? 'not-checked' : 'checked';
+    const report = this.freshReport;
+    const missingSpeaker = ma?.destination && report && !this.failure && !report.players.some(player => player.id === ma.destination!.id && player.available);
+    const destinationStatus = !ma?.destination ? 'not-selected' : !report || this.failure ? 'not-checked'
+      : missingSpeaker ? 'error' : !this.destinationFresh || this.destinationFailure === null ? 'not-checked' : this.destinationFailure ? 'error' : 'checked';
     const destinationMessage = destinationStatus === 'not-selected' ? 'Choose a speaker or group before playing.'
-      : destinationStatus === 'not-checked' ? this.failure ? 'Speaker status cannot be checked until Music Assistant is connected.' : 'The saved speaker has not been checked.'
-      : missingSpeaker ? this.unavailableSpeaker : this.destinationFailure || 'Music Assistant reports the saved speaker and its queue as available.';
-    return { revision: this.state.revision, url: ma?.url ?? null, tokenConfigured: Boolean(ma?.accessToken),
+      : destinationStatus === 'not-checked' ? this.failure ? 'Speaker status cannot be checked until Music Assistant is connected.' : 'Checking the selected speaker…'
+      : missingSpeaker ? this.unavailableSpeaker : this.destinationFailure || 'The selected speaker and its queue are available.';
+    const result: IntegrationView = { revision: this.state.revision, url: ma?.url ?? null, tokenConfigured: Boolean(ma?.accessToken), output: this.output,
       settingsChangesBlocked: Boolean(this.playback?.ownsPlayback),
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
-      status: !ma ? 'not-configured' : this.failure ? 'error' : this.report ? 'checked' : 'not-checked',
+      status: !ma ? 'not-configured' : this.failure ? 'error' : report ? 'checked' : 'not-checked',
       destinationStatus, destinationMessage,
-      message: !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (this.report
+      message: !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (report
         ? 'Music Assistant is connected and authorized.'
         : 'Music Assistant is configured. Its connection has not been checked.'),
-      report: structuredClone(this.report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
+      report: structuredClone(report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
       ...(ma?.browserUrl ? { browserUrl: ma.browserUrl } : {}), ...(ma?.tokenExpiresAt ? { tokenExpiresAt: ma.tokenExpiresAt } : {}) };
+    const key = JSON.stringify(result);
+    if (key !== this.lastView) { this.lastView = key; this.sequence++; }
+    return { ...result, sequence: this.sequence, instanceId: this.runtimeId };
   }
   async save(url: string, accessToken: string | undefined, revision: number): Promise<IntegrationView> {
     return this.serial(async () => {
@@ -399,7 +470,7 @@ export class IntegrationManager implements CatalogueProvider {
     try { return await pending; }
     finally { if (this.inspection?.pending === pending) this.inspection = undefined; }
   }
-  private get unavailableSpeaker() { return 'The saved speaker is unavailable in Music Assistant. Check that speaker or choose another destination.'; }
+  private get unavailableSpeaker() { return 'The selected speaker is unavailable in Music Assistant. Check that speaker or choose another destination.'; }
   private connectionFailure(error: unknown) {
     return error instanceof AppError ? error.message : 'Could not connect to Music Assistant. Check the saved server and authorization.';
   }
@@ -412,6 +483,7 @@ export class IntegrationManager implements CatalogueProvider {
     return report;
   }
   private async inspectSettings(revision: number): Promise<IntegrationView> {
+    const observation = ++this.observation;
     const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(400, 'Save a Music Assistant connection first.');
     let report: ConnectionReport | null = null; let failure = ''; let destinationFailure: string | null = null;
@@ -431,11 +503,13 @@ export class IntegrationManager implements CatalogueProvider {
     // lane; a stale inspection cannot overwrite a newly saved connection's status.
     return this.serial(async () => {
       this.expected(revision);
+      if (observation !== this.observation) return this.view();
       if (!ma.serverId && report?.serverId) {
         const next = { ...this.state, musicAssistant: { ...ma, serverId: report.serverId } };
         await this.store.save(next); this.state = next; // Identity enrichment does not alter routing/revision.
       }
-      this.report = report; this.failure = failure; this.destinationFailure = destinationFailure; return this.view();
+      this.report = report; this.failure = failure; this.destinationFailure = destinationFailure;
+      this.destinationCheckedAt = report && ma.destination ? Date.now() : null; this.changed(); return this.view();
     });
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
@@ -447,12 +521,12 @@ export class IntegrationManager implements CatalogueProvider {
     try { report = await this.inspectConnection(reader, ma); }
     catch (error) {
       return this.serial(async () => {
-        this.expected(revision); this.report = null; this.failure = this.connectionFailure(error); this.destinationFailure = null;
+        this.expected(revision); this.observation++; this.report = null; this.failure = this.connectionFailure(error); this.destinationFailure = null; this.destinationCheckedAt = null; this.changed();
         throw new AppError(error instanceof AppError ? error.status : 502, this.failure);
       });
     }
     const publish = <T>(work: () => T) => this.serial(async () => {
-      this.expected(revision); this.report = report; this.failure = ''; return work();
+      this.expected(revision); this.observation++; this.report = report; this.failure = ''; try { return work(); } finally { this.changed(); }
     });
     const player = report.players.find(p => p.id === id && p.available);
     if (!player) return publish(() => { throw new AppError(409, 'This speaker is unavailable in Music Assistant. Choose an available speaker or group.'); });
@@ -460,14 +534,14 @@ export class IntegrationManager implements CatalogueProvider {
     catch (error) {
       return publish(() => {
         const message = this.queueFailure(error);
-        if (ma.destination?.id === id) this.destinationFailure = message;
+        if (ma.destination?.id === id) { this.destinationFailure = message; this.destinationCheckedAt = Date.now(); }
         throw new AppError(502, message);
       });
     }
     return this.serial(async () => {
       this.expected(revision);
-      await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...ma, destination: { id: player.id, name: player.name } } });
-      this.report = report; this.failure = ''; this.destinationFailure = ''; return this.view();
+      await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...this.state.musicAssistant!, destination: { id: player.id, name: player.name } } });
+      this.report = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed(); return this.view();
     });
   }
 }

@@ -20,12 +20,12 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   await expect(login).toHaveURL(/\/host\/settings$/);
   await expect(login.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   await login.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:room');
-  await expect(login.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+  await expect(login.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   const binding = isolatedApp.manager.sourceBindingId;
   await login.getByRole('button', { name: 'Change connection', exact: true }).click();
   const reconnectPromise = login.waitForEvent('popup'); await login.getByRole('button', { name: 'Reconnect Music Assistant' }).click();
   const reconnect = await reconnectPromise; await reconnect.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
-  await expect(reconnect.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+  await expect(reconnect.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   expect(isolatedApp.manager.sourceBindingId).toBe(binding);
   expect(isolatedApp.calls.filter(c => c.command === 'auth/token/create')).toHaveLength(2);
   expect(isolatedApp.calls.some(c => /play_media|cmd\/|\/stop$|\/pause$|\/resume$/.test(c.command))).toBe(false);

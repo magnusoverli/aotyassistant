@@ -40,7 +40,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.keyboard.press('Escape');
   expect(await page.evaluate(() => ['--bg', '--panel', '--line', '--text', '--accent'].map(key => getComputedStyle(document.body).getPropertyValue(key)))).toEqual(palette);
   await expect(page.getByRole('region', { name: '1. Music connection', exact: true })).toBeVisible();
-  await expect(page.getByRole('region', { name: '2. Speaker', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: '2. Active speaker', exact: true })).toBeVisible();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: /^(Change speaker|Save speaker|Cancel speaker change)$/ })).toHaveCount(0);
@@ -71,8 +71,8 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await expectConfiguredConnection(page);
   expect(outgoing.filter(url => url.endsWith('/destination'))).toEqual([]);
   await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:room');
-  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
-  await expect(page.getByText('Speaker selected.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Living room is now the active speaker.', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:room');
   await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:room');
   expect(outgoing.filter(url => url.endsWith('/destination'))).toHaveLength(1);
@@ -81,7 +81,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.screenshot({ path: 'test-results/settings-configured.png', fullPage: true });
   await page.reload();
   await expectConfiguredConnection(page);
-  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:room');
   expect(outgoing.some(url => url.endsWith('/playback'))).toBe(false);
@@ -91,7 +91,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: 'test-results/settings-mobile.png', fullPage: true });
   await page.reload();
-  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   await expectConfiguredConnection(page);
   expect(responses.join('')).not.toContain('browser-test-token');
   expect(responses.join('')).not.toContain('PRIVATE FIXTURE TRACK');
@@ -102,7 +102,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
   page.once('dialog', dialog => dialog.dismiss());
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expectConfiguredConnection(page);
-  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   expect(outgoing.some(url => url.endsWith('/clear'))).toBe(false);
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
@@ -141,6 +141,7 @@ test('host configures Music Assistant entirely in the browser without receiving 
 test('a rejected disconnect keeps the configured summary and saved destination', async ({ page }) => {
   const settings: IntegrationView = {
     revision: 3, url: 'http://music-assistant.local:8095', tokenConfigured: true,
+    output: { name: 'Living room', state: 'checking', checkedAt: null },
     destination: { id: 'sonos:test', name: 'Living room' }, status: 'not-checked', message: '',
     destinationStatus: 'not-checked', destinationMessage: 'The saved speaker has not been checked.',
     report: null, playbackAvailable: true, playbackIssue: '',
@@ -159,7 +160,7 @@ test('a rejected disconnect keeps the configured summary and saved destination',
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Stop or finish the current track');
   await expectConfiguredConnection(page, 'Not checked');
-  await expect(page.getByText('Saved speaker: Living room (not checked)', { exact: true })).toBeVisible();
+  await expect(page.getByText('Checking Living room…', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
   expect(changes).toEqual(['/api/host/integrations/clear']);
 });
@@ -167,6 +168,7 @@ test('a rejected disconnect keeps the configured summary and saved destination',
 test('settings keep recovery warnings visible and require confirmation without automatic integration changes', async ({ page }) => {
   const settings: IntegrationView = {
     revision: 1, url: 'http://music-assistant.local:8095', tokenConfigured: true,
+    output: { name: 'A longer speaker group name for the listening room', state: 'recovery', checkedAt: null },
     destination: { id: 'sonos:test', name: 'A longer speaker group name for the listening room' },
     status: 'error', message: 'The connection check failed. Check the saved server and token.',
     destinationStatus: 'not-checked', destinationMessage: 'Speaker status cannot be checked until Music Assistant is connected.',
@@ -208,6 +210,7 @@ for (const scenario of ['offline-speaker', 'missing-speaker', 'queue-failure', '
       : connectionFailed ? 'Speaker status cannot be checked until Music Assistant is connected.' : 'Choose a speaker or group before playing.';
     const settings: IntegrationView = {
       revision: 2, url: isolatedApp.musicAssistantOrigin, tokenConfigured: true,
+      output: { name: noSpeaker ? null : 'Living room', state: noSpeaker ? 'none' : connectionFailed ? 'unconfirmed' : 'unavailable', checkedAt: null },
       destination: noSpeaker ? null : { id: 'sonos:room', name: 'Living room' },
       status: connectionFailed ? 'error' : 'checked', message,
       destinationStatus: noSpeaker ? 'not-selected' : connectionFailed ? 'not-checked' : 'error', destinationMessage,
@@ -226,15 +229,15 @@ for (const scenario of ['offline-speaker', 'missing-speaker', 'queue-failure', '
     const connection = page.locator('.settings-connection'); const speaker = page.locator('.settings-destination');
     const select = speaker.getByLabel('Speaker or group', { exact: true });
     const savedAvailable = scenario === 'queue-failure';
-    await expect(select).toBeVisible(); await expect(select).toHaveValue(savedAvailable ? 'sonos:room' : '');
+    await expect(select).toBeVisible(); await expect(select).toHaveValue('');
     if (connectionFailed) await expect(select).toBeDisabled(); else await expect(select).toBeEnabled();
     if (!savedAvailable && !noSpeaker) await expect(select.locator('option[value="sonos:room"]')).toHaveCount(0);
     await expect(speaker.getByRole('button', { name: /^(Change speaker|Save speaker|Cancel speaker change)$/ })).toHaveCount(0);
-    await expect(speaker.locator('.settings-state')).toHaveText(noSpeaker ? 'Not selected' : connectionFailed ? 'Not checked' : 'Needs attention');
+    await expect(speaker.locator('.settings-state')).toHaveText(connectionFailed ? 'Unconfirmed' : 'No active speaker');
     await expect(page.locator('.settings-notice.error')).toHaveCount(0);
     if (connectionFailed) {
       await expect(connection.getByRole('alert')).toHaveText(message); await expect(speaker.getByRole('alert')).toHaveCount(0);
-      await expect(speaker).toContainText('Speaker status cannot be checked');
+      await expect(speaker).toContainText('Speaker status will update');
     } else {
       await expect(connection.getByRole('alert')).toHaveCount(0);
       await expect(connection.getByRole('button', { name: 'Reconnect Music Assistant', exact: true })).toHaveCount(0);
@@ -249,6 +252,7 @@ for (const scenario of ['offline-speaker', 'missing-speaker', 'queue-failure', '
 test('a failed automatic speaker selection restores the saved speaker without downgrading Music Assistant or retrying the write', async ({ page, isolatedApp }) => {
   const settings: IntegrationView = {
     revision: 2, url: isolatedApp.musicAssistantOrigin, tokenConfigured: true, destination: { id: 'sonos:room', name: 'Living room' },
+    output: { name: 'Living room', state: 'ready', checkedAt: Date.now() },
     status: 'checked', message: 'Music Assistant is connected and authorized.', destinationStatus: 'checked', destinationMessage: '',
     report: { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true,
       players: [{ id: 'sonos:room', name: 'Living room', available: true }, { id: 'sonos:bedroom', name: 'Bedroom', available: true }] },
@@ -263,7 +267,7 @@ test('a failed automatic speaker selection restores the saved speaker without do
       expect(route.request().postDataJSON()).toEqual({ id: 'sonos:bedroom', revision: 2 });
       if (writes.length === 1) { enter(); await held; await route.fulfill({ status: 502, json: { error: message } }); }
       else {
-        settings.destination = { id: 'sonos:bedroom', name: 'Bedroom' }; settings.revision++;
+        settings.destination = { id: 'sonos:bedroom', name: 'Bedroom' }; settings.output = { name: 'Bedroom', state: 'ready', checkedAt: Date.now() }; settings.revision++;
         await route.fulfill({ json: settings });
       }
     }
@@ -275,22 +279,22 @@ test('a failed automatic speaker selection restores the saved speaker without do
     await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
     await entered;
     await expect(page.locator('.settings-connection .settings-state')).toHaveText('Connected');
-    await expect(page.locator('.settings-destination .settings-state')).toHaveText('Checking…');
+    await expect(page.locator('.settings-destination .settings-state')).toHaveText('Selecting…');
     await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
     await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:bedroom');
     await page.getByLabel('Speaker or group', { exact: true }).dispatchEvent('change');
     release(); await expect(page.locator('.settings-destination').getByRole('alert')).toHaveText(message);
     await expectConfiguredConnection(page); await expect(page.locator('.settings-connection').getByRole('alert')).toHaveCount(0);
     await expect(page.locator('.settings-notice.error')).toHaveCount(0);
-    await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+    await expect(page.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:room');
     await expect(page.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
     await expect(page.getByLabel('Speaker or group', { exact: true })).toBeFocused();
-    const revalidated = page.waitForResponse(response => response.url().endsWith('/api/host/integrations') && response.request().method() === 'GET');
+    const revalidated = page.waitForResponse(response => response.url().endsWith('/api/host/integrations/destinations') && response.request().method() === 'GET');
     await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await revalidated;
     expect(writes).toEqual(['/api/host/integrations/destination']);
     await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
-    await expect(page.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
+    await expect(page.getByText('Active speaker: Bedroom', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:bedroom');
     await expect(page.locator('.settings-destination').getByRole('alert')).toHaveCount(0);
     expect(writes).toEqual(['/api/host/integrations/destination', '/api/host/integrations/destination']);
@@ -313,7 +317,7 @@ for (const inventory of ['empty', 'all-offline', 'missing-saved'] as const) {
     const select = speaker.getByLabel('Speaker or group', { exact: true });
     await expect(select).toHaveValue('');
     await expect(select.locator('option[value="sonos:room"]')).toHaveCount(0);
-    await expect(speaker).toContainText('Saved speaker: Living room (unavailable)');
+    await expect(speaker).toContainText('Living room is unavailable.');
     if (inventory === 'missing-saved') {
       await expect(select).toBeEnabled();
       await expect(select.locator('option')).toHaveText(['Choose a speaker or group', 'Bedroom']);
@@ -322,7 +326,7 @@ for (const inventory of ['empty', 'all-offline', 'missing-saved'] as const) {
       await expect(select.locator('option')).toHaveText(['No available speakers or groups']);
       await expect(speaker).toContainText(inventory === 'empty' ? 'No speakers found.' : 'No speakers are currently available.');
     }
-    await expect(speaker.getByRole('button', { name: 'Find speakers again' })).toBeEnabled();
+    await expect(speaker.getByRole('button', { name: 'Refresh speakers' })).toBeEnabled();
     expect(writes).toEqual([]);
     // A stale client still cannot select a missing/offline speaker through the API.
     const rejected = await page.request.post('/api/host/integrations/destination', {
@@ -332,12 +336,12 @@ for (const inventory of ['empty', 'all-offline', 'missing-saved'] as const) {
     expect(isolatedApp.manager.view().destination).toEqual(saved.destination);
     expect(isolatedApp.manager.view().revision).toBe(saved.revision);
     isolatedApp.setSpeakers([bedroom]);
-    await speaker.getByRole('button', { name: 'Find speakers again' }).click();
+    await speaker.getByRole('button', { name: 'Refresh speakers' }).click();
     await expect(select).toBeEnabled(); await expect(select).toHaveValue('');
     await expect(select.locator('option')).toHaveText(['Choose a speaker or group', 'Bedroom']);
     expect(writes).toEqual([]); expect(isolatedApp.manager.view().revision).toBe(saved.revision);
     await select.selectOption('sonos:bedroom');
-    await expect(speaker.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
+    await expect(speaker.getByText('Active speaker: Bedroom', { exact: true })).toBeVisible();
     await expect(select).toHaveValue('sonos:bedroom');
     expect(isolatedApp.manager.view().destination?.id).toBe('sonos:bedroom');
     expect(writes).toHaveLength(1);

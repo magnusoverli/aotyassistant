@@ -83,7 +83,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
     const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
-      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/listening-order/events' || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations'));
+      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/listening-order/events' || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations' || req.path === '/api/host/integrations/events'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
     if (!known && setup && read && ['/display', '/join', '/participant'].includes(req.path)) {
       res.status(403).type('html').send(guestAddressHelp(config.guestUrl, req.path)); return;
@@ -123,8 +123,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
 
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
   let closeAuthorization = () => {};
+  let closeIntegrations = () => {};
   if (integrations) {
-    mountIntegrations(app, engine, integrations, setupManager);
+    closeIntegrations = mountIntegrations(app, engine, integrations, setupManager);
     closeAuthorization = mountAuthorization(app, integrations, () => { engine.emit('change'); });
   }
   app.post('/api/host/volume', async (req, res) => {
@@ -262,5 +263,5 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, close: () => { closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, close: () => { closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
 }

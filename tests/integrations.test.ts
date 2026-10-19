@@ -26,6 +26,7 @@ async function mockMusicAssistant() {
     if (mode === 'huge') { res.end('x'.repeat(2 * 1024 * 1024 + 1)); return; }
     if (req.url === '/info') { res.end(JSON.stringify({ server_version: '2.mock', schema_version: mode === 'old-schema' ? 27 : 46, min_supported_schema_version: 28 })); return; }
     if (req.url === '/api-docs') { res.setHeader('Content-Type', 'text/html'); res.end('<h1>Mock generated API docs</h1>'); return; }
+    if (req.url === '/ws') { res.writeHead(404); res.end(); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw); calls.push({ command: body.command, args: body.args, authorization: req.headers.authorization ?? '' });
     if (req.headers.authorization === 'Bearer bad-token') { res.statusCode = 401; res.end('bad-token and secret upstream details'); return; }

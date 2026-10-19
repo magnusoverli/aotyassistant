@@ -2,6 +2,7 @@ import type { IntegrationView } from '../src/integrations';
 import { el, link } from './dom';
 import { AddressingPanel } from './addressing-panel';
 import { requestJson, RequestError } from './request';
+import { appPath } from './paths';
 import type { SetupView } from '../src/setup';
 import { pageFrame, workspaceGrid, slot } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
@@ -13,6 +14,8 @@ export async function mountSettings(container: HTMLElement) {
   let urlDraft = '';
   let tokenDraft = '';
   let pendingDestination = '';
+  let queuedSnapshot: IntegrationView | undefined;
+  let live: EventSource | undefined;
   let busy = false;
   let busyScope: 'connection' | 'speaker' = 'connection';
   let online = false;
@@ -50,6 +53,11 @@ export async function mountSettings(container: HTMLElement) {
     }
   }
   function apply(next: IntegrationView, updateDraft = false) {
+    if (settings?.instanceId === next.instanceId && settings && (next.revision < settings.revision || next.sequence !== undefined && settings.sequence !== undefined && next.sequence < settings.sequence)) return;
+    if (authPending && next.revision !== settings?.revision) {
+      authPending = false; loginUrl = ''; updateDraft = true; notice = 'Music Assistant connected.';
+    }
+    if (notice.endsWith(' is now the active speaker.') && (next.output.state !== 'ready' || next.output.name !== settings?.output.name)) notice = '';
     settings = next;
     if (!next.tokenConfigured || next.status === 'error') speakerError = '';
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; }
@@ -96,7 +104,7 @@ export async function mountSettings(container: HTMLElement) {
       if (!online) error = 'Cannot reach the application. Check your connection and try again.';
       else if (scope === 'speaker') { if (settings?.status !== 'error') speakerError = message; }
       else error = message;
-    } finally { busy = false; render(); if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending); }
+    } finally { busy = false; if (queuedSnapshot) { apply(queuedSnapshot); queuedSnapshot = undefined; } render(); if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending); }
   }
   function action(text: string, work: () => Promise<void>, secondary = false, scope: 'connection' | 'speaker' = 'connection') {
     const b = el('button', text, secondary ? 'secondary' : ''); b.type = 'button';
@@ -216,15 +224,17 @@ export async function mountSettings(container: HTMLElement) {
       for (const control of detected.querySelectorAll('button')) control.disabled ||= Boolean(settings?.settingsChangesBlocked);
       output.append(detected);
     }
-    const speakerState = busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !settings.destination ? 'Not selected'
-      : settings.destinationStatus === 'checked' ? 'Available' : settings.destinationStatus === 'error' ? 'Needs attention' : 'Not checked';
-    const destination = panel('destination', '2. Speaker', speakerState);
-    const savedSpeaker = settings?.destination;
+    const activeOutput = settings?.output;
+    const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !online ? 'Connection lost'
+      : activeOutput?.state === 'ready' ? 'Ready' : activeOutput?.state === 'checking' ? 'Checking…' : activeOutput?.state === 'recovery' ? 'Recovery needed'
+      : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : 'No active speaker';
+    const destination = panel('destination', '2. Active speaker', speakerState);
     const report = online && settings?.status === 'checked' ? settings.report : null;
     const availableSpeakers = report?.players.filter(player => player.available) ?? [];
-    const availableSavedSpeaker = availableSpeakers.find(player => player.id === savedSpeaker?.id);
-    if (savedSpeaker) destination.append(el('p', availableSavedSpeaker ? `Speaker: ${availableSavedSpeaker.name}`
-      : `Saved speaker: ${savedSpeaker.name} (${report ? 'unavailable' : 'not checked'})`, 'saved-destination'));
+    if (pendingDestination) destination.append(el('p', `Selecting ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
+    else if (online && activeOutput?.state === 'ready') destination.append(el('p', `Active speaker: ${activeOutput.name}`, 'active-destination'));
+    else if (activeOutput?.state === 'unavailable' && activeOutput.name) destination.append(el('p', `${activeOutput.name} is unavailable. Choose another speaker or wait for it to reconnect.`, 'muted small'));
+    else if (activeOutput?.state === 'checking' && activeOutput.name) destination.append(el('p', `Checking ${activeOutput.name}…`, 'muted small'));
     const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
     const select = el('select'); select.id = 'ma-destination';
     select.disabled = busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.settingsChangesBlocked);
@@ -236,34 +246,38 @@ export async function mountSettings(container: HTMLElement) {
     for (const player of availableSpeakers) {
       const option = el('option', player.name); option.value = player.id; select.append(option);
     }
-    const selectedId = pendingDestination || savedSpeaker?.id;
+    const selectedId = pendingDestination || (activeOutput?.state === 'ready' || activeOutput?.state === 'recovery' ? settings?.destination?.id : undefined);
     select.value = availableSpeakers.find(player => player.id === selectedId)?.id ?? '';
     select.onchange = () => {
       const id = select.value;
-      if (busy || select.disabled || !id || id === settings?.destination?.id) return;
+      if (busy || select.disabled || !id || id === settings?.destination?.id && settings.output.state === 'ready') return;
       const restoreFocus = document.activeElement === select;
       pendingDestination = id;
       void run(async () => {
-        try { apply(await request('/destination', { id, revision: settings!.revision })); notice = 'Speaker selected.'; }
+        try {
+          apply(await request('/destination', { id, revision: settings!.revision }));
+          notice = settings?.output.state === 'ready' ? `${settings.output.name} is now the active speaker.` : 'Speaker selected. Playback is not ready; check its status below.';
+        }
         finally { pendingDestination = ''; }
       }, 'speaker').then(() => {
         if (restoreFocus && main.isConnected && document.activeElement === document.body) main.querySelector<HTMLSelectElement>('#ma-destination')?.focus({ preventScroll: true });
       });
     };
-    const speakerHelp = el('p', 'Selections apply automatically. Music starts only when Play is pressed.', 'muted field-hint'); speakerHelp.id = 'ma-destination-help';
+    const speakerHelp = el('p', 'Music plays here when you press Play. Speaker availability updates automatically.', 'muted field-hint'); speakerHelp.id = 'ma-destination-help';
     select.setAttribute('aria-describedby', speakerHelp.id);
     const group = el('div', undefined, 'field'); group.append(destinationLabel, select, speakerHelp); destination.append(group);
     if (report && !availableSpeakers.length) destination.append(el('p', report.players.length
-      ? 'No speakers are currently available. Turn one on or check Music Assistant, then find speakers again.'
-      : 'No speakers found. Add or enable one in Music Assistant, then find speakers again.', 'muted small'));
-    else if (!report && !savedSpeaker) {
+      ? 'No speakers are currently available. Turn one on or check Music Assistant; available speakers will appear here.'
+      : 'No speakers found. Add or enable one in Music Assistant; available speakers will appear here.', 'muted small'));
+    else if (!report && !settings?.destination) {
       destination.append(el('div', !settings?.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant to choose a speaker.'
         : busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.', 'empty-state'));
     }
     const speakerFailure = speakerError || (settings?.destinationStatus === 'error' ? settings.destinationMessage : '');
     if (speakerFailure) { const failure = el('p', speakerFailure, 'error'); failure.setAttribute('role', 'alert'); destination.append(failure); }
-    else if (settings?.destination && settings.destinationStatus === 'not-checked') destination.append(el('p', settings.destinationMessage, 'muted small'));
-    if (settings?.tokenConfigured) destination.append(action('Find speakers again', discover, true, 'speaker'));
+    else if (activeOutput?.state === 'unconfirmed') destination.append(el('p', 'Speaker status will update when Music Assistant reconnects.', 'muted small'));
+    if (report && report.schemaVersion !== 65) destination.append(el('p', 'Live playback requires Music Assistant API schema 65.', 'muted small'));
+    if (settings?.tokenConfigured) destination.append(action('Refresh speakers', discover, true, 'speaker'));
     if (settings?.settingsChangesBlocked) destination.append(el('p', 'Finish the current song before changing speakers.', 'muted small'));
     if (settings?.destination) destination.append(el('p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
     output.append(destination);
@@ -314,16 +328,39 @@ export async function mountSettings(container: HTMLElement) {
     } catch { /* Ignore unrelated/malformed browser storage. */ }
   });
   let refreshing = false;
-  async function refreshSnapshot() {
-    if (busy || refreshing || !navigator.onLine) return;
+  async function refreshSnapshot(discoverSpeakers = true) {
+    if (busy || refreshing) return;
     refreshing = true; let changed = false; const wasOnline = online;
     try {
-      const next = await request('');
-      if (authPending && next.revision !== settings?.revision) { authPending = false; loginUrl = ''; apply(next, true); await discover(); notice = 'Music Assistant connected.'; changed = true; }
-      else if (JSON.stringify(next) !== JSON.stringify(settings)) { apply(next); changed = true; }
+      const next = await request(discoverSpeakers && settings?.tokenConfigured ? '/destinations' : '');
+      if (busy) { queuedSnapshot = next; return; }
+      const before = visibleSnapshot(); apply(next); changed = before !== visibleSnapshot();
     } catch { /* Keep the current form and explicit retry; a read cannot replay a mutation. */ }
     finally { refreshing = false; if (changed || wasOnline !== online) render(); }
   }
   window.addEventListener('focus', () => { void refreshSnapshot(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSnapshot(); });
+  function visibleSnapshot() {
+    return JSON.stringify(settings && { ...settings, sequence: undefined, instanceId: undefined, output: { ...settings.output, checkedAt: undefined },
+      report: settings.report && { ...settings.report, checkedAt: undefined } });
+  }
+  function acceptLive(next: IntegrationView) {
+    const wasOnline = online; online = true;
+    if (busy) { queuedSnapshot = next; return; }
+    const before = visibleSnapshot(); apply(next);
+    if (!wasOnline || before !== visibleSnapshot()) render();
+  }
+  function connectLive() {
+    live?.close(); live = new EventSource(appPath('/api/host/integrations/events'));
+    live.addEventListener('state', event => {
+      if (!main.isConnected) { live?.close(); return; }
+      acceptLive(JSON.parse((event as MessageEvent).data) as IntegrationView);
+    });
+    live.onerror = () => { online = false; if (!busy) render(); void refreshSnapshot(false); };
+  }
+  connectLive();
+  window.addEventListener('offline', () => { online = false; render(); });
+  window.addEventListener('online', () => { void refreshSnapshot(); });
+  window.addEventListener('pagehide', () => live?.close());
+  window.addEventListener('pageshow', event => { if (event.persisted) { connectLive(); void refreshSnapshot(); } });
 }

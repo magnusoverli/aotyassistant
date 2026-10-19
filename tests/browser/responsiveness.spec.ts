@@ -123,7 +123,7 @@ test('optional file diagnostics do not disable automatic speaker selection, whic
     await expect(page.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
     const before = isolatedApp.calls.filter(call => call.command === 'players/all').length;
     await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
-    await expect(page.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
+    await expect(page.getByText('Active speaker: Bedroom', { exact: true })).toBeVisible();
     expect(isolatedApp.calls.filter(call => call.command === 'players/all').length - before).toBe(1);
   } finally { release(); }
 });

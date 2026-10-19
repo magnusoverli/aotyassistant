@@ -121,6 +121,7 @@ test('host invitations remain available with thirty people and consequential act
 
 test('setup retries preserve drafts, healthy summaries need no save, and returning reads respect playback blocks', async ({ page, isolatedApp }) => {
   const settings: IntegrationView = { revision: 1, url: isolatedApp.musicAssistantOrigin, tokenConfigured: true,
+    output: { name: 'A long speaker group name for the listening room', state: 'checking', checkedAt: null },
     destination: { id: 'room', name: 'A long speaker group name for the listening room' }, status: 'checked', message: '',
     destinationStatus: 'checked', destinationMessage: '',
     report: null, playbackAvailable: true, playbackIssue: '', settingsChangesBlocked: false };
@@ -136,7 +137,8 @@ test('setup retries preserve drafts, healthy summaries need no save, and returni
   await page.getByLabel('Music Assistant URL', { exact: true }).fill('http://draft.local:8095');
   settings.report = { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true,
     players: [{ id: 'room', name: settings.destination!.name, available: true }] };
-  fail = false; await page.getByRole('button', { name: 'Find speakers again' }).click();
+  settings.output.state = 'ready';
+  fail = false; await page.getByRole('button', { name: 'Refresh speakers' }).click();
   await expect(page.getByLabel('Music Assistant URL', { exact: true })).toHaveValue('http://draft.local:8095');
   await expect(page.locator('.settings-destination').getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Save speaker' })).toHaveCount(0);
@@ -182,6 +184,7 @@ test('home, error pages and display invitations provide concrete routes while AP
 test('initial settings failure can retry and an empty speaker inventory keeps the visible selector disabled', async ({ page }) => {
   let unavailable = true; const writes: string[] = [];
   const settings: IntegrationView = { revision: 1, url: 'http://music.local:8095', tokenConfigured: true, destination: null,
+    output: { name: null, state: 'none', checkedAt: null },
     status: 'checked', message: '', playbackAvailable: false, playbackIssue: '',
     destinationStatus: 'not-selected', destinationMessage: 'Choose a speaker or group before playing.',
     report: { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true, players: [] } };
@@ -196,6 +199,6 @@ test('initial settings failure can retry and an empty speaker inventory keeps th
   await expect(page.locator('.settings-destination')).toContainText('No speakers found.');
   await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Save speaker', exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Find speakers again' }).click();
+  await page.getByRole('button', { name: 'Refresh speakers' }).click();
   expect(writes).toEqual([]);
 });

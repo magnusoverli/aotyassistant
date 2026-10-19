@@ -42,8 +42,8 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     await host.goto('/host/settings');
     await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
     await host.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
-    await expect(host.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
-    await expect(host.getByText('Speaker selected.', { exact: true })).toBeVisible();
+    await expect(host.getByText('Active speaker: Bedroom', { exact: true })).toBeVisible();
+    await expect(host.getByText('Bedroom is now the active speaker.', { exact: true })).toBeVisible();
     for (const page of [first, second]) {
       expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(1);
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');

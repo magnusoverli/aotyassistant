@@ -104,6 +104,7 @@ async function authorizationFixture(t: TestContext) {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/info') { res.end(JSON.stringify({ ...serverInfo, server_id: identity })); return; }
     if (req.url === '/api-docs') { res.end('docs'); return; }
+    if (req.url === '/ws') { res.writeHead(404); res.end(); return; }
     let raw = ''; for await (const chunk of req) raw += chunk;
     const input = JSON.parse(raw); calls.push(input.command);
     if (!['Bearer login-code', `Bearer ${token}`, 'Bearer old-token'].includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('private upstream error'); return; }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.13] — 2026-10-19
+
+- Make speaker selection a live active output, with automatic availability updates, restart revalidation, and synchronized speaker names in Settings and playback controls.
+
 ## [0.3.12] — 2026-10-19
 
 - Show only available speakers in Settings, explain empty/offline inventories, and keep unavailable saved speakers out of the dropdown while allowing read-only rediscovery.

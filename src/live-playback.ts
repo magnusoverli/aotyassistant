@@ -43,7 +43,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   private volumeTarget?: { level: number; requestedAt: number; mismatches: number };
   get volume(): VolumeState {
     if (!this.integrations.configured) return this.demo.volume;
-    return { ...(this.available && !this.failed ? this.volumeState : { available: false, level: null }), revision: this.integrations.configurationRevision, generation: this.volumeGeneration };
+    return { ...(this.available && this.integrations.playbackAvailable ? this.volumeState : { available: false, level: null }), revision: this.integrations.configurationRevision, generation: this.volumeGeneration };
   }
   progress(id: string) {
     if (!this.integrations.configured) return this.demo.progress(id);
@@ -56,7 +56,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     const correction = queue.state === 'playing' && queue.elapsed_time_last_updated ? Math.max(0, Math.min(5, Date.now() / 1000 - queue.elapsed_time_last_updated)) : 0;
     own.position = { elapsed: queue.elapsed_time + correction, duration: own.track.duration, at: Date.now() };
   }
-  private get available() { return !this.closed && this.integrations.playbackAvailable; }
+  private get available() { return !this.closed && this.integrations.routeConfigured; }
   private command<T>(action: string, work: (api: MusicAssistantApi, destination: string, revision: number) => Promise<T>): Promise<T> {
     return maOperation(action, () => this.integrations.withPlayback(async (api, destination, revision) => {
       maRemaining(Infinity);
@@ -103,7 +103,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     const promise: Promise<void> = (async () => {
       let state: VolumeState;
       try { await this.verifyCapability(api, destination); state = await api.volume(destination); }
-      catch { state = { available: false, level: null }; }
+      catch { state = { available: false, level: null }; this.integrations.refreshOutputSoon(); }
       if (this.available && !this.failed && revision === this.integrations.configurationRevision && epoch === this.volumeEpoch) {
         const target = this.volumeTarget;
         if (target && state.available && state.level !== target.level && (target.mismatches++ === 0 || Date.now() - target.requestedAt < 1200)) {
@@ -130,7 +130,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   async setVolume(level: number, playbackId?: string) {
     if (!this.integrations.configured) { await this.demo.setVolume(level); return; }
-    if (!this.available || this.failed) throw new AppError(409, 'Choose a playback destination and recover connectivity before changing volume.');
+    if (!this.available || !this.integrations.playbackAvailable) throw new AppError(409, 'Choose a playback destination and recover connectivity before changing volume.');
     this.volumeEpoch++;
     const revision = this.integrations.configurationRevision;
     await this.command('volume', async (api, destination) => {
@@ -162,6 +162,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   get mode() { return this.integrations.configured ? 'music-assistant' as const : 'demo' as const; }
   get connected() { return !this.closed && !this.failed; }
   get ownsPlayback() { return Boolean(this.own || this.demoId); }
+  get requiresRecovery() { return this.failed; }
 
   constructor(private demo: DemoAdapter, private integrations: IntegrationManager, private pollMs = 1500) {
     integrations.attachPlayback(this);
@@ -262,6 +263,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.commandGeneration++;
     const id = this.own?.appId;
     this.issue = message; this.failed = fatal; clearTimeout(this.timer);
+    this.integrations.refreshOutputSoon();
     if (fatal && this.own?.suspend) this.own.suspend(); else this.own?.release?.();
     if (!fatal) this.own = undefined;
     if (id) this.onInvalidated(id, message);

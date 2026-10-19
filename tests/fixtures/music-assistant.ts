@@ -60,8 +60,8 @@ export async function startMusicAssistantFixture(port = 0) {
   const events = new WebSocketServer({ noServer: true });
   const authenticated = new Set<WebSocket>();
   const websocketCommands: string[] = [];
-  const notify = (event = 'queue_updated', object_id = queue.queue_id) => {
-    for (const socket of authenticated) if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event, object_id, data: queue }));
+  const notify = (event = 'queue_updated', object_id = queue.queue_id, data: unknown = queue) => {
+    for (const socket of authenticated) if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event, object_id, data }));
   };
   const server = createServer(async (req, res) => {
     requests.push({ path: req.url ?? '', port: req.socket.remotePort });
@@ -199,7 +199,13 @@ export async function startMusicAssistantFixture(port = 0) {
     clampVolume(level: number) { volumeClamp = level; },
     parkPaused() { queue.state = 'idle'; queue.active = false; queue.ended = false; queue.elapsed_time = 0; player.playback_state = 'idle'; player.active_source = null; },
     finish() { queue.state = 'idle'; queue.ended = true; notify(); }, fail(value: boolean) { failed = value; },
-    setSpeakers(next: typeof speakers) { speakers = structuredClone(next); },
+    setSpeakers(next: typeof speakers, emit = true) {
+      const previous = speakers; speakers = structuredClone(next);
+      if (emit) {
+        for (const speaker of previous) if (!speakers.some(p => p.player_id === speaker.player_id)) notify('player_removed', speaker.player_id, null);
+        for (const speaker of speakers) notify(previous.some(p => p.player_id === speaker.player_id) ? 'player_updated' : 'player_added', speaker.player_id, speaker);
+      }
+    },
     failNextPlaybackVerification() { failAfterPlay = true; },
     ignoreControl(action: typeof ignoredControl) { ignoredControl = action; },
     ignorePolicy(action: typeof ignoredPolicy) { ignoredPolicy = action; },

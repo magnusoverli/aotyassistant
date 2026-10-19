@@ -11,7 +11,7 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
   await host.goto('/host/settings');
   await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   await host.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
-  await expect(host.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
+  await expect(host.getByText('Active speaker: Bedroom', { exact: true })).toBeVisible();
   await host.reload(); await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
   await expect(host.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:bedroom');
   expect(checks).toEqual([]);

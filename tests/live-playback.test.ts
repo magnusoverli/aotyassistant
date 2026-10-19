@@ -283,6 +283,7 @@ test('changed recording versions fail before playback and prepared references ca
   await assert.rejects(f.engine.play(f.alex, f.host().turnId!, null, track.id), e => e instanceof AppError && e.status === 422);
   assert.equal(writes(f).length, 0);
   await f.manager.save(f.remote.origin, 'browser-test-token', f.manager.view().revision);
+  await f.manager.check(f.manager.view().revision);
   await assert.rejects(f.engine.play(f.alex, f.host().turnId!, null, track.id), e => e instanceof AppError && e.status === 409);
 });
 
@@ -309,7 +310,7 @@ test('an acknowledged but ignored stop keeps ownership uncertain and never advan
   assert.equal(f.remote.queue.state, 'idle'); assert.equal(f.adapter.ownsPlayback, false);
 });
 
-test('restart restores playback availability and membership without taking ownership or starting audio', async t => {
+test('restart revalidates the output before restoring readiness without taking ownership or starting audio', async t => {
   const f = await fixture(); t.after(f.close);
   const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
@@ -318,6 +319,8 @@ test('restart restores playback availability and membership without taking owner
   const adapter = new ManagedPlayback(new DemoAdapter(), manager); t.after(() => adapter.close());
   const engine = new Engine(new FileStore(f.dir), adapter, 'http://localhost:3000', manager); await engine.init();
   await adapter.refresh();
+  assert.equal(manager.playbackAvailable, false); assert.equal(manager.output.state, 'checking');
+  await manager.check(manager.view().revision);
   assert.equal(manager.playbackAvailable, true); assert.equal(writes(f).length, before);
   assert.equal(adapter.ownsPlayback, false); assert.equal(f.remote.queue.state, 'playing');
   assert.equal(engine.view({ kind: 'participant', credential: f.alex }).ownPlayback, null);
@@ -366,6 +369,8 @@ test('Music Assistant pause-to-idle parking has no expiry and resumes the same i
   assert.equal(f.host().turnId, turnId); assert.equal(f.participant(f.alex).ownPlayback!.id, id);
   assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused'); assert.equal(f.display().nowPlaying!.revealed, true);
   assert.equal(f.display().progress!.elapsed, paused); assert.equal(writes(f).length, before);
+  // This controller-only fixture has no HTTP-owned inventory monitor; revalidate after the clock jump.
+  await f.manager.check(f.manager.view().revision);
   await f.engine.setVolume(25, turnId, f.alex, id);
   await f.engine.control(f.alex, turnId, id, 'resume');
   assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.participant(f.alex).ownPlayback!.id, id);

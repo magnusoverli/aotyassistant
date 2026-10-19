@@ -91,6 +91,7 @@ test('saved catalogue entries/artwork survive expired references, fresh readers,
   } finally { Date.now = now; }
   const writes = () => f.remote.calls.filter(call => /^(players\/cmd\/|player_queues\/(play_media|stop|pause|resume|autoplay|repeat|shuffle)$)/.test(call.command));
   const writesBefore = writes().length; await f.restart(); assert.equal(writes().length, writesBefore);
+  await f.running.integrations.check(f.running.integrations.view().revision);
   assert.equal(f.running.integrations.sourceBindingId, binding); assert.equal(f.running.integrations.playbackAvailable, true);
   assert.deepEqual(await f.json(prefix + '/state', undefined, f.first.privateCookie), added.view);
   const retry = await f.json<PreparationResult>(prefix + '/add', added.body, f.first.credentials); assert.equal(retry.replayed, true);
@@ -175,6 +176,7 @@ test('owner APIs and streams stay private across matching nicknames, recovery, d
 test('exact/source failures retain entries for review and never substitute or send an audio command', async t => {
   const f = await fixture(t); const added = await f.add(); const binding = f.running.integrations.sourceBindingId;
   await f.running.integrations.save(f.remote.origin, 'browser-test-token', f.running.integrations.view().revision);
+  await f.running.integrations.check(f.running.integrations.view().revision);
   assert.equal(f.running.integrations.sourceBindingId, binding);
   f.remote.track.version = 'Different remaster';
   let view = await f.json('/api/participant/state', undefined, f.first.membership);

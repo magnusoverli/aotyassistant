@@ -2,6 +2,10 @@
 
 ## Status
 
+**0.3.13 release verification — 2026-10-19:** Live active-output selection passes production build, typecheck, **232 backend/controller tests** and all **113 Chromium workflows**. Publication uses `v0.3.13`, with anonymous amd64/arm64 image verification before pushing the versioned Home Assistant store manifest to `main`.
+
+**Live active speaker — 0.3.13, 2026-10-19:** Speaker selection now represents the app-wide active output, with shared inventory/queue readiness, pending/ready/unavailable/unconfirmed/recovery states, automatic discovery and reconnection, and output labels beside host/participant playback controls. One existing MA event connection drives coalesced checks, backed by a 15-second server poll; remembered routing is revalidated after restart and 45-second-old checks cannot imply readiness. Ownership/Stop/recovery, exact-source playback, private lists and explicit Play remain intact. Phone-width Settings/player and host screenshots reviewed; screenshots remain ignored. Verification uses synthetic MA, without real speaker audio.
+
 **0.3.12 release verification — 2026-10-19:** Speaker-picker availability fixes pass production build, typecheck, **227 backend/controller tests** and all **111 Chromium workflows**. Publication uses `v0.3.12`, with anonymous amd64/arm64 image verification before pushing the versioned Home Assistant store manifest to `main`.
 
 **Speaker picker availability — 0.3.12, 2026-10-19:** Fix the UI's stale saved-speaker fallback and all-offline empty state. The menu now lists only available speakers from successful discovery; missing/offline and unchecked saved preferences are labelled separately. Find speakers again remains usable with no choices and restores selection when speakers appear. Existing backend availability/queue validation and persisted routing remain authoritative. Three real-fixture browser regressions reproduced the former stale menu selection before the fix, then passed for empty, all-offline and missing-saved inventories, rejected stale API selections and read-only recovery. Build/typecheck, **227 backend/controller tests** and **25 targeted browser workflows** pass.

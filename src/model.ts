@@ -23,6 +23,7 @@ export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueA
 export interface CatalogueProvider {
   readonly configured: boolean;
   readonly playbackAvailable?: boolean;
+  readonly output?: OutputState;
   readonly catalogueRevision?: string | number;
   readonly configurationRevision?: string | number;
   search(query: string, context?: string): Promise<CatalogueTrack[]>;
@@ -60,10 +61,13 @@ export type Person = { id: string; nickname: string };
 export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[] };
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
+/** Public output identity/health only; never a queue payload or current recording. */
+export type OutputState = { name: string | null; state: 'none' | 'checking' | 'ready' | 'unavailable' | 'unconfirmed' | 'recovery'; checkedAt: number | null };
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;
+  output?: OutputState;
   playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';
   revision: number; turnId: string | null; current: Person | null; next: Person | null;
   me?: Person; myTurn?: boolean; ownPlayback?: Room['playback'];

@@ -184,6 +184,10 @@ Implemented: empty-room invitations, metadata-free playback status, top invitati
 
 ## Batch 6 — Setup and recovery
 
+**Active output follow-up — 0.3.13, 2026-10-19:** Settings now presents an Active speaker with pending, ready, unavailable, unconfirmed and recovery states. A shared server monitor discovers new/returning speakers automatically and revalidates the remembered output after restart. Sanitized live snapshots synchronize Settings and the host/participant output labels; unavailable choices disappear without selecting a replacement. Playback ownership, explicit Play and recovery remain independent of readiness. Output-only updates preserve participant browsing and the compact player geometry.
+
+Release verification: build/typecheck, **232 backend/controller tests** and all **113 Chromium workflows** pass, including live multi-browser output updates, empty-inventory recovery, disconnection/reconnection, private destination changes and compact host/player geometry. Reviewed 320px Settings/player and 390px host captures; real-device/audio validation remains separate.
+
 Release **0.3.12** fixes the speaker picker for empty/offline inventories and removes unavailable saved speakers from its choices. Release verification: build/typecheck, **227 backend/controller tests** and all **111 Chromium workflows** passed, including read-only rediscovery and stale-selection rejection.
 
 The 0.3.10 release combines automatic speaker selection with corrected 160px Music Assistant thumbnails and reveal-gated 1024px display covers. Release verification: build/typecheck, 227 backend/controller tests and all 104 Chromium workflows passed.
@@ -194,7 +198,7 @@ Implemented: ordered setup and healthy connection summaries, an always-visible s
 
 - [x] Organise settings as Music connection → Speaker → Guest access. Keep host navigation in the menu rather than a duplicate footer link. Expand incomplete connection setup and show a healthy connection as a summary with Change.
 - [x] Distinguish saved credentials from confirmed health. Keep Reconnect, manual tokens and disconnect secondary unless needed.
-- [x] Keep the Speaker or group menu visible in its card and list only available speakers from successful discovery. Label unavailable/unchecked saved speakers separately, show an explicit empty state, and retain Find speakers again for read-only recovery. Apply changed selections automatically with pending/error feedback, restore the saved selection only when it remains available, and disable changes during owned playback. No Change/Save speaker buttons.
+- [x] Keep the Speaker or group menu visible in its Active speaker card and list only available speakers from fresh discovery. Show live readiness and an explicit empty state, with Refresh speakers for read-only recovery. Apply changed selections automatically with pending/error feedback, restore the selected output only after validation, and disable changes during owned playback. No Change/Save speaker buttons.
 - [x] Make sign-in states explicit: waiting, connected, cancelled and expired. Preserve working configuration when sign-in is cancelled.
 - [x] Separate guest sharing from uploaded-file networking. Keep manual address overrides under Advanced; show the old/new link and cookie-access consequence before an origin change.
 - [x] Explain playback-blocked changes beside the affected control, with a return link. Use existing ownership facts or a small server-provided status rather than inferring from button state.

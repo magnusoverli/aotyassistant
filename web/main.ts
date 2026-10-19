@@ -10,6 +10,7 @@ import { pageForPath } from './navigation';
 import { artwork, progressBar, updateProgress, volumeControl, updateVolume, progressConnected, displayedProgress } from './media';
 import { PlayerController } from './player-controller';
 import { PlayerReturn } from './player-return';
+import { outputLabel } from './output';
 import { PublicRoom } from './public-room';
 import { PreparationController } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
@@ -259,7 +260,7 @@ function catalogueButton(text: string, action: CatalogueAction, secondary = true
   control.onclick = () => { void runCatalogue(action); }; return control;
 }
 function participantLayoutKey(current: View) {
-  return JSON.stringify({ ...current, revision: undefined, ownPlayback: undefined, progress: undefined, playbackStatus: undefined, nowPlaying: undefined,
+  return JSON.stringify({ ...current, revision: undefined, output: undefined, ownPlayback: undefined, progress: undefined, playbackStatus: undefined, nowPlaying: undefined,
     volume: [current.volume?.available, current.volume?.revision] });
 }
 function accept(next: View) {
@@ -386,6 +387,7 @@ function host() {
     return main;
   }
   const audio = panel('host-audio'); const audioTitle = el('div'); audioTitle.append(el('h2', 'Speaker volume'));
+  audioTitle.append(outputLabel(view.output, realtime));
   if (!view?.volume?.available) {
     const hint = el('p', undefined, 'muted small');
     hint.append('Volume is unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link'));
@@ -428,7 +430,7 @@ function participantPlayer(current: View) {
   const artist = el('div', undefined, 'artist-credit');
   if (playback?.track.artistArtwork) artist.append(artwork(playback.track.artistArtwork, 'Artist image', 'artist-portrait'));
   const credit = el('p', playback?.track.artist ?? 'Search or use your list.', 'artist'); credit.title = credit.textContent!;
-  artist.append(credit); track.append(artist);
+  artist.append(credit); track.append(artist, outputLabel(current.output, realtime));
   now.append(artwork(playback?.track.artwork, 'Album artwork', 'mini-record'), track);
   const progress = progressBar(playback ? shown.progress : undefined);
   if (player.starting) {
@@ -473,7 +475,7 @@ function participant() {
   const realCatalogue = view.catalogue?.source === 'music-assistant';
   if (realCatalogue && !view.catalogue?.playbackAvailable) {
     const hint = el('p', undefined, 'muted small');
-    hint.append('Choose a speaker in ', link('host settings', '/host/settings', 'inline-link'), ' before playing. You can still prepare tracks.'); search.append(hint);
+    hint.append(view.output?.name ? 'Check the speaker in ' : 'Choose a speaker in ', link('host settings', '/host/settings', 'inline-link'), ' before playing. You can still prepare tracks.'); search.append(hint);
   }
   if (realCatalogue) {
     const modes = el('div', undefined, 'actions search-tabs');

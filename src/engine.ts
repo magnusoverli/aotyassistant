@@ -124,6 +124,7 @@ export class Engine extends EventEmitter {
     const person = (id: string | null) => id ? people.get(id) ?? null : null;
     const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id,
       playbackAvailable: this.ready && this.catalogueState.playbackAvailable,
+      ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
       revision: room.revision, turnId: room.turnId, current: person(room.currentId),
       next: room.currentId && room.active.length ? person(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) : null,
       rotation: room.active.map(id => person(id)!), // Names/order only, never selections or credentials.
@@ -280,7 +281,10 @@ export class Engine extends EventEmitter {
       };
       const context = await this.inspect(room => {
         check(room);
-        if (this.catalogue?.configured && !this.catalogue.playbackAvailable) throw new AppError(422, 'Choose a playback destination in host settings first.');
+        if (this.catalogue?.configured && !this.catalogue.playbackAvailable) {
+          if (this.catalogue.output?.name) throw new AppError(409, 'The selected speaker is not ready. Check its status in host settings and try again.');
+          throw new AppError(422, 'Choose a playback destination in host settings first.');
+        }
         return `${room.id}:${this.participant(credential, room).id}`;
       });
       const track = await maStage('resolve', () => resolve(context)); const id = randomUUID();
