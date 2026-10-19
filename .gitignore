@@ -3,10 +3,13 @@ dist/
 data/
 .env
 .env.*
-!.env.example
 playwright-report/
 test-results/
 # Generated screenshots stay local; application icons remain tracked.
 screenshots/
 **/screenshots/
 docs/ui-ux-audit-assets/
+coverage/
+*.tsbuildinfo
+.DS_Store
+config.prebuilt.yaml

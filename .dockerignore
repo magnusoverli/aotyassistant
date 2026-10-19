@@ -6,3 +6,9 @@ data
 .git
 test-results
 playwright-report
+screenshots
+docs
+.github
+tests
+scripts
+*.md

@@ -48,7 +48,7 @@ async function fixture(t: TestContext) {
   }
   async function openStream(path: string, credential: string) {
     const abort = new AbortController(); aborts.push(abort);
-    const response = await fetch(origin + path, { headers: { Cookie: credential }, signal: abort.signal }); assert.equal(response.status, 200);
+    const response = await fetch(origin + path, { headers: { Cookie: credential }, signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]) }); assert.equal(response.status, 200);
     const reader = response.body!.getReader(); let buffer = ''; const decoder = new TextDecoder();
     return async () => {
       while (!buffer.includes('\n\n')) { const part = await reader.read(); if (part.done) throw new Error('Stream ended'); buffer += decoder.decode(part.value, { stream: true }); }
@@ -112,15 +112,30 @@ test('one participant stream separates room and owner events, keeps room access 
   const room = await events(); const list = await events();
   assert.match(room, /event: state/); assert.ok(!room.includes(added.entryId)); assert.ok(!room.includes('upcoming'));
   assert.match(list, /event: preparation\n/); assert.ok(list.includes(added.entryId)); assert.ok(!list.includes(f.second.preparation.ownerId));
+  // Read-only output monitoring can publish room state between owner events.
+  // Inspect every intervening frame rather than relying on scheduler timing.
+  const expectEvent = async (name: string, contains = '') => {
+    for (;;) {
+      const frame = await events();
+      assert.ok(!frame.includes(f.second.preparation.ownerId));
+      if (frame.startsWith('event: state\n')) {
+        assert.ok(!frame.includes(added.entryId)); assert.ok(!frame.includes('upcoming'));
+        if (name === 'state' && frame.includes(contains)) return;
+        continue;
+      }
+      assert.ok(frame.startsWith(`event: ${name}\n`), `Expected ${name}, received ${frame}`);
+      return;
+    }
+  };
   const key = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: added.view.revision }, f.first.privateCookie);
-  assert.match(await events(), /event: preparation\n/);
+  await expectEvent('preparation');
   const recovered = await f.request(prefix + '/recover', { recoveryKey: key.recoveryKey }); const newCookie = cookie(recovered); const view = await recovered.json() as PreparationView;
-  assert.match(await events(), /event: preparation\n/);
+  await expectEvent('preparation');
   await f.json(prefix + '/revoke-devices', { revision: view.revision }, newCookie);
-  assert.match(await events(), /event: preparation-revoked/);
-  await f.running.engine.join('Late'); assert.match(await events(), /event: state/);
+  await expectEvent('preparation-revoked');
+  await f.running.engine.join('Late'); await expectEvent('state', 'Late');
   const host = f.running.engine.view({ kind: 'host' }); await f.running.engine.remove(host.current!.id, host.revision);
-  assert.match(await events(), /event: revoked/);
+  await expectEvent('revoked');
 });
 
 test('bounded thumbnail variants remain owner-authorized and independently cached', async t => {

@@ -1,44 +1,69 @@
-# Albums of the Year — Home Assistant installation
+# Install and manage Albums of the Year
 
-Requires **Home Assistant 2026.10.0 or later** with Supervisor, amd64 or aarch64, and an installed Music Assistant server with a working login. Real playback currently supports MA API schema 65. Core, Supervisor and MA have independent versions. Music sources and players can be configured after connecting.
+Albums of the Year is distributed and supported as a **Home Assistant app**. Use Home Assistant OS with Core **2026.10.0 or later**, Supervisor, and an **amd64** or **aarch64** system. Music Assistant must be reachable from the app and have a working login, music source, and speaker/group. Playback supports **MA API schema 65**.
+
+## Install
 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
-## Install and connect
+1. Add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
+2. Install **Albums of the Year**. Supervisor downloads the published image for your architecture.
+3. Keep the app’s **Network** port enabled: container port `3000/tcp` is published as port `3000` by default. Choose another free host port if necessary.
+4. Start the app and select **Open web UI**. The host desk opens inside Home Assistant through Ingress. Enable **Show in sidebar** if desired.
 
-1. Use the button above, or add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
-2. Install **Albums of the Year (development)** and start it. Supervisor downloads the public prebuilt image for your architecture.
-3. Select **Open web UI**. The host interface opens through Home Assistant Ingress. Enable its sidebar entry in the app's Info page if desired.
-4. Open **Connections & settings**, choose a detected server, and select **Connect Music Assistant**. Complete MA sign-in in the new tab. If discovery misses an external server, enter its direct API address (normally port 8095).
-5. Choose a speaker/group; the selection is validated and applied automatically. Then share the host desk's guest QR or display link.
+**Start on boot** is enabled for new installations. The optional **Watchdog** checks the app’s process health; an unavailable Music Assistant server does not by itself make the app unhealthy.
 
-Guest addresses are derived from Supervisor's LAN interface and effective published port. MA-facing media addresses are checked automatically by fetching a protected synthetic file; setup never starts audio. For multiple interfaces, choose a guest address in **Home Assistant setup**. If port `3000/tcp` is disabled, publish it under **Network**, or configure a reachable reverse-proxy origin.
+## Connect Music Assistant
 
-New installs default to **Start on boot**. Discovery continues in the background, with capped retries while MA is unavailable and infrequent network refreshes when healthy. **Find Music Assistant** is also available after connection. The host UI remains available while MA is offline. Supervisor's optional **Watchdog** monitors this app, not MA availability.
+1. Open **Connections & settings** and select a detected server. Use **Find Music Assistant** to search again. If needed, enter the server’s direct API address, normally `http://<ma-host>:8095`, rather than its Home Assistant dashboard/Ingress URL.
+2. Choose **Connect Music Assistant**, complete sign-in in the new tab, and return to Settings.
+3. Choose an available **Speaker or group**. Selection is checked and saved immediately.
+4. Check **Application addresses**, then open the host desk’s join/display links from a guest device.
 
-## Addresses and sign-in fallback
+Discovery, connection checks, speaker selection, and file-access checks do not play audio or change volume. An explicit Play action replaces the selected destination’s queue with one song and may interrupt music already playing there.
 
-- `/host` and `/host/settings`: host controls, through Ingress or the LAN port.
-- `/join`, `/participant`, `/display`: guests and display, using the separate LAN origin without HA accounts.
-- Existing guest addresses are preserved. `guest_url` is an optional advanced override; normal installation needs no Configuration-tab edits.
-- Supervisor-verified LAN addresses also open the display and guest pages, even when the saved address uses a hostname. Other LAN address mismatches show a recovery page with links to the saved address and settings. Guest QR links continue to use your chosen saved address.
-- **Advanced: token or separate login address** supports a browser-reachable MA address when the backend uses internal DNS, or manual token entry from **MA → Settings → Profile**.
-- **Reconnect Music Assistant** renews authorization while retaining the same server's speaker and private-list source identity. MA 2.10.6 long-lived tokens expire after one year. Replacing the server requires an explicit Disconnect.
-- Advanced token setup also preserves the speaker and saved-list identity when a new address is verified as the same server. Enter a token for the new address; a failed or unverified address change keeps the saved connection. Older unchecked connections must first have their server identity checked.
-- Trusted Supervisor discovery can relocate a saved same-ID server and refresh its browser login address; file access is rechecked after network changes/reconnection. Saved guest origins and manual file-address overrides remain explicit choices. Relocation follows the existing playback-ownership guard.
-- Settings reports an unsupported MA API separately from an unavailable speaker, including installed version/schema and app-update guidance. Browsing remains available for compatible read-only APIs; playback still requires a verified schema.
-- Cancelled/expired login or blocked browser/webview callbacks keep saved settings intact. Retry Connect or use the token fallback.
+**Advanced: token or separate login address** supports a browser-reachable MA login address when the detected internal hostname cannot open on your device, or manual token entry from MA’s profile settings. A cancelled sign-in keeps existing settings. You do not need to create a Home Assistant access token.
 
-Phones need access to the guest port; HA remote access does not publish it. MA can fetch media over Supervisor's internal network when installed on the same host. Manual media overrides take precedence. Keep a stable guest address because changing browser origins affects cookies and private-list recovery.
+Use **Reconnect Music Assistant** to renew authorization for the same server while retaining saved music identity and speaker selection. Use **Disconnect** when replacing the server. Disconnecting removes this app’s saved token; revoke it in Music Assistant separately if needed. See [connection and compatibility details](docs/music-assistant.md).
 
-## Access and backups
+## Guest and display access
 
-The app uses the injected Supervisor token for **default-role information reads**; users do not create an HA token. Best-effort mDNS helps find external MA servers. Host networking, Docker access, Core database access and shared-media mounts are unnecessary.
+- **Host desk / Connections & settings:** available through Home Assistant Ingress and the published LAN port.
+- **My seat / Join / Listening room:** use the separate guest address, without Home Assistant accounts.
 
-**LAN host controls remain intentionally unauthenticated.** HA login protects Ingress, not the published LAN port. Keep that port on a trusted LAN. The MA token stays in the protected `/data/integrations.json` and is not returned to the UI. The dedicated MA login callback consumes its credential and immediately redirects to a clean URL.
+Supervisor supplies LAN-address and published-port suggestions. Choose a stable address in Settings if several interfaces are available. Phones and the display must be able to reach that address; isolated guest Wi-Fi may block it. Home Assistant remote access does not automatically expose the guest port.
 
-Include all of `/data` in HA backups: room state, settings, private lists and uploads. Hot-backup hooks wait for active filesystem writes and pause new writes during the archive. Read-only pages and existing audio streams remain available. Long uploads can make the pre-backup hook fail; retry after they finish. The post-backup hook resumes writes. Restart the app if a failed Supervisor backup leaves writes paused. Protect backups because they contain credentials; uninstalling can delete app data.
+Keep the address stable. Changing its hostname, IP, port, or HTTP/HTTPS scheme can require participants to rejoin and recover their private lists. Save recovery keys first. See [application addresses](docs/application-addressing.md).
 
-## Releases
+**Host controls on the LAN port are open to everyone who can reach it.** Use a trusted network and do not forward the port to the internet. Ingress authentication does not secure the LAN port. See [security and privacy](SECURITY.md).
 
-Supervisor uses `version` in `config.yaml` to offer updates. Restart restores lists/settings/order but clears playback ownership and reveal; MA may continue independently. See [image publishing](docs/home-assistant-releases.md) and [setup implementation/research](docs/home-assistant-setup-research.md).
+## App options
+
+Normal setup takes place in **Connections & settings**. The Home Assistant Configuration tab contains only these advanced/compatibility options:
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `guest_url` | Automatic | Optional guest-origin fallback, such as `http://homeassistant.local:3000`. Include the published port; no path, query, or Ingress address. A saved in-app guest address takes precedence. |
+| `demo_track_seconds` | `30` | Simulated track length before Music Assistant is connected; 1–3600 seconds. No effect on real music. |
+| `playback_mode` | `demo` | Compatibility option for older saved configuration. Connecting Music Assistant enables real playback automatically. |
+
+## Updates and restart behaviour
+
+1. Finish or stop app-owned playback.
+2. Create a Home Assistant backup including this app.
+3. Check the app store for updates, read the [changelog](CHANGELOG.md), and install the update.
+4. Refresh open browser pages and check the Music Assistant/speaker status in Settings.
+
+The stable app uses the same repository and slug as 0.3.16: update the existing installation; do not uninstall it. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue independently if you leave a song playing.
+
+Obsolete room schemas from early development builds are not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the upgrade path](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records likewise stop startup rather than replacing saved state.
+
+## Backups and restore
+
+Include **Albums of the Year** in your Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
+
+Hot-backup hooks coordinate persistent writes while Supervisor archives the data. Existing read-only pages and audio streams remain available. If a backup fails and writes remain paused, restart the app and retry the backup. Avoid large uploads during backups.
+
+Restore the app through Home Assistant’s backup interface. Recheck the guest address, Music Assistant connection, and speaker after restoring, especially on a replacement host. Keep participant recovery keys: restoring server data cannot restore credentials that a phone’s browser has lost. Uninstalling the app may remove its data.
+
+For a rollback, restore the pre-update backup together with its matching app version; do not assume an older image can read a newer data format. See [troubleshooting](docs/troubleshooting.md) for common recovery paths.

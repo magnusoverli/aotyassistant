@@ -68,13 +68,15 @@ test('room capacity and invalid names are enforced without losing existing parti
   assert.deepEqual(f.host(), before);
 });
 
-test('old development event records are discarded rather than migrated; other data files are untouched', async t => {
+test('legacy room records stop startup without overwriting room or private data', async t => {
   const f = await fixture(); t.after(() => f.adapter.close());
   const other = join(f.directory, 'private-data-fixture'); await writeFile(other, 'saved-music-settings-fixture');
   for (const schema of [1, 2]) {
-    await writeFile(join(f.directory, 'state.json'), JSON.stringify({ schema, session: { id: randomUUID(), participants: ['discarded'] } }));
-    const adapter = new DemoAdapter(); t.after(() => adapter.close()); const engine = new Engine(f.store, adapter, 'http://app.local:3000'); await engine.init();
-    assert.deepEqual(engine.view({ kind: 'host' }).active, []); assert.equal((await f.store.load()).schema, 3);
+    const bytes = JSON.stringify({ schema, session: { id: randomUUID(), participants: ['retained'] } });
+    await writeFile(join(f.directory, 'state.json'), bytes);
+    const adapter = new DemoAdapter(); t.after(() => adapter.close()); const engine = new Engine(f.store, adapter, 'http://app.local:3000');
+    await assert.rejects(engine.init(), /Persistent state could not be loaded/);
+    assert.equal(await readFile(join(f.directory, 'state.json'), 'utf8'), bytes);
     assert.equal(await readFile(other, 'utf8'), 'saved-music-settings-fixture');
   }
 });

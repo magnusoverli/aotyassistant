@@ -1,19 +1,28 @@
 {
   "name": "albums-of-the-year",
-  "version": "0.3.16",
+  "version": "1.0.0",
+  "description": "A Home Assistant app for taking turns sharing favourite music through Music Assistant.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/magnusoverli/aotyassistant.git"
+  },
+  "bugs": "https://github.com/magnusoverli/aotyassistant/issues",
+  "homepage": "https://github.com/magnusoverli/aotyassistant#readme",
   "private": true,
   "type": "module",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit",
+    "check:release": "node scripts/check-release.mjs",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "npm run build && playwright test",
-    "test:container": "docker build -t aotyassistant:smoke . && tsx scripts/container-smoke.ts && tsx scripts/upload-smoke.ts",
+    "test:container": "docker build -t aotyassistant:smoke . && npm run test:container:built",
+    "test:container:built": "tsx scripts/container-smoke.ts && tsx scripts/upload-smoke.ts",
     "ma:probe": "tsx scripts/ma-probe.ts"
   },
   "dependencies": {

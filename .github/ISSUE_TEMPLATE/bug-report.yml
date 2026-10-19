@@ -1,0 +1,34 @@
+name: Bug report
+description: Report a problem with the Home Assistant app
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Support is for the Home Assistant app. Please check the troubleshooting guide first.
+        Do not include tokens, cookies, recovery keys, backups, protected media URLs, or private music.
+        Report sensitive security issues through the repository's Security tab.
+  - type: input
+    id: app-version
+    attributes:
+      label: Albums of the Year version
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Home Assistant Core/Supervisor and Music Assistant versions/schema, architecture, browser/device, speaker integration, and Ingress or guest link.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include what you expected and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Remove credentials and private data before sharing.

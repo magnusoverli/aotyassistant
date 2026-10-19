@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { createServer, type AddressInfo } from 'node:net';
 import { once } from 'node:events';
 
-// A dedicated test tag cannot replace the image tag used by the development deployment.
+// Smoke tests use a dedicated tag and disposable data, never a released installation.
 export const image = 'aotyassistant:smoke';
 const exec = promisify(execFile);
 export const docker = async (...args: string[]) => (await exec('docker', args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 })).stdout.trim();

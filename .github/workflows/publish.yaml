@@ -15,7 +15,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validation:
+    uses: ./.github/workflows/ci.yaml
+    permissions:
+      contents: read
   checks:
+    needs: validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -27,23 +32,12 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: mkdir -p /tmp/opencode
-      - run: npm run typecheck && npm test && npm run build
       - id: version
-        shell: bash
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync, appendFileSync } from 'node:fs';
-          const config = readFileSync('config.yaml', 'utf8');
-          const version = /^version: "([0-9]+\.[0-9]+\.[0-9]+)"$/m.exec(config)?.[1];
-          if (!version) throw new Error('Invalid release version');
-          if (process.env.GITHUB_REF_TYPE === 'tag' && process.env.GITHUB_REF_NAME !== `v${version}`) throw new Error('Tag and manifest versions differ');
-          appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nimage=ghcr.io/${process.env.GITHUB_REPOSITORY.toLowerCase()}\n`);
-          NODE
+        run: node scripts/check-release.mjs
   build:
     needs: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +70,7 @@ jobs:
   publish:
     needs: [checks, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -100,6 +95,11 @@ jobs:
           const config = readFileSync('config.yaml', 'utf8').replace(/^image:.*\n/gm, '');
           writeFileSync('config.prebuilt.yaml', `${config}\nimage: ${process.env.IMAGE}\n`);
           NODE
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify public release images
+        run: node scripts/verify-release-image.mjs '${{ needs.checks.outputs.image }}' '${{ needs.checks.outputs.version }}'
       - uses: actions/upload-artifact@v4
         with:
           name: published-store-manifest

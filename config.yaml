@@ -1,8 +1,8 @@
-name: Albums of the Year (development)
-version: "0.3.16"
+name: Albums of the Year
+version: "1.0.0"
 slug: albums_of_the_year
 url: https://github.com/magnusoverli/aotyassistant
-description: Private listening circle with artist/album browsing and turn-controlled experimental Music Assistant playback.
+description: Take turns sharing favourite music with private song lists, Music Assistant playback, and a shared listening-room display.
 arch:
   - amd64
   - aarch64
@@ -12,6 +12,7 @@ hassio_api: true
 hassio_role: default
 boot: auto
 init: false
+timeout: 30
 ingress: true
 ingress_port: 8099
 ingress_entry: host
@@ -19,7 +20,7 @@ ingress_stream: true
 panel_icon: mdi:album
 panel_title: Albums of the Year
 panel_admin: true
-stage: experimental
+stage: stable
 host_network: false
 watchdog: "http://[HOST]:[PORT:3000]/api/health"
 backup: hot

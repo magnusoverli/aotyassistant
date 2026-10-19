@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-19
+
+- Launch the stable Home Assistant app with a new user guide, MIT license, and Home Assistant-only installation support.
+- Replace completed development plans and mockups with maintained setup, playback, recovery, troubleshooting, and contributor documentation.
+- Allow graceful shutdown to finish and preserve unsupported legacy room files instead of silently resetting them.
+- Gate image publication on browser and packaged-app checks, consistent release metadata, and anonymous image verification.
+
 ## [0.3.16] — 2026-10-19
 
 - Preserve private-list identity and speaker selection when advanced setup verifies a new address for the same Music Assistant server.

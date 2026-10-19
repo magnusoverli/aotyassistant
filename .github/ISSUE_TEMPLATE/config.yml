@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and troubleshooting
+    url: https://github.com/magnusoverli/aotyassistant/blob/main/docs/troubleshooting.md
+    about: Common connection, playback, and recovery questions
+  - name: Private vulnerability report
+    url: https://github.com/magnusoverli/aotyassistant/security/advisories/new
+    about: Report sensitive security issues privately

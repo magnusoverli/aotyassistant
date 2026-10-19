@@ -1,13 +1,31 @@
-# Publishing Home Assistant images
+# Publishing Home Assistant releases
 
-The **Publish Home Assistant images** workflow builds amd64 and aarch64 images, publishes their versioned multi-architecture manifest to GHCR, and emits a store manifest. It uses GitHub's short-lived package token.
+The store follows `main`. The published app is `ghcr.io/magnusoverli/aotyassistant`, with a versioned multi-architecture image for **amd64** and **aarch64**. GitHub Actions uses its short-lived package token; no long-lived registry credential is needed.
 
-1. Set the intended version in `config.yaml`, `package.json` and the lockfile; update the changelog and merge tested changes.
-2. Run **Actions → Publish Home Assistant images → Run workflow**, or push a matching `v<version>` tag. Checks run before both architectures are published.
-3. Make `ghcr.io/magnusoverli/aotyassistant` **public** on first publication and confirm an unauthenticated pull works.
-4. Download the **published-store-manifest** artifact. Replace root `config.yaml` with its `config.prebuilt.yaml` contents and commit/push. The `image` reference is enabled only after the image is available.
-5. Check for updates in HA's app store and test the release on HAOS.
+## Prepare
 
-Version **0.2.2** is published publicly for amd64 and aarch64; its anonymous pull was verified and the root manifest now uses that image. For subsequent releases, build/tag a release branch, publish the image, then merge the store version update. Do not advertise missing/private images or overwrite released version tags. To build a local development checkout on HA, remove its `image` line.
+1. Finish the change and its **Unreleased** changelog entries. Review [release readiness](release-readiness.md), especially migrations and physical-device evidence.
+2. Create `release/<version>`. Set the same version in `config.yaml`, `package.json`, the lockfile, and `Dockerfile`.
+3. Move the completed changelog entries under a dated release heading. Keep an empty **Unreleased** section.
+4. Run the [contributor checks](../CONTRIBUTING.md#verify-a-change), including `npm run check:release`. Commit and push the release branch.
 
-The Node 24/Alpine Dockerfile is shared by source and prebuilt installations and includes HA/OCI labels. The workflow does not restart deployed installations. Regenerate `icon.png` from `icon.svg` with `npx tsx scripts/generate-addon-icon.ts`.
+Use semantic versions: patches for compatible fixes, minor versions for compatible features, major versions for incompatible contracts. Describe required user action and data migrations explicitly. Never overwrite a released Git tag or image version.
+
+## Publish and verify
+
+1. Push the matching annotated `v<version>` tag. **Publish Home Assistant images** runs the shared application checks, Chromium workflows, and native amd64/aarch64 packaged-app tests before building/pushing release images.
+2. Wait for both architecture builds and the combined manifest. The workflow verifies anonymous manifest/configuration/layer access, architecture labels, and version metadata before emitting **published-store-manifest**.
+3. For first publication, the GHCR package must be public. The anonymous check intentionally fails while it is private; make it public and rerun the failed publication job.
+4. Download **published-store-manifest**, compare `config.prebuilt.yaml` with the release branch’s manifest, and apply any required difference. The image reference and version must match the published image.
+5. Only after successful publication and verification, fast-forward or merge the release branch into `main` and push. This makes the new store version visible after its image is available.
+6. Create a GitHub release from the existing tag with user-facing highlights, upgrade notes, supported architectures, and accurate verification results. Mark it latest when it is the current stable version.
+
+If publication fails, leave the store on the previous version and repair/rerun the workflow. If a published image needs code changes, use a new version rather than replacing its contents.
+
+## Installed-app acceptance
+
+Refresh the Home Assistant store, update a backed-up installation, and record the app/HA/MA versions, architecture, and player integration. Check startup, Ingress, guest links, connection/speaker status, retained room/lists/uploads, and backup/restore.
+
+Physical speaker tests involve real audio and queue replacement. Run them on the intended test destination, recording exact-recording playback, reveal, pause/resume, natural completion, takeover, and recovery. Automated synthetic checks do not establish those results.
+
+Keep the previous backup and version until acceptance completes. Rollback means restoring matching data and app versions through Home Assistant, not deleting configuration or replacing data files by hand.

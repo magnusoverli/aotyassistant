@@ -1,0 +1,15 @@
+name: Feature request
+description: Suggest an improvement to the Home Assistant app
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would this improve?
+      description: Describe the problem or workflow, and whether it affects hosts, participants, or the display.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Suggested change
+      description: Include alternatives you have tried, if relevant.

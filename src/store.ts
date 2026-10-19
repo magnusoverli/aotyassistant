@@ -17,8 +17,6 @@ export class FileStore implements Store {
   async load(): Promise<State> {
     try {
       const value = JSON.parse(await readFile(join(this.directory, 'state.json'), 'utf8'));
-      // Development-only lifecycle replacement: discard old event state, not private libraries or settings.
-      if (value?.schema === 1 || value?.schema === 2) return { schema: 3, room: null };
       return stateSchema.parse(value);
     }
     catch (error) {
