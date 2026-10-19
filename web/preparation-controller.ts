@@ -75,7 +75,12 @@ export class PreparationController {
       window.addEventListener('focus', this.checkMissingAccess);
     }
     const epoch = this.epoch; const sequence = ++this.loadSequence; this.loading = true; this.changed();
-    try { const view = await this.request<PreparationView>('/state'); if (epoch !== this.epoch) return; if (!this.pending) this.error = ''; this.accept(view); this.listen(); }
+    try {
+      const view = await this.request<PreparationView>('/state'); if (epoch !== this.epoch) return;
+      if (!this.pending) this.error = '';
+      const ownerId = this.view?.ownerId; this.accept(view);
+      if (!this.stopStream || ownerId !== view.ownerId) this.listen();
+    }
     catch (error) {
       if (epoch !== this.epoch) return;
       this.missing = error instanceof RequestError && error.code === 'missing-library';

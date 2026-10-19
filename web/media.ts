@@ -2,6 +2,7 @@ import type { PlaybackProgress, VolumeState } from '../src/model';
 import { el } from './dom';
 import { vinyl } from './visuals';
 import { ProgressClock } from './progress-clock';
+import { attr, prop } from './view-nodes';
 
 const clock = new ProgressClock();
 const animated = new Set<HTMLElement>();
@@ -44,10 +45,10 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
   const status = frame.querySelector<HTMLElement>('.playback-status')!;
   const caption = progress?.status === 'playing' ? '● Playing' : progress?.status === 'paused' ? 'Ⅱ Paused' : progress?.status === 'stopped' ? '■ Stopped' : '○ Waiting for a track';
   if (status.textContent !== caption && !status.classList.contains('player-pending')) status.textContent = caption;
-  frame.dataset.status = progress?.status ?? 'waiting';
+  attr(frame, 'data-status', progress?.status ?? 'waiting');
   const bar = frame.querySelector<HTMLProgressElement>('progress')!;
-  if (progress?.fraction != null) bar.value = progress.fraction; else bar.removeAttribute('value');
-  bar.hidden = !progress;
+  if (progress?.fraction != null) prop(bar, 'value', progress.fraction); else attr(bar, 'value', undefined);
+  prop(bar, 'hidden', !progress);
   const times = frame.querySelector<HTMLElement>('.track-times')!;
   if (progress?.duration !== undefined) {
     if (times.children.length !== 2) times.replaceChildren(el('span'), el('span'));
@@ -56,7 +57,7 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
     if (times.children[1]!.textContent !== duration) times.children[1]!.textContent = duration;
     const description = progress.elapsed === undefined ? 'Position unavailable' : `${elapsed} elapsed${progress.duration > 0 ? ` of ${duration}` : ''}`;
     if (bar.getAttribute('aria-valuetext') !== description) bar.setAttribute('aria-valuetext', description);
-  } else { if (times.childNodes.length) times.replaceChildren(); bar.setAttribute('aria-valuetext', 'Track progress. Times hidden until reveal.'); }
+  } else { if (times.childNodes.length) times.replaceChildren(); attr(bar, 'aria-valuetext', 'Track progress. Times hidden until reveal.'); }
 }
 export function progressBar(progress?: PlaybackProgress, publicDisplay = false) {
   const frame = el('section', undefined, `playback-progress${publicDisplay ? ' public-playback' : ''}`); frame.setAttribute('aria-label', 'Playback status and progress');
@@ -79,10 +80,25 @@ export function volumeControl(volume: VolumeState | undefined, change: (level: n
 export function updateVolume(root: HTMLElement, volume?: VolumeState) {
   const slider = root.querySelector<HTMLInputElement>('#volume-level');
   if (!slider || slider.dataset.dragging === 'true') return;
-  slider.value = String(volume?.level ?? 0);
+  prop(slider, 'value', String(volume?.level ?? 0));
   const output = root.querySelector<HTMLOutputElement>('.volume-control output');
   if (output) {
-    output.value = volume?.level == null ? 'Unavailable' : `${volume.level}%`;
-    output.title = 'Volume';
+    prop(output, 'value', volume?.level == null ? 'Unavailable' : `${volume.level}%`);
+    prop(output, 'title', 'Volume');
+  }
+}
+
+/** Replace only a changed image, keeping its surrounding layout and fallback mounted. */
+export class ArtworkView {
+  readonly element: HTMLElement;
+  private url?: string;
+  constructor(private alt: string, private className = '') { this.element = artwork(undefined, alt, className); }
+  update(url?: string) {
+    if (url === this.url) return this.element;
+    this.url = url;
+    this.element.querySelector('img')?.remove();
+    const image = artwork(url, this.alt, this.className).querySelector('img');
+    if (image) this.element.append(image);
+    return this.element;
   }
 }

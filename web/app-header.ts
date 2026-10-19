@@ -1,6 +1,7 @@
 import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
 import { navigationHref, inIngress } from './paths';
+import { attr, prop, text } from './view-nodes';
 
 /** One persistent, compact header for every route and viewport. */
 export class AppHeader {
@@ -51,8 +52,10 @@ export class AppHeader {
     document.addEventListener('aoty-address-changed', this.addressChanged);
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => {
-        document.documentElement.style.setProperty('--app-header-height', `${this.element.getBoundingClientRect().height}px`);
-        document.documentElement.style.setProperty('--app-bar-height', `${inner.getBoundingClientRect().height}px`);
+        const style = document.documentElement.style;
+        for (const [key, value] of [['--app-header-height', `${this.element.getBoundingClientRect().height}px`], ['--app-bar-height', `${inner.getBoundingClientRect().height}px`]]) {
+          if (style.getPropertyValue(key!) !== value) style.setProperty(key!, value!);
+        }
       });
       this.resize.observe(this.element);
     }
@@ -71,18 +74,18 @@ export class AppHeader {
   }
   private updateLink(anchor: HTMLAnchorElement, item: NavigationItem) {
     if (anchor.textContent !== item.text) anchor.textContent = item.text;
-    anchor.setAttribute('href', navigationHref(item.href));
-    if (inIngress() && ['participant', 'display'].includes(item.id)) { anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; }
-    if (item.current) anchor.setAttribute('aria-current', 'page'); else anchor.removeAttribute('aria-current');
+    attr(anchor, 'href', navigationHref(item.href));
+    if (inIngress() && ['participant', 'display'].includes(item.id)) { prop(anchor, 'target', '_blank'); prop(anchor, 'rel', 'noopener noreferrer'); }
+    attr(anchor, 'aria-current', item.current ? 'page' : undefined);
   }
   private setExpanded(value: boolean, restoreFocus = false) {
     this.expanded = value; this.updateLayout();
     if (restoreFocus) this.toggle.focus({ preventScroll: true });
   }
   private updateLayout() {
-    this.toggle.setAttribute('aria-expanded', String(this.expanded));
-    this.toggle.textContent = this.expanded ? 'Close' : 'Menu';
-    this.navigation.hidden = !this.expanded;
+    attr(this.toggle, 'aria-expanded', String(this.expanded));
+    text(this.toggle, this.expanded ? 'Close' : 'Menu');
+    prop(this.navigation, 'hidden', !this.expanded);
   }
   private keydown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;
@@ -97,11 +100,11 @@ export class AppHeader {
   private fullscreenChanged = () => this.updateFullscreen();
   private addressChanged = () => this.update(this.lastState);
   private updateFullscreen() {
-    this.fullscreen.hidden = !document.fullscreenEnabled || !document.documentElement.requestFullscreen;
-    this.fullscreen.textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
-    this.fullscreen.setAttribute('aria-pressed', String(Boolean(document.fullscreenElement)));
-    this.fullscreen.disabled = this.fullscreenPending;
-    this.meta.hidden = this.page !== 'display' || this.fullscreen.hidden;
+    prop(this.fullscreen, 'hidden', !document.fullscreenEnabled || !document.documentElement.requestFullscreen);
+    text(this.fullscreen, document.fullscreenElement ? 'Exit full screen' : 'Full screen');
+    attr(this.fullscreen, 'aria-pressed', String(Boolean(document.fullscreenElement)));
+    prop(this.fullscreen, 'disabled', this.fullscreenPending);
+    prop(this.meta, 'hidden', this.page !== 'display' || this.fullscreen.hidden);
   }
   private async toggleFullscreen() {
     if (this.fullscreenPending) return;

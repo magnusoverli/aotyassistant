@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.3.15] — 2026-10-19
+
+- Update player, catalogue, uploads, and settings in place while preserving unrelated content, focus, text selection, and animations.
+- Keep listening-order seats and entry forms mounted, and retain live connections during unchanged tab rechecks.
+
 ## [0.3.14] — 2026-10-19
 
 - Keep playback recovery independent of app health, confirm automatic stops, reconcile uncertain settings saves, and reduce list/catalogue latency with bounded work and backup-safe uploads.

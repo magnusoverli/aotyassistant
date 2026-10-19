@@ -16,7 +16,7 @@ export function workspaceGrid(layout: 'sidebar' | 'music', className = '') {
 }
 
 export function slot<T extends HTMLElement>(node: T, name: 'primary' | 'secondary' | 'player' | 'find' | 'list' | 'results') {
-  node.dataset.slot = name;
+  if (node.dataset.slot !== name) node.dataset.slot = name;
   return node;
 }
 

@@ -4,6 +4,7 @@ import { vinyl, updateVinylLabel } from './visuals';
 import { artwork, progressBar, updateProgress } from './media';
 import { publicRecordLabels } from './record-labels';
 import { pageFrame } from './page-layout';
+import { attr, prop, text } from './view-nodes';
 
 export function publicPlaybackState(view: View, online: boolean) {
   if (!online || !view.connected) return 'unavailable';
@@ -51,13 +52,13 @@ export class PublicRoom {
   update(view: View, online: boolean, qrImage: string) {
     const state = publicPlaybackState(view, online);
     const active = state === 'playing' || state === 'paused';
-    this.element.dataset.playback = state;
-    this.turn.textContent = view.current ? `${view.current.nickname}’s turn` : '';
-    this.turn.hidden = !view.current;
-    this.rest.hidden = active; this.stage.hidden = !active;
-    this.restTitle.textContent = state === 'unavailable' ? 'Playback unavailable.' : 'Nothing playing.';
-    this.restHint.textContent = state === 'unavailable' ? (online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…')
-      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the listening circle.';
+    attr(this.element, 'data-playback', state);
+    text(this.turn, view.current ? `${view.current.nickname}’s turn` : '');
+    prop(this.turn, 'hidden', !view.current);
+    prop(this.rest, 'hidden', active); prop(this.stage, 'hidden', !active);
+    text(this.restTitle, state === 'unavailable' ? 'Playback unavailable.' : 'Nothing playing.');
+    text(this.restHint, state === 'unavailable' ? (online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…')
+      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the listening circle.');
 
     const revealed = active && view.nowPlaying?.revealed === true ? view.nowPlaying.track : undefined;
     const trackKey = active ? JSON.stringify([view.progress!.id, revealed ?? null, revealed ? null : view.current]) : '';

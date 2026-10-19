@@ -1,5 +1,6 @@
 import type { View } from '../src/model';
 import { el, link } from './dom';
+import { text, attr, prop } from './view-nodes';
 
 /** A navigation shortcut, never a second player or a source of optimistic public state. */
 export class PlayerReturn {
@@ -32,13 +33,13 @@ export class PlayerReturn {
     }
     const playback = view?.myTurn ? view.ownPlayback : undefined;
     this.failed = Boolean(error);
-    this.jump.textContent = error ? 'Review status' : 'Go to player';
-    this.jump.setAttribute('href', error ? '#main-content' : '#participant-player');
+    text(this.jump, error ? 'Review status' : 'Go to player');
+    attr(this.jump, 'href', error ? '#main-content' : '#participant-player');
     this.available = Boolean(target && view?.myTurn && (starting || playback || error));
     // Only authoritative snapshots can say Playing, Paused or Revealed.
-    const text = error ? 'Check playback' : !connected ? 'Connection lost' : starting ? 'Starting…'
+    const caption = error ? 'Check playback' : !connected ? 'Connection lost' : starting ? 'Starting…'
       : playback ? `${playback.status === 'playing' ? 'Playing' : playback.status === 'paused' ? 'Paused' : 'Stopped'} · ${playback.revealed ? 'Revealed' : 'Hidden'}` : '';
-    if (this.status.textContent !== text) this.status.textContent = text;
+    text(this.status, caption);
     this.visibility();
   }
 
@@ -47,6 +48,6 @@ export class PlayerReturn {
     const viewport = window.visualViewport;
     const top = viewport?.offsetTop ?? 0;
     const bottom = top + (viewport?.height ?? innerHeight);
-    this.element.hidden = !this.available || !rect || (rect.bottom > top && rect.top < bottom);
+    prop(this.element, 'hidden', !this.available || !rect || (rect.bottom > top && rect.top < bottom));
   }
 }

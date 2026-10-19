@@ -7,17 +7,19 @@ import { avatar, vinyl } from './visuals';
 import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
 import { pageForPath } from './navigation';
-import { artwork, progressBar, updateProgress, volumeControl, updateVolume, progressConnected, displayedProgress } from './media';
+import { progressBar, updateProgress, volumeControl, updateVolume, progressConnected, displayedProgress, ArtworkView } from './media';
 import { PlayerController } from './player-controller';
 import { PlayerReturn } from './player-return';
-import { outputLabel } from './output';
+import { outputLabel, updateOutputLabel } from './output';
+import { ViewNodes, children, prop, text, attr } from './view-nodes';
+import { CatalogueRow } from './catalogue-row';
 import { PublicRoom } from './public-room';
 import { PreparationController } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
 import type { PreparedEntryView, PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
-import { catalogueSourceChoice, sourceName } from './catalogue-sources';
+import { sourceName } from './catalogue-sources';
 import { participantEvents } from './participant-events';
 import { BrowseHistory } from './browse-history';
 import { copyButton } from './copy-text';
@@ -79,6 +81,12 @@ let joinError = '';
 let accessEnded = false;
 let publicRoom: PublicRoom | undefined;
 let settingsMounted = false;
+const playerNodes = new ViewNodes();
+const participantNodes = new ViewNodes();
+const hostNodes = new ViewNodes();
+const pageNodes = new ViewNodes();
+const entryNodes = new ViewNodes();
+const catalogueRows = new Map<string, CatalogueRow>();
 document.body.dataset.view = page;
 const player = new PlayerController({
   role: page === 'host' ? 'host' : 'participant', getView: () => view,
@@ -143,10 +151,12 @@ const participantAccess = new ParticipantAccess(
   () => api<View>('/api/participant/state'), () => navigator.onLine,
   next => {
     if (page === 'join') { view = next; location.replace(appPath('/participant')); return; }
-    accept(next); subscribe('participant');
+    const changed = view?.roomId !== next.roomId || view.me?.id !== next.me?.id;
+    accept(next); if (!stream || changed) subscribe('participant');
   },
   () => {
     view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel();
+    participantNodes.clear(); playerNodes.clear(); catalogueRows.clear();
     resetCatalogueTask();
     results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
@@ -268,6 +278,7 @@ function accept(next: View) {
   if (view?.roomId === next.roomId && view.revision > next.revision) return;
   if (view?.volume?.revision === next.volume?.revision && (view?.volume?.generation ?? 0) > (next.volume?.generation ?? 0)) next = { ...next, volume: view!.volume };
   if (catalogueIdentity(view) !== catalogueIdentity(next)) {
+    catalogueRows.clear();
     catalogue.cancel();
     resetCatalogueTask();
     results = []; searchText = ''; searchDone = false;
@@ -362,7 +373,7 @@ function renderDisplay() {
     const message = notice('', 'error'); message.id = 'display-notice';
     pageContent.replaceChildren(message, publicRoom.element);
   }
-  const message = document.getElementById('display-notice')!; message.textContent = error; message.hidden = !error;
+  const message = document.getElementById('display-notice')!; text(message, error); prop(message, 'hidden', !error);
   publicRoom.update(view, realtime, qrImage);
 }
 function closedRoom() {
@@ -372,129 +383,134 @@ function closedRoom() {
   return main;
 }
 function host() {
-  const main = pageFrame('workspace', 'host-page');
-  main.setAttribute('aria-label', 'Host desk');
-  main.append(pageHeading('Host desk', listeningOrder.mobileManagement));
-  const grid = workspaceGrid('sidebar');
-  const workspace = slot(el('div', undefined, 'host-workspace stack'), 'primary'); workspace.id = 'overview';
-  const aside = slot(el('aside', undefined, 'host-invitations'), 'secondary'); aside.id = 'room-invitation'; aside.append(qrCard());
-  aside.setAttribute('aria-label', 'Room invitation'); grid.append(workspace, aside); main.append(grid);
+  const v = hostNodes;
+  const main = v.get('main', () => { const node = pageFrame('workspace', 'host-page'); node.setAttribute('aria-label', 'Host desk'); return node; });
+  const heading = v.get('heading', () => pageHeading('Host desk', listeningOrder.mobileManagement));
+  const grid = v.get('grid', () => workspaceGrid('sidebar'));
+  const workspace = v.get('workspace', () => { const node = slot(el('div', undefined, 'host-workspace stack'), 'primary'); node.id = 'overview'; return node; });
+  const aside = v.get('invitations', () => { const node = slot(el('aside', undefined, 'host-invitations'), 'secondary'); node.id = 'room-invitation'; node.setAttribute('aria-label', 'Room invitation'); return node; });
+  const invitation = v.get('invitation-state', () => ({ key: '' }));
+  const invitationKey = JSON.stringify([view?.joinUrl, view?.displayUrl, qrImage, guestLinksReady(view?.joinUrl)]);
+  if (invitation.key !== invitationKey) { invitation.key = invitationKey; children(aside, qrCard()); }
+  children(grid, workspace, aside); children(main, heading, grid);
   if (!view) return main;
-  const active = view.active ?? []; const turnId = view.turnId;
+  const active = view.active ?? [];
+  main.classList.toggle('is-empty', !active.length);
   if (!active.length) {
-    main.classList.add('is-empty'); workspace.append(el('p', 'Share the room. The first person to join gets the first turn.', 'muted'));
-    if (!view.playbackAvailable || view.mode === 'demo') workspace.append(link('Set up music and speaker', '/host/settings'));
+    children(workspace, v.el('empty', 'p', 'Share the room. The first person to join gets the first turn.', 'muted'),
+      (!view.playbackAvailable || view.mode === 'demo') && v.get('setup', () => link('Set up music and speaker', '/host/settings')));
     return main;
   }
-  const audio = panel('host-audio'); const audioTitle = el('div'); audioTitle.append(el('h2', 'Speaker volume'));
-  audioTitle.append(outputLabel(view.output, realtime));
-  if (!view?.volume?.available) {
-    const hint = el('p', undefined, 'muted small');
-    hint.append('Volume is unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link'));
-    audioTitle.append(hint);
-  }
-  audio.append(audioTitle, volumeControl(view ? player.project(view).volume : undefined, (level, commit) => player.volume(level, commit), !realtime || !view?.connected));
-  workspace.append(audio);
-  const live = panel('host-live', { tone: 'highlight' }); const livePerson = el('div', undefined, 'host-live-person');
-  const personInfo = el('div'); personInfo.append(label('CURRENT PARTICIPANT'), el('h2', view.current?.nickname ?? 'Waiting for participants'));
+  const audio = v.get('audio', () => panel('host-audio')); const audioTitle = v.el('audio-title', 'div');
+  const output = v.get('output', () => outputLabel(view!.output, realtime)); updateOutputLabel(output, view.output, realtime);
+  const hint = v.get('volume-hint', () => { const node = el('p', undefined, 'muted small'); node.append('Volume is unavailable. ', link('Check speaker settings', '/host/settings', 'volume-settings-link')); return node; });
+  children(audioTitle, v.el('volume-title', 'h2', 'Speaker volume'), output, !view.volume?.available && hint);
+  const volume = v.get('volume', () => volumeControl(undefined, (level, commit) => player.volume(level, commit), true));
+  updateVolume(volume, player.project(view).volume); prop(volume.querySelector('input')!, 'disabled', !realtime || !view.connected || !view.volume?.available);
+  children(audio, audioTitle, volume);
+  const live = v.get('live', () => panel('host-live', { tone: 'highlight' })); const livePerson = v.el('person', 'div', undefined, 'host-live-person');
+  const personInfo = v.el('person-info', 'div');
   const status = view.playbackStatus === 'playing' ? 'Playing' : view.playbackStatus === 'paused' ? 'Paused' : view.playbackStatus === 'unavailable' ? 'Unavailable' : 'Choosing a song';
-  personInfo.append(el('p', `${status}${active.length > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status'));
-  livePerson.append(avatar(view.current, 'avatar-large'), personInfo); live.append(livePerson);
-  const controls = el('div', undefined, 'host-live-actions');
-  const advance = button('Skip turn', () => {
+  children(personInfo, v.get('current-caption', () => label('CURRENT PARTICIPANT')), v.el('current-name', 'h2', view.current?.nickname ?? 'Waiting for participants'),
+    v.el('status', 'p', `${status}${active.length > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status'));
+  const image = v.get('avatar', () => ({ key: '', node: avatar(undefined, 'avatar-large') }));
+  const key = JSON.stringify(view.current); if (image.key !== key) { image.key = key; image.node = avatar(view.current, 'avatar-large'); }
+  children(livePerson, image.node, personInfo);
+  const controls = v.el('controls', 'div', undefined, 'host-live-actions');
+  const advance = v.get('advance', () => button('Skip turn', () => {
     if (view?.playbackStatus !== 'idle' && !confirm('Stop the current song and skip to the next person?')) return;
-    return mutate('/api/host/advance', { turnId });
-  }); advance.disabled ||= !view.current; controls.append(advance);
-  live.append(controls); workspace.prepend(live);
+    return mutate('/api/host/advance', { turnId: view?.turnId });
+  })); prop(advance, 'disabled', busy || !realtime || !view.connected || !view.current); children(controls, advance);
+  children(live, livePerson, controls); children(workspace, live, audio);
   return main;
 }
 function renderParticipantPlayer() {
   const card = root.querySelector('.playback-card');
   if (page !== 'participant' || !view?.me || !card || root.querySelector('.app-content > .error')) { render(); return; }
-  const focused = document.activeElement instanceof HTMLElement && card.contains(document.activeElement) ? document.activeElement.id : '';
-  const top = scrollY;
-  card.replaceWith(participantPlayer(view));
+  participantPlayer(view);
   updatePlayerReturn();
   // Starting a track changes availability, not the search/list layout or their DOM state.
-  for (const control of root.querySelectorAll<HTMLButtonElement>('[data-player-ready]')) control.disabled = control.dataset.playerReady !== 'true' || player.starting;
-  if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
-  window.scrollTo({ top, behavior: 'instant' });
+  for (const control of root.querySelectorAll<HTMLButtonElement>('[data-player-ready]')) prop(control, 'disabled', control.dataset.playerReady !== 'true' || player.starting);
 }
 function participantPlayer(current: View) {
+  const v = playerNodes;
   const shown = player.project(current); const playback = current.myTurn ? shown.ownPlayback : undefined;
-  const card = slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player'); card.id = 'participant-player'; card.setAttribute('aria-label', 'Your player');
-  card.tabIndex = -1;
-  const now = el('div', undefined, 'private-now-playing');
-  const track = el('div'); const title = el('h2', playback?.track.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
-  title.title = title.textContent!; track.append(title);
-  const artist = el('div', undefined, 'artist-credit');
-  if (playback?.track.artistArtwork) artist.append(artwork(playback.track.artistArtwork, 'Artist image', 'artist-portrait'));
-  const credit = el('p', playback?.track.artist ?? 'Search or use your list.', 'artist'); credit.title = credit.textContent!;
-  artist.append(credit); track.append(artist, outputLabel(current.output, realtime));
-  now.append(artwork(playback?.track.artwork, 'Album artwork', 'mini-record'), track);
-  const progress = progressBar(playback ? shown.progress : undefined);
-  if (player.starting) {
-    const status = progress.querySelector<HTMLElement>('.playback-status')!;
-    status.textContent = 'Starting track…'; status.classList.add('player-pending');
-  }
-  const statusLine = el('div', undefined, 'player-status-line');
-  statusLine.append(progress.querySelector('.playback-status')!, el('span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : 'Your player', 'privacy-tag'));
-  progress.prepend(statusLine);
-  const controls = el('div', undefined, 'actions');
+  const card = v.get('card', () => { const node = slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player'); node.id = 'participant-player'; node.setAttribute('aria-label', 'Your player'); node.tabIndex = -1; return node; });
+  const now = v.el('now', 'div', undefined, 'private-now-playing');
+  const track = v.el('track', 'div'); const title = v.el('title', 'h2', playback?.track.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
+  prop(title, 'title', title.textContent!);
+  const artist = v.el('artist', 'div', undefined, 'artist-credit');
+  const credit = v.el('credit', 'p', playback?.track.artist ?? 'Search or use your list.', 'artist'); prop(credit, 'title', credit.textContent!);
+  children(artist, Boolean(playback?.track.artistArtwork) && v.get('portrait', () => new ArtworkView('Artist image', 'artist-portrait')).update(playback?.track.artistArtwork), credit);
+  const output = v.get('output', () => outputLabel(current.output, realtime)); updateOutputLabel(output, current.output, realtime);
+  children(track, title, artist, output);
+  children(now, v.get('cover', () => new ArtworkView('Album artwork', 'mini-record')).update(playback?.track.artwork), track);
+  const progress = v.get('progress', () => progressBar(undefined));
+  const status = progress.querySelector<HTMLElement>('.playback-status')!;
+  status.classList.toggle('player-pending', player.starting);
+  updateProgress(progress, playback ? shown.progress : undefined);
+  if (player.starting) text(status, 'Starting track…');
+  const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
+  children(statusLine, status, v.el('privacy', 'span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : 'Your player', 'privacy-tag'));
+  if (statusLine.parentElement !== progress) progress.prepend(statusLine);
+  const controls = v.el('controls', 'div', undefined, 'actions');
   const action = playback?.status === 'paused' ? 'resume' : 'pause';
-  const transport = playerButton(action === 'pause' ? 'Pause' : 'Resume', () => player.control(action), true);
-  transport.id = 'player-transport'; transport.disabled ||= !playback || playback.status === 'stopped';
-  const reveal = playerButton(playback?.revealed ? 'Revealed' : 'Reveal song', () => player.reveal());
-  reveal.id = 'player-reveal'; reveal.classList.add('reveal-button'); reveal.disabled ||= !playback || playback.revealed;
-  controls.append(transport, reveal);
-  const finish = button(playback ? 'Finish turn' : 'Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId: current.turnId }); }, true);
-  finish.id = 'finish-my-turn'; finish.disabled ||= !current.myTurn || player.starting;
-  const ending = el('div', undefined, 'player-ending'); ending.append(finish);
-  card.append(now, progress, controls,
-    volumeControl(shown.volume, (level, commit) => player.volume(level, commit), !realtime || !current.connected || !playback || playback.status === 'stopped' || player.starting), ending);
+  const transport = v.get('transport', () => { const node = playerButton('Pause', () => {}, true); node.id = 'player-transport'; return node; });
+  text(transport, action === 'pause' ? 'Pause' : 'Resume'); transport.onclick = () => { error = ''; player.control(action); };
+  prop(transport, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.status === 'stopped');
+  const reveal = v.get('reveal', () => { const node = playerButton('Reveal song', () => player.reveal()); node.id = 'player-reveal'; node.classList.add('reveal-button'); return node; });
+  text(reveal, playback?.revealed ? 'Revealed' : 'Reveal song'); prop(reveal, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.revealed);
+  children(controls, transport, reveal);
+  const finish = v.get('finish', () => { const node = button('Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId: view?.turnId }); }, true); node.id = 'finish-my-turn'; return node; });
+  text(finish, playback ? 'Finish turn' : 'Pass turn'); prop(finish, 'disabled', busy || !realtime || !current.connected || !current.myTurn || player.starting);
+  const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, finish);
+  const volume = v.get('volume', () => volumeControl(undefined, (level, commit) => player.volume(level, commit), true));
+  updateVolume(volume, shown.volume); prop(volume.querySelector('input')!, 'disabled', !shown.volume?.available || !realtime || !current.connected || !playback || playback.status === 'stopped' || player.starting);
+  children(card, now, progress, controls, volume, ending);
   return card;
 }
 function participant() {
   if (!view?.me) return participantEntry();
-  const main = pageFrame('workspace', 'participant-page');
+  const v = participantNodes;
+  const main = v.get('main', () => pageFrame('workspace', 'participant-page'));
   const position = view.position;
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
-  main.dataset.turnState = state;
-  const hero = el('section', undefined, `participant-hero is-${state}`); hero.setAttribute('aria-label', 'Your turn status');
-  const title = el('h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'); title.title = title.textContent!;
-  hero.append(title, el('p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance'));
-  const shortcuts = el('nav', undefined, 'music-shortcuts'); shortcuts.setAttribute('aria-label', 'Your music shortcuts');
-  const find = link('Find music', '#music-find', 'secondary button');
+  attr(main, 'data-turn-state', state);
+  const hero = v.el('hero', 'section', undefined, `participant-hero is-${state}`); attr(hero, 'aria-label', 'Your turn status');
+  const title = v.el('title', 'h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'); prop(title, 'title', title.textContent!);
+  const distance = v.el('distance', 'p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance');
+  const shortcuts = v.el('shortcuts', 'nav', undefined, 'music-shortcuts'); attr(shortcuts, 'aria-label', 'Your music shortcuts');
+  const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));
   find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
-  const list = el('button', 'My list', 'secondary'); list.type = 'button'; list.onclick = () => music.openList();
-  shortcuts.append(find, list); hero.append(shortcuts);
-  main.append(hero);
-  const search = el('section', undefined, 'catalogue-panel');
-  search.setAttribute('aria-labelledby', 'music-find-title');
-  const searchHeading = sectionHeading('Find music', 'music-find-title'); searchHeading.append(el('span', 'Private search', 'privacy-tag')); search.append(searchHeading);
+  const list = v.el('list-shortcut', 'button', 'My list', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
+  children(shortcuts, find, list); children(hero, title, distance, shortcuts);
+  const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
+  const searchHeading = v.get('search-heading', () => { const node = sectionHeading('Find music', 'music-find-title'); node.append(el('span', 'Private search', 'privacy-tag')); return node; });
+  const searchNodes: Node[] = [searchHeading];
   const realCatalogue = view.catalogue?.source === 'music-assistant';
   if (realCatalogue && !view.catalogue?.playbackAvailable) {
-    const hint = el('p', undefined, 'muted small');
-    hint.append(view.output?.name ? 'Check the speaker in ' : 'Choose a speaker in ', link('host settings', '/host/settings', 'inline-link'), ' before playing. You can still prepare tracks.'); search.append(hint);
+    const hint = v.el('speaker-hint', 'p', undefined, 'muted small');
+    const prefix = v.get('speaker-prefix', () => document.createTextNode('')); text(prefix, view.output?.name ? 'Check the speaker in ' : 'Choose a speaker in ');
+    children(hint, prefix, v.get('speaker-settings', () => link('host settings', '/host/settings', 'inline-link')), v.get('speaker-suffix', () => document.createTextNode(' before playing. You can still prepare tracks.'))); searchNodes.push(hint);
   }
   if (realCatalogue) {
-    const modes = el('div', undefined, 'actions search-tabs');
+    const modes = v.el('modes', 'div', undefined, 'actions search-tabs'); const tabs: Node[] = [];
     for (const mode of ['artists', 'tracks'] as const) {
-      const tab = catalogueButton(mode === 'tracks' ? 'Songs' : 'Artists', () => {
+      const tab = v.get(`mode-${mode}`, () => catalogueButton(mode === 'tracks' ? 'Songs' : 'Artists', () => {
         browseHistory?.remember();
         searchMode = mode; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
         sourceChoices.clear(); artistNotices = []; albumNotices = []; trackNotices = [];
         browseHistory?.push();
-      }, searchMode !== mode); tab.id = `catalogue-mode-${mode}`; tab.setAttribute('aria-pressed', String(searchMode === mode)); modes.append(tab);
+      })); prop(tab, 'className', searchMode !== mode ? 'secondary' : ''); prop(tab, 'disabled', !realtime || !view.connected);
+      prop(tab, 'id', `catalogue-mode-${mode}`); attr(tab, 'aria-pressed', String(searchMode === mode)); tabs.push(tab);
     }
-    search.append(modes);
+    children(modes, ...tabs); searchNodes.push(modes);
   }
-  const form = el('form', undefined, 'search-form');
-  const input = el('input'); input.type = 'search'; input.enterKeyHint = 'search'; input.placeholder = realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Song, artist, or album') : 'Try Northern or Night'; input.required = true; input.maxLength = 200;
-  input.id = 'catalogue-search';
-  input.setAttribute('aria-label', 'Search catalogue'); input.value = searchText; input.oninput = () => { searchText = input.value; };
-  const submit = el('button', searching ? 'Searching…' : 'Search'); submit.id = 'catalogue-search-submit'; submit.type = 'submit'; submit.disabled = !realtime || !view.connected;
-  form.append(input, submit);
+  const form = v.el('form', 'form', undefined, 'search-form');
+  const input = v.get('input', () => { const node = el('input'); node.type = 'search'; node.enterKeyHint = 'search'; node.required = true; node.maxLength = 200; node.id = 'catalogue-search'; node.setAttribute('aria-label', 'Search catalogue'); node.oninput = () => { searchText = node.value; }; return node; });
+  prop(input, 'placeholder', realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Song, artist, or album') : 'Try Northern or Night'); prop(input, 'value', searchText);
+  const submit = v.get('submit', () => { const node = el('button'); node.id = 'catalogue-search-submit'; node.type = 'submit'; return node; }); text(submit, searching ? 'Searching…' : 'Search'); prop(submit, 'disabled', !realtime || !view.connected);
+  children(form, input, submit);
   form.onsubmit = event => {
     event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
@@ -513,14 +529,16 @@ function participant() {
         }
       }
     });
-  }; search.append(form);
-  const found = panel('catalogue-results'); found.setAttribute('aria-labelledby', 'music-results-title');
-  found.setAttribute('aria-busy', String(catalogueBusy));
-  const resultsHeading = sectionHeading(chosenArtist ? 'Browse music' : 'Results', 'music-results-title'); found.append(resultsHeading);
+  }; searchNodes.push(form);
+  children(search, ...searchNodes, search.querySelector('.music-upload'));
+  const found = v.get('found', () => { const node = panel('catalogue-results'); node.setAttribute('aria-labelledby', 'music-results-title'); return node; });
+  attr(found, 'aria-busy', String(catalogueBusy));
+  const resultsHeading = v.get('results-heading', () => sectionHeading('Results', 'music-results-title')); text(resultsHeading.querySelector('h2')!, chosenArtist ? 'Browse music' : 'Results');
+  const foundNodes: Node[] = [resultsHeading];
   const resultKind = searchMode === 'artists' && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
   const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
-  if (searchDone && !searching) resultsHeading.append(el('span', resultSummary, 'count-tag'));
+  children(resultsHeading, resultsHeading.querySelector('h2')!, searchDone && !searching && v.el('count', 'span', resultSummary, 'count-tag'));
   const allNotices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
   // Keep API coverage caveats available without repeating a warning banner on every successful search.
   const notices = allNotices.filter(notice => notice !== catalogueSearchNotice);
@@ -528,80 +546,68 @@ function participant() {
   const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.${coverageUnconfirmed ? ' Source coverage unconfirmed.' : ''}` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (catalogueError) {
-    const notice = el('div', undefined, 'list-notice'); const message = el('p', catalogueError); message.setAttribute('role', 'alert'); notice.append(message);
-    if (catalogueRetry) { const retry = catalogueRetry; const control = catalogueButton('Try again', retry); control.id = 'catalogue-retry'; notice.append(control); }
-    found.append(notice);
+    const notice = v.el('error', 'div', undefined, 'list-notice'); const message = v.el('error-text', 'p', catalogueError); attr(message, 'role', 'alert');
+    const retry = v.get('retry', () => { const node = catalogueButton('Try again', () => catalogueRetry?.()); node.id = 'catalogue-retry'; return node; });
+    prop(retry, 'disabled', !realtime || !view.connected);
+    // runCatalogue clears the retry slot before executing; capture the current request.
+    const retryAction = catalogueRetry; retry.onclick = () => { if (retryAction) void runCatalogue(retryAction); };
+    children(notice, message, Boolean(catalogueRetry) && retry); foundNodes.push(notice);
   }
-  if (!searchDone && !searching && !catalogueError) found.append(el('p', 'Search for music to add to your private list.', 'muted small'));
-  if (searching) { const status = el('p', 'Searching…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
-  else if (catalogueBusy) { const status = el('p', 'Loading music…', 'muted'); status.setAttribute('role', 'status'); found.append(status); }
+  if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', 'Search for music to add to your private list.', 'muted small'));
+  if (searching || catalogueBusy) { const status = v.el('status', 'p', searching ? 'Searching…' : 'Loading music…', 'muted'); attr(status, 'role', 'status'); foundNodes.push(status); }
   if (coverageUnconfirmed) {
-    const details = el('details', undefined, 'catalogue-help'); details.open = catalogueDetails;
-    details.append(el('summary', 'Some sources may be missing · Details'));
-    for (const notice of allNotices) details.append(el('p', notice, 'muted small'));
-    details.ontoggle = () => { if (details.isConnected) catalogueDetails = details.open; }; found.append(details);
+    const details = v.el('help', 'details', undefined, 'catalogue-help'); prop(details, 'open', catalogueDetails);
+    children(details, v.el('help-summary', 'summary', 'Some sources may be missing · Details'), ...allNotices.map((notice, index) => v.el(`help-${index}`, 'p', notice, 'muted small')));
+    details.ontoggle = () => { if (details.isConnected) catalogueDetails = details.open; }; foundNodes.push(details);
   }
   if (chosenArtist) {
-    const crumbs = el('div', undefined, 'actions browse-crumbs');
-    const back = catalogueButton(chosenAlbum ? '← Albums' : '← Artists', () => browseHistory?.back()); back.id = chosenAlbum ? 'browse-albums' : 'browse-artists'; crumbs.append(back);
-    found.append(crumbs, el('h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`),
-      el('p', sourceName(chosenAlbum?.provider ?? chosenArtist.provider), 'muted small'));
+    const crumbs = v.el('crumbs', 'div', undefined, 'actions browse-crumbs');
+    const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists'); children(crumbs, back);
+    foundNodes.push(crumbs, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`),
+      v.el('browse-provider', 'p', sourceName(chosenAlbum?.provider ?? chosenArtist.provider), 'muted small'));
   }
+  const rowIds = new Set<string>(); const occurrences = new Map<string, number>();
+  const row = (kind: 'artist' | 'album' | 'track', item: CatalogueArtist | CatalogueAlbum | CatalogueTrack) => {
+    // Repeated references remain separate presentation rows; the opaque playback/browse
+    // reference is never rewritten to manufacture a unique source identity.
+    const identity = `${kind}:${item.id}`; const occurrence = occurrences.get(identity) ?? 0; occurrences.set(identity, occurrence + 1);
+    const key = JSON.stringify([kind, item.id, occurrence]); rowIds.add(key);
+    let renderer = catalogueRows.get(key); if (!renderer) { renderer = new CatalogueRow(); catalogueRows.set(key, renderer); }
+    return renderer.update(kind, item, { choices: sourceChoices, changed: render, music, online: realtime && view!.connected,
+      canPlay: Boolean(view!.myTurn), playbackAvailable: Boolean(view!.catalogue?.playbackAvailable), starting: player.starting,
+      play: track => { error = ''; playTrack(track); }, browse: selected => { void runCatalogue(async () => {
+        browseHistory?.remember();
+        const response = await catalogue.browse(kind === 'artist' ? 'albums' : 'tracks', selected.id);
+        if (!response) return;
+        if (kind === 'artist') { chosenArtist = selected; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; }
+        else { chosenAlbum = selected as CatalogueAlbum; results = response.tracks ?? []; trackNotices = response.notices ?? []; }
+        return true;
+      }); },
+    });
+  };
   for (const artist of !chosenArtist ? artists : []) {
-    const source = catalogueSourceChoice(artist, artist.name, sourceChoices, render, 'artist');
-    const shown = source.item ?? artist;
-    const row = el('div', undefined, 'track-row browse-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name), el('p', sourceName(artist.provider), 'muted')); info.append(artwork(artist.matchKind === 'metadata' && !source.item ? undefined : shown.artwork, 'Artist image', 'result-artwork artist-portrait'), copy);
-    if (source.control) copy.append(source.control);
-    const browse = catalogueButton('View albums', async () => {
-      if (!source.item) return;
-      browseHistory?.remember();
-      const response = await catalogue.browse('albums', source.item!.id);
-      if (response) { chosenArtist = source.item; chosenAlbum = undefined; albums = response.albums ?? []; albumNotices = response.notices ?? []; results = []; return true; }
-    }, true); browse.disabled ||= !source.item; row.append(info, browse); found.append(row);
+    foundNodes.push(row('artist', artist));
   }
   for (const album of chosenArtist && !chosenAlbum ? albums : []) {
-    const source = catalogueSourceChoice(album, album.name, sourceChoices, render, 'album');
-    const shown = source.item ?? album; const unchosen = album.matchKind === 'metadata' && !source.item;
-    const row = el('div', undefined, 'track-row browse-row'); const info = el('div', undefined, 'result-identity'); const copy = el('div'); copy.append(el('strong', shown.name),
-      el('p', [unchosen ? null : shown.year, shown.version, sourceName(album.provider)].filter(Boolean).join(' · '), 'muted'));
-    info.append(artwork(unchosen ? undefined : shown.artwork, 'Album artwork', 'result-artwork'), copy);
-    if (source.control) copy.append(source.control);
-    const browse = catalogueButton('View tracks', async () => {
-      if (!source.item) return;
-      browseHistory?.remember();
-      const response = await catalogue.browse('tracks', source.item!.id);
-      if (response) { chosenAlbum = source.item; results = response.tracks ?? []; trackNotices = response.notices ?? []; return true; }
-    }, true); browse.disabled ||= !source.item; row.append(info, browse); found.append(row);
+    foundNodes.push(row('album', album));
   }
   const emptyBrowse = searchDone && searchMode === 'artists' && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
-  if (emptyBrowse) found.append(el('p', coverageUnconfirmed ? 'No results returned. Try another source or check Details.' : chosenArtist && !chosenAlbum
+  if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', coverageUnconfirmed ? 'No results returned. Try another source or check Details.' : chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist. This provider may not support artist albums; try another provider result or search tracks.'
     : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name; Music Assistant may omit unavailable sources.', 'muted'));
   if (searchDone && searchMode === 'tracks' && !results.length) {
-    const empty = el('p', realCatalogue
+    const empty = v.el('empty-tracks', 'p', realCatalogue
       ? coverageUnconfirmed ? 'No results returned. Try another source or check Details.' : 'No songs found. Try another title or artist.'
       : 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
-    empty.setAttribute('role', 'status'); found.append(empty);
+    attr(empty, 'role', 'status'); foundNodes.push(empty);
   }
   for (const group of results) {
-    const source = catalogueSourceChoice(group, group.title, sourceChoices, render);
-    const track = source.item ?? group;
-    const row = el('div', undefined, `track-row${library.added.has(track.id) ? ' is-prepared' : ''}`); const info = el('div', undefined, 'result-identity'); const copy = el('div');
-    copy.append(el('strong', track.title), el('p', track.artist, 'result-artist'), el('p', [track.album, track.version, sourceName(track.provider)].filter(Boolean).join(' · '), 'muted result-details'));
-    info.append(artwork(group.matchKind === 'metadata' && !source.item ? undefined : track.artwork, 'Album artwork', 'result-artwork'), copy);
-    if (source.control) copy.append(source.control);
-    if (source.item && !track.available) copy.append(el('p', 'Unavailable through this source', 'muted small'));
-    const controls = el('div', undefined, 'row-actions');
-    const add = music.addButton(track); add.dataset.sourceSelectable = String(Boolean(source.item)); add.disabled ||= !source.item; controls.append(add);
-    const play = playerButton(!source.item ? 'Choose a source' : !track.available ? 'Unavailable' : !view.catalogue?.playbackAvailable ? 'Choose a speaker' : 'Play', () => playTrack(track));
-    play.disabled ||= !source.item || !track.available || !view.catalogue?.playbackAvailable;
-    play.dataset.playerReady = String(!play.disabled); play.disabled ||= player.starting; controls.append(play);
-    row.append(info, controls);
-    found.append(row);
+    foundNodes.push(row('track', group));
   }
-  const musicPanel = music.render(search, searchDone || catalogueBusy || catalogueError ? found : undefined);
-  musicPanel.prepend(participantPlayer(view));
-  main.append(musicPanel);
+  for (const id of catalogueRows.keys()) if (!rowIds.has(id)) catalogueRows.delete(id);
+  children(found, ...foundNodes);
+  const musicPanel = music.render(search, searchDone || catalogueBusy || catalogueError ? found : undefined, participantPlayer(view));
+  children(main, hero, musicPanel);
   return main;
 }
 function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }) {
@@ -619,28 +625,27 @@ function joinForm() {
         if (page === 'join') location.replace(appPath('/participant')); else participantAccess.enter(next);
       } catch (cause) { joinError = cause instanceof Error ? cause.message : 'Could not join the room. Try again.'; }
     }); },
-  });
+  }, entryNodes.get('join-form', () => new ViewNodes()));
 }
 
 function participantEntry() {
-  const main = pageFrame('compact', page === 'join' ? 'room-join-page' : 'participant-entry');
-  const layout = el('div', undefined, 'entry-layout stack');
+  const v = entryNodes;
+  const main = v.get('main', () => pageFrame('compact', page === 'join' ? 'room-join-page' : 'participant-entry'));
+  const layout = v.el('layout', 'div', undefined, 'entry-layout stack');
   const state = participantAccess.state;
-  if (state === 'unjoined') layout.append(joinForm());
+  let content: HTMLElement;
+  if (state === 'unjoined') content = joinForm();
   else {
-    const status = panel('entry-status');
-    const title = el('h1', state === 'checking' ? 'Checking your place in the room…' : state === 'offline' ? 'You’re offline.' : 'Can’t reach the room.');
-    status.append(title);
-    const message = el('p', state === 'checking' ? 'Your saved music is kept separately.' : state === 'offline' ? 'Reconnect to check your place or join the room.' : participantAccess.message, 'muted');
-    message.setAttribute('role', state === 'error' ? 'alert' : 'status'); status.append(message);
-    if (state !== 'checking') {
-      const retry = el('button', 'Retry', 'secondary'); retry.type = 'button'; retry.id = 'retry-room'; retry.disabled = !navigator.onLine;
-      retry.onclick = () => { void participantAccess.check(); }; status.append(retry);
-    }
-    layout.append(status);
+    const status = v.get('status', () => panel('entry-status'));
+    const title = v.el('title', 'h1', state === 'checking' ? 'Checking your place in the room…' : state === 'offline' ? 'You’re offline.' : 'Can’t reach the room.');
+    const message = v.el('message', 'p', state === 'checking' ? 'Your saved music is kept separately.' : state === 'offline' ? 'Reconnect to check your place or join the room.' : participantAccess.message, 'muted');
+    attr(message, 'role', state === 'error' ? 'alert' : 'status');
+    const retry = v.el('retry', 'button', 'Retry', 'secondary'); prop(retry, 'type', 'button'); prop(retry, 'id', 'retry-room'); prop(retry, 'disabled', !navigator.onLine);
+    retry.onclick = () => { void participantAccess.check(); };
+    children(status, title, message, state !== 'checking' && retry, status.querySelector('.entry-library-access')); content = status;
   }
-  layout.firstElementChild!.append(music.renderEntry());
-  main.append(layout); return main;
+  const access = music.renderEntry(); if (access.parentElement !== content) content.append(access);
+  children(layout, content); children(main, layout); return main;
 }
 function render() {
   updateHeader();
@@ -650,32 +655,32 @@ function render() {
   const selection = focused instanceof HTMLInputElement && ['text', 'search', 'password'].includes(focused.type) ? [focused.selectionStart, focused.selectionEnd] as const : null;
   const scrollRegions = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(node => [node.dataset.scrollKey, node.scrollTop] as const);
   const scrollY = window.scrollY;
-  const content = document.createDocumentFragment();
-  if (error) content.append(notice(error, 'error'));
-  if (view && !realtime) content.append(notice('Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection'));
+  const content: Node[] = [];
+  if (error) { const message = pageNodes.get('error', () => notice('', 'error')); text(message, error); content.push(message); }
+  if (view && !realtime) content.push(pageNodes.get('connection', () => notice('Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection')));
   else if (view?.playbackIssue) {
-    const message = notice('', 'warning'); message.append('Playback controls lost; the speaker may still be playing. ', page === 'host' ? link('Recover controls in Settings', '/host/settings', 'inline-link') : 'Ask the host to recover controls.'); content.append(message);
-  } else if (view && !view.connected) content.append(notice('The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error'));
-  if (page === 'host') content.append(host());
-  else if (page === 'join' && !view) content.append(participantEntry());
-  else if (page === 'participant' || page === 'join') content.append(participant());
+    content.push(pageNodes.get('recovery', () => { const message = notice('', 'warning'); message.append('Playback controls lost; the speaker may still be playing. ', page === 'host' ? link('Recover controls in Settings', '/host/settings', 'inline-link') : 'Ask the host to recover controls.'); return message; }));
+  } else if (view && !view.connected) content.push(pageNodes.get('unavailable', () => notice('The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error')));
+  if (page === 'host') content.push(host());
+  else if (page === 'join' && !view) content.push(participantEntry());
+  else if (page === 'participant' || page === 'join') content.push(participant());
   else {
     const main = pageFrame('compact', 'home-page');
     const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('My music', '/participant'), link('Room display', '/display'));
-    main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.append(main);
+    main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.push(main);
   }
-  pageContent.replaceChildren(content);
+  children(pageContent, ...content);
   updatePlayerReturn();
-  for (const [key, top] of scrollRegions) { const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(node => node.dataset.scrollKey === key); if (region) region.scrollTop = top; }
+  for (const [key, top] of scrollRegions) { const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(node => node.dataset.scrollKey === key); if (region) prop(region, 'scrollTop', top); }
   const replacement = focused?.id ? document.getElementById(focused.id)
     : focused?.dataset.focusKey ? [...root.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey) : null;
-  if (replacement instanceof HTMLElement) {
+  if (replacement instanceof HTMLElement && replacement !== document.activeElement) {
     restoringFocus = true;
     replacement.focus({ preventScroll: true });
     if (selection && replacement instanceof HTMLInputElement) replacement.setSelectionRange(selection[0], selection[1]);
     restoringFocus = false;
   }
-  window.scrollTo({ top: scrollY, behavior: 'instant' });
+  if (window.scrollY !== scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
 }
 async function init() {
   render();

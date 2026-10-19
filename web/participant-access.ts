@@ -16,7 +16,9 @@ export class ParticipantAccess {
   check(): Promise<void> {
     if (this.pending) return this.pending;
     if (!this.online()) { this.offline(); return Promise.resolve(); }
-    const epoch = ++this.epoch; this.state = 'checking'; this.message = ''; this.changed();
+    const epoch = ++this.epoch;
+    // Revalidate an existing member in the background; the visible page has not changed.
+    if (this.state !== 'member') { this.state = 'checking'; this.message = ''; this.changed(); }
     const pending = Promise.resolve().then(() => this.request()).then(view => {
       if (epoch !== this.epoch) return;
       if (!view.me) throw new Error('The room returned an incomplete membership response.');
@@ -37,8 +39,9 @@ export class ParticipantAccess {
   }
 
   enter(view: View) {
+    const changed = this.state !== 'member';
     this.epoch++; this.pending = undefined; this.state = 'member'; this.removed = false; this.message = '';
-    this.accepted(view); this.changed();
+    this.accepted(view); if (changed) this.changed();
   }
 
   revoke() {

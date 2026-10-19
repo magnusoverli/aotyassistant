@@ -2,6 +2,7 @@ import type { ListeningOrderView, Person, View } from '../src/model';
 import { el } from './dom';
 import { avatar } from './visuals';
 import { appPath } from './paths';
+import { ViewNodes, children, prop, attr, text } from './view-nodes';
 
 type Management = { disabled(): boolean; move(id: string, shift: number): void; remove(id: string): void };
 
@@ -19,6 +20,7 @@ export class ListeningOrder {
   private me?: Person;
   private source?: EventSource;
   private key = '';
+  private rows = new Map<string, ViewNodes>();
 
   constructor(private management?: Management) {
     const bar = el('section', undefined, 'order-bar'); bar.setAttribute('aria-label', 'Listening order');
@@ -64,25 +66,25 @@ export class ListeningOrder {
   }
 
   private connection(online: boolean) {
-    this.status.textContent = online ? '' : navigator.onLine ? 'Reconnecting…' : 'Offline';
-    this.element.dataset.online = String(online);
+    text(this.status, online ? '' : navigator.onLine ? 'Reconnecting…' : 'Offline');
+    attr(this.element, 'data-online', String(online));
     this.updateControls();
   }
 
   private updateControls() {
     const disabled = !this.management || this.management.disabled() || this.element.dataset.online !== 'true';
-    for (const button of [this.manage, this.mobileManagement]) button.disabled = disabled;
-    for (const button of this.list.querySelectorAll('button')) button.disabled = disabled;
+    for (const button of [this.manage, this.mobileManagement]) prop(button, 'disabled', disabled);
+    for (const button of this.list.querySelectorAll('button')) prop(button, 'disabled', disabled);
   }
 
   private render() {
     const view = this.snapshot; const people = view?.rotation ?? [];
-    this.empty.textContent = view ? 'No participants have joined.' : 'Loading listening order…';
-    this.empty.hidden = people.length > 0; this.list.hidden = !people.length;
+    text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
+    prop(this.empty, 'hidden', people.length > 0); prop(this.list, 'hidden', !people.length);
     for (const button of [this.manage, this.mobileManagement]) {
-      button.hidden = !this.management || !people.length;
-      button.textContent = this.managing ? 'Done managing' : 'Manage people';
-      button.setAttribute('aria-expanded', String(this.managing));
+      prop(button, 'hidden', !this.management || !people.length);
+      text(button, this.managing ? 'Done managing' : 'Manage people');
+      attr(button, 'aria-expanded', String(this.managing));
     }
     this.list.classList.toggle('is-managing', this.managing);
     const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id, this.managing]);
@@ -90,28 +92,33 @@ export class ListeningOrder {
       this.key = key;
       const left = this.list.scrollLeft;
       const focused = document.activeElement instanceof HTMLElement && this.list.contains(document.activeElement) ? document.activeElement.dataset.focusKey : undefined;
-      this.list.replaceChildren(...people.map((person, index) => {
+      children(this.list, ...people.map((person, index) => {
+        let nodes = this.rows.get(person.id); if (!nodes) { nodes = new ViewNodes(); this.rows.set(person.id, nodes); } const v = nodes;
         const current = person.id === view?.current?.id; const me = person.id === this.me?.id;
         const next = !current && person.id === view?.next?.id;
-        const row = el('li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}`);
-        row.dataset.personId = person.id; if (current) row.setAttribute('aria-current', 'step');
-        const name = el('strong', person.nickname); name.title = person.nickname;
-        row.append(el('span', String(index + 1).padStart(2, '0'), 'seat-number'), avatar(person), name,
-          el('span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'),
-          el('span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : 'Listening', 'seat-state seat-state-compact'));
+        const row = v.el('row', 'li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}`);
+        attr(row, 'data-person-id', person.id); attr(row, 'aria-current', current ? 'step' : undefined);
+        const name = v.el('name', 'strong', person.nickname); prop(name, 'title', person.nickname);
+        const image = v.get('avatar', () => ({ key: '', node: avatar(person) }));
+        const imageKey = JSON.stringify(person); if (image.key !== imageKey) { image.key = imageKey; image.node = avatar(person); }
+        const content: Node[] = [v.el('number', 'span', String(index + 1).padStart(2, '0'), 'seat-number'), image.node, name,
+          v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'),
+          v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : 'Listening', 'seat-state seat-state-compact')];
         if (this.managing && this.management) {
-          const actions = el('div', undefined, 'order-actions');
+          const actions = v.el('actions', 'div', undefined, 'order-actions'); const controls: Node[] = [];
           const action = (text: string, key: string, label: string, work: () => void) => {
-            const button = el('button', text, 'secondary'); button.type = 'button'; button.dataset.focusKey = key;
-            button.setAttribute('aria-label', label); button.onclick = work; actions.append(button);
+            const button = v.el(key, 'button', text, 'secondary'); prop(button, 'type', 'button'); attr(button, 'data-focus-key', key);
+            attr(button, 'aria-label', label); button.onclick = work; controls.push(button);
           };
           if (index > 0) action('↑', `up-${person.id}`, `Move ${person.nickname} up`, () => this.management!.move(person.id, -1));
           if (index < people.length - 1) action('↓', `down-${person.id}`, `Move ${person.nickname} down`, () => this.management!.move(person.id, 1));
           action('Remove', `remove-${person.id}`, `Remove ${person.nickname}`, () => this.management!.remove(person.id));
-          row.append(actions);
+          children(actions, ...controls); content.push(actions);
         }
+        children(row, ...content);
         return row;
       }));
+      for (const id of this.rows.keys()) if (!people.some(person => person.id === id)) this.rows.delete(id);
       this.list.scrollLeft = left;
       if (focused) [...this.list.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused)?.focus({ preventScroll: true });
     }

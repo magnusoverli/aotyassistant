@@ -1,7 +1,8 @@
 import type { UploadPreview } from '../src/uploads';
 import { el } from './dom';
 import { fieldControl } from './ui-components';
-import { artwork } from './media';
+import { ArtworkView } from './media';
+import { ViewNodes, children, prop, text } from './view-nodes';
 import { operationId, preparationRequest, type PreparationController } from './preparation-controller';
 
 const prefix = '/api/participant/preparations';
@@ -23,6 +24,7 @@ export class UploadPanel {
   private notice = '';
   private xhr?: XMLHttpRequest;
   private epoch = 0;
+  private nodes = new ViewNodes();
   constructor(private library: PreparationController, private member: () => boolean, private changed: () => void, private added: () => void) {
     this.input.type = 'file'; this.input.id = 'track-upload-file'; this.input.hidden = true;
     this.input.accept = '.mp3,.m4a,.flac,.wav,.aif,.aiff,.ogg,.oga,.opus,audio/mpeg,audio/mp4,audio/flac,audio/wav,audio/aiff,audio/ogg,audio/opus';
@@ -131,29 +133,40 @@ export class UploadPanel {
       this.uploadId = undefined; this.preview = undefined; this.persist(); this.notice = 'Added to your list.';
     }
     const disabled = !this.member() || !navigator.onLine || this.busy || this.recovering || this.discarding || this.library.loading || this.library.saving || Boolean(this.library.pending);
+    const v = this.nodes;
+    const button = (key: string, caption: string, action: () => void | Promise<void>, disabled = false) => {
+      const control = v.get(key, () => this.button(caption, action));
+      text(control, caption); prop(control, 'disabled', disabled); control.onclick = () => { void action(); }; return control;
+    };
     const nodes: Node[] = [this.input];
     if (this.busy) {
-      const message = el('p', this.progress >= 100 ? 'Processing audio and artwork…' : `Uploading… ${this.progress}%`, 'muted small'); message.setAttribute('role', 'status');
-      const progress = el('progress'); progress.max = 100; progress.value = this.progress; progress.setAttribute('aria-label', 'File upload progress');
-      nodes.push(message, progress, this.button('Cancel upload', () => this.stop(true)));
+      const message = v.el('progress-message', 'p', this.progress >= 100 ? 'Processing audio and artwork…' : `Uploading… ${this.progress}%`, 'muted small');
+      const progress = v.get('progress', () => { const node = el('progress'); node.max = 100; node.setAttribute('aria-label', 'File upload progress'); message.setAttribute('role', 'status'); return node; });
+      prop(progress, 'value', this.progress);
+      nodes.push(message, progress, button('cancel', 'Cancel upload', () => this.stop(true)));
     } else if (allowSelection) {
-      const formats = el('p', 'Supported formats: MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small');
-      nodes.push(el('p', 'Choose one audio file, then review it before adding.', 'muted small'), this.button(this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled), formats);
+      const formats = v.el('formats', 'p', 'Supported formats: MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small');
+      nodes.push(v.el('instructions', 'p', 'Choose one audio file, then review it before adding.', 'muted small'), button('choose', this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled), formats);
     }
-    if (this.recovering) nodes.push(el('p', 'Checking the completed upload…', 'muted small'));
-    if (this.error) { const error = el('p', this.error, 'error small'); error.setAttribute('role', 'alert'); nodes.push(error); }
-    if (this.notice) { const notice = el('p', this.notice, 'success small'); notice.setAttribute('role', 'status'); nodes.push(notice); }
+    if (this.recovering) nodes.push(v.el('recovering', 'p', 'Checking the completed upload…', 'muted small'));
+    if (this.error) { const error = v.el('error', 'p', this.error, 'error small'); if (!error.hasAttribute('role')) error.setAttribute('role', 'alert'); nodes.push(error); }
+    if (this.notice) { const notice = v.el('notice', 'p', this.notice, 'success small'); if (!notice.hasAttribute('role')) notice.setAttribute('role', 'status'); nodes.push(notice); }
     if (this.preview && !this.busy) {
-      const preview = this.preview; const form = el('form', undefined, 'upload-preview');
-      form.append(el('h3', 'Review uploaded song'));
-      const heading = el('div', undefined, 'result-identity'); heading.append(artwork(preview.artwork, 'Uploaded album artwork', 'result-artwork'), el('p', preview.filename, 'muted small')); form.append(heading);
+      const preview = this.preview; const form = v.el('preview', 'form', undefined, 'upload-preview');
+      const heading = v.el('identity', 'div', undefined, 'result-identity');
+      children(heading, v.get('art', () => new ArtworkView('Uploaded album artwork', 'result-artwork')).update(preview.artwork), v.el('filename', 'p', preview.filename, 'muted small'));
+      const fields: Node[] = [];
       for (const [key, caption] of [['title', 'Track title'], ['artist', 'Artist'], ['album', 'Album']] as const) {
-        const { group, input } = fieldControl(caption, `upload-${key}`);
-        input.value = this.text[key]; input.maxLength = 1000; input.required = key === 'title'; input.disabled = disabled;
-        input.oninput = () => { this.text[key] = input.value; this.persist(); }; form.append(group);
+        const { group, input } = v.get(`field-${key}`, () => {
+          const field = fieldControl(caption, `upload-${key}`); field.input.maxLength = 1000; field.input.required = key === 'title';
+          field.input.oninput = () => { this.text[key] = field.input.value; this.persist(); }; return field;
+        });
+        prop(input, 'value', this.text[key]); prop(input, 'disabled', disabled); fields.push(group);
       }
-      form.append(el('p', 'Uploaded, not yet saved. Artist and album are optional.', 'muted small'));
-      const add = el('button', 'Add to my list'); add.type = 'submit'; add.disabled = disabled || Boolean(this.library.view?.reviewEntryId); form.append(add);
+      const add = v.get('add', () => { const node = el('button', 'Add to my list'); node.type = 'submit'; return node; });
+      prop(add, 'disabled', disabled || Boolean(this.library.view?.reviewEntryId));
+      children(form, v.el('preview-title', 'h3', 'Review uploaded song'), heading, ...fields,
+        v.el('unsaved', 'p', 'Uploaded, not yet saved. Artist and album are optional.', 'muted small'), add);
       form.onsubmit = event => {
         event.preventDefault();
         void (async () => {
@@ -166,10 +179,10 @@ export class UploadPanel {
       }; nodes.push(form);
     }
     if (this.uploadId && !this.busy) {
-      const actions = el('div', undefined, 'actions');
-      if (!this.preview) actions.append(this.button('Check completed upload', () => this.recover(), !navigator.onLine || this.recovering || this.discarding));
-      actions.append(this.button('Discard upload draft', () => this.discard(), !navigator.onLine || this.recovering || this.discarding || this.library.saving || Boolean(this.library.pending))); nodes.push(actions);
+      const actions = v.el('actions', 'div', undefined, 'actions');
+      children(actions, !this.preview && button('recover', 'Check completed upload', () => this.recover(), !navigator.onLine || this.recovering || this.discarding),
+        button('discard', 'Discard upload draft', () => this.discard(), !navigator.onLine || this.recovering || this.discarding || this.library.saving || Boolean(this.library.pending))); nodes.push(actions);
     }
-    this.element.replaceChildren(...nodes); return this.element;
+    children(this.element, ...nodes); return this.element;
   }
 }

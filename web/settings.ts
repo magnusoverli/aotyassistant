@@ -6,10 +6,12 @@ import { appPath } from './paths';
 import type { SetupView } from '../src/setup';
 import { pageFrame, workspaceGrid, slot } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
+import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-nodes';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement) {
   const main = pageFrame('workspace', 'settings-page'); container.append(main);
+  const nodes = new ViewNodes();
   let settings: IntegrationView | undefined;
   let urlDraft = '';
   let tokenDraft = '';
@@ -72,7 +74,7 @@ export async function mountSettings(container: HTMLElement) {
     return changed;
   }
   function connectButton(text: string) {
-    const button = el('button', text, settings?.tokenConfigured ? 'secondary' : ''); button.type = 'button'; button.disabled = busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked);
+    const button = nodes.el(`connect-${text}`, 'button', text, settings?.tokenConfigured ? 'secondary' : ''); prop(button, 'type', 'button'); prop(button, 'disabled', busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked));
     button.onclick = () => {
       const popup = window.open('about:blank', '_blank'); if (popup) popup.opener = null;
       void run(async () => {
@@ -96,6 +98,7 @@ export async function mountSettings(container: HTMLElement) {
   }
   async function run(work: () => Promise<void>, scope: 'connection' | 'speaker' = 'connection') {
     if (busy) return;
+    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     const revision = settings?.revision;
     busy = true; busyScope = scope; error = ''; notice = ''; if (scope === 'speaker') speakerError = ''; render();
     try { await work(); }
@@ -106,150 +109,155 @@ export async function mountSettings(container: HTMLElement) {
       if (!online) error = 'Cannot reach the application. Check your connection and try again.';
       else if (scope === 'speaker') { if (settings?.status !== 'error') speakerError = message; }
       else error = message;
-    } finally { busy = false; if (queuedSnapshot) { apply(queuedSnapshot); queuedSnapshot = undefined; } render(); if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending); }
+    } finally {
+      busy = false; if (queuedSnapshot) { apply(queuedSnapshot); queuedSnapshot = undefined; } render();
+      if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending);
+      queueMicrotask(() => { if (focused?.isConnected && document.activeElement === document.body) focused.focus({ preventScroll: true }); });
+    }
   }
   function action(text: string, work: () => Promise<void>, secondary = false, scope: 'connection' | 'speaker' = 'connection') {
-    const b = el('button', text, secondary ? 'secondary' : ''); b.type = 'button';
-    b.dataset.focusKey = text;
-    b.disabled = busy || !online; b.onclick = () => { void run(work, scope); }; return b;
+    const key = text === 'Close connection settings' ? 'Change connection' : text;
+    const b = nodes.el(`action-${key}`, 'button', text); prop(b, 'type', 'button');
+    // Retain feature classes such as the refresh spinner's animation hook.
+    b.classList.toggle('secondary', secondary); attr(b, 'data-focus-key', key);
+    prop(b, 'disabled', busy || !online); b.onclick = () => { void run(work, scope); }; return b;
   }
   function field(text: string, id: string, type: string, value: string, change: (value: string) => void) {
-    const { group, input } = fieldControl(text, id, type); input.value = value; input.disabled = busy;
+    const { group, input } = nodes.get(`field-${id}`, () => fieldControl(text, id, type)); prop(input, 'value', value); prop(input, 'disabled', busy);
     input.oninput = () => change(input.value); return { group, input };
   }
   function panel(id: string, title: string, state?: string) {
-    const section = createPanel(`settings-card settings-${id}`); section.setAttribute('aria-labelledby', `settings-${id}-title`);
-    const heading = sectionHeading(title, `settings-${id}-title`);
-    if (state) { const badge = el('span', state, 'badge settings-state'); badge.setAttribute('role', 'status'); heading.append(badge); }
-    section.append(heading); return section;
+    const section = nodes.get(`panel-${id}`, () => { const section = createPanel(`settings-card settings-${id}`); section.setAttribute('aria-labelledby', `settings-${id}-title`); section.append(sectionHeading(title, `settings-${id}-title`)); return section; });
+    const heading = section.firstElementChild!;
+    const badge = nodes.el(`badge-${id}`, 'span', state ?? '', 'badge settings-state'); attr(badge, 'role', 'status');
+    children(heading, heading.firstElementChild!, state ? badge : undefined); return section;
   }
-  function render() {
-    const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const focusId = focused?.id;
-    const selection = focused instanceof HTMLInputElement && ['text', 'password', 'search'].includes(focused.type) ? [focused.selectionStart, focused.selectionEnd] as const : null;
-    const scrollY = window.scrollY;
-    const workspace = el('div', undefined, 'settings-workspace');
-    workspace.append(pageHeading('Settings'));
+  const render = scheduledRender(renderNow);
+  function renderNow() {
+    const v = nodes;
+    const workspace = v.el('workspace', 'div', undefined, 'settings-workspace');
+    const workspaceNodes: Node[] = [v.get('heading', () => pageHeading('Settings'))];
     const failure = error;
-    if (failure) { const message = uiNotice(failure, 'error'); message.classList.add('settings-notice'); workspace.append(message); }
-    if (notice) { const message = uiNotice(notice, 'success'); message.classList.add('settings-notice'); workspace.append(message); }
-    if (!online && error) { const retry = el('button', 'Retry connection', 'secondary'); retry.onclick = () => { void run(async () => { apply(await request(''), !settings); await loadSetup(); await discover(); }); }; workspace.append(retry); }
-    const grid = workspaceGrid('sidebar', 'settings-grid');
+    if (failure) { const message = v.get('error', () => { const node = uiNotice('', 'error'); node.classList.add('settings-notice'); return node; }); text(message, failure); workspaceNodes.push(message); }
+    if (notice) { const message = v.get('notice', () => { const node = uiNotice('', 'success'); node.classList.add('settings-notice'); return node; }); text(message, notice); workspaceNodes.push(message); }
+    if (!online && error) { const retry = v.el('retry', 'button', 'Retry connection', 'secondary'); retry.onclick = () => { void run(async () => { apply(await request(''), !settings); await loadSetup(); await discover(); }); }; workspaceNodes.push(retry); }
+    const grid = v.get('grid', () => workspaceGrid('sidebar', 'settings-grid'));
     const state = busy && busyScope === 'connection' ? 'Working…' : !settings ? 'Loading…' : !settings.tokenConfigured ? 'Not connected' : settings.status === 'checked' ? 'Connected' : settings.status === 'error' ? 'Needs attention' : 'Not checked';
     const connection = panel('connection', '1. Music connection', state);
+    const connectionNodes: Node[] = [connection.firstElementChild!];
     if (settings?.tokenConfigured) {
-      connection.append(el('p', settings.url ?? 'Music Assistant', 'saved-address'));
-      if (settings.status === 'error') { const failure = el('p', settings.message, 'error'); failure.setAttribute('role', 'alert'); connection.append(failure); }
-      else if (settings.status !== 'checked') connection.append(el('p', 'Connection saved. Checking Music Assistant…', 'muted small'));
+      connectionNodes.push(v.el('saved-address', 'p', settings.url ?? 'Music Assistant', 'saved-address'));
+      if (settings.status === 'error') { const failure = v.el('connection-failure', 'p', settings.message, 'error'); attr(failure, 'role', 'alert'); connectionNodes.push(failure); }
+      else if (settings.status !== 'checked') connectionNodes.push(v.el('checking-connection', 'p', 'Connection saved. Checking Music Assistant…', 'muted small'));
       const change = action(editConnection ? 'Close connection settings' : 'Change connection', async () => { editConnection = !editConnection; }, true);
-      change.disabled ||= Boolean(settings.settingsChangesBlocked); connection.append(change);
-      const actions = actionGroup(); actions.classList.add('settings-connection-actions');
-      actions.append(connectButton('Reconnect Music Assistant'));
-      actions.append(action('Disconnect', async () => {
+      prop(change, 'disabled', change.disabled || Boolean(settings.settingsChangesBlocked)); connectionNodes.push(change);
+      const actions = v.get('connection-actions', () => { const node = actionGroup(); node.classList.add('settings-connection-actions'); return node; });
+      children(actions, connectButton('Reconnect Music Assistant'), action('Disconnect', async () => {
         if (!confirm('Disconnect Music Assistant and remove the saved token and destination? This does not revoke the token in Music Assistant.')) return;
         apply(await request('/clear', { revision: settings!.revision }), true); editConnection = false; authPending = false; loginUrl = '';
         notice = 'Music Assistant disconnected.';
       }, true));
-      if (editConnection || settings.status === 'error') connection.append(actions);
-      for (const control of actions.querySelectorAll('button')) control.disabled ||= Boolean(settings.settingsChangesBlocked);
-      if (settings.tokenExpiresAt) connection.append(el('p', `Authorization expires ${new Date(settings.tokenExpiresAt).toLocaleDateString()}.`, 'muted small'));
+      if (editConnection || settings.status === 'error') connectionNodes.push(actions);
+      for (const control of actions.querySelectorAll('button')) prop(control, 'disabled', control.disabled || Boolean(settings.settingsChangesBlocked));
+      if (settings.tokenExpiresAt) connectionNodes.push(v.el('expiry', 'p', `Authorization expires ${new Date(settings.tokenExpiresAt).toLocaleDateString()}.`, 'muted small'));
     }
     if (settings && (!settings.tokenConfigured || editConnection)) {
-      const setupFields = el('div', undefined, 'form-stack connection-fields');
+      const setupFields = v.el('setup-fields', 'div', undefined, 'form-stack connection-fields'); const setupNodes: Node[] = [];
       if (!settings.tokenConfigured) {
-        if (!setup?.servers.length) setupFields.append(el('p', setup?.status === 'waiting' ? 'No server found. Enter its address below.' : 'Looking for Music Assistant…', 'muted small'));
-        setupFields.append(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
+        if (!setup?.servers.length) setupNodes.push(v.el('finding-server', 'p', setup?.status === 'waiting' ? 'No server found. Enter its address below.' : 'Looking for Music Assistant…', 'muted small'));
+        setupNodes.push(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
         if (setup?.servers.length) {
-          const label = el('label', 'Detected Music Assistant server'); label.htmlFor = 'ma-detected';
-          const select = el('select'); select.id = 'ma-detected'; select.disabled = busy;
-          const manual = el('option', 'Enter another address'); manual.value = ''; select.append(manual);
+          const label = v.el('detected-label', 'label', 'Detected Music Assistant server'); prop(label, 'htmlFor', 'ma-detected');
+          const select = v.el('detected-select', 'select'); prop(select, 'id', 'ma-detected'); prop(select, 'disabled', busy);
+          const manual = v.el('manual-server', 'option', 'Enter another address'); prop(manual, 'value', ''); const serverOptions = [manual];
           for (const server of setup.servers) {
-            const option = el('option', `${server.name} · ${server.version}${server.ready ? '' : ' · sources/players setup pending'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
-            option.value = server.url; select.append(option);
+            const option = v.el(`server-${server.url}`, 'option', `${server.name} · ${server.version}${server.ready ? '' : ' · sources/players setup pending'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
+            prop(option, 'value', server.url); serverOptions.push(option);
           }
-          select.value = setup.servers.some(s => s.url === urlDraft) ? urlDraft : '';
+          children(select, ...serverOptions); v.retain('server-', setup.servers.map(server => `server-${server.url}`)); prop(select, 'value', setup.servers.some(s => s.url === urlDraft) ? urlDraft : '');
           select.onchange = () => { const server = setup?.servers.find(s => s.url === select.value); urlDraft = server?.url ?? ''; browserDraft = server?.browserUrl ?? ''; render(); };
-          const detected = el('div', undefined, 'field'); detected.append(label, select); setupFields.append(detected);
+          const detected = v.el('detected-field', 'div', undefined, 'field'); children(detected, label, select); setupNodes.push(detected);
         }
       }
-      const form = el('form', undefined, 'form-stack integration-form');
+      const form = v.el('connection-form', 'form', undefined, 'form-stack integration-form');
       const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
-      url.input.required = true; url.input.maxLength = 2048; url.input.placeholder = 'http://homeassistant.local:8095';
-      setupFields.append(url.group);
-      if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); connect.id = 'ma-connect'; setupFields.append(connect); }
-      connection.append(setupFields);
-      const advanced = el('details', undefined, 'settings-advanced'); advanced.open = manualExpanded;
-      advanced.append(el('summary', 'Advanced: token or separate login address'));
+      prop(url.input, 'required', true); prop(url.input, 'maxLength', 2048); prop(url.input, 'placeholder', 'http://homeassistant.local:8095');
+      setupNodes.push(url.group);
+      if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); prop(connect, 'id', 'ma-connect'); setupNodes.push(connect); }
+      children(setupFields, ...setupNodes); connectionNodes.push(setupFields);
+      const advanced = v.el('advanced', 'details', undefined, 'settings-advanced'); prop(advanced, 'open', manualExpanded);
       advanced.ontoggle = () => { if (advanced.isConnected) manualExpanded = advanced.open; };
       const login = field('Browser login address', 'ma-browser-url', 'url', browserDraft, value => { browserDraft = value; });
-      login.input.placeholder = 'Same as Music Assistant URL'; advanced.append(login.group);
+      prop(login.input, 'placeholder', 'Same as Music Assistant URL');
       const token = field('Music Assistant access token', 'ma-token', 'password', tokenDraft, value => { tokenDraft = value; });
-      token.input.autocomplete = 'off'; token.input.maxLength = 8192; token.input.placeholder = 'Paste a long-lived access token';
-      token.input.setAttribute('spellcheck', 'false'); token.input.required = true;
-      const tokenHelp = el('p', 'Create a token in Music Assistant → Settings → Profile.', 'muted field-hint'); tokenHelp.id = 'ma-token-help';
-      token.input.setAttribute('aria-describedby', tokenHelp.id); token.group.append(tokenHelp);
-      if (location.protocol !== 'https:') token.group.append(el('p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
-      const save = el('button', 'Save connection'); save.type = 'submit'; save.disabled = busy || !online || Boolean(settings.settingsChangesBlocked); save.id = 'ma-save';
-      const controls = actionGroup('form'); controls.append(save);
-      form.append(token.group, controls);
+      prop(token.input, 'autocomplete', 'off'); prop(token.input, 'maxLength', 8192); prop(token.input, 'placeholder', 'Paste a long-lived access token');
+      attr(token.input, 'spellcheck', 'false'); prop(token.input, 'required', true);
+      const tokenHelp = v.el('token-help', 'p', 'Create a token in Music Assistant → Settings → Profile.', 'muted field-hint'); prop(tokenHelp, 'id', 'ma-token-help');
+      attr(token.input, 'aria-describedby', tokenHelp.id);
+      children(token.group, token.group.firstElementChild!, token.input, tokenHelp, location.protocol !== 'https:' && v.el('token-security', 'p', 'HTTP connection — use HTTPS before entering a real token on shared Wi-Fi.', 'settings-security-note'));
+      const save = v.el('save', 'button', 'Save connection'); prop(save, 'type', 'submit'); prop(save, 'disabled', busy || !online || Boolean(settings.settingsChangesBlocked)); prop(save, 'id', 'ma-save');
+      const controls = v.get('save-actions', () => actionGroup('form')); children(controls, save);
+      children(form, token.group, controls);
       form.onsubmit = event => {
         event.preventDefault(); const submittedUrl = urlDraft.trim(); const submittedToken = tokenDraft.trim();
         // Clear the secret immediately after submission; it is never persisted in browser storage.
-        tokenDraft = '';
+        tokenDraft = ''; token.input.value = '';
         void run(async () => {
           apply(await request('/save', { url: submittedUrl, accessToken: submittedToken, revision: settings!.revision }), true);
           await discover(); notice = 'Connection saved.';
         });
-      }; advanced.append(form); connection.append(advanced);
-      const help = el('details', undefined, 'settings-help'); help.open = helpExpanded;
-      const summary = el('summary', 'Setup help'); summary.id = 'settings-help-toggle'; help.append(summary);
-      help.addEventListener('toggle', () => { if (help.isConnected) helpExpanded = help.open; });
-      help.append(el('p', 'Use the direct Music Assistant API address, not a Home Assistant dashboard link.', 'muted small'));
-      help.append(el('p', 'Tokens are stored on the server, not in your browser. Connecting does not start audio.', 'muted small'));
-      connection.append(help);
+      }; children(advanced, v.el('advanced-summary', 'summary', 'Advanced: token or separate login address'), login.group, form); connectionNodes.push(advanced);
+      const help = v.el('help', 'details', undefined, 'settings-help'); prop(help, 'open', helpExpanded);
+      const summary = v.el('help-summary', 'summary', 'Setup help'); prop(summary, 'id', 'settings-help-toggle');
+      help.ontoggle = () => { if (help.isConnected) helpExpanded = help.open; };
+      children(help, summary, v.el('help-address', 'p', 'Use the direct Music Assistant API address, not a Home Assistant dashboard link.', 'muted small'),
+        v.el('help-token', 'p', 'Tokens are stored on the server, not in your browser. Connecting does not start audio.', 'muted small'));
+      connectionNodes.push(help);
     }
     if (loginUrl) {
-      const pending = el('p', 'Waiting for sign-in…', 'muted'); pending.setAttribute('role', 'status'); connection.append(pending);
-      const login = el('a', 'Open Music Assistant sign-in', 'button secondary'); login.href = loginUrl; login.target = '_blank'; login.rel = 'noopener noreferrer'; connection.append(login);
-      connection.append(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = 'Sign-in cancelled. Your saved connection was kept.'; }, true));
+      const pending = v.el('auth-pending', 'p', 'Waiting for sign-in…', 'muted'); attr(pending, 'role', 'status'); connectionNodes.push(pending);
+      const login = v.el('auth-link', 'a', 'Open Music Assistant sign-in', 'button secondary'); attr(login, 'href', loginUrl); prop(login, 'target', '_blank'); prop(login, 'rel', 'noopener noreferrer'); connectionNodes.push(login);
+      connectionNodes.push(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = 'Sign-in cancelled. Your saved connection was kept.'; }, true));
     }
-    if (settings?.settingsChangesBlocked) { const blocked = el('p', undefined, 'muted small'); blocked.append('Finish the current song before changing setup. ', link('Return to host', '/host', 'inline-link')); connection.append(blocked); }
-    grid.append(slot(connection, 'primary'));
-    const output = slot(el('div', undefined, 'settings-output stack'), 'secondary');
+    if (settings?.settingsChangesBlocked) connectionNodes.push(v.get('connection-blocked', () => { const node = el('p', undefined, 'muted small'); node.append('Finish the current song before changing setup. ', link('Return to host', '/host', 'inline-link')); return node; }));
+    children(connection, ...connectionNodes);
+    const output = v.get('output', () => slot(el('div', undefined, 'settings-output stack'), 'secondary')); const outputNodes: Node[] = [];
     if (setup?.supervisor.enabled && (!setup.supervisor.available || setup.supervisor.guestOrigins.some(origin => origin !== addresses.view?.guestOrigin))) {
       const detected = panel('detected', 'Home Assistant setup', setup.supervisor.available ? 'Detected' : 'Unavailable');
-      detected.append(el('p', setup.supervisor.message, 'muted small'));
-      for (const origin of setup.supervisor.guestOrigins) if (origin !== addresses.view?.guestOrigin) detected.append(action(`Use ${origin} for guests`, async () => {
+      const detectedNodes: Node[] = [detected.firstElementChild!, v.el('supervisor-message', 'p', setup.supervisor.message, 'muted small')];
+      for (const origin of setup.supervisor.guestOrigins) if (origin !== addresses.view?.guestOrigin) detectedNodes.push(action(`Use ${origin} for guests`, async () => {
         if (!confirm(`Change the guest link from ${addresses.view?.guestOrigin}/join to ${origin}/join? Keep private recovery keys before switching browser addresses.`)) return;
         await requestJson('/api/host/addressing/guest', { origin, revision: settings!.revision }); notice = 'Guest address saved.';
       }, true));
-      for (const control of detected.querySelectorAll('button')) control.disabled ||= Boolean(settings?.settingsChangesBlocked);
-      output.append(detected);
+      children(detected, ...detectedNodes);
+      for (const control of detected.querySelectorAll('button')) prop(control, 'disabled', control.disabled || Boolean(settings?.settingsChangesBlocked));
+      outputNodes.push(detected);
     }
     const activeOutput = settings?.output;
     const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !online ? 'Connection lost'
       : activeOutput?.state === 'ready' ? 'Ready' : activeOutput?.state === 'checking' ? 'Checking…' : activeOutput?.state === 'recovery' ? 'Recovery needed'
       : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : 'No active speaker';
     const destination = panel('destination', '2. Active speaker', speakerState);
+    const destinationNodes: Node[] = [destination.firstElementChild!];
     const report = online && settings?.status === 'checked' ? settings.report : null;
     const availableSpeakers = report?.players.filter(player => player.available) ?? [];
-    if (pendingDestination) destination.append(el('p', `Selecting ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
-    else if (online && activeOutput?.state === 'ready') destination.append(el('p', `Active speaker: ${activeOutput.name}`, 'active-destination'));
-    else if (activeOutput?.state === 'unavailable' && activeOutput.name) destination.append(el('p', `${activeOutput.name} is unavailable. Choose another speaker or wait for it to reconnect.`, 'muted small'));
-    else if (activeOutput?.state === 'checking' && activeOutput.name) destination.append(el('p', `Checking ${activeOutput.name}…`, 'muted small'));
-    const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
-    const select = el('select'); select.id = 'ma-destination';
-    select.disabled = busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.settingsChangesBlocked);
+    if (pendingDestination) destinationNodes.push(v.el('speaker-description', 'p', `Selecting ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
+    else if (online && activeOutput?.state === 'ready') destinationNodes.push(v.el('speaker-description', 'p', `Active speaker: ${activeOutput.name}`, 'active-destination'));
+    else if (activeOutput?.state === 'unavailable' && activeOutput.name) destinationNodes.push(v.el('speaker-description', 'p', `${activeOutput.name} is unavailable. Choose another speaker or wait for it to reconnect.`, 'muted small'));
+    else if (activeOutput?.state === 'checking' && activeOutput.name) destinationNodes.push(v.el('speaker-description', 'p', `Checking ${activeOutput.name}…`, 'muted small'));
+    const destinationLabel = v.el('speaker-label', 'label', 'Speaker or group'); prop(destinationLabel, 'htmlFor', 'ma-destination');
+    const select = v.el('speaker-select', 'select'); prop(select, 'id', 'ma-destination');
+    prop(select, 'disabled', busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.settingsChangesBlocked));
     const placeholder = !settings ? 'Loading speakers…' : !settings.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant first'
       : !report ? busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers not checked'
       : availableSpeakers.length ? 'Choose a speaker or group' : 'No available speakers or groups';
-    const empty = el('option', placeholder); empty.value = ''; empty.disabled = true; select.append(empty);
+    const empty = v.el('speaker-placeholder', 'option', placeholder); prop(empty, 'value', ''); prop(empty, 'disabled', true); const speakerOptions = [empty];
     // The saved routing preference is not evidence that a speaker is currently selectable.
     for (const player of availableSpeakers) {
-      const option = el('option', player.name); option.value = player.id; select.append(option);
+      const option = v.el(`speaker-option-${player.id}`, 'option', player.name); prop(option, 'value', player.id); speakerOptions.push(option);
     }
     const selectedId = pendingDestination || (activeOutput?.state === 'ready' || activeOutput?.state === 'recovery' ? settings?.destination?.id : undefined);
-    select.value = availableSpeakers.find(player => player.id === selectedId)?.id ?? '';
+    children(select, ...speakerOptions); v.retain('speaker-option-', availableSpeakers.map(player => `speaker-option-${player.id}`)); prop(select, 'value', availableSpeakers.find(player => player.id === selectedId)?.id ?? '');
     select.onchange = () => {
       const id = select.value;
       if (busy || select.disabled || !id || id === settings?.destination?.id && settings.output.state === 'ready') return;
@@ -265,47 +273,40 @@ export async function mountSettings(container: HTMLElement) {
         if (restoreFocus && main.isConnected && document.activeElement === document.body) main.querySelector<HTMLSelectElement>('#ma-destination')?.focus({ preventScroll: true });
       });
     };
-    const speakerHelp = el('p', 'Music plays here when you press Play. Speaker availability updates automatically.', 'muted field-hint'); speakerHelp.id = 'ma-destination-help';
-    select.setAttribute('aria-describedby', speakerHelp.id);
-    const group = el('div', undefined, 'field'); group.append(destinationLabel, select, speakerHelp); destination.append(group);
-    if (report && !availableSpeakers.length) destination.append(el('p', report.players.length
+    const speakerHelp = v.el('speaker-help', 'p', 'Music plays here when you press Play. Speaker availability updates automatically.', 'muted field-hint'); prop(speakerHelp, 'id', 'ma-destination-help');
+    attr(select, 'aria-describedby', speakerHelp.id);
+    const group = v.el('speaker-field', 'div', undefined, 'field'); children(group, destinationLabel, select, speakerHelp); destinationNodes.push(group);
+    if (report && !availableSpeakers.length) destinationNodes.push(v.el('empty-speakers', 'p', report.players.length
       ? 'No speakers are currently available. Turn one on or check Music Assistant; available speakers will appear here.'
       : 'No speakers found. Add or enable one in Music Assistant; available speakers will appear here.', 'muted small'));
     else if (!report && !settings?.destination) {
-      destination.append(el('div', !settings?.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant to choose a speaker.'
+      destinationNodes.push(v.el('speaker-loading', 'div', !settings?.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant to choose a speaker.'
         : busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.', 'empty-state'));
     }
     const speakerFailure = speakerError || (settings?.destinationStatus === 'error' ? settings.destinationMessage : '');
-    if (speakerFailure) { const failure = el('p', speakerFailure, 'error'); failure.setAttribute('role', 'alert'); destination.append(failure); }
-    else if (activeOutput?.state === 'unconfirmed') destination.append(el('p', 'Speaker status will update when Music Assistant reconnects.', 'muted small'));
-    if (report && report.schemaVersion !== 65) destination.append(el('p', 'Live playback requires Music Assistant API schema 65.', 'muted small'));
+    if (speakerFailure) { const failure = v.el('speaker-error', 'p', speakerFailure, 'error'); attr(failure, 'role', 'alert'); destinationNodes.push(failure); }
+    else if (activeOutput?.state === 'unconfirmed') destinationNodes.push(v.el('speaker-unconfirmed', 'p', 'Speaker status will update when Music Assistant reconnects.', 'muted small'));
+    if (report && report.schemaVersion !== 65) destinationNodes.push(v.el('schema', 'p', 'Live playback requires Music Assistant API schema 65.', 'muted small'));
     if (settings?.tokenConfigured) {
       const refresh = action('Refresh speakers', discover, true, 'speaker');
-      refresh.classList.add('speaker-refresh'); refresh.setAttribute('aria-busy', String(refreshingSpeakers));
-      destination.append(refresh);
+      if (!refresh.classList.contains('speaker-refresh')) refresh.classList.add('speaker-refresh'); attr(refresh, 'aria-busy', String(refreshingSpeakers));
+      destinationNodes.push(refresh);
     }
-    if (settings?.settingsChangesBlocked) destination.append(el('p', 'Finish the current song before changing speakers.', 'muted small'));
-    if (settings?.destination) destination.append(el('p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
-    output.append(destination);
-    output.append(addresses.render());
+    if (settings?.settingsChangesBlocked) destinationNodes.push(v.el('speaker-blocked', 'p', 'Finish the current song before changing speakers.', 'muted small'));
+    if (settings?.destination) destinationNodes.push(v.el('speaker-safe-note', 'p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
+    children(destination, ...destinationNodes); outputNodes.push(destination, addresses.render());
     if (settings?.playbackIssue) {
       const playback = panel('recovery', 'Playback recovery');
-      playback.append(el('p', 'The speaker may still be playing. Recovery stops only the song this app still controls; other audio is left alone. It does not start music or pass the turn.', 'warning'), action('Recover playback controls', async () => {
+      const recovery = action('Recover playback controls', async () => {
         if (!confirm('Recover playback controls? This stops the recording only if the app still owns that exact queue item. Externally replaced audio is left untouched. The turn will not advance.')) return;
         apply(await request('/recover', { revision: settings!.revision })); notice = 'Playback controls recovered. Select a track to start again.';
-      }, true, 'speaker'));
-      const details = el('details'); details.append(el('summary', 'Details'), el('p', settings.playbackIssue, 'muted small')); playback.append(details);
-      output.append(playback);
+      }, true, 'speaker');
+      const details = v.el('recovery-details', 'details'); children(details, v.el('recovery-summary', 'summary', 'Details'), v.el('recovery-issue', 'p', settings.playbackIssue, 'muted small'));
+      children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', 'The speaker may still be playing. Recovery stops only the song this app still controls; other audio is left alone. It does not start music or pass the turn.', 'warning'), recovery, details);
+      outputNodes.push(playback);
     }
-    grid.append(output); workspace.append(grid);
-    main.replaceChildren(workspace);
-    if (focused && !busy) {
-      const replacement = focusId ? document.getElementById(focusId) : [...main.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey);
-      if (replacement instanceof HTMLElement) {
-        replacement.focus({ preventScroll: true }); if (selection && replacement instanceof HTMLInputElement) replacement.setSelectionRange(selection[0], selection[1]);
-      }
-    }
-    window.scrollTo(0, scrollY);
+    children(output, ...outputNodes); children(grid, slot(connection, 'primary'), output); workspaceNodes.push(grid);
+    children(workspace, ...workspaceNodes); children(main, workspace);
   }
   render();
   try {
