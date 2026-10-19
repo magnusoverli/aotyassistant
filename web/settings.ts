@@ -219,21 +219,25 @@ export async function mountSettings(container: HTMLElement) {
     const speakerState = busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !settings.destination ? 'Not selected'
       : settings.destinationStatus === 'checked' ? 'Available' : settings.destinationStatus === 'error' ? 'Needs attention' : 'Not checked';
     const destination = panel('destination', '2. Speaker', speakerState);
-    const savedSpeaker = settings?.destination; const report = settings?.report;
-    if (savedSpeaker) destination.append(el('p', `Speaker: ${savedSpeaker.name}`, 'saved-destination'));
+    const savedSpeaker = settings?.destination;
+    const report = online && settings?.status === 'checked' ? settings.report : null;
+    const availableSpeakers = report?.players.filter(player => player.available) ?? [];
+    const availableSavedSpeaker = availableSpeakers.find(player => player.id === savedSpeaker?.id);
+    if (savedSpeaker) destination.append(el('p', availableSavedSpeaker ? `Speaker: ${availableSavedSpeaker.name}`
+      : `Saved speaker: ${savedSpeaker.name} (${report ? 'unavailable' : 'not checked'})`, 'saved-destination'));
     const destinationLabel = el('label', 'Speaker or group'); destinationLabel.htmlFor = 'ma-destination';
     const select = el('select'); select.id = 'ma-destination';
-    select.disabled = busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !report?.players.some(player => player.available) || Boolean(settings.settingsChangesBlocked);
-    const empty = el('option', 'Choose a speaker or group'); empty.value = ''; empty.disabled = true; select.append(empty);
-    if (savedSpeaker && !report?.players.some(player => player.id === savedSpeaker.id)) {
-      const saved = el('option', `${savedSpeaker.name} (${report ? 'unavailable' : 'not checked'})`);
-      saved.value = savedSpeaker.id; saved.disabled = true; select.append(saved);
+    select.disabled = busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.settingsChangesBlocked);
+    const placeholder = !settings ? 'Loading speakers…' : !settings.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant first'
+      : !report ? busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers not checked'
+      : availableSpeakers.length ? 'Choose a speaker or group' : 'No available speakers or groups';
+    const empty = el('option', placeholder); empty.value = ''; empty.disabled = true; select.append(empty);
+    // The saved routing preference is not evidence that a speaker is currently selectable.
+    for (const player of availableSpeakers) {
+      const option = el('option', player.name); option.value = player.id; select.append(option);
     }
-    for (const player of report?.players ?? []) {
-      const option = el('option', `${player.name}${player.available ? '' : ' (unavailable)'}`);
-      option.value = player.id; option.disabled = !player.available; select.append(option);
-    }
-    select.value = pendingDestination || savedSpeaker?.id || '';
+    const selectedId = pendingDestination || savedSpeaker?.id;
+    select.value = availableSpeakers.find(player => player.id === selectedId)?.id ?? '';
     select.onchange = () => {
       const id = select.value;
       if (busy || select.disabled || !id || id === settings?.destination?.id) return;
@@ -249,7 +253,9 @@ export async function mountSettings(container: HTMLElement) {
     const speakerHelp = el('p', 'Selections apply automatically. Music starts only when Play is pressed.', 'muted field-hint'); speakerHelp.id = 'ma-destination-help';
     select.setAttribute('aria-describedby', speakerHelp.id);
     const group = el('div', undefined, 'field'); group.append(destinationLabel, select, speakerHelp); destination.append(group);
-    if (report && !report.players.length) destination.append(el('p', 'No speakers found. Add one in Music Assistant, then try again.', 'muted small'));
+    if (report && !availableSpeakers.length) destination.append(el('p', report.players.length
+      ? 'No speakers are currently available. Turn one on or check Music Assistant, then find speakers again.'
+      : 'No speakers found. Add or enable one in Music Assistant, then find speakers again.', 'muted small'));
     else if (!report && !savedSpeaker) {
       destination.append(el('div', !settings?.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant to choose a speaker.'
         : busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers could not be loaded. Try again.', 'empty-state'));

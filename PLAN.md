@@ -2,6 +2,10 @@
 
 ## Status
 
+**0.3.12 release verification — 2026-10-19:** Speaker-picker availability fixes pass production build, typecheck, **227 backend/controller tests** and all **111 Chromium workflows**. Publication uses `v0.3.12`, with anonymous amd64/arm64 image verification before pushing the versioned Home Assistant store manifest to `main`.
+
+**Speaker picker availability — 0.3.12, 2026-10-19:** Fix the UI's stale saved-speaker fallback and all-offline empty state. The menu now lists only available speakers from successful discovery; missing/offline and unchecked saved preferences are labelled separately. Find speakers again remains usable with no choices and restores selection when speakers appear. Existing backend availability/queue validation and persisted routing remain authoritative. Three real-fixture browser regressions reproduced the former stale menu selection before the fix, then passed for empty, all-offline and missing-saved inventories, rejected stale API selections and read-only recovery. Build/typecheck, **227 backend/controller tests** and **25 targeted browser workflows** pass.
+
 **0.3.11 release verification — 2026-10-19:** Mobile workspace and compact listening-order refinements pass production build, typecheck, **227 backend/controller tests** and all **108 Chromium workflows**. Publication uses `v0.3.11`, with anonymous amd64/arm64 image verification before pushing the versioned Home Assistant store manifest to `main`. Screenshots remain outside version control.
 
 **Compact mobile listening order — 0.3.11, 2026-10-19:** Follow-up approved by the owner: a 55px strip with 130–150px entries, no mobile avatars, and short Now/Next/You labels. Manage people is beside Host desk on stacked layouts; expanded entries retain full-size reorder/removal controls. Manually reviewed at 320px and 390px, including management mode. Build/typecheck and **17 targeted Chromium workflows** pass, covering shared-route appearance, two fully visible entries at 320px, live updates, management, display privacy and player geometry.

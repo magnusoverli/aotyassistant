@@ -35,6 +35,7 @@ export async function startMusicAssistantFixture(port = 0) {
     repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: typeof track }, next_item: null as unknown };
   const player = { player_id: 'sonos:room', available: true, type: 'player', supported_features: ['volume_set'], volume_control: 'native', volume_level: 30, group_volume: 40, group_members: [] as string[],
     playback_state: 'idle', active_source: null as string | null, active_group: null as string | null, synced_to: null as string | null };
+  let speakers = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
   let imageMode: 'png' | 'svg' | 'redirect' | 'oversized' = 'png';
   const imageCalls: string[] = [];
   let imageDelay = 0;
@@ -103,7 +104,7 @@ export async function startMusicAssistantFixture(port = 0) {
     let result: unknown = null;
     if (command === 'auth/token/create') result = appToken;
     else if (command === 'auth/token/revoke') result = null;
-    else if (command === 'players/all') result = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
+    else if (command === 'players/all') result = speakers;
     else if (command === 'players/get') result = { ...player, player_id: args.player_id };
     else if (command === 'players/cmd/volume_set') player.volume_level = volumeClamp ?? args.volume_level;
     else if (command === 'players/cmd/group_volume') player.group_volume = volumeClamp ?? args.volume_level;
@@ -198,6 +199,7 @@ export async function startMusicAssistantFixture(port = 0) {
     clampVolume(level: number) { volumeClamp = level; },
     parkPaused() { queue.state = 'idle'; queue.active = false; queue.ended = false; queue.elapsed_time = 0; player.playback_state = 'idle'; player.active_source = null; },
     finish() { queue.state = 'idle'; queue.ended = true; notify(); }, fail(value: boolean) { failed = value; },
+    setSpeakers(next: typeof speakers) { speakers = structuredClone(next); },
     failNextPlaybackVerification() { failAfterPlay = true; },
     ignoreControl(action: typeof ignoredControl) { ignoredControl = action; },
     ignorePolicy(action: typeof ignoredPolicy) { ignoredPolicy = action; },

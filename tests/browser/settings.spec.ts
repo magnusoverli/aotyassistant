@@ -159,7 +159,7 @@ test('a rejected disconnect keeps the configured summary and saved destination',
   await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Stop or finish the current track');
   await expectConfiguredConnection(page, 'Not checked');
-  await expect(page.getByText('Speaker: Living room', { exact: true })).toBeVisible();
+  await expect(page.getByText('Saved speaker: Living room (not checked)', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /^(Enable|Disable) live playback$/ })).toHaveCount(0);
   expect(changes).toEqual(['/api/host/integrations/clear']);
 });
@@ -225,9 +225,10 @@ for (const scenario of ['offline-speaker', 'missing-speaker', 'queue-failure', '
     await expectConfiguredConnection(page, connectionFailed ? 'Needs attention' : 'Connected');
     const connection = page.locator('.settings-connection'); const speaker = page.locator('.settings-destination');
     const select = speaker.getByLabel('Speaker or group', { exact: true });
-    await expect(select).toBeVisible(); await expect(select).toHaveValue(noSpeaker ? '' : 'sonos:room');
+    const savedAvailable = scenario === 'queue-failure';
+    await expect(select).toBeVisible(); await expect(select).toHaveValue(savedAvailable ? 'sonos:room' : '');
     if (connectionFailed) await expect(select).toBeDisabled(); else await expect(select).toBeEnabled();
-    if (scenario === 'offline-speaker' || scenario === 'missing-speaker') await expect(select.locator('option[value="sonos:room"]')).toBeDisabled();
+    if (!savedAvailable && !noSpeaker) await expect(select.locator('option[value="sonos:room"]')).toHaveCount(0);
     await expect(speaker.getByRole('button', { name: /^(Change speaker|Save speaker|Cancel speaker change)$/ })).toHaveCount(0);
     await expect(speaker.locator('.settings-state')).toHaveText(noSpeaker ? 'Not selected' : connectionFailed ? 'Not checked' : 'Needs attention');
     await expect(page.locator('.settings-notice.error')).toHaveCount(0);
@@ -295,3 +296,54 @@ test('a failed automatic speaker selection restores the saved speaker without do
     expect(writes).toEqual(['/api/host/integrations/destination', '/api/host/integrations/destination']);
   } finally { release(); }
 });
+
+for (const inventory of ['empty', 'all-offline', 'missing-saved'] as const) {
+  test(`speaker discovery removes stale choices and recovers from ${inventory} without automatic selection`, async ({ page, isolatedApp }) => {
+    await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'browser-test-token', 0);
+    const saved = await isolatedApp.manager.selectDestination('sonos:room', 1);
+    const bedroom = { player_id: 'sonos:bedroom', name: 'Bedroom', available: true };
+    isolatedApp.setSpeakers(inventory === 'empty' ? [] : inventory === 'missing-saved' ? [bedroom] : [
+      { player_id: 'sonos:room', name: 'Living room', available: false }, { ...bedroom, available: false },
+    ]);
+    const writes: string[] = [];
+    page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/api/host/integrations')) writes.push(request.url()); });
+    await page.setViewportSize({ width: 320, height: 844 }); await page.goto('/host/settings');
+    await expectConfiguredConnection(page);
+    const speaker = page.locator('.settings-destination');
+    const select = speaker.getByLabel('Speaker or group', { exact: true });
+    await expect(select).toHaveValue('');
+    await expect(select.locator('option[value="sonos:room"]')).toHaveCount(0);
+    await expect(speaker).toContainText('Saved speaker: Living room (unavailable)');
+    if (inventory === 'missing-saved') {
+      await expect(select).toBeEnabled();
+      await expect(select.locator('option')).toHaveText(['Choose a speaker or group', 'Bedroom']);
+    } else {
+      await expect(select).toBeDisabled();
+      await expect(select.locator('option')).toHaveText(['No available speakers or groups']);
+      await expect(speaker).toContainText(inventory === 'empty' ? 'No speakers found.' : 'No speakers are currently available.');
+    }
+    await expect(speaker.getByRole('button', { name: 'Find speakers again' })).toBeEnabled();
+    expect(writes).toEqual([]);
+    // A stale client still cannot select a missing/offline speaker through the API.
+    const rejected = await page.request.post('/api/host/integrations/destination', {
+      headers: { Origin: isolatedApp.origin }, data: { id: 'sonos:room', revision: saved.revision },
+    });
+    expect(rejected.status()).toBe(409);
+    expect(isolatedApp.manager.view().destination).toEqual(saved.destination);
+    expect(isolatedApp.manager.view().revision).toBe(saved.revision);
+    isolatedApp.setSpeakers([bedroom]);
+    await speaker.getByRole('button', { name: 'Find speakers again' }).click();
+    await expect(select).toBeEnabled(); await expect(select).toHaveValue('');
+    await expect(select.locator('option')).toHaveText(['Choose a speaker or group', 'Bedroom']);
+    expect(writes).toEqual([]); expect(isolatedApp.manager.view().revision).toBe(saved.revision);
+    await select.selectOption('sonos:bedroom');
+    await expect(speaker.getByText('Speaker: Bedroom', { exact: true })).toBeVisible();
+    await expect(select).toHaveValue('sonos:bedroom');
+    expect(isolatedApp.manager.view().destination?.id).toBe('sonos:bedroom');
+    expect(writes).toHaveLength(1);
+    // Settings also performs a read-only file-address diagnostic via item_by_uri.
+    const reads = ['players/all', 'players/get', 'player_queues/get_active_queue', 'music/item_by_uri'];
+    expect(isolatedApp.calls.filter(call => !reads.includes(call.command))).toEqual([]);
+    await noHorizontalOverflow(page);
+  });
+}

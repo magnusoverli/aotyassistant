@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.3.12] — 2026-10-19
+
+- Show only available speakers in Settings, explain empty/offline inventories, and keep unavailable saved speakers out of the dropdown while allowing read-only rediscovery.
+
 ## [0.3.11] — 2026-10-19
 
 - Refine the mobile workspace with a smaller stable player, a compact listening-order strip, and direct Find music/My list shortcuts. Improve secondary text and touch targets.
