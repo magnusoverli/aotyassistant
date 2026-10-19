@@ -1,5 +1,6 @@
 import type { Response } from 'express';
 import { AppError } from './model.js';
+type StreamEvent = 'state' | 'setup' | 'revoked' | 'preparation' | 'preparation-revoked';
 
 /** Reserve before asynchronous authorization. Headers/data still wait for authorization. */
 export class EventStreams {
@@ -36,11 +37,11 @@ class EventStream {
     this.response.flushHeaders(); return true;
   }
 
-  send(event: 'state' | 'revoked' | 'preparation' | 'preparation-revoked', data: unknown) {
+  send(event: StreamEvent, data: unknown) {
     this.sendEncoded(event, JSON.stringify(data));
   }
   /** Accept only JSON produced from an already authorized/filtered projection. */
-  sendEncoded(event: 'state' | 'revoked' | 'preparation' | 'preparation-revoked', json: string) {
+  sendEncoded(event: StreamEvent, json: string) {
     if (this.closed) return;
     const frame = `event: ${event}\ndata: ${json}\n\n`;
     if (event === 'revoked') { this.pending.clear(); this.response.write(frame); this.end(); return; }

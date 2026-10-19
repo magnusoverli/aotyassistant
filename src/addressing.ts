@@ -21,7 +21,7 @@ export const applicationOrigin = z.string().trim().max(2048).url().transform((va
 
 export type MediaCheck = { status: 'unchecked' | 'checking' | 'verified' | 'failed' | 'expired'; origin: string | null; checkedAt: number | null; message: string };
 export type AddressingView = { revision: number; guestOrigin: string; mediaOrigin: string | null; automaticMediaOrigin: string | null;
-  effectiveMediaOrigin: string; configured: boolean; mediaCheck: MediaCheck };
+  effectiveMediaOrigin: string; configured: boolean; mediaCheck: MediaCheck; sequence?: number; instanceId?: string };
 
 /** Recovery/setup only. Never authorize ordinary APIs by trusting an arbitrary Host or forwarded header. */
 export function setupHostAllowed(host: string, remote: string) {

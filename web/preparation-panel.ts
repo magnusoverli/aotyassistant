@@ -152,7 +152,7 @@ export class PreparationPanel {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      library.undoId, library.recoveryKey, this.expanded, this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), this.options.canPlay(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
+      library.recoveryKey, this.expanded, this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), this.options.canPlay(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const expanded = this.expanded || !this.withSearch;
@@ -207,10 +207,6 @@ export class PreparationPanel {
     }
     children(actions, ...actionNodes); children(ordered, ...upcomingRows); bodyNodes.push(actions, ordered); children(body, ...bodyNodes);
     const tools = v.el('tools', 'div', undefined, 'list-tools'); const toolNodes: Node[] = [];
-    const removed = snapshot?.removed.find(entry => entry.id === library.undoId);
-    if (!snapshot?.reviewEntryId && removed) {
-      const undo = v.el('undo', 'div', undefined, 'list-notice'); children(undo, v.el('undo-message', 'p', `Removed ${removed.title}. Undo adds it back at the end.`), this.control('undo', 'Undo removal', () => library.edit('restore', { entryId: removed.id }))); listNodes.push(undo);
-    }
     const history = this.details('history', 'History');
     const historyNodes: Node[] = [history.firstElementChild!, v.el('history-help', 'p', 'Previously played songs were started, not necessarily finished. Add back places a song at the end of your list.', 'muted small')];
     let remaining = this.historyLimit; const historyIds = new Set<string>();

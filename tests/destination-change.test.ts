@@ -80,6 +80,9 @@ test('unchanged-credential saves keep references, but token/origin replacement, 
   const fresh = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
   const second = await startMusicAssistantFixture(); t.after(second.close);
   const originEpoch = f.manager.catalogueRevision;
+  await assert.rejects(f.manager.save(second.origin, 'fixture-token', f.manager.view().revision), /different Music Assistant server/);
+  assert.equal(f.manager.catalogueRevision, originEpoch);
+  await f.manager.clear(f.manager.view().revision);
   await f.manager.save(second.origin, 'fixture-token', f.manager.view().revision);
   assert.notEqual(f.manager.catalogueRevision, originEpoch); await assert.rejects(f.manager.resolve(fresh.id, f.context(f.alex)), status(409));
   const current = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;

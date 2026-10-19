@@ -10,7 +10,7 @@ import { SerialQueue } from './serial.js';
 import { maOperation } from './ma-operation.js';
 import { CatalogueReferences } from './catalogue-references.js';
 import { OutputMonitor } from './output-monitor.js';
-import { verifiedPlaybackSchema } from './music-assistant-policy.js';
+import { playbackCompatibility, supportsPlaybackSchema } from './music-assistant-policy.js';
 import type { IntegrationState, IntegrationStore } from './integration-store.js';
 export { integrationSchema, IntegrationFileStore, type IntegrationStore } from './integration-store.js';
 
@@ -27,6 +27,9 @@ export type IntegrationView = {
   output: OutputState;
   sequence?: number;
   instanceId?: string;
+  addressing?: AddressingView;
+  authorization?: { attemptId: string; revision: number };
+  compatibility?: ReturnType<typeof playbackCompatibility> | null;
 };
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
@@ -59,6 +62,9 @@ export class IntegrationManager implements CatalogueProvider {
   private playbackKey = '';
   private lastView = '';
   private sequence = 0;
+  private addressingSequence = 0;
+  private lastAddressing = '';
+  private authorization?: IntegrationView['authorization'];
   private settingsUncertain = false;
   private closed = false;
   private mediaCheck: MediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Not checked since startup. No audio has been started.' };
@@ -92,8 +98,9 @@ export class IntegrationManager implements CatalogueProvider {
     const player = report?.players.find(player => player.id === selected?.id);
     const state = this.settingsUncertain ? 'unconfirmed' : !selected ? 'none' : this.playback?.requiresRecovery ? 'recovery' : this.failure ? 'unconfirmed'
       : !report ? 'checking' : !player?.available ? 'unavailable' : !this.destinationFresh || this.destinationFailure === null ? 'checking'
-      : this.destinationFailure || report.schemaVersion !== verifiedPlaybackSchema ? 'unavailable' : 'ready';
-    return { name: player?.name ?? selected?.name ?? null, state, checkedAt: selected ? this.destinationCheckedAt : report?.checkedAt ?? null };
+      : this.destinationFailure ? 'unavailable' : !supportsPlaybackSchema(report.schemaVersion) ? 'incompatible' : 'ready';
+    return { name: player?.name ?? selected?.name ?? null, state, checkedAt: selected ? this.destinationCheckedAt : report?.checkedAt ?? null,
+      ...(state === 'incompatible' ? { reason: 'unsupported-schema' as const } : {}) };
   }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
   private changed() { for (const listener of this.listeners) listener(); }
@@ -123,8 +130,11 @@ export class IntegrationManager implements CatalogueProvider {
   addressing(): AddressingView {
     const check = this.mediaCheck.status === 'verified' && this.mediaCheck.checkedAt! + 5 * 60_000 <= Date.now()
       ? { ...this.mediaCheck, status: 'expired' as const, message: 'The last check is over five minutes old. Check again if the network changed.' } : this.mediaCheck;
-    return { revision: this.state.revision, guestOrigin: this.guestOrigin, mediaOrigin: this.state.mediaOrigin ?? null,
+    const result = { revision: this.state.revision, guestOrigin: this.guestOrigin, mediaOrigin: this.state.mediaOrigin ?? null,
       automaticMediaOrigin: this.state.automaticMediaOrigin ?? null, effectiveMediaOrigin: this.effectiveMediaOrigin, configured: this.configured, mediaCheck: { ...check } };
+    const key = JSON.stringify(result);
+    if (key !== this.lastAddressing) { this.lastAddressing = key; this.addressingSequence++; }
+    return { ...result, sequence: this.addressingSequence, instanceId: this.runtimeId };
   }
   async saveGuestOrigin(origin: string, revision: number) {
     return this.serial(async () => {
@@ -144,6 +154,7 @@ export class IntegrationManager implements CatalogueProvider {
     const candidates = automatic ? this.state.mediaOrigin ? [this.state.mediaOrigin] : [...new Set([...this.environmentMediaOrigins, ...supplied])].slice(0, 6) : supplied;
     const setup = this.configurationRevision; const api = this.getApi(); this.checking = true;
     this.mediaCheck = { status: 'checking', origin: null, checkedAt: null, message: 'Music Assistant is fetching a protected diagnostic file. No audio is played.' };
+    this.changed();
     try {
       for (const origin of [...new Set(candidates)]) {
         const lease = this.checks.create(origin); let verified = false;
@@ -166,7 +177,7 @@ export class IntegrationManager implements CatalogueProvider {
     } catch (error) {
       if (setup === this.configurationRevision) this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'The check could not finish. Try again.' };
       throw error;
-    } finally { this.checking = false; }
+    } finally { this.checking = false; this.changed(); }
   }
   attachPlayback(playback: PlaybackController): void { this.playback = playback; }
   close() { this.closed = true; this.stopMonitoring(); this.observation++; this.cachedReader?.close?.(); this.cachedReader = undefined; }
@@ -292,7 +303,7 @@ export class IntegrationManager implements CatalogueProvider {
     return this.serial(async () => {
       this.expected(revision);
       await this.commit({ ...this.state, revision: this.state.revision + 1, mediaOrigin: origin || null });
-      if (origin && verified) this.mediaCheck = verified;
+      if (origin && verified) { this.mediaCheck = verified; this.changed(); }
       return this.view();
     });
   }
@@ -338,7 +349,7 @@ export class IntegrationManager implements CatalogueProvider {
     const destinationChanged = this.state.musicAssistant?.destination?.id !== next.musicAssistant?.destination?.id;
     this.state = next;
     this.observation++;
-    if (connectionChanged) { this.report = null; this.failure = ''; }
+    if (connectionChanged) { this.report = null; this.failure = ''; this.authorization = undefined; }
     if (connectionChanged || destinationChanged) { this.destinationFailure = null; this.destinationCheckedAt = null; }
     this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Addresses or settings changed. Check file access again; no audio has been started.' };
     if (connectionChanged) {
@@ -369,45 +380,57 @@ export class IntegrationManager implements CatalogueProvider {
         ? 'Music Assistant is connected and authorized.'
         : 'Music Assistant is configured. Its connection has not been checked.'),
       report: structuredClone(report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
-      ...(ma?.browserUrl ? { browserUrl: ma.browserUrl } : {}), ...(ma?.tokenExpiresAt ? { tokenExpiresAt: ma.tokenExpiresAt } : {}) };
+      ...(ma?.browserUrl ? { browserUrl: ma.browserUrl } : {}), ...(ma?.tokenExpiresAt ? { tokenExpiresAt: ma.tokenExpiresAt } : {}),
+      addressing: this.addressing(), compatibility: report ? playbackCompatibility(report.schemaVersion, report.serverVersion) : null,
+      ...(this.authorization ? { authorization: { ...this.authorization } } : {}) };
     const key = JSON.stringify(result);
     if (key !== this.lastView) { this.lastView = key; this.sequence++; }
     return { ...result, sequence: this.sequence, instanceId: this.runtimeId };
   }
   async save(url: string, accessToken: string | undefined, revision: number): Promise<IntegrationView> {
-    return this.serial(async () => {
-      this.expected(revision); url = musicAssistantUrl.parse(url);
-      const previous = this.state.musicAssistant;
-      // Never forward a retained secret to a newly supplied origin.
-      if (previous?.url !== url && !accessToken) throw new AppError(400, 'Enter a token for the new server URL. The old token cannot be reused automatically.');
-      const nextToken = accessToken ? maToken.parse(accessToken) : previous?.accessToken;
-      if (!nextToken) throw new AppError(400, 'Enter a Music Assistant access token.');
-      await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: {
-        url, accessToken: nextToken, destination: previous?.url === url ? previous.destination : null,
-        sourceBindingId: previous?.url === url ? previous.sourceBindingId ?? randomUUID() : randomUUID(),
-        ...(previous?.url === url && previous.serverId ? { serverId: previous.serverId } : {}),
-      } });
-      return this.view();
-    });
+    this.assertSetupRevision(revision); url = musicAssistantUrl.parse(url);
+    const previous = this.state.musicAssistant;
+    // Never forward a retained secret to a newly supplied origin.
+    if (previous?.url !== url && !accessToken) throw new AppError(400, 'Enter a token for the new server URL. The old token cannot be reused automatically.');
+    const nextToken = accessToken ? maToken.parse(accessToken) : previous?.accessToken;
+    if (!nextToken) throw new AppError(400, 'Enter a Music Assistant access token.');
+    let serverId = previous?.serverId;
+    const moved = previous && previous.url !== url;
+    if (moved) {
+      if (!serverId) throw new AppError(409, 'Check the saved Music Assistant connection before changing its address, or Disconnect explicitly to replace it. Your saved setup was kept.');
+      // Validate outside the playback lane. Failed/offline candidates never replace saved setup.
+      const candidate = this.reader(url, nextToken);
+      try { serverId = (await candidate.inspect({ documentation: false })).serverId; }
+      finally { candidate.close?.(); }
+      if (!serverId) throw new AppError(422, 'The new address did not provide a Music Assistant server identity. Your saved setup was kept.');
+    }
+    return this.serial(() => this.installConnection({ url, accessToken: nextToken,
+      ...(serverId ? { serverId } : {}), ...(moved ? { browserUrl: url } : previous?.browserUrl ? { browserUrl: previous.browserUrl } : {}),
+      ...(previous?.accessToken === nextToken && previous.tokenExpiresAt ? { tokenExpiresAt: previous.tokenExpiresAt } : {}) }, revision));
+  }
+  private async installConnection(connection: Omit<NonNullable<IntegrationState['musicAssistant']>, 'sourceBindingId' | 'destination'>, revision: number) {
+    this.assertSetupRevision(revision);
+    const previous = this.state.musicAssistant;
+    const same = previous && (previous.serverId ? previous.serverId === connection.serverId : previous.url === connection.url);
+    if (previous && !same) throw new AppError(409, 'This is a different Music Assistant server. Disconnect explicitly before replacing the catalogue. Your saved lists were kept.');
+    await this.commit({ ...this.state, revision: revision + 1, musicAssistant: { ...connection,
+      sourceBindingId: same ? previous.sourceBindingId ?? randomUUID() : randomUUID(), destination: same ? previous.destination : null } });
+    return this.view();
   }
   /** Authorization validated the new endpoint/token. Identity, not IP, preserves preparations. */
-  async saveAuthorized(url: string, accessToken: string, serverId: string, browserUrl: string, revision: number, tokenExpiresAt?: number) {
+  async saveAuthorized(url: string, accessToken: string, serverId: string, browserUrl: string, revision: number, tokenExpiresAt?: number, attemptId?: string) {
     return this.serial(async () => {
-      this.assertSetupRevision(revision); url = musicAssistantUrl.parse(url); accessToken = maToken.parse(accessToken);
-      const previous = this.state.musicAssistant;
-      const same = previous && (previous.serverId ? previous.serverId === serverId : previous.url === url);
-      if (previous && !same) throw new AppError(409, 'This is a different Music Assistant server. Disconnect explicitly before replacing the catalogue. Your saved lists were kept.');
-      await this.commit({ ...this.state, revision: revision + 1, musicAssistant: { url, accessToken, serverId,
-        browserUrl: musicAssistantUrl.parse(browserUrl), ...(tokenExpiresAt ? { tokenExpiresAt } : {}),
-        sourceBindingId: same ? previous.sourceBindingId ?? randomUUID() : randomUUID(), destination: same ? previous.destination : null } });
+      await this.installConnection({ url: musicAssistantUrl.parse(url), accessToken: maToken.parse(accessToken), serverId,
+        browserUrl: musicAssistantUrl.parse(browserUrl), ...(tokenExpiresAt ? { tokenExpiresAt } : {}) }, revision);
+      if (attemptId) { this.authorization = { attemptId, revision: this.state.revision }; this.changed(); }
       return this.view();
     });
   }
-  /** Only Supervisor/mDNS-verified candidates matching a persisted server ID reach here. */
-  async relocate(url: string, serverId: string, revision: number) {
-    return maOperation('server-relocation', () => this.relocateServer(url, serverId, revision));
+  /** Only trusted Supervisor-derived candidates matching a persisted server ID reach here. */
+  async relocate(url: string, serverId: string, revision: number, browserUrl?: string | null) {
+    return maOperation('server-relocation', () => this.relocateServer(url, serverId, revision, browserUrl));
   }
-  private async relocateServer(url: string, serverId: string, revision: number) {
+  private async relocateServer(url: string, serverId: string, revision: number, browserUrl?: string | null) {
     this.assertSetupRevision(revision); const previous = this.state.musicAssistant;
     if (!previous?.serverId || previous.serverId !== serverId || previous.url === url) return;
     url = musicAssistantUrl.parse(url);
@@ -417,7 +440,7 @@ export class IntegrationManager implements CatalogueProvider {
     if (report.serverId !== serverId) throw new AppError(409, 'The discovered Music Assistant identity changed.');
     return this.serial(async () => {
       this.assertSetupRevision(revision);
-      await this.commit({ ...this.state, revision: revision + 1, musicAssistant: { ...previous, url } });
+      await this.installConnection({ ...previous, url, browserUrl: musicAssistantUrl.parse(browserUrl || url) }, revision);
     });
   }
   async clear(revision: number): Promise<IntegrationView> {
@@ -525,7 +548,8 @@ export class IntegrationManager implements CatalogueProvider {
     }
     return this.serial(async () => {
       this.expected(revision);
-      await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...this.state.musicAssistant!, destination: { id: player.id, name: player.name } } });
+      await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...this.state.musicAssistant!,
+        ...(report.serverId ? { serverId: report.serverId } : {}), destination: { id: player.id, name: player.name } } });
       this.report = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed(); return this.view();
     });
   }

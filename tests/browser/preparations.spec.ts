@@ -46,7 +46,7 @@ test('the first save reaches an already-open tab without reload, extra writes, o
   } finally { await other.close(); }
 });
 
-test('compact private lists reorder, undo, survive removal/rejoining, recover on another phone, and never autoplay', async ({ browser, page: host, isolatedApp }) => {
+test('compact private lists reorder, restore from history, survive removal/rejoining, recover on another phone, and never autoplay', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const second = r.second;
   try {
     for (const query of ['Northern', 'Summer', 'Night']) await add(second, query);
@@ -63,7 +63,10 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
     await second.getByLabel('Options for Northern Lights', { exact: true }).click();
     await second.locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Remove', exact: true }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer']);
-    await second.getByRole('button', { name: 'Undo removal' }).click();
+    await expect(second.locator('.list-save-status')).toHaveText('Private · Saved ✓');
+    await expect(second.locator('.preparation-list > .list-notice')).toHaveCount(0);
+    await second.locator('#list-history').click();
+    await second.locator('#list-history').locator('..').locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Add back', exact: true }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     await second.reload(); await showList(second); await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     const overflow = await second.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); expect(overflow).toBe(false);
@@ -76,7 +79,8 @@ test('compact private lists reorder, undo, survive removal/rejoining, recover on
     await expect.poll(async () => (await state(second)).played.length).toBe(1);
     await showList(second);
     await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
-    await second.locator('#list-history').click(); await expect(second.getByRole('button', { name: 'Add back', exact: true })).toBeVisible();
+    if (!await second.locator('#list-history').evaluate(node => (node.parentElement as HTMLDetailsElement).open)) await second.locator('#list-history').click();
+    await expect(second.getByRole('button', { name: 'Add back', exact: true })).toBeVisible();
     await second.locator('#list-recovery').click(); second.once('dialog', dialog => dialog.accept());
     await second.getByRole('button', { name: 'Create recovery key' }).click();
     const key = await second.getByRole('textbox', { name: 'Your private recovery key' }).inputValue(); expect(key.length).toBeGreaterThan(70);

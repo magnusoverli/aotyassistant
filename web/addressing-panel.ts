@@ -22,7 +22,8 @@ export class AddressingPanel {
   }
   private accept(view: AddressingView, drafts = false) {
     const previous = this.view;
-    if (previous && view.revision < previous.revision) return;
+    if (previous && previous.instanceId === view.instanceId && (view.revision < previous.revision ||
+      view.sequence !== undefined && previous.sequence !== undefined && view.sequence < previous.sequence)) return;
     this.view = view; this.saved(view.revision);
     setGuestOrigin(view.guestOrigin);
     if (drafts || !previous) {
@@ -30,6 +31,7 @@ export class AddressingPanel {
       if (!previous || this.mediaDraft === (previous.mediaOrigin ?? '')) this.mediaDraft = view.mediaOrigin ?? '';
     }
   }
+  observe(view: AddressingView) { this.accept(view, true); }
   private async run(work: () => Promise<void>) {
     if (this.busy || this.blocked()) return;
     this.busy = true; this.error = ''; this.notice = ''; this.changed();

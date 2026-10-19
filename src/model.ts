@@ -62,7 +62,7 @@ export type ListeningOrderView = { roomId: string | null; revision: number; curr
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
 /** Public output identity/health only; never a queue payload or current recording. */
-export type OutputState = { name: string | null; state: 'none' | 'checking' | 'ready' | 'unavailable' | 'unconfirmed' | 'recovery'; checkedAt: number | null };
+export type OutputState = { name: string | null; state: 'none' | 'checking' | 'ready' | 'unavailable' | 'unconfirmed' | 'recovery' | 'incompatible'; checkedAt: number | null; reason?: 'unsupported-schema' };
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;

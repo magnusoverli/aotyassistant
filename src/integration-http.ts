@@ -24,6 +24,10 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
       if (key !== previous) { previous = key; stream.sendEncoded('state', key); }
     };
     send(); stream.onClose(integrations.subscribe(send));
+    if (setup) {
+      const sendSetup = () => stream.send('setup', setup.view());
+      sendSetup(); stream.onClose(setup.subscribe(sendSetup));
+    }
     stream.every(() => { send(); stream.heartbeat(); }, 15_000);
     integrations.refreshOutputSoon();
   });

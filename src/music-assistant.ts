@@ -5,7 +5,7 @@ import { presentCatalogueItems } from './catalogue-grouping.js';
 import type { SavedSelection } from './preparations.js';
 import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
-import { verifiedPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
+import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
 export type Destination = { id: string; name: string; available: boolean };
@@ -364,7 +364,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   async playbackCapability(playerId: string): Promise<QueueSnapshot> {
     const info = z.object({ schema_version: z.number() }).parse(await this.read('/info'));
-    if (info.schema_version !== verifiedPlaybackSchema) throw new AppError(422, `Live playback currently requires the verified Music Assistant API schema ${verifiedPlaybackSchema}. Browsing remains available.`);
+    if (!supportsPlaybackSchema(info.schema_version)) throw new AppError(422, `Live playback currently requires the verified Music Assistant API schema ${verifiedPlaybackSchemas.join(', ')}. Browsing remains available.`);
     return this.queue(playerId);
   }
   async queue(playerId: string): Promise<QueueSnapshot> {

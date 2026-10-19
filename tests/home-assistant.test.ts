@@ -122,8 +122,8 @@ async function authorizationFixture(t: TestContext) {
   const post = (path: string, data: unknown) => fetch(`${local.origin}${path}`, { method: 'POST', headers: { Origin: local.origin, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const start = async () => {
     const response = await post('/api/host/auth/start', { url: remote.origin, revision: manager.view().revision }); assert.equal(response.status, 200);
-    const login = new URL((await response.json() as { loginUrl: string }).loginUrl);
-    return { callback: new URL(login.searchParams.get('return_url')!), cookie: response.headers.get('set-cookie')!.split(';')[0]!, response };
+    const payload = await response.json() as { loginUrl: string; attemptId: string }; const login = new URL(payload.loginUrl);
+    return { attemptId: payload.attemptId, callback: new URL(login.searchParams.get('return_url')!), cookie: response.headers.get('set-cookie')!.split(';')[0]!, response };
   };
   return { manager, local, remote, token, calls, dir, engine, app: http.app, post, start, setIdentity(value: string) { identity = value; } };
 }
@@ -135,7 +135,8 @@ test('browser authorization binds state to cookie, consumes callbacks once, and 
   const forged = await fetch(login.callback, { redirect: 'manual' }); assert.match(forged.headers.get('location')!, /failed$/);
   assert.deepEqual(f.calls, []); assert.equal(f.manager.configured, false);
   const connected = await fetch(login.callback, { headers: { Cookie: login.cookie }, redirect: 'manual' });
-  assert.equal(connected.status, 303); assert.equal(connected.headers.get('location'), '/host/settings?ma_auth=connected');
+  assert.equal(connected.status, 303); assert.equal(connected.headers.get('location'), `/host/settings?ma_attempt=${login.attemptId}&ma_auth=connected`);
+  assert.equal(f.manager.view().authorization?.attemptId, login.attemptId);
   assert.equal(connected.headers.get('referrer-policy'), 'no-referrer'); assert.equal(f.manager.serverId, serverInfo.server_id);
   assert.equal(f.manager.configured, true); assert.ok(f.manager.view().tokenExpiresAt! > Date.now());
   assert.ok(!(JSON.stringify(f.manager.view())).includes(f.token)); assert.ok(!(await readFile(join(f.dir, 'integrations.json'), 'utf8')).includes('login-code'));
@@ -204,7 +205,8 @@ test('Ingress requires its dedicated trusted listener; prefixes assets/auth and 
   const wrongUser = await fetch(`${ingress.origin}/api/host/auth/callback${callback.search}`, { headers: { ...headers, 'X-Remote-User-Id': 'different', Cookie: cookie }, redirect: 'manual' });
   assert.match(wrongUser.headers.get('location')!, /failed$/); assert.equal(f.calls.length, 0);
   const valid = await fetch(`${ingress.origin}/api/host/auth/callback${callback.search}`, { headers: { ...headers, Cookie: cookie }, redirect: 'manual' });
-  assert.match(valid.headers.get('location')!, /^\/api\/hassio_ingress\/fixture\/host\/settings\?ma_auth=connected$/);
+  const returned = new URL(valid.headers.get('location')!, 'https://ha.example.test');
+  assert.equal(returned.pathname, '/api/hassio_ingress/fixture/host/settings'); assert.equal(returned.searchParams.get('ma_auth'), 'connected');
   const csrf = await fetch(`${ingress.origin}/api/host/integrations/clear`, { method: 'POST', headers: { ...postHeaders, Origin: f.local.origin }, body: JSON.stringify({ revision: f.manager.view().revision }) }); assert.equal(csrf.status, 403);
   const health = await fetch(`${f.local.origin}/api/health`, { headers: { Host: '172.30.33.99:3000' } }); assert.equal(health.status, 200);
 });

@@ -30,7 +30,6 @@ export class PreparationController {
   conflict = false;
   recoveryKey = '';
   recovered = false;
-  undoId?: string;
   lastSavedUploadId?: string;
   readonly added = new Set<string>();
   private addedEntries = new Map<string, string>();
@@ -63,7 +62,7 @@ export class PreparationController {
     if (this.view && JSON.stringify(this.view) === JSON.stringify(view)) return;
     if (this.view?.ownerId !== view.ownerId) {
       this.epoch++; this.recoveryKey = ''; this.warning = ''; this.conflict = false;
-      this.added.clear(); this.addedEntries.clear(); this.undoId = undefined; this.lastSavedUploadId = undefined; this.restoreDraft(view.ownerId);
+      this.added.clear(); this.addedEntries.clear(); this.lastSavedUploadId = undefined; this.restoreDraft(view.ownerId);
     }
     for (const [reference, entryId] of this.addedEntries) if (!view.upcoming.some(entry => entry.id === entryId)) { this.added.delete(reference); this.addedEntries.delete(reference); }
     this.view = view; this.missing = false; this.changed();
@@ -170,7 +169,6 @@ export class PreparationController {
       this.pending = undefined;
       try { localStorage.removeItem(this.storageKey(pending.ownerId)); } catch { /* A server receipt still prevents a duplicate if a stale local draft remains. */ }
       if (pending.path === 'add' && pending.body.trackId) { this.added.add(pending.body.trackId); this.addedEntries.set(pending.body.trackId, result.entryId); }
-      if (pending.path === 'remove') this.undoId = result.entryId;
       if (pending.path === 'add-upload') this.lastSavedUploadId = pending.body.uploadId;
       if (result.warning) this.warning = result.warning;
       this.accept(result.view);

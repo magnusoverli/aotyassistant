@@ -13,7 +13,7 @@ One file per upload: **MP3 (CBR/VBR), M4A with AAC or Apple Lossless/ALAC, FLAC,
 1. Join the room and choose **Upload a track** in the private music panel. The native phone/browser picker supplies the file; the app never receives a device filesystem path or searches other apps' storage.
 2. Watch upload/processing progress. Review the detected cover, title, artist, and album; correct the text if needed. Unknown tags fall back to the filename/empty fields and the neutral record.
 3. Choose **Add uploaded track to my list**. **Saved** means the server acknowledged durable file storage and list attachment, not merely that the network transfer reached 100%.
-4. Reorder, Make next, Remove, Undo, Restore, and recover the list normally. Only the current participant may explicitly **Play next**, pause/resume/stop/reveal, or finish. Uploading never changes the current listener or starts audio.
+4. Reorder, Make next, Remove, and recover the list normally; restore removed tracks with **History → Removed → Add back**. Only the current participant may explicitly **Play next**, pause/resume/stop/reveal, or finish. Uploading never changes the current listener or starts audio.
 
 Preparation does not require a working MA connection or speaker. Without them, uploaded entries remain saved but unavailable for playback; the demo does not pretend to play uploaded audio. Once saved, the phone can disconnect. Artist/album tags and common embedded JPEG/PNG covers are extracted locally; the app does not perform cloud identification or fetch URLs from tags. Album artwork is not reused as an artist portrait.
 

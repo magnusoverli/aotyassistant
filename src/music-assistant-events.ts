@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
 import { musicAssistantUrl, resolveLanAddresses } from './lan-network.js';
-import { verifiedPlaybackSchema } from './music-assistant-policy.js';
+import { supportsPlaybackSchema } from './music-assistant-policy.js';
 
 export type PlaybackEvent = { connected: boolean; objectId?: string; kind?: string; available?: boolean; name?: string };
-const info = z.object({ schema_version: z.literal(verifiedPlaybackSchema) });
+const info = z.object({ schema_version: z.number().int().refine(supportsPlaybackSchema) });
 const event = z.object({ event: z.enum(['queue_updated', 'queue_items_updated', 'player_added', 'player_updated', 'player_removed', 'queue_added']), object_id: z.string().min(1).max(500),
   data: z.object({ available: z.boolean().optional(), name: z.string().max(200).optional() }).nullish().catch(undefined) });
 

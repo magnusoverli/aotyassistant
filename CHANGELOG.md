@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.3.16] — 2026-10-19
+
+- Preserve private-list identity and speaker selection when advanced setup verifies a new address for the same Music Assistant server.
+- Match sign-in feedback to its authorization attempt and synchronize file-access results across Settings tabs.
+- Rediscover Music Assistant throughout runtime, refresh verified media/login addresses, and keep Find Music Assistant available after connection.
+- Report unsupported Music Assistant schemas separately from speaker availability, with installed-version and update guidance.
+- Remove the redundant My list removal-confirmation box; restore removed tracks with Add back in History.
+- Document prioritized Music Assistant/Home Assistant improvements, including reproduced setup issues, runtime recovery, compatibility, and diagnostics.
+
 ## [0.3.15] — 2026-10-19
 
 - Update player, catalogue, uploads, and settings in place while preserving unrelated content, focus, text selection, and animations.

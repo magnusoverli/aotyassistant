@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import { z } from 'zod';
 import { AppError } from './model.js';
@@ -11,7 +11,7 @@ import { browserOrigin, ingressContext, requestBase } from './ingress.js';
 
 const cookieName = 'aoty_ma_login';
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
-type Transaction = { browserHash: string; origin: string; base: string; userId?: string; url: string; browserUrl: string; serverId: string; revision: number; expires: number };
+type Transaction = { attemptId: string; browserHash: string; origin: string; base: string; userId?: string; url: string; browserUrl: string; serverId: string; revision: number; expires: number };
 const random = () => randomBytes(32).toString('base64url');
 const tokenClaims = (token: string): { jti?: string; exp?: number } => {
   try { return z.object({ jti: z.string().max(200).optional(), exp: z.number().int().positive().optional() }).parse(JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString('utf8'))); }
@@ -38,13 +38,13 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     const oldBrowser = rawCookie(req, cookieName);
     if (oldBrowser) for (const [key, tx] of transactions) if (tx.browserHash === digest(oldBrowser)) transactions.delete(key);
     if (transactions.size >= 32) throw new AppError(429, 'Too many pending connections. Try again later.');
-    const expiresAt = now() + 10 * 60_000;
-    transactions.set(state, { browserHash: digest(browser), origin, base, userId: ingressContext(req)?.userId,
+    const expiresAt = now() + 10 * 60_000; const attemptId = randomUUID();
+    transactions.set(state, { attemptId, browserHash: digest(browser), origin, base, userId: ingressContext(req)?.userId,
       url: input.url, browserUrl, serverId: info.server_id, revision: input.revision, expires: expiresAt });
     res.cookie(cookieName, browser, { path: `${base}/api/host/auth`, httpOnly: true, sameSite: 'lax', secure: origin.startsWith('https:'), maxAge: 10 * 60_000 });
     const callback = new URL(`${base}/api/host/auth/callback`, origin); callback.searchParams.set('state', state);
     const login = new URL('/login', browserUrl); login.searchParams.set('return_url', callback.href); login.searchParams.set('device_name', 'Albums of the Year');
-    res.json({ loginUrl: login.href, expiresAt });
+    res.json({ loginUrl: login.href, expiresAt, attemptId });
   });
   app.post('/api/host/auth/cancel', (req, res) => {
     body(req, z.object({}).strict()); const browser = rawCookie(req, cookieName);
@@ -54,7 +54,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
   });
   app.get('/api/host/auth/callback', async (req, res) => {
     // Always finish at a clean local URL, including failure and malformed callbacks.
-    const base = requestBase(req); let result = 'failed'; let minted: string | undefined; let transport: MusicAssistantTransport | undefined;
+    const base = requestBase(req); let result = 'failed'; let attemptId: string | undefined; let minted: string | undefined; let transport: MusicAssistantTransport | undefined;
     try {
       prune(); const state = z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.query.state);
       const tx = transactions.get(state); const browser = rawCookie(req, cookieName);
@@ -63,6 +63,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       if (!tx || !browser || digest(browser) !== tx.browserHash || tx.base !== base || tx.userId !== context?.userId ||
         (context ? context.origin !== tx.origin : req.headers.host !== new URL(tx.origin).host)) throw new Error();
       transactions.delete(state); // Consume before network I/O: callbacks cannot race/replay.
+      attemptId = tx.attemptId;
       res.clearCookie(cookieName, { path: `${base}/api/host/auth`, httpOnly: true, sameSite: 'lax', secure: tx.origin.startsWith('https:') });
       integrations.assertSetupRevision(tx.revision);
       if (req.query.error !== undefined) { result = 'cancelled'; throw new Error(); }
@@ -76,7 +77,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       transport = new MusicAssistantTransport(tx.url, code);
       minted = maToken.parse(await transport.read('/api', 'auth/token/create', { name: 'Albums of the Year' }));
       const expiresAt = tokenClaims(minted).exp;
-      await integrations.saveAuthorized(tx.url, minted, tx.serverId, tx.browserUrl, tx.revision, expiresAt ? expiresAt * 1000 : undefined);
+      await integrations.saveAuthorized(tx.url, minted, tx.serverId, tx.browserUrl, tx.revision, expiresAt ? expiresAt * 1000 : undefined, tx.attemptId);
       minted = undefined; result = 'connected'; changed();
     } catch {
       // Best-effort cleanup of ONLY the token minted by this failed transaction.
@@ -85,7 +86,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       if (id && transport) await transport.read('/api', 'auth/token/revoke', { token_id: id }).catch(() => {});
     } finally { transport?.close(); }
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
-    res.redirect(303, `${base}/host/settings?ma_auth=${result}`);
+    res.redirect(303, `${base}/host/settings?${attemptId ? `ma_attempt=${attemptId}&` : ''}ma_auth=${result}`);
   });
   return () => { clearInterval(timer); transactions.clear(); };
 }

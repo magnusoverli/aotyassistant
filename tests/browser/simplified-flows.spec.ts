@@ -71,7 +71,7 @@ test('browser and in-page Back restore private browsing without putting results 
   expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });
 
-test('upload review, nearby undo and recovery-key copy fallback keep saved music intact', async ({ page, isolatedApp }) => {
+test('upload review, history restoration and recovery-key copy fallback keep saved music intact', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { nickname: 'Keeper' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await page.locator('#list-upload').click(); await expect(page.getByText('Choose one audio file, then review it before adding.')).toBeVisible();
@@ -86,7 +86,9 @@ test('upload review, nearby undo and recovery-key copy fallback keep saved music
   await page.getByRole('button', { name: 'Open list' }).click();
   await page.getByLabel('Options for Keep this draft', { exact: true }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
-  await page.getByRole('button', { name: 'Undo removal' }).click(); await expect(page.locator('.saved-track.is-next')).toContainText('Keep this draft');
+  await page.locator('#list-history').click();
+  await page.locator('#list-history').locator('..').getByRole('button', { name: 'Add back', exact: true }).click();
+  await expect(page.locator('.saved-track.is-next')).toContainText('Keep this draft');
   await page.locator('#list-recovery').click(); await page.getByRole('button', { name: 'Create recovery key', exact: true }).click();
   const key = page.getByRole('textbox', { name: 'Your private recovery key' }); await expect(key).toBeVisible();
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }));

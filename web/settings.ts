@@ -33,10 +33,12 @@ export async function mountSettings(container: HTMLElement) {
   let setup: SetupView | undefined;
   let loginUrl = '';
   let authPending = false;
+  let authAttempt = '';
   const authResult = new URL(location.href).searchParams.get('ma_auth');
   if (authResult) {
+    const attemptId = new URL(location.href).searchParams.get('ma_attempt');
     history.replaceState(null, '', location.pathname);
-    try { localStorage.setItem('aoty.ma-auth-result', JSON.stringify({ result: authResult, at: Date.now() })); } catch { /* Returning to the original tab also refreshes its saved connection. */ }
+    try { localStorage.setItem('aoty.ma-auth-result', JSON.stringify({ result: authResult, attemptId, at: Date.now() })); } catch { /* The integration stream also confirms successful attempts. */ }
     if (authResult === 'connected') notice = 'Music Assistant connected. Choose a speaker below.';
     else if (authResult === 'cancelled') notice = 'Sign-in cancelled. Your saved connection was kept.';
     else if (authResult === 'expired') notice = 'Sign-in expired. Try connecting again.';
@@ -57,16 +59,24 @@ export async function mountSettings(container: HTMLElement) {
   }
   function apply(next: IntegrationView, updateDraft = false) {
     if (settings?.instanceId === next.instanceId && settings && (next.revision < settings.revision || next.sequence !== undefined && settings.sequence !== undefined && next.sequence < settings.sequence)) return;
-    if (authPending && next.revision !== settings?.revision) {
+    if (authPending && next.authorization?.attemptId === authAttempt && next.authorization.revision <= next.revision) {
       authPending = false; loginUrl = ''; updateDraft = true; notice = 'Music Assistant connected.';
     }
     if (notice.endsWith(' is now the active speaker.') && (next.output.state !== 'ready' || next.output.name !== settings?.output.name)) notice = '';
+    // Runtime relocation should refresh unchanged drafts while preserving an in-progress edit.
+    if (settings && next.url !== settings.url && urlDraft === settings.url) {
+      urlDraft = next.url ?? ''; if (browserDraft === (settings.browserUrl ?? '')) browserDraft = next.browserUrl ?? '';
+    }
     settings = next;
+    if (next.addressing) addresses.observe(next.addressing);
     if (!next.tokenConfigured || next.status === 'error') speakerError = '';
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; }
   }
   async function loadSetup(refresh = false) {
     const next = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
+    return applySetup(next);
+  }
+  function applySetup(next: SetupView) {
     let changed = JSON.stringify(setup) !== JSON.stringify(next); setup = next;
     if (!settings?.tokenConfigured && !urlDraft && setup.servers.length === 1) {
       urlDraft = setup.servers[0]!.url; browserDraft = setup.servers[0]!.browserUrl ?? ''; changed = true;
@@ -79,9 +89,9 @@ export async function mountSettings(container: HTMLElement) {
       const popup = window.open('about:blank', '_blank'); if (popup) popup.opener = null;
       void run(async () => {
         try {
-          const result = await requestJson<{ loginUrl: string; expiresAt: number }>('/api/host/auth/start', { url: urlDraft.trim(),
+          const result = await requestJson<{ loginUrl: string; expiresAt: number; attemptId: string }>('/api/host/auth/start', { url: urlDraft.trim(),
             ...(browserDraft.trim() ? { browserUrl: browserDraft.trim() } : {}), revision: settings!.revision }, 30_000);
-          loginUrl = result.loginUrl; authPending = true; authExpiresAt = result.expiresAt;
+          loginUrl = result.loginUrl; authPending = true; authExpiresAt = result.expiresAt; authAttempt = result.attemptId;
           if (popup) popup.location.replace(loginUrl);
           notice = popup ? 'Sign in in the opened tab, then return here.' : 'Your browser blocked the sign-in tab. Open the sign-in link below.';
         } catch (error) { popup?.close(); throw error; }
@@ -111,7 +121,7 @@ export async function mountSettings(container: HTMLElement) {
       else error = message;
     } finally {
       busy = false; if (queuedSnapshot) { apply(queuedSnapshot); queuedSnapshot = undefined; } render();
-      if (!addresses.view || settings?.revision !== revision) void addresses.load(!authPending);
+      if (!addresses.view || settings?.revision !== revision || addresses.view.mediaCheck.status === 'unchecked') void addresses.load(!authPending);
       queueMicrotask(() => { if (focused?.isConnected && document.activeElement === document.body) focused.focus({ preventScroll: true }); });
     }
   }
@@ -151,6 +161,7 @@ export async function mountSettings(container: HTMLElement) {
       else if (settings.status !== 'checked') connectionNodes.push(v.el('checking-connection', 'p', 'Connection saved. Checking Music Assistant…', 'muted small'));
       const change = action(editConnection ? 'Close connection settings' : 'Change connection', async () => { editConnection = !editConnection; }, true);
       prop(change, 'disabled', change.disabled || Boolean(settings.settingsChangesBlocked)); connectionNodes.push(change);
+      connectionNodes.push(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
       const actions = v.get('connection-actions', () => { const node = actionGroup(); node.classList.add('settings-connection-actions'); return node; });
       children(actions, connectButton('Reconnect Music Assistant'), action('Disconnect', async () => {
         if (!confirm('Disconnect Music Assistant and remove the saved token and destination? This does not revoke the token in Music Assistant.')) return;
@@ -166,18 +177,18 @@ export async function mountSettings(container: HTMLElement) {
       if (!settings.tokenConfigured) {
         if (!setup?.servers.length) setupNodes.push(v.el('finding-server', 'p', setup?.status === 'waiting' ? 'No server found. Enter its address below.' : 'Looking for Music Assistant…', 'muted small'));
         setupNodes.push(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
-        if (setup?.servers.length) {
-          const label = v.el('detected-label', 'label', 'Detected Music Assistant server'); prop(label, 'htmlFor', 'ma-detected');
-          const select = v.el('detected-select', 'select'); prop(select, 'id', 'ma-detected'); prop(select, 'disabled', busy);
-          const manual = v.el('manual-server', 'option', 'Enter another address'); prop(manual, 'value', ''); const serverOptions = [manual];
-          for (const server of setup.servers) {
-            const option = v.el(`server-${server.url}`, 'option', `${server.name} · ${server.version}${server.ready ? '' : ' · sources/players setup pending'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
-            prop(option, 'value', server.url); serverOptions.push(option);
-          }
-          children(select, ...serverOptions); v.retain('server-', setup.servers.map(server => `server-${server.url}`)); prop(select, 'value', setup.servers.some(s => s.url === urlDraft) ? urlDraft : '');
-          select.onchange = () => { const server = setup?.servers.find(s => s.url === select.value); urlDraft = server?.url ?? ''; browserDraft = server?.browserUrl ?? ''; render(); };
-          const detected = v.el('detected-field', 'div', undefined, 'field'); children(detected, label, select); setupNodes.push(detected);
+      }
+      if (setup?.servers.length) {
+        const label = v.el('detected-label', 'label', 'Detected Music Assistant server'); prop(label, 'htmlFor', 'ma-detected');
+        const select = v.el('detected-select', 'select'); prop(select, 'id', 'ma-detected'); prop(select, 'disabled', busy);
+        const manual = v.el('manual-server', 'option', 'Enter another address'); prop(manual, 'value', ''); const serverOptions = [manual];
+        for (const server of setup.servers) {
+          const option = v.el(`server-${server.url}`, 'option', `${server.name} · ${server.version}${server.ready ? '' : ' · sources/players setup pending'}${server.playbackCompatible ? '' : ' · playback schema not supported'}`);
+          prop(option, 'value', server.url); serverOptions.push(option);
         }
+        children(select, ...serverOptions); v.retain('server-', setup.servers.map(server => `server-${server.url}`)); prop(select, 'value', setup.servers.some(s => s.url === urlDraft) ? urlDraft : '');
+        select.onchange = () => { const server = setup?.servers.find(s => s.url === select.value); urlDraft = server?.url ?? ''; browserDraft = server?.browserUrl ?? ''; render(); };
+        const detected = v.el('detected-field', 'div', undefined, 'field'); children(detected, label, select); setupNodes.push(detected);
       }
       const form = v.el('connection-form', 'form', undefined, 'form-stack integration-form');
       const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
@@ -220,6 +231,7 @@ export async function mountSettings(container: HTMLElement) {
       connectionNodes.push(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = 'Sign-in cancelled. Your saved connection was kept.'; }, true));
     }
     if (settings?.settingsChangesBlocked) connectionNodes.push(v.get('connection-blocked', () => { const node = el('p', undefined, 'muted small'); node.append('Finish the current song before changing setup. ', link('Return to host', '/host', 'inline-link')); return node; }));
+    if (settings?.compatibility && !settings.compatibility.supported) connectionNodes.push(v.el('compatibility', 'p', settings.compatibility.message, 'warning small'));
     children(connection, ...connectionNodes);
     const output = v.get('output', () => slot(el('div', undefined, 'settings-output stack'), 'secondary')); const outputNodes: Node[] = [];
     if (setup?.supervisor.enabled && (!setup.supervisor.available || setup.supervisor.guestOrigins.some(origin => origin !== addresses.view?.guestOrigin))) {
@@ -236,13 +248,14 @@ export async function mountSettings(container: HTMLElement) {
     const activeOutput = settings?.output;
     const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !online ? 'Connection lost'
       : activeOutput?.state === 'ready' ? 'Ready' : activeOutput?.state === 'checking' ? 'Checking…' : activeOutput?.state === 'recovery' ? 'Recovery needed'
-      : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : 'No active speaker';
+      : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : activeOutput?.state === 'incompatible' ? 'Playback unsupported' : 'No active speaker';
     const destination = panel('destination', '2. Active speaker', speakerState);
     const destinationNodes: Node[] = [destination.firstElementChild!];
     const report = online && settings?.status === 'checked' ? settings.report : null;
     const availableSpeakers = report?.players.filter(player => player.available) ?? [];
     if (pendingDestination) destinationNodes.push(v.el('speaker-description', 'p', `Selecting ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
     else if (online && activeOutput?.state === 'ready') destinationNodes.push(v.el('speaker-description', 'p', `Active speaker: ${activeOutput.name}`, 'active-destination'));
+    else if (activeOutput?.state === 'incompatible') destinationNodes.push(v.el('speaker-description', 'p', `Selected speaker: ${activeOutput.name}. Playback needs a compatible Music Assistant API.`, 'muted small'));
     else if (activeOutput?.state === 'unavailable' && activeOutput.name) destinationNodes.push(v.el('speaker-description', 'p', `${activeOutput.name} is unavailable. Choose another speaker or wait for it to reconnect.`, 'muted small'));
     else if (activeOutput?.state === 'checking' && activeOutput.name) destinationNodes.push(v.el('speaker-description', 'p', `Checking ${activeOutput.name}…`, 'muted small'));
     const destinationLabel = v.el('speaker-label', 'label', 'Speaker or group'); prop(destinationLabel, 'htmlFor', 'ma-destination');
@@ -256,7 +269,7 @@ export async function mountSettings(container: HTMLElement) {
     for (const player of availableSpeakers) {
       const option = v.el(`speaker-option-${player.id}`, 'option', player.name); prop(option, 'value', player.id); speakerOptions.push(option);
     }
-    const selectedId = pendingDestination || (activeOutput?.state === 'ready' || activeOutput?.state === 'recovery' ? settings?.destination?.id : undefined);
+    const selectedId = pendingDestination || (activeOutput?.state === 'ready' || activeOutput?.state === 'recovery' || activeOutput?.state === 'incompatible' ? settings?.destination?.id : undefined);
     children(select, ...speakerOptions); v.retain('speaker-option-', availableSpeakers.map(player => `speaker-option-${player.id}`)); prop(select, 'value', availableSpeakers.find(player => player.id === selectedId)?.id ?? '');
     select.onchange = () => {
       const id = select.value;
@@ -286,7 +299,6 @@ export async function mountSettings(container: HTMLElement) {
     const speakerFailure = speakerError || (settings?.destinationStatus === 'error' ? settings.destinationMessage : '');
     if (speakerFailure) { const failure = v.el('speaker-error', 'p', speakerFailure, 'error'); attr(failure, 'role', 'alert'); destinationNodes.push(failure); }
     else if (activeOutput?.state === 'unconfirmed') destinationNodes.push(v.el('speaker-unconfirmed', 'p', 'Speaker status will update when Music Assistant reconnects.', 'muted small'));
-    if (report && report.schemaVersion !== 65) destinationNodes.push(v.el('schema', 'p', 'Live playback requires Music Assistant API schema 65.', 'muted small'));
     if (settings?.tokenConfigured) {
       const refresh = action('Refresh speakers', discover, true, 'speaker');
       if (!refresh.classList.contains('speaker-refresh')) refresh.classList.add('speaker-refresh'); attr(refresh, 'aria-busy', String(refreshingSpeakers));
@@ -329,7 +341,7 @@ export async function mountSettings(container: HTMLElement) {
     if (event.key !== 'aoty.ma-auth-result' || !authPending || !event.newValue) return;
     try {
       const result = JSON.parse(event.newValue);
-      if (typeof result.at !== 'number' || Date.now() - result.at > 60_000) return;
+      if (result.attemptId !== authAttempt || typeof result.at !== 'number' || Date.now() - result.at > 60_000) return;
       if (result.result === 'connected') void refreshSnapshot();
       else { authPending = false; loginUrl = ''; notice = result.result === 'cancelled' ? 'Sign-in cancelled. Your saved connection was kept.' : result.result === 'expired' ? 'Sign-in expired. Try connecting again.' : 'Sign-in could not finish. Try connecting again.'; render(); }
     } catch { /* Ignore unrelated/malformed browser storage. */ }
@@ -363,6 +375,7 @@ export async function mountSettings(container: HTMLElement) {
       if (!main.isConnected) { live?.close(); return; }
       acceptLive(JSON.parse((event as MessageEvent).data) as IntegrationView);
     });
+    live.addEventListener('setup', event => { if (applySetup(JSON.parse((event as MessageEvent).data) as SetupView)) render(); });
     live.onerror = () => { online = false; if (!busy) render(); void refreshSnapshot(false); };
   }
   connectLive();
