@@ -37,7 +37,7 @@ test('participant typography, surfaces and desktop alignment match the host page
     const sectionStyle = await host.locator('.settings-connection h2').evaluate(typography);
     await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     expect((await page.locator('.participant-hero h1').evaluate(typography)).size).toBe('28px');
-    expect(await page.locator('.catalogue-panel h2').evaluate(typography)).toEqual(sectionStyle);
+    expect((await page.locator('#music-find-title').evaluate(typography)).family).toEqual(sectionStyle.family);
     expect(await page.locator('.preparation-list h2').evaluate(typography)).toEqual(sectionStyle);
     await host.goto('/host'); await expect(host.locator('.qr-card')).toBeVisible();
     expect(await page.locator('.catalogue-panel').evaluate(surface)).toEqual(await host.locator('.qr-card').evaluate(surface));
@@ -47,6 +47,10 @@ test('participant typography, surfaces and desktop alignment match the host page
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Workspace');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.locator('.catalogue-results .count-tag')).toHaveText('3 tracks');
+    await expect(page.locator('.catalogue-panel > .catalogue-results')).toHaveCount(1);
+    await expect(page.locator('.music-workspace > .catalogue-results, .catalogue-panel .panel')).toHaveCount(0);
+    await expect(page.locator('.preparation-list').getByRole('button', { name: /^(Play|Pause|Resume|Finish turn)/ })).toHaveCount(0);
+    await expect(page.locator('.playback-card').getByRole('button', { name: 'Play next', exact: true })).toBeEnabled();
     expect((await page.getByRole('button', { name: 'Choose audio file', exact: true }).boundingBox())!.y).toBeLessThan((await page.locator('.catalogue-results').boundingBox())!.y);
     await page.screenshot({ path: 'test-results/participant-coherent-desktop.png', fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -89,6 +93,36 @@ test('search exposes pending/results feedback and restores keyboard focus withou
     await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Summer');
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeFalsy();
   } finally { release(); await r.close(); }
+});
+
+test('saved-list changes update the player selection without adding playback controls to the list', async ({ browser, page: host, isolatedApp }) => {
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 3); const page = r.page;
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Keep this query');
+    await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 6));
+    const saved = await (await page.request.get('/api/participant/preparations/state')).json();
+    const next = saved.upcoming[1];
+    expect((await r.request('/move', { entryId: next.id, beforeId: saved.upcoming[0].id, operation: { id: randomUUID(), issuedAt: Date.now(), revision: saved.revision } })).ok()).toBe(true);
+    await expect(page.locator('.playback-card h2')).toHaveText(next.title);
+    await expect(input).toBeFocused(); await expect(input).toHaveValue('Keep this query');
+    expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 6]);
+    await page.getByRole('button', { name: 'Open list', exact: true }).click();
+    await expect(page.locator('.preparation-list').getByRole('button', { name: /^(Play|Pause|Resume|Finish turn)/, includeHidden: true })).toHaveCount(0);
+    expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
+    await page.locator('.playback-card').getByRole('button', { name: 'Play next', exact: true }).click();
+    await expect(page.locator('.playback-card').getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
+    await expect(page.locator('.list-count')).toHaveText(' · 2');
+    const playing = await (await page.request.get('/api/participant/state')).json();
+    expect(playing.ownPlayback.track.title).toBe(next.title);
+    await expect(page.locator('.playback-card h2')).toHaveText(next.title);
+    for (const [width, height] of [[1440, 1000], [390, 844], [320, 700], [844, 390]]) {
+      await page.setViewportSize({ width: width!, height: height! });
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: `test-results/player-with-saved-pick-${width}.png`, fullPage: false });
+    }
+  } finally { await r.close(); }
 });
 
 test('search and one private list share desktop/phone layouts, including long metadata and short viewports', async ({ browser, page: host, isolatedApp }) => {

@@ -54,8 +54,8 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
     const list = (await participant.locator('.preparation-list').boundingBox())!;
     if (width >= 1100) expect(Math.abs(player.y - list.y)).toBeLessThan(1);
     else {
-      expect(search.y).toBeGreaterThanOrEqual(player.y + player.height);
-      expect(list.y).toBeGreaterThanOrEqual(search.y + search.height);
+      expect(list.y).toBeGreaterThanOrEqual(player.y + player.height);
+      expect(search.y).toBeGreaterThanOrEqual(list.y + list.height);
     }
     for (const page of [host, settings, participant]) {
       await alignedMenu(page);

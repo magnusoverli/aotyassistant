@@ -83,7 +83,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list, .saved-track, .music-workspace')).toHaveCount(0);
-    await expect(r.page.getByRole('button', { name: 'Play this song' })).toHaveCount(0);
+    await expect(r.page.getByRole('button', { name: 'Play next' })).toHaveCount(0);
     await expect(r.page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
     for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
       await r.page.setViewportSize({ width: width!, height: height! }); await noOverflow(r.page);

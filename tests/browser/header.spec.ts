@@ -42,10 +42,14 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(page.locator('.host-sidebar, .host-nav, .session-navigation, main .back-link, main .display-link')).toHaveCount(0);
     const html = await page.getByRole('banner').innerHTML(); expect(html).not.toContain('#access='); expect(html).not.toContain('#invite=');
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);
-    for (const width of [1440, 1200, 1100, 390, 320]) {
+    for (const width of [1920, 1440, 1200, 1100, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
       await expect(page.locator('header .header-menu-toggle')).toBeVisible();
       await openNavigation(page); await expect(navigation).toBeVisible(); await noOverflow(page);
+      if (width >= 1100) {
+        expect(await page.locator('.header-inner').evaluate(node => Math.abs(node.getBoundingClientRect().width - document.documentElement.clientWidth))).toBeLessThan(1);
+        expect(await page.locator('.listening-order').evaluate(node => Math.abs(node.getBoundingClientRect().width - document.documentElement.clientWidth))).toBeLessThan(1);
+      }
     }
   }
   await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto('/host/settings');

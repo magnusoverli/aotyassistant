@@ -46,7 +46,7 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     await expect(first.getByAltText('Saved album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
     await expect(first.getByAltText('Saved album artwork', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     expect(publicImages).toEqual([]); await expect(second.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();
-    await first.getByRole('button', { name: 'Play this song', exact: true }).click();
+    await first.getByRole('button', { name: 'Play next', exact: true }).click();
     await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
     await expect(tv.getByRole('progressbar', { name: 'Track progress', exact: true })).toBeVisible();
     await expect(tv.locator('.track-times')).toBeEmpty();

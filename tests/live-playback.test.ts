@@ -131,6 +131,55 @@ test('queue events wake confirmation early but only an HTTP ownership read confi
   assert.equal(writes(f).filter(c => c.command === 'player_queues/pause').length, 1);
 });
 
+for (const active of [true, false]) test(`natural completion advances after MA's delayed ended flag with active=${active}`, async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const poll = () => (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const turn = f.host().turnId; const playbackId = f.participant(f.alex).ownPlayback!.id; const before = writes(f).length;
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  Object.assign(f.remote.queue, { state: 'idle', active, ended: false });
+  await poll(); t.mock.timers.tick(5000); await poll();
+  assert.equal(f.host().turnId, turn); assert.equal(f.adapter.ownsPlayback, true);
+  assert.equal(writes(f).length, before, 'Waiting for completion must not send audio commands.');
+  f.remote.finish(); await poll();
+  await eventually(() => f.host().current?.nickname === 'Sam');
+  const nextTurn = f.host().turnId;
+  await poll(); await f.engine.complete(playbackId);
+  assert.equal(f.host().turnId, nextTurn); assert.equal(f.participant(f.sam).ownPlayback, null);
+  assert.equal(f.display().nowPlaying?.revealed, false); assert.equal(f.adapter.ownsPlayback, false);
+  assert.equal(writes(f).length, before, 'Completion must not start the next participant’s song.');
+});
+
+test('idle without a confirmed natural end expires without advancing, even at the track duration', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const poll = () => (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const turn = f.host().turnId; const before = writes(f).length;
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  Object.assign(f.remote.queue, { state: 'idle', ended: false, elapsed_time: track.duration });
+  await poll(); t.mock.timers.tick(10_000); await poll();
+  await eventually(() => f.participant(f.alex).ownPlayback === null);
+  f.remote.finish(); await poll();
+  assert.equal(f.host().turnId, turn); assert.equal(f.adapter.ownsPlayback, false); assert.equal(writes(f).length, before);
+});
+
+for (const change of ['stop', 'replacement', 'connection-loss'] as const) test(`${change} during completion confirmation never advances the turn`, async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const poll = () => (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const turn = f.host().turnId!; const playbackId = f.participant(f.alex).ownPlayback!.id; const before = writes(f).length;
+  f.remote.queue.state = 'idle'; await poll();
+  if (change === 'stop') await f.engine.control(f.alex, turn, playbackId, 'stop');
+  else if (change === 'replacement') f.remote.queue.current_item!.queue_item_id = 'external-item';
+  else f.remote.fail(true);
+  f.remote.finish(); await poll();
+  assert.equal(f.host().turnId, turn); assert.equal(writes(f).length, before);
+  assert.equal(f.engine.ready, change !== 'connection-loss');
+});
+
 test('playback follows configured connection/destination automatically without setup or volume writes', async t => {
   const remote = await startMusicAssistantFixture(); t.after(remote.close);
   const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-auto-'))); await manager.init();

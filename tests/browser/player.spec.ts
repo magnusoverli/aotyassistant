@@ -1,6 +1,5 @@
 import { expect, type Browser, type Page } from '@playwright/test';
 import { test } from './app-fixture';
-import { showList } from './preparation-helpers';
 
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 async function setup(browser: Browser, host: Page) {
@@ -35,8 +34,7 @@ for (const paused of [false, true]) test(`direct and prepared replacement both r
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
     const original = await (await page.request.get('/api/participant/state')).json();
     const prompts: string[] = [];
-    for (const name of ['Play', 'Play this song']) {
-      if (name === 'Play this song') await showList(page);
+    for (const name of ['Play', 'Play next']) {
       page.once('dialog', async dialog => { prompts.push(dialog.message()); await dialog.dismiss(); });
       await page.getByRole('button', { name, exact: true }).click();
       expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).toBe(original.ownPlayback.id);

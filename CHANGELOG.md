@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.1] — 2026-10-19
+
+- Advance to the next participant when Music Assistant confirms a song’s natural end after its idle delay.
+- Spin the room-display record about 1.7 times faster during playback.
+- Combine participant search and results into one compact panel, with saved-list playback controls in the player.
+- Expand the desktop header and listening order across the full browser width.
+
 ## [1.0.0] — 2026-10-19
 
 - Add Home Assistant-only installation and usage guides, MIT licensing, and stable app metadata.

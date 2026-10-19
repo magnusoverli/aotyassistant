@@ -21,11 +21,11 @@ See [private lists](private-lists.md) and [uploaded audio](uploaded-audio.md). W
 
 ## Play a turn
 
-Only the current participant can start/control their song, reveal it, or finish their turn. Choose **Play** from a search result or **Play this song** from **Saved list**. This takes over the chosen Music Assistant destination with one song, replacing its existing queue and disabling repeat, shuffle, and autoplay.
+Only the current participant can start/control their song, reveal it, or finish their turn. Choose **Play** from a search result or **Play next** in the player to start the first entry in **Saved list**. The list’s **Make next** action changes which saved song is selected without starting playback. Playing takes over the chosen Music Assistant destination with one song, replacing its existing queue and disabling repeat, shuffle, and autoplay.
 
 The shared display hides the title, artist, and cover until the current participant selects **Reveal song**. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the song controlled by the app and pass to the next person, or **Pass turn** to advance without playing a song.
 
-Confirmed natural completion advances once. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next person’s song never starts automatically.
+When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song.
 
 The host and current playing participant can adjust volume when the selected speaker supports it. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.
 

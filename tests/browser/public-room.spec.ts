@@ -181,7 +181,7 @@ test('only the small sticker is personalized, its shuffled history survives refr
       disc: record.getAnimations()[0]!,
     }));
     await expect.poll(() => spin.evaluate(saved => saved.disc.playState)).toBe('running');
-    expect(await spin.evaluate(saved => saved.disc.effect!.getTiming().duration)).toBe(60_000);
+    expect(await spin.evaluate(saved => saved.disc.effect!.getTiming().duration)).toBe(35_300);
     expect(await tv.locator('.room-record > .vinyl-label').evaluate(label => label.getAnimations().length)).toBe(0);
     const initialTime = await spin.evaluate(saved => Number(saved.disc.currentTime));
     await expect.poll(() => spin.evaluate(saved => Number(saved.disc.currentTime))).toBeGreaterThan(initialTime);
@@ -269,8 +269,9 @@ test('the visible sticker text turns with the record instead of only advancing a
       const combined = new DOMMatrix(getComputedStyle(record).transform).multiply(new DOMMatrix(getComputedStyle(record.querySelector('.vinyl-label')!).transform));
       return { a: combined.a, b: combined.b, c: combined.c, d: combined.d };
     });
-    expect(orientation.a).toBeCloseTo(Math.cos(Math.PI / 6), 3); expect(orientation.b).toBeCloseTo(.5, 3);
-    expect(orientation.c).toBeCloseTo(-.5, 3); expect(orientation.d).toBeCloseTo(Math.cos(Math.PI / 6), 3);
+    const angle = 2 * Math.PI * 5000 / 35_300;
+    expect(orientation.a).toBeCloseTo(Math.cos(angle), 3); expect(orientation.b).toBeCloseTo(Math.sin(angle), 3);
+    expect(orientation.c).toBeCloseTo(-Math.sin(angle), 3); expect(orientation.d).toBeCloseTo(Math.cos(angle), 3);
     await motion.dispose();
   } finally { await f.close(); }
 });

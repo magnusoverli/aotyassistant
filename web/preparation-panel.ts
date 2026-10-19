@@ -8,7 +8,7 @@ import { copyButton } from './copy-text';
 import { workspaceGrid, slot } from './page-layout';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
-type Options = { getView(): View | undefined; starting(): boolean; canPlay(): boolean; play(entry: PreparedEntryView): void; changed(): void };
+type Options = { getView(): View | undefined; starting(): boolean; changed(): void };
 export class PreparationPanel {
   private expanded = false;
   private editing = false;
@@ -103,7 +103,7 @@ export class PreparationPanel {
     return access;
   }
 
-  render(search?: HTMLElement, results?: HTMLElement, player?: HTMLElement) {
+  render(search?: HTMLElement, player?: HTMLElement) {
     this.withSearch = Boolean(search);
     const panel = this.workspace ??= workspaceGrid('music', 'music-workspace');
     attr(panel, 'role', 'region'); attr(panel, 'aria-label', 'Your private music');
@@ -113,8 +113,8 @@ export class PreparationPanel {
     if (!uploads.classList.contains('music-upload')) uploads.classList.add('music-upload');
     attr(uploads, 'aria-label', 'Upload a private track'); if (this.uploads.hasWork && !uploads.open) uploads.open = true;
     children(uploads, uploads.firstChild!, this.uploads.render());
-    if (search && uploads.parentElement !== search) search.append(uploads);
-    children(panel, player, this.feedback, search, slot(this.renderList(), 'list'), results && slot(results, 'results'), !search && uploads);
+    if (search && uploads.parentElement !== search) search.insertBefore(uploads, search.querySelector('.catalogue-results'));
+    children(panel, player, this.feedback, slot(this.renderList(), 'list'), search, !search && uploads);
     return panel;
   }
   /** The phone shortcut opens the same list, retaining the current browse context. */
@@ -152,7 +152,7 @@ export class PreparationPanel {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      library.recoveryKey, this.expanded, this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), this.options.canPlay(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
+      library.recoveryKey, this.expanded, this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const expanded = this.expanded || !this.withSearch;
@@ -198,10 +198,6 @@ export class PreparationPanel {
     const actions = v.el('actions', 'div', undefined, 'list-actions'); const actionNodes: Node[] = [];
     const next = snapshot?.upcoming[0];
     if (next) {
-      const play = v.get('play-next', () => { const node = this.button('Play this song', () => { const next = library.view?.upcoming[0]; if (next) this.options.play(next); }, false); node.classList.add('list-play'); return node; });
-      attr(play, 'data-focus-key', `play-next-${next.id}`);
-      const ready = !library.saving && navigator.onLine && this.options.canPlay() && next.sourceAvailable !== false && !library.pending && !snapshot?.reviewEntryId;
-      attr(play, 'data-player-ready', String(ready)); prop(play, 'disabled', !ready || this.options.starting()); actionNodes.push(play);
       const edit = v.get('edit', () => { const node = this.button('Edit order', () => { this.editing = !this.editing; this.refresh(); }, true, 'list-edit'); node.classList.add('list-edit'); return node; });
       text(edit, this.editing ? 'Done' : 'Edit order'); prop(edit, 'disabled', library.saving || !navigator.onLine); attr(edit, 'aria-pressed', String(this.editing)); actionNodes.push(edit);
     }

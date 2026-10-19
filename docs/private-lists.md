@@ -7,6 +7,7 @@
 - **Add to list** saves the selected recording/source. The next choice is at the top.
 - **Edit order** provides drag handles and up/down controls. **Make next** moves a choice to the front.
 - **Remove** moves a choice to **History → Removed**. Choose **Add back** to restore it.
+- **Play next** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
 - Successful playback keeps the choice in **History → Previously played**. This means playback started, not necessarily that the song finished.
 
 The app never autoplays a list or sends the whole list to Music Assistant. Failed or uncertain playback keeps the entry for explicit review.

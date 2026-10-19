@@ -16,7 +16,7 @@ import { CatalogueRow } from './catalogue-row';
 import { PublicRoom } from './public-room';
 import { PreparationController } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
-import type { PreparedEntryView, PreparationView } from '../src/preparations';
+import type { PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
 import { sourceName } from './catalogue-sources';
@@ -108,17 +108,9 @@ const player = new PlayerController({
   failed: message => { error = message; render(); },
 });
 const library = new PreparationController(() => {
-  if (page === 'participant' && view?.me && root.querySelector('.preparation-list')) music.refresh(); else render();
+  if (page === 'participant' && view?.me && root.querySelector('.preparation-list')) { music.refresh(); renderParticipantPlayer(); } else render();
 }, () => Boolean(view?.me));
-const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting,
-  canPlay: () => realtime && Boolean(view?.connected && view.myTurn && view.catalogue?.playbackAvailable), changed: render,
-  play: (entry: PreparedEntryView) => {
-    if (!library.view) return;
-    const track: CatalogueTrack = { id: `prepared:${entry.id}`, title: entry.title, artist: entry.artist, album: entry.album, version: entry.version,
-      provider: entry.provider, duration: entry.duration, available: entry.sourceAvailable !== false, artwork: entry.artwork, artistArtwork: entry.artistArtwork };
-    playTrack(track, { entryId: entry.id, revision: library.view.revision });
-  },
-});
+const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting, changed: render });
 const appHeader = new AppHeader(page, message => { error = message; render(); });
 const listeningOrder = new ListeningOrder(page === 'host' ? {
   disabled: () => busy || !realtime || !view?.connected,
@@ -171,7 +163,7 @@ function keepMusicFocusVisible() {
   if (!(focused instanceof HTMLElement) || !focused.closest('.music-workspace')) return;
   const headerBottom = Math.max(0, appHeader.element.getBoundingClientRect().bottom) + 12;
   const list = root.querySelector<HTMLElement>('.preparation-list');
-  const obstruction = stackedLayout() && focused.closest('.catalogue-results') && list && getComputedStyle(list).position === 'sticky' ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
+  const obstruction = stackedLayout() && focused.closest('.catalogue-panel') && list && getComputedStyle(list).position === 'sticky' ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
   const rect = focused.getBoundingClientRect();
   if (rect.top < obstruction) window.scrollBy({ top: rect.top - obstruction, behavior: 'instant' });
 }
@@ -237,7 +229,9 @@ function showCatalogueStart() {
   const first = (results.querySelector('.track-row') ?? results).getBoundingClientRect();
   const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
   if (heading.top < top || first.bottom > height) {
-    window.scrollTo({ top: Math.max(0, scrollY + results.getBoundingClientRect().top - top), behavior: 'instant' });
+    const search = root.querySelector('.catalogue-panel')!.getBoundingClientRect();
+    const target = first.bottom - search.top <= height - top ? search.top : results.getBoundingClientRect().top;
+    window.scrollTo({ top: Math.max(0, scrollY + target - top), behavior: 'instant' });
   }
 }
 async function runCatalogue(action: CatalogueAction) {
@@ -435,32 +429,46 @@ function renderParticipantPlayer() {
 function participantPlayer(current: View) {
   const v = playerNodes;
   const shown = player.project(current); const playback = current.myTurn ? shown.ownPlayback : undefined;
+  const next = library.view?.upcoming[0];
+  const preview = playback?.track ?? next;
   const card = v.get('card', () => { const node = slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player'); node.id = 'participant-player'; node.setAttribute('aria-label', 'Your player'); node.tabIndex = -1; return node; });
   const now = v.el('now', 'div', undefined, 'private-now-playing');
-  const track = v.el('track', 'div'); const title = v.el('title', 'h2', playback?.track.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
+  const track = v.el('track', 'div'); const title = v.el('title', 'h2', preview?.title ?? (current.myTurn ? 'Choose a song' : 'Waiting for your turn'));
   prop(title, 'title', title.textContent!);
   const artist = v.el('artist', 'div', undefined, 'artist-credit');
-  const credit = v.el('credit', 'p', playback?.track.artist ?? 'Search or use your list.', 'artist'); prop(credit, 'title', credit.textContent!);
-  children(artist, Boolean(playback?.track.artistArtwork) && v.get('portrait', () => new ArtworkView('Artist image', 'artist-portrait')).update(playback?.track.artistArtwork), credit);
+  const credit = v.el('credit', 'p', preview?.artist ?? 'Search or use your list.', 'artist'); prop(credit, 'title', credit.textContent!);
+  children(artist, Boolean(preview?.artistArtwork) && v.get('portrait', () => new ArtworkView('Artist image', 'artist-portrait')).update(preview?.artistArtwork), credit);
   const output = v.get('output', () => outputLabel(current.output, realtime)); updateOutputLabel(output, current.output, realtime);
   children(track, title, artist, output);
-  children(now, v.get('cover', () => new ArtworkView('Album artwork', 'mini-record')).update(playback?.track.artwork), track);
+  children(now, v.get('cover', () => new ArtworkView('Album artwork', 'mini-record')).update(preview?.artwork), track);
   const progress = v.get('progress', () => progressBar(undefined));
   const status = progress.querySelector<HTMLElement>('.playback-status')!;
   status.classList.toggle('player-pending', player.starting);
   updateProgress(progress, playback ? shown.progress : undefined);
   if (player.starting) text(status, 'Starting track…');
   const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
-  children(statusLine, status, v.el('privacy', 'span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : 'Your player', 'privacy-tag'));
+  children(statusLine, status, v.el('privacy', 'span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'Next from saved list' : 'Your player', 'privacy-tag'));
   if (statusLine.parentElement !== progress) progress.prepend(statusLine);
   const controls = v.el('controls', 'div', undefined, 'actions');
+  const play = v.get('play-next', () => { const node = playerButton('Play next', () => {
+    const entry = library.view?.upcoming[0];
+    if (!entry || !library.view) return;
+    const track: CatalogueTrack = { id: `prepared:${entry.id}`, title: entry.title, artist: entry.artist, album: entry.album, version: entry.version,
+      provider: entry.provider, duration: entry.duration, available: entry.sourceAvailable !== false, artwork: entry.artwork, artistArtwork: entry.artistArtwork };
+    playTrack(track, { entryId: entry.id, revision: library.view.revision });
+  }); node.id = 'player-play-next'; return node; });
+  const ready = Boolean(next && next.sourceAvailable !== false && realtime && current.connected && current.myTurn && current.catalogue?.playbackAvailable &&
+    !library.loading && !library.saving && !library.pending && !library.view?.reviewEntryId);
+  prop(play, 'hidden', !next); prop(play, 'disabled', !ready || player.starting); attr(play, 'data-player-ready', String(ready));
+  prop(play, 'title', next ? `Play from saved list: ${next.title}` : 'Save a song to play it here');
+  card.classList.toggle('has-next-pick', Boolean(next));
   const action = playback?.status === 'paused' ? 'resume' : 'pause';
   const transport = v.get('transport', () => { const node = playerButton('Pause', () => {}, true); node.id = 'player-transport'; return node; });
   text(transport, action === 'pause' ? 'Pause' : 'Resume'); transport.onclick = () => { error = ''; player.control(action); };
   prop(transport, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.status === 'stopped');
   const reveal = v.get('reveal', () => { const node = playerButton('Reveal song', () => player.reveal()); node.id = 'player-reveal'; node.classList.add('reveal-button'); return node; });
   text(reveal, playback?.revealed ? 'Revealed' : 'Reveal song'); prop(reveal, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.revealed);
-  children(controls, transport, reveal);
+  children(controls, play, transport, reveal);
   const finish = v.get('finish', () => { const node = button('Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId: view?.turnId }); }, true); node.id = 'finish-my-turn'; return node; });
   text(finish, playback ? 'Finish turn' : 'Pass turn'); prop(finish, 'disabled', busy || !realtime || !current.connected || !current.myTurn || player.starting);
   const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, finish);
@@ -485,7 +493,9 @@ function participant() {
   const list = v.el('list-shortcut', 'button', 'Saved list', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
   children(shortcuts, find, list); children(hero, title, distance, shortcuts);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
-  const searchHeading = v.get('search-heading', () => { const node = sectionHeading('Find music', 'music-find-title'); node.append(el('span', 'Private search', 'privacy-tag')); return node; });
+  const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
+  const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading, el('span', 'Private search', 'privacy-tag')); return node; });
+  const modes = v.el('modes', 'div', undefined, 'search-tabs'); attr(modes, 'role', 'group'); attr(modes, 'aria-label', 'Search by');
   const searchNodes: Node[] = [searchHeading];
   const realCatalogue = view.catalogue?.source === 'music-assistant';
   if (realCatalogue && !view.catalogue?.playbackAvailable) {
@@ -494,7 +504,7 @@ function participant() {
     children(hint, prefix, v.get('speaker-settings', () => link('host settings', '/host/settings', 'inline-link')), v.get('speaker-suffix', () => document.createTextNode(' before playing. You can still prepare tracks.'))); searchNodes.push(hint);
   }
   if (realCatalogue) {
-    const modes = v.el('modes', 'div', undefined, 'actions search-tabs'); const tabs: Node[] = [];
+    const tabs: Node[] = [];
     for (const mode of ['artists', 'tracks'] as const) {
       const tab = v.get(`mode-${mode}`, () => catalogueButton(mode === 'tracks' ? 'Songs' : 'Artists', () => {
         browseHistory?.remember();
@@ -504,8 +514,9 @@ function participant() {
       })); prop(tab, 'className', searchMode !== mode ? 'secondary' : ''); prop(tab, 'disabled', !realtime || !view.connected);
       prop(tab, 'id', `catalogue-mode-${mode}`); attr(tab, 'aria-pressed', String(searchMode === mode)); tabs.push(tab);
     }
-    children(modes, ...tabs); searchNodes.push(modes);
+    children(modes, ...tabs);
   }
+  children(searchHeading, searchTitle, realCatalogue && modes);
   const form = v.el('form', 'form', undefined, 'search-form');
   const input = v.get('input', () => { const node = el('input'); node.type = 'search'; node.enterKeyHint = 'search'; node.required = true; node.maxLength = 200; node.id = 'catalogue-search'; node.setAttribute('aria-label', 'Search catalogue'); node.oninput = () => { searchText = node.value; }; return node; });
   prop(input, 'placeholder', realCatalogue ? (searchMode === 'artists' ? 'Artist name' : 'Song, artist, or album') : 'Try Northern or Night'); prop(input, 'value', searchText);
@@ -530,8 +541,7 @@ function participant() {
       }
     });
   }; searchNodes.push(form);
-  children(search, ...searchNodes, search.querySelector('.music-upload'));
-  const found = v.get('found', () => { const node = panel('catalogue-results'); node.setAttribute('aria-labelledby', 'music-results-title'); return node; });
+  const found = v.get('found', () => { const node = el('section', undefined, 'catalogue-results'); node.setAttribute('aria-labelledby', 'music-results-title'); return node; });
   attr(found, 'aria-busy', String(catalogueBusy));
   const resultsHeading = v.get('results-heading', () => sectionHeading('Results', 'music-results-title')); text(resultsHeading.querySelector('h2')!, chosenArtist ? 'Browse music' : 'Results');
   const foundNodes: Node[] = [resultsHeading];
@@ -606,7 +616,8 @@ function participant() {
   }
   for (const id of catalogueRows.keys()) if (!rowIds.has(id)) catalogueRows.delete(id);
   children(found, ...foundNodes);
-  const musicPanel = music.render(search, searchDone || catalogueBusy || catalogueError ? found : undefined, participantPlayer(view));
+  children(search, ...searchNodes, search.querySelector('.music-upload'), Boolean(searchDone || catalogueBusy || catalogueError) && found);
+  const musicPanel = music.render(search, participantPlayer(view));
   children(main, hero, musicPanel);
   return main;
 }

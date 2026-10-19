@@ -42,7 +42,7 @@ The app discovers local addresses and Music Assistant automatically. Setup check
 
 ## A listening evening
 
-The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, browse **Find music**, add songs to **Saved list**, or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play this song** from the list, then **Reveal song** to show its details. **Finish turn** passes control to the next person.
+The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, browse **Find music**, add songs to **Saved list**, or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play next** in the player to start the first saved selection, then **Reveal song** to show its details. The turn passes automatically when the song finishes, or earlier with **Finish turn**.
 
 There is one persistent room. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, or advancing a turn never starts the next song automatically.
 

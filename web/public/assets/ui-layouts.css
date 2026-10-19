@@ -13,11 +13,10 @@
   .workspace-grid[data-composition='sidebar'] { grid-template-areas:'primary secondary'; }
   [data-composition='sidebar'] > [data-slot='primary'] { grid-area:primary; }
   [data-composition='sidebar'] > [data-slot='secondary'] { grid-area:secondary; }
-  .workspace-grid[data-composition='music'] { grid-template-rows:auto auto minmax(0,1fr); grid-template-areas:'player list' 'find list' 'results list'; overflow-anchor:none; }
+  .workspace-grid[data-composition='music'] { grid-template-rows:auto minmax(0,1fr); grid-template-areas:'player list' 'find list'; overflow-anchor:none; }
   [data-composition='music'] > [data-slot='player'] { grid-area:player; }
   [data-composition='music'] > [data-slot='find'] { grid-area:find; }
   [data-composition='music'] > [data-slot='list'] { grid-area:list; }
-  [data-composition='music'] > [data-slot='results'] { grid-area:results; }
   .stack { display:flex; flex-direction:column; gap:var(--workspace-gap); min-width:0; }
   .stack > * { margin-block:0; }
   .app-content > .notice { width:calc(100% - 2 * var(--workspace-gutter)); max-width:calc(var(--workspace-width) - 2 * var(--workspace-gutter)); margin:var(--workspace-gap) auto 0; }

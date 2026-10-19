@@ -11,7 +11,10 @@ type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configuratio
   'withPlayback' | 'withDemoPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
 type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback'>;
 type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
-  position?: { elapsed: number; duration: number; at: number } };
+  idleSince?: number; position?: { elapsed: number; duration: number; at: number } };
+
+// MA schema 65 settles a naturally finished queue after a five-second idle debounce.
+const completionConfirmationMs = 10_000;
 
 /** Single-destination controller. Never sends a stop to a queue it does not own. */
 export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
@@ -360,7 +363,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
           } else if (!parked) this.observe(own, q);
         }
         if (action === 'stop') { clearTimeout(this.timer); own.release?.(); this.own = undefined; }
-        else own.status = action === 'pause' ? 'paused' : 'playing';
+        else { own.status = action === 'pause' ? 'paused' : 'playing'; own.idleSince = undefined; }
       } catch (error) {
         if (error instanceof AppError && error.status === 409) throw error;
         this.invalidate('Playback connectivity or queue state is uncertain. The host must recover playback controls.', true);
@@ -368,7 +371,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       }
     });
   }
-  private schedule(ms = this.eventsConnected && this.pollMs === 1500 ? 3000 : this.pollMs): void {
+  private schedule(ms = this.own?.idleSince !== undefined ? Math.min(500, this.pollMs) : this.eventsConnected && this.pollMs === 1500 ? 3000 : this.pollMs): void {
     clearTimeout(this.timer);
     if (this.closed || this.draining) return;
     this.timer = setTimeout(() => { maBackground(() => { void this.poll(); }); }, ms); this.timer.unref();
@@ -399,6 +402,14 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
           // MA releases paused streams after ~30s. Retain the exact selection and frozen position, with no pause expiry and no auto-resume.
           maBackground(() => { void this.refreshVolume(own.api, own.destination); }); this.onProgress(); return;
         }
+        if (q.state === 'idle' && !q.ended && own.status === 'playing' && own.seenPlaying && this.sameQueueItem(q, own) && this.safeQueue(q)) {
+          // Idle is published before MA's delayed ended flag, sometimes after releasing the
+          // active source. Keep observing this exact item; time alone never advances a turn.
+          own.idleSince ??= Date.now();
+          if (Date.now() - own.idleSince < completionConfirmationMs) return;
+          this.invalidate('Playback stopped outside the app without a verified natural end. The turn was not advanced.', false); return;
+        }
+        own.idleSince = undefined;
         if (!this.isOwned(q, own)) { this.invalidate('Playback changed outside this app. Its audio was left untouched.', false); return; }
         if (!this.safeQueue(q)) {
           // A background snapshot may be old. Revalidate immediately before a write.
