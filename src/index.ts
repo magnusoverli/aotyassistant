@@ -15,6 +15,7 @@ import { PreparationFileStore, PreparationManager } from './preparations.js';
 import { UploadAssets } from './uploads.js';
 import { drainOperations } from './operation.js';
 import { diagnostics } from './diagnostics.js';
+import { productName } from './product.js';
 
 let cleanup = () => {};
 try {
@@ -44,7 +45,7 @@ try {
     ingress.listen(config.ingressPort, config.listenHost); await once(ingress, 'listening');
   }
   if (config.addon) closeBackup = await startBackupControl();
-  console.info(`Albums of the Year listening on port ${config.port}. Music starts only on Play. Host controls are open to LAN users.`);
+  console.info(`${productName} listening on port ${config.port}. Music starts only on Play. Host controls are open to LAN users.`);
   setup.start();
   let stopping = false;
   const shutdown = () => {

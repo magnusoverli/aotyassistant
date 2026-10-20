@@ -289,7 +289,7 @@ test('future private uploads share list ordering/history/recovery without disclo
   await assert.rejects(f.manager.add(f.owner.credential, await f.op(), { ...upload, path: '/etc/passwd' } as SavedSelection), status(400));
 });
 
-test('Play next pins the exact head/revision, serializes double clicks once, and retains confirmed played history', async () => {
+test('Play first selection pins the exact head/revision, serializes double clicks once, and retains confirmed played history', async () => {
   const f = await fixture(); const first = await f.add(); const second = await f.add(2); let starts = 0;
   const work = async (selection: SavedSelection) => { starts++; assert.deepEqual(selection, selected()); return { playbackId: randomUUID(), value: 'confirmed' }; };
   await assert.rejects(f.manager.playHead(f.owner.credential, second.entryId, second.view.revision, work), status(409));
@@ -301,7 +301,7 @@ test('Play next pins the exact head/revision, serializes double clicks once, and
   assert.deepEqual(saved.upcoming.map(entry => entry.id), [second.entryId]); assert.equal(saved.played[0]!.id, first.entryId); assert.equal(saved.reviewEntryId, undefined);
 });
 
-test('failed/uncertain Play next survives restart with an explicit review marker and never consumes or retries audio', async () => {
+test('failed/uncertain Play first selection survives restart with an explicit review marker and never consumes or retries audio', async () => {
   const f = await fixture(); const first = await f.add(); let starts = 0;
   await assert.rejects(f.manager.playHead(f.owner.credential, first.entryId, first.view.revision, async () => { starts++; throw new AppError(502, 'Uncertain start'); }), status(502));
   const manager = new PreparationManager(f.store, f.now); const saved = await manager.read(f.owner.credential);

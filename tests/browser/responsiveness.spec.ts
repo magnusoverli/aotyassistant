@@ -113,6 +113,9 @@ test('a replacement search cancels stale work without blocking the search form',
 });
 
 test('optional file diagnostics do not disable automatic speaker selection, which reuses the validated inventory', async ({ page, isolatedApp }) => {
+  // Measure the selection's request budget, not independent background inventory refreshes.
+  // Live output monitoring has separate coverage in output-monitor and active-speaker tests.
+  isolatedApp.manager.stopMonitoring();
   await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'fixture-token', 0);
   await isolatedApp.manager.selectDestination('sonos:room', 1);
   let release = () => {}; let entered!: () => void;

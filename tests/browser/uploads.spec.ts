@@ -125,8 +125,8 @@ test('an uploaded file uses the normal explicit player and never exposes Music A
     await selectFile(page); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     await page.locator('.upload-preview').getByRole('button', { name: 'Add to list' }).click();
     await showList(page);
-    await expect(page.getByRole('button', { name: 'Play next' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Play next' }).click();
+    await expect(page.getByRole('button', { name: 'Play first selection' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Play first selection' }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
     const state = await (await page.request.get('/api/participant/state')).json();

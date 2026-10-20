@@ -15,7 +15,7 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   await page.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
   const login = await popupPromise;
   await expect(login.getByRole('heading', { name: 'Music Assistant sign-in' })).toBeVisible();
-  await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
+  await login.getByRole('link', { name: 'Authorize Listening Room' }).click();
   await expect(login.locator('.settings-connection .settings-state')).toHaveText('Connected');
   await expect(page.getByText('Music Assistant connected.', { exact: true })).toBeVisible();
   await expect(page.getByText('Waiting for sign-in…', { exact: true })).toHaveCount(0);
@@ -28,7 +28,7 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   const binding = isolatedApp.manager.sourceBindingId;
   await login.getByRole('button', { name: 'Change connection', exact: true }).click();
   const reconnectPromise = login.waitForEvent('popup'); await login.getByRole('button', { name: 'Reconnect Music Assistant' }).click();
-  const reconnect = await reconnectPromise; await reconnect.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
+  const reconnect = await reconnectPromise; await reconnect.getByRole('link', { name: 'Authorize Listening Room' }).click();
   await expect(reconnect.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   expect(isolatedApp.manager.sourceBindingId).toBe(binding);
   expect(isolatedApp.calls.filter(c => c.command === 'auth/token/create')).toHaveLength(2);
@@ -41,7 +41,7 @@ test('unrelated settings changes and another attempt cannot announce successful 
   await page.goto('/host/settings');
   await page.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
   const popup = page.waitForEvent('popup'); await page.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
-  const login = await popup; await expect(login.getByRole('link', { name: 'Authorize Albums of the Year' })).toBeVisible();
+  const login = await popup; await expect(login.getByRole('link', { name: 'Authorize Listening Room' })).toBeVisible();
   const unrelated = await page.context().newPage(); await unrelated.goto(`${isolatedApp.origin}/host`);
   await unrelated.evaluate(() => localStorage.setItem('aoty.ma-auth-result', JSON.stringify({ attemptId: 'different-attempt', result: 'connected', at: Date.now() })));
   await isolatedApp.manager.saveGuestOrigin('http://guest-change.local:3000', isolatedApp.manager.view().revision);
@@ -49,7 +49,7 @@ test('unrelated settings changes and another attempt cannot announce successful 
   await expect(page.getByText('Music Assistant connected.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Waiting for sign-in…', { exact: true })).toBeVisible();
   expect(isolatedApp.manager.configured).toBe(false);
-  await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
+  await login.getByRole('link', { name: 'Authorize Listening Room' }).click();
   await expect(login.getByText(/Music Assistant sign-in could not finish/)).toBeVisible();
   await expect(page.getByText('Sign-in could not finish. Try connecting again.', { exact: true })).toBeVisible();
   expect(isolatedApp.calls.some(call => call.command === 'auth/token/create')).toBe(false);
@@ -93,7 +93,7 @@ test('an unsupported schema identifies compatibility while retaining a healthy s
   await page.goto('/host/settings');
   await expect(page.locator('.settings-connection .settings-state')).toHaveText('Connected');
   await expect(page.locator('.settings-connection')).toContainText('uses API schema 66');
-  await expect(page.locator('.settings-connection')).toContainText('Check for an Albums of the Year update');
+  await expect(page.locator('.settings-connection')).toContainText('Check for an app update');
   await expect(page.locator('.settings-destination .settings-state')).toHaveText('Playback unsupported');
   await expect(page.getByLabel('Speaker or group', { exact: true })).toHaveValue('sonos:room');
   await expect(page.locator('.settings-destination')).not.toContainText('Living room is unavailable');
@@ -111,7 +111,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
   const backend = (ingress.address() as AddressInfo).port;
   const escaped: string[] = [];
   const proxy = createServer((req, res) => {
-    if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(`<iframe title="Albums of the Year" src="${prefix}/host/settings" style="width:100%;height:100vh;border:0"></iframe>`); return; }
+    if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(`<iframe title="Listening Room" src="${prefix}/host/settings" style="width:100%;height:100vh;border:0"></iframe>`); return; }
     if (!req.url?.startsWith(`${prefix}/`)) { escaped.push(req.url ?? ''); res.writeHead(404); res.end(); return; }
     const upstream = request({ hostname: '127.0.0.1', port: backend, path: req.url.slice(prefix.length), method: req.method,
       headers: { ...req.headers, 'x-ingress-path': prefix, 'x-forwarded-host': req.headers.host!, 'x-forwarded-proto': 'http', 'x-remote-user-id': 'owner' } }, reply => {
@@ -128,7 +128,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     await expect(frame.getByLabel('Guest address', { exact: true })).toHaveValue(guest);
     await frame.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
     const popupPromise = page.waitForEvent('popup'); await frame.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
-    const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Albums of the Year' }).click();
+    const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Listening Room' }).click();
     await expect(login.locator('.settings-connection .settings-state')).toHaveText('Connected');
     await expect(login).toHaveURL(`${origin}${prefix}/host/settings`);
     await openNavigation(login);

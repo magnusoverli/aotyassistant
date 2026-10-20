@@ -8,7 +8,7 @@ test('mobile shortcuts expose preparation and source choices fit narrow screens'
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   const shortcuts = page.getByRole('navigation', { name: 'Your music shortcuts' });
   await expect(shortcuts).toBeInViewport();
-  await shortcuts.getByRole('button', { name: 'Saved list', exact: true }).click();
+  await shortcuts.getByRole('button', { name: 'Your selections', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Close list', exact: true })).toBeInViewport();
   await page.getByRole('button', { name: 'Close list', exact: true }).click();
   await shortcuts.getByRole('link', { name: 'Find music', exact: true }).click();
@@ -47,9 +47,9 @@ test('off-screen playback offers a read-only return with confirmed status and re
     release(); await expect(shortcut).toContainText('Playing · Hidden');
     expect(await page.evaluate(() => scrollY)).toBe(before);
     await shortcut.getByRole('link', { name: 'Go to player', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Reveal song', exact: true })).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'Reveal details', exact: true })).toBeInViewport();
     await expect(shortcut).toBeHidden(); expect(plays).toBe(1);
-    await page.getByRole('button', { name: 'Reveal song', exact: true }).click();
+    await page.getByRole('button', { name: 'Reveal details', exact: true }).click();
     await expect(page.locator('.privacy-tag').first()).toContainText('Visible on room display');
     await page.locator('.catalogue-results').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
     await expect(shortcut).toContainText('Playing · Revealed');

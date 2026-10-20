@@ -4,9 +4,9 @@ configuration:
     description: Normally detected from Supervisor. Use a stable LAN HTTP(S) origin only if guests need another address. Do not enter a Home Assistant or Ingress URL.
   playback_mode:
     name: Legacy demo fallback
-    description: Compatibility with older saved options. Connecting Music Assistant in the web UI automatically makes real playback available.
+    description: Compatibility with older saved options. Demo playback is silent. Connecting Music Assistant in the web UI automatically makes real playback available.
   demo_track_seconds:
     name: Demo track length
-    description: Simulated track length before Music Assistant is connected. This setting does not affect real music.
+    description: Simulated track length before Music Assistant is connected. No audio is played in demo mode. This setting does not affect real music.
 network:
   3000/tcp: Guests, room display, uploaded audio, and unauthenticated LAN host controls

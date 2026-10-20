@@ -1,6 +1,6 @@
 # Contributing
 
-Albums of the Year is a **Home Assistant app**. Changes should improve that installation and its guest, host, or display experience. Native Node and standalone Docker/Compose deployments are not supported products.
+Listening Room is a **Home Assistant app** for turn-based music sharing through Music Assistant. Changes should improve that installation and its guest, host, or display experience. Native Node and standalone Docker/Compose deployments are not supported products.
 
 For a bug, use the [issue form](https://github.com/magnusoverli/aotyassistant/issues/new/choose) and include a minimal reproduction with versions and sanitized logs. Discuss substantial architecture or behaviour changes before implementing them. See [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
@@ -49,6 +49,9 @@ CI runs both suites on native amd64 and aarch64 runners. They exercise actual pa
 
 - Describe product behaviour in the present tense. Use neutral language and direct instructions, such as “Select a speaker”.
 - Use exact interface labels in procedures. Distinguish participant, host, and public-display access.
+- Use **listening room**, **display name**, **Your music**, **Your selections**, **Play first selection**, **Move to top**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
+- Describe music discovery and turn-taking, not annual awards, voting, continuous playlist playback, or remote synchronized listening. Scope privacy claims to this app.
+- Keep display copy in `src/product.ts` aligned with app/package/image metadata and the GitHub About description. Preserve installation IDs, API paths, cookies, and storage keys during wording changes.
 - Keep internal discussions, personal accounts, and temporary progress reports out of product documentation.
 - State support requirements and known limitations explicitly. Describe test coverage separately from verified compatibility.
 - Keep unpublished changes under **Unreleased**. Add a version and release date only when publication is scheduled.

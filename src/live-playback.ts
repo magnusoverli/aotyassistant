@@ -195,7 +195,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   async resolve(id: string, context = ''): Promise<Track> {
     if (!this.integrations.configured) return this.resolveDemo(() => this.demo.resolve(id));
-    if (!this.available) throw new AppError(409, 'Choose a playback destination in host settings first.');
+    if (!this.available) throw new AppError(409, 'Choose a speaker or group in Settings before playing.');
     this.pending?.release?.(); this.pending = undefined;
     return this.resolveLive(this.integrations.resolve(id, context));
   }
@@ -206,7 +206,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       if (this.integrations.configured) throw new AppError(409, 'Demo selections cannot play through the connected catalogue. Your saved entry was kept.');
       return this.resolveDemo(() => this.demo.resolveSaved(selection, context, trackId));
     }
-    if (!this.available) throw new AppError(409, 'Choose a playback destination in host settings first.');
+    if (!this.available) throw new AppError(409, 'Choose a speaker or group in Settings before playing.');
     return this.resolveLive(this.integrations.resolveSaved(selection, context, trackId));
   }
   private async resolveLive(result: Promise<Selection>) {

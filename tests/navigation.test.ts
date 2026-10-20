@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { headerModel, routes, pageForPath, type HeaderView, type Page } from '../web/navigation.js';
 
-const view: HeaderView = { me: { id: 'me', nickname: 'Literal <name>' } };
+const view: HeaderView = { mode: 'demo', me: { id: 'me', nickname: 'Literal <name>' } };
 
 test('all pages use the same central route/navigation definitions with one current page', () => {
   for (const page of Object.keys(routes) as Page[]) {
@@ -29,7 +29,7 @@ test('all pages have stable navigation without display credentials or lifecycle 
 });
 
 test('header state stays presentation-only with literal nicknames', () => {
-  assert.equal(headerModel('participant', {}).subtitle, 'Music');
+  assert.equal(headerModel('participant', {}).subtitle, 'Your music');
   const participant = headerModel('participant', { view }); assert.equal(participant.subtitle, 'Literal <name>');
   assert.ok(!('turn' in participant), 'Turn status belongs in the workspace, not repeated in the header.');
   const withPrivateData = { ...view, ownPlayback: { track: { title: 'SECRET TITLE' } }, preparations: ['PRIVATE LIST'] };

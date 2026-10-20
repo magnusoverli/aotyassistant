@@ -42,11 +42,11 @@ test('one player separates reveal, volume and finish while keeping search availa
   await expect(page.locator('.playback-card').getByRole('button', { name: 'Pass turn' })).toBeEnabled();
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'Play', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Reveal song' })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Reveal details' })).toBeEnabled();
   await expect(page.locator('.player-ending').getByRole('button', { name: 'Finish turn' })).toBeEnabled();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
-  await page.getByRole('button', { name: 'Reveal song' }).click(); await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display');
+  await page.getByRole('button', { name: 'Reveal details' }).click(); await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display');
   await expect(page.getByRole('searchbox')).toHaveValue('Northern');
   await page.getByRole('button', { name: 'Finish turn', exact: true }).click(); await expect(page.locator('.playback-card')).toContainText('Choose a song');
   await expect(page.getByRole('button', { name: 'Pass turn' })).toBeEnabled();
@@ -170,13 +170,13 @@ test('sign-in cancellation and expiry keep saved connection and expose a usable 
 });
 
 test('home, error pages and display invitations provide concrete routes while API errors stay JSON', async ({ page }) => {
-  await page.goto('/'); await expect(page).toHaveTitle('Home · Albums of the Year');
-  for (const name of ['Join room', 'Music', 'Room display', 'Host desk']) await expect(page.locator('main').getByRole('link', { name, exact: true })).toBeVisible();
+  await page.goto('/'); await expect(page).toHaveTitle('Home · Listening Room');
+  for (const name of ['Join room', 'Your music', 'Room display', 'Host desk']) await expect(page.locator('main').getByRole('link', { name, exact: true })).toBeVisible();
   const missing = await page.goto('/missing-page'); expect(missing?.status()).toBe(404);
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
   expect(await page.locator('html').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(16, 23, 19)');
   const api = await page.request.get('/api/missing'); expect(api.status()).toBe(404); expect(api.headers()['content-type']).toContain('application/json');
-  await page.goto('/display'); await expect(page).toHaveTitle('Room display · Albums of the Year');
+  await page.goto('/display'); await expect(page).toHaveTitle('Room display · Listening Room');
   await expect(page.locator('.room-qr-link')).toHaveAttribute('href', /\/join$/);
   await expect(page.locator('.room-join-link')).toBeVisible();
   await page.locator('.room-qr-link').click(); await expect(page.getByLabel('Display name')).toBeVisible();

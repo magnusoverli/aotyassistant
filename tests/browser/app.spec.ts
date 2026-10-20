@@ -6,7 +6,7 @@ test('QR invitation, direct joining without startup, mobile controls, private re
   await expect(host.getByText('Open host controls:')).toHaveCount(0);
   await expect(host.getByRole('button', { name: 'Create a session' })).toHaveCount(0);
   const joinUrl = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
-  const displayUrl = await host.getByRole('link', { name: 'Open public display' }).getAttribute('href');
+  const displayUrl = await host.getByRole('link', { name: 'Open room display' }).getAttribute('href');
   expect(new URL(joinUrl!).pathname).toBe('/join'); expect(new URL(joinUrl!).hash).toBe('');
   const alexContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const samContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -34,7 +34,7 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     await alex.getByRole('button', { name: 'Search', exact: true }).click(); await alex.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(alex.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
     await expect(alex.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
-    await expect(alex.getByRole('button', { name: 'Reveal song' })).toBeInViewport();
+    await expect(alex.getByRole('button', { name: 'Reveal details' })).toBeInViewport();
     await expect(alex.getByRole('button', { name: 'Finish turn' })).toBeInViewport();
     await alex.getByRole('button', { name: 'Pause', exact: true }).click();
     await alexContext.setOffline(true);
@@ -43,11 +43,11 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     await expect(alex.getByRole('button', { name: 'Finish turn' })).toBeEnabled();
     await alex.screenshot({ path: 'test-results/participant-playing.png', fullPage: true });
     await expect(alex.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
-    await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     await expect(sam.getByText('Northern Lights')).toHaveCount(0);
     expect(payloads.join('')).not.toContain('Northern Lights'); expect(payloads.join('')).not.toContain('The Paper Satellites');
     expect(requests.some(url => url.includes('demo-cover.svg'))).toBe(false);
-    await alex.getByRole('button', { name: 'Reveal song' }).click();
+    await alex.getByRole('button', { name: 'Reveal details' }).click();
     await expect(tv.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
     await expect(tv.locator('.artist-credit').getByText('The Paper Satellites')).toBeVisible();
     await expect(sam.getByText('Northern Lights')).toHaveCount(0);

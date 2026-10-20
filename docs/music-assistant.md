@@ -1,6 +1,6 @@
 # Music Assistant connection and compatibility
 
-Albums of the Year uses Music Assistant for catalogue search, artwork, speaker discovery, and playback. Configure music providers and speakers in Music Assistant first, then [connect the app](../DOCS.md#connect-music-assistant).
+Listening Room uses Music Assistant for catalogue search, artwork, speaker discovery, and playback. Configure music providers and speakers in Music Assistant first, then [connect the app](../DOCS.md#connect-music-assistant).
 
 ## Supported API
 

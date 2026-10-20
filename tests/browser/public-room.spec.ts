@@ -87,12 +87,12 @@ test('the public room is clean while idle/stopped and preserves the exact animat
   try {
     await expect(tv.locator('.now-playing')).toBeHidden(); await expect(tv.locator('.room-record')).toBeHidden();
     await expect(tv.locator('.vinyl-label.is-personalized')).toHaveCount(0);
-    await expect(tv.getByRole('progressbar')).toBeHidden(); await expect(tv.getByText('Keep them guessing.')).toHaveCount(0);
+    await expect(tv.getByRole('progressbar')).toBeHidden(); await expect(tv.getByText('Track details hidden.')).toHaveCount(0);
     await fits(tv); await tv.screenshot({ path: 'test-results/public-room-idle.png' });
     await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'idle');
     const images: string[] = []; tv.on('request', request => { if (/artwork|demo-cover/.test(request.url())) images.push(request.url()); });
     await f.play(); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
-    await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     await expect(tv.locator('.room-record .vinyl-owner')).toHaveText('Alex');
     expect(recordLabels).toContain(await tv.locator('.room-record .vinyl-caption').textContent());
     await expect(tv.locator('.track-times')).toBeEmpty(); expect(images).toEqual([]);
@@ -187,7 +187,7 @@ test('only the small sticker is personalized, its shuffled history survives refr
     await tv.evaluate(({ key, index, size }) => localStorage.setItem(key, JSON.stringify({ version: 1, size, remaining: [index], current: null })),
       { key: recordLabelStorageKey, index: recordLabels.indexOf(caption), size: recordLabels.length });
     await f.play();
-    await expect(tv.getByRole('heading', { name: 'Keep them guessing.', exact: true })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Track details hidden.', exact: true })).toBeVisible();
     await expect(tv.locator('.room-record .vinyl-owner')).toHaveText(nickname);
     await expect(tv.locator('.room-record .vinyl-caption')).toHaveText(caption);
     await expect(tv.getByRole('img', { name: `${nickname} — ${caption}`, exact: true })).toBeVisible();
@@ -205,7 +205,7 @@ test('only the small sticker is personalized, its shuffled history survives refr
     await f.control('pause'); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     await expect(tv.locator('.room-record .vinyl-caption')).toHaveText(caption);
     await tv.reload(); await expect(tv.locator('.room-record .vinyl-caption')).toHaveText(caption);
-    await expect(tv.getByRole('heading', { name: 'Keep them guessing.', exact: true })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Track details hidden.', exact: true })).toBeVisible();
     await f.control('resume'); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     const otherScreen = await f.screen.newPage(); await otherScreen.goto('/display');
     await expect(otherScreen.locator('.room-record .vinyl-caption')).toHaveText(caption); await otherScreen.close();

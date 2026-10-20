@@ -65,7 +65,7 @@ test('search, source selection and playback patch existing regions without detac
   await expect(page.locator('.playback-card .playback-status')).toHaveText('Ⅱ Paused'); await retained(page);
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await expect.poll(async () => (await (await page.request.get('/api/participant/state')).json()).ownPlayback.status).toBe('playing');
-  await page.getByRole('button', { name: 'Reveal song', exact: true }).click();
+  await page.getByRole('button', { name: 'Reveal details', exact: true }).click();
   await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display'); await retained(page);
 });
 

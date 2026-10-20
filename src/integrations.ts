@@ -376,7 +376,7 @@ export class IntegrationManager implements CatalogueProvider {
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
       status: this.settingsUncertain ? 'error' : !ma ? 'not-configured' : this.failure ? 'error' : report ? 'checked' : 'not-checked',
       destinationStatus, destinationMessage,
-      message: this.settingsUncertain ? this.failure : !ma ? 'Music Assistant is not configured. You can keep using the demo.' : this.failure || (report
+      message: this.settingsUncertain ? this.failure : !ma ? 'Music Assistant is not configured. Demo mode simulates playback without audio.' : this.failure || (report
         ? 'Music Assistant is connected and authorized.'
         : 'Music Assistant is configured. Its connection has not been checked.'),
       report: structuredClone(report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,

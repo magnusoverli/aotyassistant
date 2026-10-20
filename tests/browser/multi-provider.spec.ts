@@ -165,7 +165,7 @@ test('only the chosen exact source reaches simulated playback, and reveal remain
   await post('/api/host/integrations/destination', { id: 'sonos:room', revision: 1 });
   await page.goto('/host');
   const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
-  const display = await page.getByRole('link', { name: 'Open public display' }).getAttribute('href');
+  const display = await page.getByRole('link', { name: 'Open room display' }).getAttribute('href');
   const tvContext = await browser.newContext();
   try {
     const tv = await tvContext.newPage(); await tv.goto(display!); await page.goto(join!);
@@ -182,9 +182,9 @@ test('only the chosen exact source reaches simulated playback, and reveal remain
     await original.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'The same recording', exact: true })).toBeVisible();
     await expect.poll(() => isolatedApp.calls.filter(c => c.command === 'player_queues/play_media').map(c => c.args.media)).toEqual([['tidal://track/private-multi-track']]);
-    await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     await expect(tv.getByText('The same recording')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Reveal song' }).click();
+    await page.getByRole('button', { name: 'Reveal details' }).click();
     await expect(tv.getByRole('heading', { name: 'The same recording', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();

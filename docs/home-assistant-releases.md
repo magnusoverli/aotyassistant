@@ -18,7 +18,7 @@ Use semantic versions: patches for compatible fixes, minor versions for compatib
 3. For first publication, the GHCR package must be public. The anonymous check intentionally fails while it is private; make it public and rerun the failed publication job.
 4. Download **published-store-manifest**, compare `config.prebuilt.yaml` with the release branch’s manifest, and apply any required difference. The image reference and version must match the published image.
 5. Only after successful publication and verification, fast-forward or merge the release branch into `main` and push. This makes the new store version visible after its image is available.
-6. Create a GitHub release from the existing tag with user-facing highlights, upgrade notes, supported architectures, and accurate verification results. Mark it latest when it is the current stable version.
+6. Create a GitHub release from the existing tag with the current display name, user-facing highlights, upgrade notes, supported architectures, and accurate verification results. Mark it latest when it is the current stable version. Keep the repository’s GitHub About description aligned with the short description in `package.json`.
 
 If publication fails, leave the store on the previous version and repair/rerun the workflow. If a published image needs code changes, use a new version rather than replacing its contents.
 

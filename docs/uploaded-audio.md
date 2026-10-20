@@ -1,6 +1,6 @@
 # Uploaded audio
 
-Upload one audio file from a phone or computer, review its title, artist, album, and embedded cover, then add it to **Saved list**. The Home Assistant app includes the required audio-analysis tools.
+Upload one audio file from a phone or computer, review its title, artist, album, and embedded cover, then add it to **Your selections**. The Home Assistant app includes the required audio-analysis tools.
 
 ## Supported formats
 
@@ -20,7 +20,7 @@ Supported extensions are `.mp3`, `.m4a`, `.flac`, `.wav`, `.aif`, `.aiff`, `.ogg
 2. Select one file and wait for upload and processing to finish.
 3. Review the details and correct the text if needed.
 4. Choose **Add to list** and wait for **Saved**.
-5. During the current participant’s turn, select **Play next** in the player to play the first entry in the list.
+5. During the current participant’s turn, select **Play first selection** in the player to play the first entry in the list.
 
 Upload completion alone is not a saved list entry. Uploading does not change the turn or start audio. Once saved, the phone can disconnect; the file is stored by the app. Text corrections do not rewrite the original audio.
 

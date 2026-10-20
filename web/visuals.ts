@@ -26,7 +26,7 @@ export function updateVinylLabel(record: HTMLElement, personalized?: { owner: st
   const sticker = record.querySelector<HTMLElement>('.vinyl-label')!;
   const owner = sticker.querySelector<HTMLElement>('.vinyl-owner')!;
   sticker.classList.toggle('is-personalized', Boolean(personalized));
-  owner.textContent = personalized?.owner ?? 'AOTY'; owner.title = personalized?.owner ?? '';
+  owner.textContent = personalized?.owner ?? 'LISTEN'; owner.title = personalized?.owner ?? '';
   owner.classList.toggle('is-long', Boolean(personalized && Array.from(personalized.owner).length > 20));
   sticker.querySelector('.vinyl-caption')!.textContent = personalized?.caption ?? 'SIDE A';
 }

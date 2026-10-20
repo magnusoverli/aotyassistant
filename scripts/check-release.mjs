@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { productName, productDescription } from '../src/product.ts';
 
 const root = process.cwd();
 const read = path => readFileSync(resolve(root, path), 'utf8');
@@ -17,7 +18,19 @@ assert.equal(lock.packages[''].license, pkg.license);
 assert.match(read('LICENSE'), /MIT License/);
 assert.ok(manifest.includes(`version: "${version}"\n`), 'Manifest version');
 assert.ok(dockerfile.includes(`ARG BUILD_VERSION=${version}\n`), 'Image default version');
-assert.match(manifest, /^name: Albums of the Year$/m);
+assert.ok(manifest.startsWith(`name: ${productName}\n`), 'App display name');
+assert.ok(manifest.includes(`\npanel_title: ${productName}\n`), 'Sidebar display name');
+assert.ok(read('repository.yaml').startsWith(`name: ${productName}\n`), 'Repository display name');
+assert.equal(pkg.description, productDescription, 'Package description');
+assert.ok(manifest.includes(`\ndescription: ${productDescription}\n`), 'App description');
+assert.ok(dockerfile.includes(`org.opencontainers.image.title="${productName}"`), 'Image display name');
+assert.ok(dockerfile.includes(`org.opencontainers.image.description="${productDescription}"`), 'Image description');
+assert.ok(read('web/index.html').includes(`<title>${productName}</title>`), 'Browser entry title');
+assert.ok(read('web/index.html').includes(`<meta name="description" content="${productDescription}"`), 'Browser description');
+// Rewording must not turn an existing installation into a different app/package.
+assert.equal(pkg.name, 'albums-of-the-year', 'Stable package identity');
+assert.equal(lock.name, pkg.name, 'Lockfile package identity');
+assert.equal(lock.packages[''].name, pkg.name, 'Lockfile root package identity');
 assert.match(manifest, /^stage: stable$/m);
 assert.match(manifest, /^slug: albums_of_the_year$/m);
 assert.match(manifest, /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);

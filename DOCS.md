@@ -1,13 +1,15 @@
-# Install and manage Albums of the Year
+# Install and manage Listening Room
 
-Albums of the Year is distributed and supported as a **Home Assistant app**. Use Home Assistant OS with Core **2026.10.0 or later**, Supervisor, and an **amd64** or **aarch64** system. Music Assistant must be reachable from the app and have a working login, music source, and speaker/group. Playback supports **MA API schema 65**.
+Listening Room lets people prepare private track selections, take turns playing through Music Assistant, and reveal track details on a shared display.
+
+It is distributed and supported as a **Home Assistant app**. Use Home Assistant OS with Core **2026.10.0 or later**, Supervisor, and an **amd64** or **aarch64** system. Music Assistant must be reachable from the app and have a working login, music source, and speaker/group. Playback supports **MA API schema 65**.
 
 ## Install
 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
 1. Add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
-2. Install **Albums of the Year**. Supervisor downloads the published image for the system’s architecture.
+2. Install **Listening Room**. Supervisor downloads the published image for the system’s architecture.
 3. Keep the app’s **Network** port enabled: container port `3000/tcp` is published as port `3000` by default. Choose another free host port if necessary.
 4. Start the app and select **Open web UI**. The host desk opens inside Home Assistant through Ingress. Enable **Show in sidebar** if desired.
 
@@ -29,7 +31,7 @@ Use **Reconnect Music Assistant** to renew authorization for the same server whi
 ## Guest and display access
 
 - **Host desk / Settings:** available through Home Assistant Ingress and the published LAN port.
-- **Music / Join room / Room display:** use the separate guest address, without Home Assistant accounts.
+- **Your music / Join room / Room display:** use the separate guest address, without Home Assistant accounts.
 
 Supervisor supplies LAN-address and published-port suggestions. Choose a stable address in Settings if several interfaces are available. Phones and the display must be able to reach that address; isolated guest Wi-Fi may block it. Home Assistant remote access does not automatically expose the guest port.
 
@@ -56,11 +58,13 @@ Normal setup takes place in **Settings**. The Home Assistant Configuration tab c
 
 Update the existing installation from the same repository; uninstalling is not required. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue playing independently if playback was active before the restart.
 
+Listening Room was previously named **Albums of the Year**. The display-name change keeps the same installation ID, repository/image addresses, browser credentials, recovery keys, and stored data. It does not require rejoining or reconnecting Music Assistant. Existing Music Assistant tokens may retain the old application label; they remain valid until their normal expiry or revocation.
+
 Room data in legacy schemas 1 and 2 is not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the installed and target versions](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records also stop startup rather than replacing saved state.
 
 ## Backups and restore
 
-Include **Albums of the Year** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
+Include **Listening Room** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
 
 Hot-backup hooks coordinate persistent writes while Supervisor archives the data. Existing read-only pages and audio streams remain available. If a backup fails and writes remain paused, restart the app and retry the backup. Avoid large uploads during backups.
 

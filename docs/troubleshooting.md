@@ -34,7 +34,7 @@ Open Settings and choose **Recover playback controls**. The app checks ownership
 
 ## A private list disappeared
 
-Use the same guest address and browser as before, or open **Recover a saved list** and enter its recovery key. After joining, recovery is also available under **List access**. A matching nickname is not proof of ownership. Clearing browser data or switching HTTP/HTTPS, hostnames, or ports changes browser access. The host cannot inspect or recover another person’s list.
+Use the same guest address and browser as before, or open **Recover a saved list** and enter its recovery key. After joining, recovery is also available under **List access**. A matching display name is not proof of ownership. Clearing browser data or switching HTTP/HTTPS, hostnames, or ports changes browser access. The host cannot inspect or recover another person’s list.
 
 ## Saving or backup fails
 

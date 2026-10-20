@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.0.6] — 2026-10-20
+
+- Rename the app to Listening Room and clarify turn-based sharing, private selections, reveal controls, and silent demo playback without changing existing installation or list access.
+
 ## [1.0.5] — 2026-10-20
 
 - Soften the current-turn border into one uniformly blurred glow with feathered ends and a gentle ten-second circuit.

@@ -34,7 +34,7 @@ export class PublicRoom {
     const listening = el('section', undefined, 'room-listening'); listening.setAttribute('aria-label', 'Listening stage');
     this.rest.setAttribute('role', 'status');
     this.rest.append(this.restTitle, this.restHint);
-    this.stage.setAttribute('aria-label', 'Public now playing');
+    this.stage.setAttribute('aria-label', 'Room playback');
     const visual = el('div', undefined, 'room-visual');
     const glow = el('div', undefined, 'room-glow'); glow.setAttribute('aria-hidden', 'true');
     this.record.classList.add('room-record'); this.cover.append(this.record);
@@ -58,7 +58,7 @@ export class PublicRoom {
     prop(this.rest, 'hidden', active); prop(this.stage, 'hidden', !active);
     text(this.restTitle, state === 'unavailable' ? 'Playback unavailable.' : 'Nothing playing.');
     text(this.restHint, state === 'unavailable' ? (online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…')
-      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the listening circle.');
+      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the listening room.');
 
     const revealed = active && view.nowPlaying?.revealed === true ? view.nowPlaying.track : undefined;
     const trackKey = active ? JSON.stringify([view.progress!.id, revealed ?? null, revealed ? null : view.current]) : '';
@@ -66,7 +66,7 @@ export class PublicRoom {
       this.trackKey = trackKey;
       this.cover.querySelector('.room-artwork')?.remove(); this.credit.replaceChildren();
       updateVinylLabel(this.record);
-      this.title.textContent = active ? revealed?.title ?? 'Keep them guessing.' : '';
+      this.title.textContent = active ? revealed?.title ?? 'Track details hidden.' : '';
       this.title.classList.toggle('is-long', Boolean(revealed && revealed.title.length > 55));
       this.album.textContent = active ? revealed?.album ?? '' : '';
       this.album.hidden = !this.album.textContent;

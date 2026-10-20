@@ -1,13 +1,13 @@
 # Private lists and recovery
 
-**Saved list** contains a participant’s ordered song selections. Access is tied to private browser credentials, not a nickname. Other participants, the host, and the public display do not receive its contents or counts.
+**Your selections** contains a participant’s ordered track choices. Access is tied to private browser credentials, not a display name. Other participants, the host, and the room display do not receive its contents or counts.
 
 ## Save and arrange
 
 - **Add to list** saves the selected recording/source. The next choice is at the top.
-- **Edit order** provides drag handles and up/down controls. **Make next** moves a choice to the front.
+- **Edit order** provides drag handles and up/down controls. **Move to top** moves a choice to the front without playing it.
 - **Remove** moves a choice to **History → Removed**. Choose **Add back** to restore it.
-- **Play next** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
+- **Play first selection** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
 - Successful playback keeps the choice in **History → Previously played**. This means playback started, not necessarily that the song finished.
 
 The app never autoplays a list or sends the whole list to Music Assistant. Failed or uncertain playback keeps the entry for explicit review.
@@ -20,7 +20,7 @@ Lists allow 200 upcoming choices, 1,000 retained entries including history, and 
 
 Open **List access → Create recovery key**. Keep the key private: anyone with it can access the saved list. On another browser/device, open **Recover a saved list**, enter the key, and select **Recover list**. Use **Revoke other devices** to remove other browsers’ access if needed.
 
-- A nickname does not recover a list.
+- A display name does not recover a list.
 - Removing a person from the listening order does not delete their music.
 - Clearing cookies/site data, using a different browser, or changing the guest address can lose browser access. Use the recovery key.
 - Without browser credentials or a recovery key, there is no host-assisted recovery path.

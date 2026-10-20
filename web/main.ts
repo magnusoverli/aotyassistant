@@ -29,9 +29,10 @@ import { joinPanel } from './join-panel';
 import { ParticipantAccess } from './participant-access';
 import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
 import { panel, pageHeading, sectionHeading, notice } from './ui-components';
+import { productName, productTagline } from '../src/product';
 
 const page = pageForPath(pagePath(location.pathname));
-document.title = `${({ home: 'Home', join: 'Join room', participant: 'Music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · Albums of the Year`;
+document.title = `${({ home: 'Home', join: 'Join room', participant: 'Your music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · ${productName}`;
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const turnAnnouncement = el('div', undefined, 'sr-only');
 turnAnnouncement.setAttribute('role', 'status'); turnAnnouncement.setAttribute('aria-live', 'polite'); turnAnnouncement.setAttribute('aria-atomic', 'true');
@@ -298,7 +299,7 @@ function accept(next: View) {
     const position = next.position;
     const turnMessage = next.myTurn ? 'It’s your turn to share.'
       : next.current ? `${next.current.nickname}’s turn. ${position?.turnsUntil === 1 ? 'You are up next.' : position?.turnsUntil != null ? `Your turn is ${position.turnsUntil} turns away.` : ''}`
-      : 'The listening circle is ready.';
+      : 'The listening room is ready.';
     const announcement = turnMessage;
     if (turnAnnouncement.textContent !== announcement) turnAnnouncement.textContent = announcement;
   }
@@ -351,7 +352,7 @@ function qrCard() {
     const invitation = link('Open guest invitation ↗', view.joinUrl); invitation.target = '_blank'; invitation.rel = 'noopener noreferrer'; card.append(invitation);
   }
   if (view?.displayUrl) {
-    const display = link('Open public display ↗', view.displayUrl); display.target = '_blank'; display.rel = 'noopener noreferrer'; card.append(display);
+    const display = link('Open room display ↗', view.displayUrl); display.target = '_blank'; display.rel = 'noopener noreferrer'; card.append(display);
   }
   return card;
 }
@@ -488,10 +489,10 @@ function participantPlayer(current: View) {
   updateProgress(progress, playback ? shown.progress : undefined);
   if (player.starting) text(status, 'Starting track…');
   const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
-  children(statusLine, status, v.el('privacy', 'span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'Next from saved list' : 'Your player', 'privacy-tag'));
+  children(statusLine, status, v.el('privacy', 'span', playback ? playback.revealed ? current.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player', 'privacy-tag'));
   if (statusLine.parentElement !== progress) progress.prepend(statusLine);
   const controls = v.el('controls', 'div', undefined, 'actions');
-  const play = v.get('play-next', () => { const node = playerButton('Play next', () => {
+  const play = v.get('play-next', () => { const node = playerButton('Play first selection', () => {
     const entry = library.view?.upcoming[0];
     if (!entry || !library.view) return;
     const track: CatalogueTrack = { id: `prepared:${entry.id}`, title: entry.title, artist: entry.artist, album: entry.album, version: entry.version,
@@ -501,14 +502,14 @@ function participantPlayer(current: View) {
   const ready = Boolean(next && next.sourceAvailable !== false && realtime && current.connected && current.myTurn && current.catalogue?.playbackAvailable &&
     !library.loading && !library.saving && !library.pending && !library.view?.reviewEntryId);
   prop(play, 'hidden', !next); prop(play, 'disabled', !ready || player.starting); attr(play, 'data-player-ready', String(ready));
-  prop(play, 'title', next ? `Play from saved list: ${next.title}` : 'Save a song to play it here');
+  prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here');
   card.classList.toggle('has-next-pick', Boolean(next));
   const action = playback?.status === 'paused' ? 'resume' : 'pause';
   const transport = v.get('transport', () => { const node = playerButton('Pause', () => {}, true); node.id = 'player-transport'; return node; });
   text(transport, action === 'pause' ? 'Pause' : 'Resume'); transport.onclick = () => { error = ''; player.control(action); };
   prop(transport, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.status === 'stopped');
-  const reveal = v.get('reveal', () => { const node = playerButton('Reveal song', () => player.reveal()); node.id = 'player-reveal'; node.classList.add('reveal-button'); return node; });
-  text(reveal, playback?.revealed ? 'Revealed' : 'Reveal song'); prop(reveal, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.revealed);
+  const reveal = v.get('reveal', () => { const node = playerButton('Reveal details', () => player.reveal()); node.id = 'player-reveal'; node.classList.add('reveal-button'); return node; });
+  text(reveal, playback?.revealed ? 'Details revealed' : 'Reveal details'); prop(reveal, 'disabled', !realtime || !current.connected || !current.myTurn || !playback || playback.revealed);
   children(controls, play, transport, reveal);
   const finish = v.get('finish', () => { const node = button('Pass turn', () => { player.cancel(); return mutate('/api/participant/finish', { turnId: view?.turnId }); }, true); node.id = 'finish-my-turn'; return node; });
   text(finish, playback ? 'Finish turn' : 'Pass turn'); prop(finish, 'disabled', busy || !realtime || !current.connected || !current.myTurn || player.starting);
@@ -526,16 +527,16 @@ function participant() {
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   attr(main, 'data-turn-state', state);
   const hero = v.el('hero', 'section', undefined, `participant-hero is-${state}`); attr(hero, 'aria-label', 'Your turn status');
-  const title = v.el('title', 'h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening circle'); prop(title, 'title', title.textContent!);
+  const title = v.el('title', 'h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening room'); prop(title, 'title', title.textContent!);
   const distance = v.el('distance', 'p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance');
   const shortcuts = v.el('shortcuts', 'nav', undefined, 'music-shortcuts'); attr(shortcuts, 'aria-label', 'Your music shortcuts');
   const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));
   find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
-  const list = v.el('list-shortcut', 'button', 'Saved list', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
+  const list = v.el('list-shortcut', 'button', 'Your selections', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
   children(shortcuts, find, list); children(hero, title, distance, shortcuts);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
   const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
-  const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading, el('span', 'Private search', 'privacy-tag')); return node; });
+  const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading, el('span', 'Your search', 'privacy-tag')); return node; });
   const modes = v.el('modes', 'div', undefined, 'search-tabs'); attr(modes, 'role', 'group'); attr(modes, 'aria-label', 'Search by');
   const searchNodes: Node[] = [searchHeading];
   const realCatalogue = view.catalogue?.source === 'music-assistant';
@@ -718,8 +719,10 @@ function render() {
   else if (page === 'participant' || page === 'join') content.push(participant());
   else {
     const main = pageFrame('compact', 'home-page');
-    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('Music', '/participant'), link('Room display', '/display'));
-    main.append(el('h1', 'Albums of the Year', 'heading-brand'), el('p', 'Take turns sharing the music you love.', 'muted'), actions, link('Host desk', '/host', 'home-host')); content.push(main);
+    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('Your music', '/participant'), link('Room display', '/display'));
+    main.append(el('h1', productName, 'heading-brand'), el('p', productTagline, 'muted'),
+      el('p', 'Join from your phone, prepare private selections, and take turns playing through Music Assistant. Reveal track details on the shared display when you’re ready.', 'muted'),
+      actions, link('Host desk', '/host', 'home-host')); content.push(main);
   }
   children(pageContent, ...content);
   updatePlayerReturn();

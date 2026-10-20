@@ -28,7 +28,7 @@ test('a first visit offers the shared inline join form and optional recovery, wi
   const form = await page.locator('.join-panel > form').innerHTML();
   await page.goto('/participant'); await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
   expect(await page.locator('.join-panel > form').innerHTML()).toBe(form);
-  await expect(page.locator('.brand-subtitle')).toHaveText('Music');
+  await expect(page.locator('.brand-subtitle')).toHaveText('Your music');
   await expect(page.locator('.preparation-list, .catalogue-panel, .playback-card')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Recover with a private key')).toBeHidden();
@@ -76,14 +76,14 @@ test('offline entry retains the nickname and returns to the join form after reco
   await expect(page.locator('.participant-hero')).toHaveCount(0);
 });
 
-for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks see no Saved list until they explicitly join`, async ({ browser, isolatedApp }) => {
+for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks see no selections workspace until they explicitly join`, async ({ browser, isolatedApp }) => {
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, count);
   try {
     const writes: string[] = []; r.page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list, .saved-track, .music-workspace')).toHaveCount(0);
-    await expect(r.page.getByRole('button', { name: 'Play next' })).toHaveCount(0);
+    await expect(r.page.getByRole('button', { name: 'Play first selection' })).toHaveCount(0);
     await expect(r.page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
     for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
       await r.page.setViewportSize({ width: width!, height: height! }); await noOverflow(r.page);

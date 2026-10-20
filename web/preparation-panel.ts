@@ -159,7 +159,7 @@ export class PreparationPanel {
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
     list.classList.toggle('is-expanded', expanded); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
     const heading = v.el('heading', 'div', undefined, 'list-heading');
-    const title = v.get('title', () => { const node = el('h2', 'Saved list'); node.id = 'music-list-title'; node.append(el('span', '', 'list-count')); return node; });
+    const title = v.get('title', () => { const node = el('h2', 'Your selections'); node.id = 'music-list-title'; node.append(el('span', '', 'list-count')); return node; });
     text(title.querySelector('.list-count')!, ` · ${snapshot?.upcoming.length ?? 0}`);
     const expand = v.el('expand', 'button', expanded ? 'Close list' : 'Open list', 'secondary list-expand'); prop(expand, 'type', 'button'); prop(expand, 'id', 'music-list-expand');
     attr(expand, 'aria-expanded', String(expanded)); attr(expand, 'aria-controls', 'music-list-body');
@@ -266,7 +266,7 @@ export class PreparationPanel {
         }
       };
       const menu = this.details(`entry-${entry.id}`, '⋯'); menu.classList.add('saved-menu'); menu.querySelector('summary')!.setAttribute('aria-label', `Options for ${entry.title}`);
-      const next = this.button('Make next', () => library.edit('move', { entryId: entry.id, beforeId: library.view?.upcoming[0]?.id ?? null })); next.dataset.makeNext = 'true';
+      const next = this.button('Move to top', () => library.edit('move', { entryId: entry.id, beforeId: library.view?.upcoming[0]?.id ?? null })); next.dataset.makeNext = 'true';
       children(menu, menu.firstElementChild!, next, this.button('Remove', () => library.edit('remove', { entryId: entry.id }, entry.title))); controls.append(menu); row.append(controls);
       cached = { key, element: row }; this.rows.set(entry.id, cached);
     }

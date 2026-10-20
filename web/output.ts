@@ -1,12 +1,13 @@
 import type { OutputState } from '../src/model';
 import { el } from './dom';
 import { text, prop } from './view-nodes';
+import { demoPlaybackNotice } from '../src/product';
 
 export function outputLabel(output?: OutputState, online = true) {
   const label = el('p', undefined, 'output-label'); updateOutputLabel(label, output, online); return label;
 }
 export function updateOutputLabel(label: HTMLElement, output?: OutputState, online = true) {
-  const caption = !online ? 'Output: Connection lost' : !output ? 'Output: Demo' : output.state === 'ready' ? `Output: ${output.name}`
+  const caption = !online ? 'Output: Connection lost' : !output ? demoPlaybackNotice : output.state === 'ready' ? `Output: ${output.name}`
     : output.state === 'checking' ? `Output: ${output.name} · Checking…`
     : output.state === 'recovery' ? `Output: ${output.name} · Recovery needed`
     : output.state === 'incompatible' ? `Output: ${output.name} · Playback unsupported`

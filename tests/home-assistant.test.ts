@@ -98,7 +98,7 @@ test('first-run addresses persist once; subsequent Supervisor IP changes and exp
 });
 
 async function authorizationFixture(t: TestContext) {
-  const calls: string[] = []; let identity = serverInfo.server_id;
+  const calls: string[] = []; const tokenNames: string[] = []; let identity = serverInfo.server_id;
   const token = `header.${Buffer.from(JSON.stringify({ jti: 'app-token-id', exp: Math.floor(Date.now() / 1000) + 365 * 86400 })).toString('base64url')}.signature`;
   const remote = await listen(t, async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
@@ -109,7 +109,7 @@ async function authorizationFixture(t: TestContext) {
     const input = JSON.parse(raw); calls.push(input.command);
     if (!['Bearer login-code', `Bearer ${token}`, 'Bearer old-token'].includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('private upstream error'); return; }
     if (input.command === 'players/all') res.end(JSON.stringify([{ player_id: 'speaker', name: 'Room', available: true }]));
-    else if (input.command === 'auth/token/create') res.end(JSON.stringify(token));
+    else if (input.command === 'auth/token/create') { tokenNames.push(input.args.name); res.end(JSON.stringify(token)); }
     else if (input.command === 'auth/token/revoke') res.end('null');
     else if (input.command === 'player_queues/get_active_queue') res.end(JSON.stringify({ queue_id: 'speaker' }));
     else { res.statusCode = 400; res.end('unsupported'); }
@@ -123,9 +123,10 @@ async function authorizationFixture(t: TestContext) {
   const start = async () => {
     const response = await post('/api/host/auth/start', { url: remote.origin, revision: manager.view().revision }); assert.equal(response.status, 200);
     const payload = await response.json() as { loginUrl: string; attemptId: string }; const login = new URL(payload.loginUrl);
+    assert.equal(login.searchParams.get('device_name'), 'Listening Room');
     return { attemptId: payload.attemptId, callback: new URL(login.searchParams.get('return_url')!), cookie: response.headers.get('set-cookie')!.split(';')[0]!, response };
   };
-  return { manager, local, remote, token, calls, dir, engine, app: http.app, post, start, setIdentity(value: string) { identity = value; } };
+  return { manager, local, remote, token, calls, tokenNames, dir, engine, app: http.app, post, start, setIdentity(value: string) { identity = value; } };
 }
 
 test('browser authorization binds state to cookie, consumes callbacks once, and persists only an app token', async t => {
@@ -142,6 +143,7 @@ test('browser authorization binds state to cookie, consumes callbacks once, and 
   assert.ok(!(JSON.stringify(f.manager.view())).includes(f.token)); assert.ok(!(await readFile(join(f.dir, 'integrations.json'), 'utf8')).includes('login-code'));
   await fetch(login.callback, { headers: { Cookie: login.cookie }, redirect: 'manual' });
   assert.equal(f.calls.filter(c => c === 'auth/token/create').length, 1);
+  assert.deepEqual(f.tokenNames, ['Listening Room']);
   assert.ok(!f.calls.some(c => /play|volume|stop/.test(c) && c !== 'players/all'));
 });
 

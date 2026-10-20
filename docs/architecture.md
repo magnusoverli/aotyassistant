@@ -48,6 +48,8 @@ The browser uses independently updated regions so routine events preserve focus,
 
 ## Storage and lifecycle
 
+The display name is Listening Room. Legacy installation IDs, repository/image addresses, `aoty_*` cookies, `aoty.*` browser-storage keys, and `AOTY_*` diagnostic environment variables remain unchanged for compatibility. Display wording is not a storage or API schema change.
+
 - `/data/state.json`: schema-3 persistent room and membership/order; playback is cleared on restart.
 - `/data/integrations.json`: MA token, verified identity/source binding, speaker, and guest/media addressing.
 - `/data/preparations/`: owner-scoped lists, exact recording descriptors, history, operation receipts, credential/recovery hashes, and deletion intents.

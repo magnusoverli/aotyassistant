@@ -1,7 +1,7 @@
 {
   "name": "albums-of-the-year",
-  "version": "1.0.5",
-  "description": "A Home Assistant app for taking turns sharing favourite music through Music Assistant.",
+  "version": "1.0.6",
+  "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {
     "type": "git",

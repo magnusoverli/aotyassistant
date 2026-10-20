@@ -8,6 +8,7 @@ import { MusicAssistantTransport, musicAssistantUrl, maToken } from './music-ass
 import { readServerInfo } from './ma-discovery.js';
 import { body, rawCookie } from './http-utils.js';
 import { browserOrigin, ingressContext, requestBase } from './ingress.js';
+import { productName } from './product.js';
 
 const cookieName = 'aoty_ma_login';
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -43,7 +44,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       url: input.url, browserUrl, serverId: info.server_id, revision: input.revision, expires: expiresAt });
     res.cookie(cookieName, browser, { path: `${base}/api/host/auth`, httpOnly: true, sameSite: 'lax', secure: origin.startsWith('https:'), maxAge: 10 * 60_000 });
     const callback = new URL(`${base}/api/host/auth/callback`, origin); callback.searchParams.set('state', state);
-    const login = new URL('/login', browserUrl); login.searchParams.set('return_url', callback.href); login.searchParams.set('device_name', 'Albums of the Year');
+    const login = new URL('/login', browserUrl); login.searchParams.set('return_url', callback.href); login.searchParams.set('device_name', productName);
     res.json({ loginUrl: login.href, expiresAt, attemptId });
   });
   app.post('/api/host/auth/cancel', (req, res) => {
@@ -75,7 +76,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
       if (report.serverId !== tx.serverId) throw new Error();
       integrations.assertSetupRevision(tx.revision);
       transport = new MusicAssistantTransport(tx.url, code);
-      minted = maToken.parse(await transport.read('/api', 'auth/token/create', { name: 'Albums of the Year' }));
+      minted = maToken.parse(await transport.read('/api', 'auth/token/create', { name: productName }));
       const expiresAt = tokenClaims(minted).exp;
       await integrations.saveAuthorized(tx.url, minted, tx.serverId, tx.browserUrl, tx.revision, expiresAt ? expiresAt * 1000 : undefined, tx.attemptId);
       minted = undefined; result = 'connected'; changed();

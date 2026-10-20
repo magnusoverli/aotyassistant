@@ -50,7 +50,7 @@ test('participant typography, surfaces and desktop alignment match the host page
     await expect(page.locator('.catalogue-panel > .catalogue-results')).toHaveCount(1);
     await expect(page.locator('.music-workspace > .catalogue-results, .catalogue-panel .panel')).toHaveCount(0);
     await expect(page.locator('.preparation-list').getByRole('button', { name: /^(Play|Pause|Resume|Finish turn)/ })).toHaveCount(0);
-    await expect(page.locator('.playback-card').getByRole('button', { name: 'Play next', exact: true })).toBeEnabled();
+    await expect(page.locator('.playback-card').getByRole('button', { name: 'Play first selection', exact: true })).toBeEnabled();
     expect((await page.getByRole('button', { name: 'Choose audio file', exact: true }).boundingBox())!.y).toBeLessThan((await page.locator('.catalogue-results').boundingBox())!.y);
     await page.screenshot({ path: 'test-results/participant-coherent-desktop.png', fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
@@ -110,7 +110,7 @@ test('saved-list changes update the player selection without adding playback con
     await page.getByRole('button', { name: 'Open list', exact: true }).click();
     await expect(page.locator('.preparation-list').getByRole('button', { name: /^(Play|Pause|Resume|Finish turn)/, includeHidden: true })).toHaveCount(0);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
-    await page.locator('.playback-card').getByRole('button', { name: 'Play next', exact: true }).click();
+    await page.locator('.playback-card').getByRole('button', { name: 'Play first selection', exact: true }).click();
     await expect(page.locator('.playback-card').getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(page.locator('.list-count')).toHaveText(' · 2');
     const playing = await (await page.request.get('/api/participant/state')).json();

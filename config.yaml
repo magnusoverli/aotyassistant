@@ -1,8 +1,8 @@
-name: Albums of the Year
-version: "1.0.5"
+name: Listening Room
+version: "1.0.6"
 slug: albums_of_the_year
 url: https://github.com/magnusoverli/aotyassistant
-description: Take turns sharing favourite music with private song lists, Music Assistant playback, and a shared listening-room display.
+description: Turn-based music sharing for Home Assistant, powered by Music Assistant.
 arch:
   - amd64
   - aarch64
@@ -18,7 +18,7 @@ ingress_port: 8099
 ingress_entry: host
 ingress_stream: true
 panel_icon: mdi:album
-panel_title: Albums of the Year
+panel_title: Listening Room
 panel_admin: true
 stage: stable
 host_network: false

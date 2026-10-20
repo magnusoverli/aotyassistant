@@ -107,7 +107,7 @@ export class PreparationFileStore implements PreparationStore {
     } catch (error) {
       this.forget(ownerId);
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw new AppError(503, 'Saved preparation could not be read. Nothing was reset. Check the data directory or restore its backup.');
+      throw new AppError(503, 'Your saved list could not be read. Nothing was reset. Check the data directory or restore its backup.');
     }
   }
   async save(state: PreparationState): Promise<void> {
@@ -141,7 +141,7 @@ export type PreparationResult = { view: PreparationView; entryId: string; replay
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const sameHash = (a: string, b: string) => timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 function input<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
-  const parsed = schema.safeParse(value); if (!parsed.success) throw new AppError(400, 'Invalid preparation request.'); return parsed.data;
+  const parsed = schema.safeParse(value); if (!parsed.success) throw new AppError(400, 'Invalid list request. Refresh your list and try again.'); return parsed.data;
 }
 function identity(credential: string) {
   if (typeof credential !== 'string' || credential.length > 100) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
@@ -233,7 +233,7 @@ export class PreparationManager {
     if (state.pendingPlay && kind !== 'review') throw new AppError(409, 'A previous play attempt needs review. Your saved entry was kept.');
     if (this.playing.has(state.ownerId)) throw new AppError(409, 'This saved track is still starting. Wait for the player before reviewing it.');
     state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
-    if (state.receipts.length >= preparationLimits.receipts) throw new AppError(409, 'Preparation edit capacity is temporarily full. Your saved entries were kept.');
+    if (state.receipts.length >= preparationLimits.receipts) throw new AppError(409, 'Too many recent list changes. Try again later; your saved entries were kept.');
   }
   private async mutate(credential: string, operation: PreparationOperation, kind: string, payload: unknown, change: (state: PreparationState) => string | Promise<string>): Promise<PreparationResult> {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);

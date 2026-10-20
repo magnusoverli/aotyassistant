@@ -34,7 +34,7 @@ for (const paused of [false, true]) test(`direct and prepared replacement both r
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
     const original = await (await page.request.get('/api/participant/state')).json();
     const prompts: string[] = [];
-    for (const name of ['Play', 'Play next']) {
+    for (const name of ['Play', 'Play first selection']) {
       page.once('dialog', async dialog => { prompts.push(dialog.message()); await dialog.dismiss(); });
       await page.getByRole('button', { name, exact: true }).click();
       expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).toBe(original.ownPlayback.id);
@@ -111,10 +111,10 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await expect(page.getByRole('alert')).toContainText('Fixture finish rejected.');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     expect(finishes).toBe(1); expect(actions).not.toContain('stop');
-    await page.getByRole('button', { name: 'Reveal song', exact: true }).click();
+    await page.getByRole('button', { name: 'Reveal details', exact: true }).click();
     await expect(page.getByText('Revealing…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
-    await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     reveal.release(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
     await expect(page.locator('.player-pending')).toHaveCount(0);
   } finally { start.release(); pause.release(); reveal.release(); await f.close(); }

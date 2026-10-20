@@ -10,7 +10,7 @@ body:
   - type: input
     id: app-version
     attributes:
-      label: Albums of the Year version
+      label: Listening Room version
     validations:
       required: true
   - type: textarea

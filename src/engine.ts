@@ -217,7 +217,7 @@ export class Engine extends EventEmitter {
       const room = this.room(state);
       if (existingCredential && room.participants.some(p => p.credentialHash === hash(existingCredential))) return existingCredential;
       const name = nickname.trim();
-      if (!name || name.length > 40 || /[\x00-\x1f\x7f]/.test(name)) throw new AppError(400, 'Use a nickname of 1–40 characters without control characters.');
+      if (!name || name.length > 40 || /[\x00-\x1f\x7f]/.test(name)) throw new AppError(400, 'Enter a display name of 1–40 characters without control characters.');
       if (room.participants.length >= 100) throw new AppError(409, 'This room is full.');
       const credential = secret(); const id = randomUUID();
       room.participants.push({ id, nickname: name, credentialHash: hash(credential) }); room.active.push(id);
@@ -307,7 +307,7 @@ export class Engine extends EventEmitter {
         check(room);
         if (this.catalogue?.configured && !this.catalogue.playbackAvailable) {
           if (this.catalogue.output?.name) throw new AppError(409, 'The selected speaker is not ready. Check its status in host settings and try again.');
-          throw new AppError(422, 'Choose a playback destination in host settings first.');
+          throw new AppError(422, 'Choose a speaker or group in Settings before playing.');
         }
         return `${room.id}:${this.participant(credential, room).id}`;
       });

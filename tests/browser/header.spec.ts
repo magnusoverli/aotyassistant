@@ -20,7 +20,7 @@ test('tabbing out of the menu exposes the focused join field and Escape works ou
 
 test('every page uses the shared header with centralized navigation, current-page semantics, and no duplicate body navigation', async ({ page }) => {
   const session = await (await page.request.get('/api/host/state')).json();
-  for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Settings'], ['/participant', 'Music'], [session.joinUrl, null], [session.displayUrl, 'Room display']] as const) {
+  for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Settings'], ['/participant', 'Your music'], [session.joinUrl, null], [session.displayUrl, 'Room display']] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(path);
     await expect(page.getByRole('banner')).toHaveCount(1); await expect(page.locator('header[data-header="shared"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
@@ -32,13 +32,13 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(navigation.locator('button, .mode-badge')).toHaveCount(0);
     expect(await navigation.locator('a').evaluateAll(links => links.map(link => ({ text: link.textContent, href: link.getAttribute('href') })))).toEqual([
       { text: 'Host desk', href: '/host' }, { text: 'Settings', href: '/host/settings' },
-      { text: 'Music', href: '/participant' }, { text: 'Room display', href: '/display' },
+      { text: 'Your music', href: '/participant' }, { text: 'Room display', href: '/display' },
     ]);
     if (current) await expect(navigation.getByRole('link', { name: current, exact: true })).toHaveAttribute('aria-current', 'page');
     else await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
     const brand = page.locator('a.brand');
     await expect(brand).toHaveAttribute('href', '/');
-    await expect(brand).toHaveAccessibleName(`Albums of the Year ${await brand.locator('.brand-subtitle').textContent()}`);
+    await expect(brand).toHaveAccessibleName(`Listening Room ${await brand.locator('.brand-subtitle').textContent()}`);
     await expect(page.locator('.host-sidebar, .host-nav, .session-navigation, main .back-link, main .display-link')).toHaveCount(0);
     const html = await page.getByRole('banner').innerHTML(); expect(html).not.toContain('#access='); expect(html).not.toContain('#invite=');
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);
@@ -61,7 +61,7 @@ test('every page uses the shared header with centralized navigation, current-pag
   await openNavigation(page);
   await page.getByRole('banner').getByRole('link', { name: 'Host desk', exact: true }).click();
   await expect(page).toHaveURL('/host');
-  const launch = page.locator('.host-invitations').getByRole('link', { name: 'Open public display' });
+  const launch = page.locator('.host-invitations').getByRole('link', { name: 'Open room display' });
   await expect(launch).toHaveAttribute('href', session.displayUrl); await expect(launch).toHaveAttribute('rel', 'noopener noreferrer');
   await expect(page.locator('.host-invitations').getByRole('link', { name: 'Open guest invitation' })).toHaveAttribute('href', session.joinUrl);
 });
@@ -91,7 +91,7 @@ test('mobile header supports keyboard menus, stable focus across live updates, o
   await page.setViewportSize({ width: 320, height: 740 }); await expect(navigation).toBeVisible(); await expect(settings).toBeFocused();
   await page.keyboard.press('Escape'); await expect(menu).toBeFocused();
   await openNavigation(page); await page.screenshot({ path: 'test-results/shared-header-menu-320.png', fullPage: true });
-  await navigation.getByRole('link', { name: 'Music', exact: true }).click();
+  await navigation.getByRole('link', { name: 'Your music', exact: true }).click();
   await expect(page).toHaveURL('/participant'); await expect(navigation).toBeHidden(); await noOverflow(page);
   await page.goto('/host'); const skip = page.getByRole('link', { name: 'Skip to content', exact: true }); await skip.focus(); await skip.press('Enter');
   await expect(page.locator('#main-content')).toBeFocused();
@@ -128,7 +128,7 @@ test('display header stays mounted through menus/fullscreen/reveal/removal witho
     const joined = await participantContext.request.post(isolatedApp.origin + '/api/participant/join', { data: { nickname: 'A listener <literal>' }, headers: { Origin: isolatedApp.origin } }); expect(joined.ok()).toBe(true);
     session = await (await host.request.get('/api/host/state')).json();
     const playing = await participantContext.request.post(isolatedApp.origin + '/api/participant/play', { data: { turnId: session.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } }); const own = await playing.json();
-    const tv = await displayContext.newPage(); await tv.goto(session.displayUrl); await expect(tv.getByRole('heading', { name: 'Keep them guessing.' })).toBeVisible();
+    const tv = await displayContext.newPage(); await tv.goto(session.displayUrl); await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     await tv.evaluate(() => { (window as any).headerRef = document.querySelector('header'); (window as any).recordRef = document.querySelector('.room-record'); (window as any).spinRef = document.querySelector('.room-record')!.getAnimations()[0]; });
     await openNavigation(tv); await expect(tv.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
     expect(await tv.getByRole('banner').innerHTML()).not.toContain('Northern Lights'); expect(await tv.getByRole('banner').innerHTML()).not.toContain('#access=');

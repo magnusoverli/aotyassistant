@@ -1,8 +1,10 @@
-# Albums of the Year
+# Listening Room
 
-**A Home Assistant app for sharing favourite music, one person and one song at a time.**
+**Take turns. Share music. Listen together.**
 
-Participants join by scanning the room’s QR code and take turns playing a song from a favourite album. Each participant prepares selections privately on a phone. A shared display hides the song’s details until the current participant reveals them.
+Turn-based music sharing for Home Assistant, powered by Music Assistant.
+
+People join a shared listening room from their phones, prepare private track selections, and take turns playing music. Browse the sources configured in Music Assistant or upload an audio file. Track details stay hidden on the room display until the current participant reveals the title, artist, and artwork.
 
 [![Release](https://img.shields.io/github/v/release/magnusoverli/aotyassistant)](https://github.com/magnusoverli/aotyassistant/releases/latest)
 [![Application checks](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml)
@@ -10,12 +12,14 @@ Participants join by scanning the room’s QR code and take turns playing a song
 
 ## What it does
 
-- **Take turns:** join with a nickname, see who is up next, and let the host arrange the listening order.
+- **Take turns:** join with a display name, see who is up next, and let the host arrange the listening order.
 - **Browse music:** search artists, albums, and tracks across the sources configured in Music Assistant.
-- **Prepare privately:** save and reorder selections, upload a track, and retain a private list between gatherings.
-- **Play and reveal:** the current participant controls playback and can reveal the song’s title, artist, and artwork on the shared display.
-- **Keep the room moving:** confirmed track completion advances the turn; the next song starts only when someone presses Play.
+- **Prepare privately:** save and reorder selections, upload a track, and return to the same private list on later visits.
+- **Play and reveal:** the current participant controls playback and can reveal track details on the shared display.
+- **Keep the room moving:** confirmed track completion advances the turn; the next track starts only when its participant presses Play.
 - **Use existing devices:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
+
+Use it for music discovery, listening clubs, or themed track-sharing. The app manages sharing and playback, not voting, scoring, or rankings.
 
 ## Requirements
 
@@ -34,23 +38,25 @@ Participants join by scanning the room’s QR code and take turns playing a song
    ```text
    https://github.com/magnusoverli/aotyassistant
    ```
-2. Install **Albums of the Year**, start it, and select **Open web UI**.
+2. Install **Listening Room**, start it, and select **Open web UI**.
 3. Open **Settings**, connect Music Assistant, and choose a speaker or group.
 4. Share the host desk’s join QR code and open **Room display** on a shared screen.
 
 The app discovers local addresses and Music Assistant automatically. Setup checks do not start music. For the full walkthrough, options, updates, and backups, see the **[installation guide](DOCS.md)**.
 
-## A listening evening
+## How it works
 
-The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, browse **Find music**, add songs to **Saved list**, or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play next** in the player to start the first saved selection, then **Reveal song** to show its details. The turn passes automatically when the song finishes, or earlier with **Finish turn**.
+The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, open **Your music**, browse **Find music**, and add tracks to **Your selections** or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play first selection** in the player, then **Reveal details** to show the track information. The turn passes automatically when Music Assistant confirms the track has finished, or earlier with **Finish turn**.
 
-There is one persistent room. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, or advancing a turn never starts the next song automatically.
+There is one persistent room, not separate events or temporary sessions. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, or advancing a turn never starts the next track automatically. Before Music Assistant is connected, **Demo mode — no audio** lets you try the workflow without playing sound.
+
+Pressing Play replaces the selected speaker or group’s queue with one track and may interrupt other audio. The app does not automatically play an entire saved list or album.
 
 ## Access and privacy
 
 Use this app on a **trusted LAN**. Anyone who can reach its guest port can also open the host controls, change settings, and manage the listening order. Home Assistant authentication protects the Ingress interface, not the separate LAN port. Do not publish that port to the internet.
 
-Private song lists are tied to browser credentials. Save a recovery key to retain access when changing phones or browser addresses. The app keeps unrevealed music off the shared display, but cannot hide it in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
+Private track lists are tied to browser credentials. Save a recovery key to retain access when changing phones or browser addresses. The app keeps unrevealed track details off the shared display, but cannot hide them in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
 
 ## Guides and support
 

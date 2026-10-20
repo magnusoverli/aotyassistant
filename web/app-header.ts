@@ -2,6 +2,7 @@ import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
 import { navigationHref, inIngress } from './paths';
 import { attr, prop, text } from './view-nodes';
+import { demoPlaybackNotice, productName } from '../src/product';
 
 /** One persistent, compact header for every route and viewport. */
 export class AppHeader {
@@ -30,7 +31,7 @@ export class AppHeader {
     const brand = link('', routes.home, 'brand');
     if (page === 'home') brand.setAttribute('aria-current', 'page');
     const mark = el('span', '◉', 'brand-mark'); mark.setAttribute('aria-hidden', 'true');
-    const wordmark = el('div'); wordmark.append(el('strong', 'Albums of the Year'), this.subtitle); brand.append(mark, wordmark);
+    const wordmark = el('div'); wordmark.append(el('strong', productName), this.subtitle); brand.append(mark, wordmark);
     this.navigation.id = 'app-navigation'; this.navigation.setAttribute('aria-label', 'Primary navigation');
     this.navigation.append(this.primary);
     this.toggle.type = 'button'; this.toggle.setAttribute('aria-controls', this.navigation.id);
@@ -64,7 +65,10 @@ export class AppHeader {
   update(state: HeaderState) {
     this.lastState = state;
     const model = headerModel(this.page, state);
-    if (this.subtitle.textContent !== model.subtitle) this.subtitle.textContent = model.subtitle;
+    const demo = state.view?.mode === 'demo';
+    this.subtitle.classList.toggle('demo-playback-notice', demo);
+    attr(this.subtitle, 'aria-live', demo ? 'polite' : undefined);
+    text(this.subtitle, demo ? demoPlaybackNotice : model.subtitle);
     for (const item of model.primary) {
       let anchor = this.links.get(item.id);
       if (!anchor) { anchor = link('', item.href, 'header-nav-link'); const li = el('li'); li.append(anchor); this.primary.append(li); this.links.set(item.id, anchor); }

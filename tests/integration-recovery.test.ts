@@ -163,7 +163,7 @@ test('unsupported playback schema is independent of healthy speaker/queue checks
   const view = manager.view(); assert.equal(view.status, 'checked'); assert.equal(view.destinationStatus, 'checked');
   assert.equal(view.output.state, 'incompatible'); assert.equal(view.output.reason, 'unsupported-schema'); assert.equal(view.playbackAvailable, false);
   assert.equal(view.report?.players.find(player => player.id === 'sonos:room')?.available, true);
-  assert.equal(view.compatibility?.schemaVersion, 66); assert.match(view.compatibility!.message, /schema 66.*schema 65.*Check for an Albums of the Year update/);
+  assert.equal(view.compatibility?.schemaVersion, 66); assert.match(view.compatibility!.message, /schema 66.*schema 65.*Check for an app update/);
   const client = new MusicAssistantClient(remote.origin, 'fixture-token'); t.after(() => client.close());
   await assert.rejects(client.playbackCapability('sonos:room'), /requires Music Assistant API schema 65/);
   remote.info.schema_version = 65; await manager.check(manager.view().revision); assert.equal(manager.playbackAvailable, true);
