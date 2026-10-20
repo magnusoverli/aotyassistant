@@ -6,6 +6,7 @@
 
 - Keep participant cards compact with corner trash icons, and slide neighbouring cards into place while reordering.
 - Make the travelling border mark the current participant’s turn, including while choosing a song, paused or stopped.
+- Prevent dragged or cancelled pointer gestures over trash icons from removing participants.
 
 ## [1.0.3] — 2026-10-20
 

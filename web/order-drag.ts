@@ -19,6 +19,7 @@ export class OrderDrag {
   private frame = 0;
   private lastFrame = 0;
   private blockClick = false;
+  private press?: { pointer: number; x: number; y: number };
 
   constructor(private list: HTMLElement, private options: Options) {
     list.addEventListener('pointerdown', this.pointerDown);
@@ -28,8 +29,14 @@ export class OrderDrag {
     list.addEventListener('lostpointercapture', () => this.cancel());
     list.addEventListener('keydown', this.keydown);
     list.addEventListener('dragstart', event => { if (this.options.state().enabled) event.preventDefault(); });
+    // Track the whole gesture, including presses on the trash icon and releases after cancellation.
+    document.addEventListener('pointermove', event => this.trackPress(event), true);
+    document.addEventListener('pointerup', event => {
+      this.trackPress(event); if (this.press?.pointer === event.pointerId) this.press = undefined;
+    }, true);
+    document.addEventListener('pointercancel', event => { if (this.press?.pointer === event.pointerId) { this.blockClick = true; this.press = undefined; } }, true);
     list.addEventListener('click', event => {
-      if (this.blockClick) { event.preventDefault(); event.stopImmediatePropagation(); this.blockClick = false; }
+      if (event.detail > 0 && this.blockClick) { event.preventDefault(); event.stopImmediatePropagation(); this.blockClick = false; }
     }, true);
     window.addEventListener('blur', () => this.cancel());
     window.addEventListener('pagehide', () => this.cancel());
@@ -85,11 +92,17 @@ export class OrderDrag {
   }
 
   private pointerDown = (event: PointerEvent) => {
-    if (this.drag || !event.isPrimary || event.button !== 0 || !(event.target instanceof Element) || event.target.closest('button, a, input, select, textarea')) return;
+    if (!event.isPrimary || event.button !== 0) return;
+    this.blockClick = false; this.press = { pointer: event.pointerId, x: event.clientX, y: event.clientY };
+    if (this.drag || !(event.target instanceof Element) || event.target.closest('button, a, input, select, textarea')) return;
     const source = event.target.closest<HTMLElement>('.rotation-seat'); if (!source || !this.list.contains(source)) return;
     this.drag = this.create(source, event); if (!this.drag) return;
     source.focus({ preventScroll: true }); this.list.setPointerCapture(event.pointerId);
   };
+
+  private trackPress(event: PointerEvent) {
+    if (this.press?.pointer === event.pointerId && Math.hypot(event.clientX - this.press.x, event.clientY - this.press.y) >= 8) this.blockClick = true;
+  }
 
   private pointerMove = (event: PointerEvent) => {
     const drag = this.drag; if (!drag || event.pointerId !== drag.pointer) return;
@@ -102,7 +115,7 @@ export class OrderDrag {
     const drag = this.drag; if (!drag || event.pointerId !== drag.pointer) return;
     if (!drag.active) { this.clear(); return; }
     drag.x = event.clientX; drag.y = event.clientY; this.pointerPosition(drag);
-    this.blockClick = true; setTimeout(() => { this.blockClick = false; }, 0);
+    this.blockClick = true;
     if (drag.valid) this.drop(); else this.cancel();
   };
 

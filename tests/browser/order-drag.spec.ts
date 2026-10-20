@@ -4,6 +4,8 @@ import { test } from './app-fixture';
 const seat = (page: Page, name: string) => page.locator('.rotation-list .rotation-seat').filter({ has: page.locator('strong', { hasText: new RegExp(`^${name}$`) }) });
 const names = (page: Page) => page.locator('.rotation-list .rotation-seat strong');
 async function pickUp(page: Page, source: Locator) {
+  // A cancelled preview can still be sliding home; aim at the card once its rollback settles.
+  await expect.poll(() => source.evaluate(node => node.getAnimations().every(animation => animation.playState === 'finished'))).toBe(true);
   const box = (await source.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + 18); await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 12, box.y + 18, { steps: 3 });
@@ -123,6 +125,24 @@ test('cancelled, unchanged, stale and disconnected drags never write an order', 
   await expect(page.locator('.is-dragging, .is-keyboard-dragging')).toHaveCount(0);
   expect(await page.locator('.rotation-list .rotation-seat').evaluateAll(nodes => nodes.every(node => !(node as HTMLElement).style.transform))).toBe(true);
   expect(writes).toEqual([]);
+});
+
+test('pointer gestures over trash icons cannot remove a participant, while deliberate mouse and keyboard removal still work', async ({ page, isolatedApp }) => {
+  for (const name of ['First', 'Second', 'Third']) await isolatedApp.engine.join(name);
+  const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
+  await page.goto('/host'); await page.getByRole('button', { name: 'Manage people', exact: true }).click();
+  const remove = seat(page, 'Third').getByRole('button', { name: 'Remove Third', exact: true });
+  const box = (await remove.boundingBox())!; const x = box.x + box.width / 2; const y = box.y + box.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  await page.mouse.move(x + 70, y, { steps: 3 }); await page.mouse.move(x, y, { steps: 3 }); await page.mouse.up();
+  await expect(names(page)).toHaveText(['First', 'Second', 'Third']); expect(writes).toEqual([]);
+  await pickUp(page, seat(page, 'First')); await movePast(page, seat(page, 'Third')); await page.keyboard.press('Escape');
+  await expect.poll(() => seat(page, 'Third').evaluate(node => node.getAnimations().length)).toBe(0);
+  await page.mouse.move(x, y); await page.mouse.up();
+  await expect(names(page)).toHaveText(['First', 'Second', 'Third']); expect(writes).toEqual([]);
+  await remove.click(); await expect(names(page)).toHaveText(['First', 'Second']);
+  const second = seat(page, 'Second').getByRole('button', { name: 'Remove Second', exact: true });
+  await second.focus(); await page.keyboard.press('Enter'); await expect(names(page)).toHaveText(['First']); expect(writes).toHaveLength(2);
 });
 
 test('pending and failed drops keep the authoritative order, block repeats and reconcile without retrying', async ({ page, isolatedApp }) => {
