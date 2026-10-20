@@ -28,6 +28,9 @@ export class OrderDrag {
     list.addEventListener('pointercancel', () => this.cancel());
     list.addEventListener('lostpointercapture', () => this.cancel());
     list.addEventListener('keydown', this.keydown);
+    list.addEventListener('focusout', event => {
+      if (this.drag && this.drag.pointer === undefined && !list.contains(event.relatedTarget instanceof Node ? event.relatedTarget : null)) this.cancel();
+    });
     list.addEventListener('dragstart', event => { if (this.options.state().enabled) event.preventDefault(); });
     // Track the whole gesture, including presses on the trash icon and releases after cancellation.
     document.addEventListener('pointermove', event => this.trackPress(event), true);

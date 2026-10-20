@@ -114,7 +114,6 @@ test('host invitations remain available with thirty people and consequential act
   await expect(page.locator('main')).not.toContainText('Northern Lights');
   page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Skip turn' }).click();
   expect((await (await page.request.get('/api/host/state')).json()).turnId).toBe(state.turnId);
-  await page.getByRole('button', { name: 'Manage people' }).click();
   page.once('dialog', dialog => dialog.dismiss()); await page.locator('.rotation-seat.is-current').getByRole('button', { name: /^Remove/ }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(30);
   page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Skip turn' }).click();

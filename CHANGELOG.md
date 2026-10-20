@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.5] — 2026-10-20
+
+- Soften the current-turn border into one uniformly blurred glow with feathered ends and a gentle ten-second circuit.
+- Make dragging and trash icons available directly in the host’s listening order, removing the Manage people mode.
+- Remove visible listening-order feedback and hint popups while retaining screen-reader announcements.
+
 ## [1.0.4] — 2026-10-20
 
 - Keep participant cards compact with corner trash icons, and slide neighbouring cards into place while reordering.

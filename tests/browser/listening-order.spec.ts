@@ -3,7 +3,7 @@ import { test } from './app-fixture';
 
 async function expectGlowing(pages: Page[], animated: boolean) {
   for (const page of pages) {
-    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node.querySelector('.order-trace-head')!).animationName === 'order-trace').map(node => node.getAttribute('aria-current')))).toEqual(animated ? ['step'] : []);
+    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node.querySelector('.order-trace-light')!).animationName === 'order-trace').map(node => node.getAttribute('aria-current')))).toEqual(animated ? ['step'] : []);
   }
 }
 
@@ -33,7 +33,10 @@ test('every route highlights the current turn, including before playback, while 
         await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
         await expect(current.locator('.rotation-list')).toBeVisible();
         await expect(current.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(3);
-        expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(['""', '""', 'none']);
+        expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(current === page ? ['none', 'none', 'none'] : ['""', '""', 'none']);
+        await expect(current.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
+        await expect(current.locator('.order-remove')).toHaveCount(current === page ? 3 : 0);
+        await expect(current.locator('.rotation-seat[tabindex="0"]')).toHaveCount(current === page ? 3 : 0);
         expect(await current.locator('.rotation-seat.is-next .seat-state:visible').evaluate(node => getComputedStyle(node, '::before').content)).toBe('none');
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();
         const seat = current.locator('.rotation-seat').first();
@@ -41,15 +44,13 @@ test('every route highlights the current turn, including before playback, while 
           await expect(seat.locator('.avatar')).toBeHidden();
           await expect(current.locator('.rotation-seat').nth(1)).toBeInViewport({ ratio: 1 });
           await expect(seat.locator('.seat-state:visible')).toHaveText('Now');
-          if (current === page) await expect(current.locator('.workspace-heading').getByRole('button', { name: 'Manage people' })).toBeVisible();
         } else {
           const avatar = (await seat.locator('.avatar').boundingBox())!;
           const name = (await seat.locator('strong').boundingBox())!;
           expect(avatar.x + avatar.width).toBeLessThanOrEqual(name.x);
-          if (current === page) await expect(current.locator('.order-bar').getByRole('button', { name: 'Manage people' })).toBeVisible();
         }
         const style = await current.locator('.rotation-seat').first().evaluate(node => {
-          const style = getComputedStyle(node); return [style.width, style.padding, style.backgroundColor, style.borderRadius, style.fontFamily];
+          const style = getComputedStyle(node); return [style.height, style.paddingTop, style.paddingBottom, style.paddingLeft, style.backgroundColor, style.borderRadius, style.fontFamily];
         });
         if (appearance) expect(style).toEqual(appearance); else appearance = style;
         await expect(current.locator('.rotation-seat strong')).toHaveText(['First', 'Second', 'My seat']);
@@ -112,7 +113,7 @@ test('every route highlights the current turn, including before playback, while 
   } finally { await guest.close(); await member.close(); }
 });
 
-test('the current-turn highlight visibly travels around the rounded perimeter before playback at desktop, mobile and management sizes', async ({ page, isolatedApp }) => {
+test('the current-turn highlight visibly travels around the rounded perimeter before playback at desktop and mobile sizes', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectGlowing([page], true);
   const seat = page.locator('.rotation-seat.is-current');
@@ -122,32 +123,39 @@ test('the current-turn highlight visibly travels around the rounded perimeter be
     await Promise.all(animations.map(animation => animation.ready)); return animations;
   });
   try {
-    for (const [width, manage] of [[1440, false], [320, false], [320, true]] as const) {
+    for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
-      if (manage) await page.getByRole('button', { name: 'Manage people', exact: true }).click();
       const bounds = await seat.boundingBox();
       const probes = await seat.evaluate(node => {
-        const head = node.querySelector<SVGRectElement>('.order-trace-head')!;
+        const head = node.querySelector<SVGRectElement>('.order-trace-light')!;
         const box = node.getBoundingClientRect(); const matrix = head.getScreenCTM()!;
         return [.20, .45, .70, .95].map(fraction => {
           const point = head.getPointAtLength(head.getTotalLength() * fraction).matrixTransform(matrix);
           return { x: point.x - box.x, y: point.y - box.y };
         });
       });
+      await seat.locator('.order-trace').evaluate(node => { (node as SVGElement).style.visibility = 'hidden'; });
+      const baseline = await seat.screenshot({ scale: 'css' });
+      await seat.locator('.order-trace').evaluate(node => { (node as SVGElement).style.removeProperty('visibility'); });
       for (let frame = 0; frame < 4; frame++) {
-        await motion.evaluate((animations, time) => { for (const animation of animations) animation.currentTime = time; }, frame * 2000);
-        const image = await seat.screenshot({ path: `test-results/order-trace-${width}-${manage ? 'manage' : 'normal'}-${frame}.png`, scale: 'css' });
-        const painted = await page.evaluate(async ({ png, probes }) => {
-          const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
-          const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
-          const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+        await motion.evaluate((animations, time) => { for (const animation of animations) animation.currentTime = time; }, frame * 2500);
+        const image = await seat.screenshot({ path: `test-results/order-trace-${width}-${frame}.png`, scale: 'css' });
+        const painted = await page.evaluate(async ({ png, baseline, probes }) => {
+          const pixels = async (png: string) => {
+            const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
+            const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+            const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0); return context;
+          };
+          const context = await pixels(png); const original = await pixels(baseline);
           return probes.map(point => {
-            const pixels = context.getImageData(Math.max(0, Math.floor(point.x) - 2), Math.max(0, Math.floor(point.y) - 2), 5, 5).data;
-            for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! > 225 && pixels[i + 1]! > 220 && pixels[i + 2]! > 160) return true;
-            return false;
+            const x = Math.max(0, Math.floor(point.x) - 2); const y = Math.max(0, Math.floor(point.y) - 2);
+            const after = context.getImageData(x, y, 5, 5).data; const before = original.getImageData(x, y, 5, 5).data;
+            let brighter = 0;
+            for (let i = 0; i < after.length; i += 4) brighter += ((after[i]! - before[i]!) + (after[i + 1]! - before[i + 1]!) + (after[i + 2]! - before[i + 2]!)) / 3;
+            return brighter / 25 > 15;
           });
-        }, { png: image.toString('base64'), probes });
-        expect(painted, `The bright head must move to a different edge at ${frame * 2000}ms (${width}px, management ${manage}).`).toEqual(probes.map((_, index) => index === frame));
+        }, { png: image.toString('base64'), baseline: baseline.toString('base64'), probes });
+        expect(painted, `The soft glow must visibly move to a different edge at ${frame * 2500}ms (${width}px).`).toEqual(probes.map((_, index) => index === frame));
         expect(await seat.boundingBox()).toEqual(bounds);
       }
     }
@@ -184,13 +192,11 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
   isolatedApp.engine.emit('change');
   await expect(list).toBeFocused(); await expect(list).toHaveJSProperty('scrollLeft', 400);
   expect(await list.evaluate(node => node === (window as any).orderList && node.firstElementChild === (window as any).firstSeat)).toBe(true);
-  const normalHeight = (await page.locator('.rotation-seat').first().boundingBox())!.height;
-  await page.getByRole('button', { name: 'Manage people' }).click();
   const controls = page.locator('.rotation-seat').nth(1);
   await controls.scrollIntoViewIfNeeded();
   await expect(controls).toBeInViewport({ ratio: 1 });
   const seatBox = (await controls.boundingBox())!;
-  expect(seatBox.height).toBe(normalHeight);
+  expect(seatBox.height).toBeLessThanOrEqual(44);
   for (const action of await controls.getByRole('button').all()) {
     const box = (await action.boundingBox())!;
     expect(box.width).toBeGreaterThanOrEqual(32); expect(box.height).toBeGreaterThanOrEqual(32);
@@ -198,15 +204,20 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
     expect(box.y + box.height).toBeLessThanOrEqual(seatBox.y + seatBox.height);
     await expect(action).toHaveText(''); await expect(action).toHaveAccessibleName('Remove Listener 1');
   }
-  await controls.focus(); await page.keyboard.press('Space'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Enter');
+  const workspace = await page.locator('.host-page').boundingBox();
+  const header = await page.locator('.app-header').boundingBox();
+  await controls.focus(); await expect(page.locator('.order-help')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  expect(await page.locator('.host-page').boundingBox()).toEqual(workspace);
+  await page.keyboard.press('Space'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Enter');
   await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 1');
   await expect(page.locator('.rotation-seat').first()).toBeFocused();
   await page.getByRole('button', { name: 'Remove Listener 1', exact: true }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(19);
   await expect(list).toBeVisible();
-  await expect(page.locator('.order-feedback')).toContainText('Their saved music is kept.');
-  await page.getByRole('button', { name: 'Done managing' }).click();
-  await expect(page.locator('.order-actions')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Manage people' })).toBeFocused();
+  await expect(page.locator('.order-announcement')).toContainText('Their saved music is kept.');
+  await expect(page.locator('.order-announcement')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
+  expect(await page.locator('.app-header').boundingBox()).toEqual(header);
+  await expect(page.locator('.order-actions')).toHaveCount(19);
+  await expect(page.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
   expect((await page.locator('.order-bar').boundingBox())!.height).toBeLessThanOrEqual(56);
 });

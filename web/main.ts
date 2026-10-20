@@ -118,13 +118,13 @@ const listeningOrder = new ListeningOrder(page === 'host' ? {
     if (!view) return;
     const name = view.rotation?.find(person => person.id === id)?.nickname ?? 'Participant';
     try {
-      await mutate('/api/host/reorder', { ids, revision }); listeningOrder.message(`Moved ${name} to position ${ids.indexOf(id) + 1}.`);
-    } catch (cause) { listeningOrder.message('Order could not be confirmed. Review the current order and try again.'); throw cause; }
+      await mutate('/api/host/reorder', { ids, revision }); listeningOrder.announce(`Moved ${name} to position ${ids.indexOf(id) + 1}.`);
+    } catch (cause) { listeningOrder.announce('Order could not be confirmed. Review the current order and try again.'); throw cause; }
   }),
   remove: id => { void run(async () => {
     const person = view?.rotation?.find(person => person.id === id); if (!view || !person) return;
     if (id === view.current?.id && !confirm(`Remove ${person.nickname} from the room? This ends their turn and stops any app-owned song.`)) return;
-    await mutate('/api/host/remove', { id, revision: view.revision }); listeningOrder.message(`Removed ${person.nickname}. Their saved music is kept.`);
+    await mutate('/api/host/remove', { id, revision: view.revision }); listeningOrder.announce(`Removed ${person.nickname}. Their saved music is kept.`);
   }); },
 } : undefined);
 appHeader.element.append(listeningOrder.element);
@@ -378,7 +378,7 @@ function closedRoom() {
 function host() {
   const v = hostNodes;
   const main = v.get('main', () => { const node = pageFrame('workspace', 'host-page'); node.setAttribute('aria-label', 'Host desk'); return node; });
-  const heading = v.get('heading', () => pageHeading('Host desk', listeningOrder.mobileManagement));
+  const heading = v.get('heading', () => pageHeading('Host desk'));
   const grid = v.get('grid', () => workspaceGrid('sidebar'));
   const workspace = v.get('workspace', () => { const node = slot(el('div', undefined, 'host-workspace stack'), 'primary'); node.id = 'overview'; return node; });
   const aside = v.get('invitations', () => { const node = slot(el('aside', undefined, 'host-invitations'), 'secondary'); node.id = 'room-invitation'; node.setAttribute('aria-label', 'Room invitation'); return node; });
