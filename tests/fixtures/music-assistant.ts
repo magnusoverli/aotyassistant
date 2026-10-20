@@ -39,6 +39,7 @@ export async function startMusicAssistantFixture(port = 0) {
   let imageMode: 'png' | 'svg' | 'redirect' | 'oversized' = 'png';
   const imageCalls: string[] = [];
   let imageDelay = 0;
+  let imageGate: { entered(): void; released: Promise<void> } | undefined;
   let nextVolumeDelay = 0;
   let volumeReadPending = false;
   let volumeClamp: number | undefined;
@@ -78,6 +79,7 @@ export async function startMusicAssistantFixture(port = 0) {
       const params = new URL(req.url, 'http://fixture').searchParams;
       // Match MA's actual imageproxy size allowlist, including rejection of the former 128px request.
       if (!['0', '80', '160', '256', '512', '1024'].includes(params.get('size') ?? '0')) { res.writeHead(400); res.end('Unsupported image size'); return; }
+      if (imageGate) { const gate = imageGate; imageGate = undefined; gate.entered(); await gate.released; }
       if (imageDelay) await new Promise(resolve => setTimeout(resolve, imageDelay));
       if (!authorizations.includes(req.headers.authorization ?? '')) { res.writeHead(401); res.end(); return; }
       if (imageMode === 'redirect') { res.writeHead(302, { Location: 'http://169.254.169.254/private' }); res.end(); return; }
@@ -193,6 +195,12 @@ export async function startMusicAssistantFixture(port = 0) {
       queueGate = { entered: enter, result }; return { entered, release };
     },
     imageMode(mode: typeof imageMode) { imageMode = mode; },
+    holdNextImageRead() {
+      let enter!: () => void; let release!: () => void;
+      const entered = new Promise<void>(resolve => { enter = resolve; });
+      const released = new Promise<void>(resolve => { release = resolve; });
+      imageGate = { entered: enter, released }; return { entered, release };
+    },
     delayImages(ms: number) { imageDelay = ms; },
     delayNextVolumeRead(ms: number) { nextVolumeDelay = ms; },
     get volumeReadPending() { return volumeReadPending; },

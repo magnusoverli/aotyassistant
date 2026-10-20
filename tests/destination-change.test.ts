@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { mkdtemp } from 'node:fs/promises';
-import { setTimeout as delay } from 'node:timers/promises';
 import type { AddressInfo } from 'node:net';
 import { Engine } from '../src/engine.js';
 import { FileStore, PersistenceError } from '../src/store.js';
@@ -96,19 +95,20 @@ test('unchanged-credential saves keep references, but token/origin replacement, 
   assert.equal((await f.request(current.artwork!, f.alex)).status, 409);
 });
 
-test('in-flight private artwork survives a speaker-only change but is denied across a credential change', async t => {
+test('in-flight private artwork survives a speaker-only change but is denied across a credential change', { timeout: 10_000 }, async t => {
   const f = await fixture(); t.after(f.close);
   const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
-  f.remote.delayImages(120);
+  const imageGate = f.remote.holdNextImageRead(); t.after(imageGate.release);
   const image = f.request(track.artwork!, f.alex);
-  for (let i = 0; i < 100 && !f.remote.imageCalls.length; i++) await delay(2);
-  assert.ok(f.remote.imageCalls.length);
+  await imageGate.entered;
   await f.manager.selectDestination('sonos:bedroom', f.manager.view().revision);
+  imageGate.release();
   assert.equal((await image).status, 200);
-  const count = f.remote.imageCalls.length; const portrait = f.request(track.artistArtwork!, f.alex);
-  for (let i = 0; i < 100 && f.remote.imageCalls.length === count; i++) await delay(2);
-  assert.ok(f.remote.imageCalls.length > count);
+  const portraitGate = f.remote.holdNextImageRead(); t.after(portraitGate.release);
+  const portrait = f.request(track.artistArtwork!, f.alex);
+  await portraitGate.entered;
   await f.manager.save(f.remote.origin, 'browser-test-token', f.manager.view().revision);
+  portraitGate.release();
   assert.equal((await portrait).status, 409);
 });
 
