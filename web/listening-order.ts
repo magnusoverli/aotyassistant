@@ -8,7 +8,7 @@ import { OrderDrag, type OrderMove } from './order-drag';
 type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void>; remove(id: string): void };
 
 /** A normalized perimeter keeps the light moving evenly as the card changes size. */
-function playingBorder() {
+function turnBorder() {
   const namespace = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(namespace, 'svg');
   svg.classList.add('order-trace'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
@@ -102,7 +102,6 @@ export class ListeningOrder {
 
   private render() {
     const view = this.snapshot; const people = view?.rotation ?? [];
-    attr(this.element, 'data-playing', String(view?.playbackStatus === 'playing'));
     text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
     prop(this.empty, 'hidden', people.length > 0); prop(this.list, 'hidden', !people.length);
     for (const button of [this.manage, this.mobileManagement]) {
@@ -121,7 +120,7 @@ export class ListeningOrder {
         let nodes = this.rows.get(person.id); if (!nodes) { nodes = new ViewNodes(); this.rows.set(person.id, nodes); } const v = nodes;
         const current = person.id === view?.current?.id; const me = person.id === this.me?.id;
         const next = !current && person.id === view?.next?.id;
-        const row = v.el('row', 'li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}`);
+        const row = v.el('row', 'li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}${this.managing ? ' is-manageable' : ''}`);
         attr(row, 'data-person-id', person.id); attr(row, 'aria-current', current ? 'step' : undefined);
         attr(row, 'data-focus-key', `person-${person.id}`); attr(row, 'tabindex', this.managing ? '0' : undefined);
         attr(row, 'aria-roledescription', this.managing ? 'draggable participant' : undefined);
@@ -132,15 +131,13 @@ export class ListeningOrder {
         const content: Node[] = [v.el('number', 'span', String(index + 1).padStart(2, '0'), 'seat-number'), image.node, name,
           v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'),
           v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : 'Listening', 'seat-state seat-state-compact'),
-          v.get('playing-border', playingBorder)];
+          v.get('turn-border', turnBorder)];
         if (this.managing && this.management) {
-          const actions = v.el('actions', 'div', undefined, 'order-actions'); const controls: Node[] = [];
-          const action = (text: string, key: string, label: string, work: () => void) => {
-            const button = v.el(key, 'button', text, 'secondary'); prop(button, 'type', 'button'); attr(button, 'data-focus-key', key);
-            attr(button, 'aria-label', label); button.onclick = work; controls.push(button);
-          };
-          action('Remove', `remove-${person.id}`, `Remove ${person.nickname}`, () => this.management!.remove(person.id));
-          children(actions, ...controls); content.push(actions);
+          const actions = v.el('actions', 'div', undefined, 'order-actions');
+          const button = v.el('remove', 'button', '', 'secondary order-remove'); prop(button, 'type', 'button');
+          attr(button, 'data-focus-key', `remove-${person.id}`); attr(button, 'aria-label', `Remove ${person.nickname}`); prop(button, 'title', `Remove ${person.nickname}`);
+          button.onclick = () => this.management!.remove(person.id);
+          children(actions, button); content.push(actions);
         }
         children(row, ...content);
         return row;

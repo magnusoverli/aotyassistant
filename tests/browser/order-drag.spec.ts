@@ -23,17 +23,25 @@ test('whole-card dragging saves a single insertion and preserves current playbac
   await page.setViewportSize({ width: 1440, height: 900 }); await page.goto('/host');
   await pickUp(page, seat(page, 'Second')); await movePast(page, seat(page, 'Fourth')); await page.mouse.up();
   expect(writes).toHaveLength(0); await expect(page.locator('.order-drag-preview')).toHaveCount(0);
+  const normalHeight = (await seat(page, 'First').boundingBox())!.height;
   await page.getByRole('button', { name: 'Manage people', exact: true }).click();
+  expect((await seat(page, 'First').boundingBox())!.height).toBe(normalHeight);
   await expect(page.getByRole('button', { name: /^Move .+ (up|down)$/ })).toHaveCount(0);
+  const secondBox = (await seat(page, 'Second').boundingBox())!; const fourthBox = (await seat(page, 'Fourth').boundingBox())!;
   await pickUp(page, seat(page, 'Second')); await movePast(page, seat(page, 'Fourth'));
-  await expect(page.locator('.order-drop-marker')).toBeVisible(); await expect(page.locator('.order-drag-preview')).toBeVisible();
+  await expect(page.locator('.order-drag-preview')).toBeVisible();
+  await expect.poll(async () => (await seat(page, 'Third').boundingBox())!.x).toBeCloseTo(secondBox.x, 0);
+  expect((await seat(page, 'Second').boundingBox())!.x).toBeCloseTo(fourthBox.x, 0);
   expect(writes).toHaveLength(0); await expect(names(page)).toHaveText(['First', 'Second', 'Third', 'Fourth']);
+  await expect(page.locator('.rotation-list .seat-number')).toHaveText(['01', '04', '02', '03']);
   isolatedApp.engine.emit('change', 'playback');
   await expect(seat(page, 'Second')).toHaveClass(/is-dragging/);
   await page.screenshot({ path: 'test-results/order-drag-desktop.png' }); await page.mouse.up();
   await expect(names(page)).toHaveText(['First', 'Third', 'Fourth', 'Second']);
+  await expect(page.locator('.rotation-list .seat-number')).toHaveText(['01', '02', '03', '04']);
+  expect((await seat(page, 'Second').boundingBox())!.x).toBeCloseTo(fourthBox.x, 0);
   expect(writes).toEqual([{ ids: [before.rotation![0]!.id, before.rotation![2]!.id, before.rotation![3]!.id, before.rotation![1]!.id], revision: before.revision }]);
-  await expect(seat(page, 'Second')).toBeFocused(); await expect(page.locator('.order-drag-preview, .order-drop-marker')).toHaveCount(0);
+  await expect(seat(page, 'Second')).toBeFocused(); await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
   // Moving the current listener changes placement, not the turn or song.
   await pickUp(page, seat(page, 'First')); await movePast(page, seat(page, 'Fourth')); await page.mouse.up();
   await expect(names(page)).toHaveText(['Third', 'Fourth', 'First', 'Second']);
@@ -44,6 +52,52 @@ test('whole-card dragging saves a single insertion and preserves current playbac
   await expect(page.locator('.order-feedback')).toHaveText('Moved Second to position 1.'); expect(writes).toHaveLength(3);
 });
 
+test('neighbours visibly slide aside, stay stable under a still pointer and flow back on reversal or cancellation', async ({ page, isolatedApp }) => {
+  for (const name of ['First', 'Second', 'Third']) await isolatedApp.engine.join(name);
+  await page.setViewportSize({ width: 1440, height: 900 }); await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/host'); await page.getByRole('button', { name: 'Manage people', exact: true }).click();
+  const first = seat(page, 'First'); const second = seat(page, 'Second'); const third = seat(page, 'Third');
+  const origin = (await first.boundingBox())!; const middle = (await second.boundingBox())!; const end = (await third.boundingBox())!;
+  let writes = 0; page.on('request', request => { if (request.url().endsWith('/api/host/reorder')) writes++; });
+  await pickUp(page, first); await page.mouse.move(middle.x + middle.width / 2, middle.y + 18);
+  const motion = await second.evaluateHandle(async node => {
+    const animation = node.getAnimations()[0]!; animation.pause(); await animation.ready; return animation;
+  });
+  try {
+    await motion.evaluate(animation => { animation.currentTime = 0; });
+    expect((await second.boundingBox())!.x).toBeCloseTo(middle.x, 0);
+    await motion.evaluate(animation => { animation.currentTime = Number(animation.effect!.getTiming().duration) / 2; });
+    const halfway = (await second.boundingBox())!.x;
+    expect(halfway).toBeGreaterThan(origin.x + 1); expect(halfway).toBeLessThan(middle.x - 1);
+    await page.screenshot({ path: 'test-results/order-flow-mid-animation.png' });
+    await motion.evaluate(animation => animation.finish());
+    await expect.poll(async () => (await second.boundingBox())!.x).toBeCloseTo(origin.x, 0);
+    const steady = await first.evaluate(async node => {
+      const positions: number[] = [];
+      for (let frame = 0; frame < 16; frame++) { await new Promise(requestAnimationFrame); positions.push(node.getBoundingClientRect().x); }
+      return positions;
+    });
+    expect(steady.every(x => Math.abs(x - middle.x) < 1)).toBe(true);
+    await page.mouse.move(origin.x + origin.width / 2, origin.y + 18);
+    await expect.poll(async () => (await second.boundingBox())!.x).toBeCloseTo(middle.x, 0);
+    await page.mouse.move(end.x + end.width / 2, end.y + 18);
+    await expect.poll(async () => (await third.boundingBox())!.x).toBeCloseTo(middle.x, 0);
+    await page.keyboard.press('Escape'); await page.mouse.up();
+    await expect.poll(async () => (await third.boundingBox())!.x).toBeCloseTo(end.x, 0);
+    await expect(names(page)).toHaveText(['First', 'Second', 'Third']); expect(writes).toBe(0);
+    await expect(page.locator('.rotation-list .seat-number')).toHaveText(['01', '02', '03']);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await first.focus(); await page.keyboard.press('Space'); await page.keyboard.press('End');
+    expect((await second.boundingBox())!.x).toBeCloseTo(origin.x, 0);
+    expect(await page.locator('.rotation-list .rotation-seat').evaluateAll(nodes => nodes.every(node => !node.getAnimations().length))).toBe(true);
+    await page.keyboard.press('Escape'); expect((await first.boundingBox())!.x).toBeCloseTo(origin.x, 0); expect(writes).toBe(0);
+    await pickUp(page, first); await page.mouse.move(end.x + end.width / 2, end.y + 18);
+    await page.setViewportSize({ width: 320, height: 700 }); await page.mouse.up();
+    await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
+    expect(await first.evaluate(node => (node as HTMLElement).style.transform)).toBe(''); expect(writes).toBe(0);
+  } finally { await motion.dispose(); }
+});
+
 test('cancelled, unchanged, stale and disconnected drags never write an order', async ({ page, isolatedApp }) => {
   for (const name of ['First', 'Second', 'Third']) await isolatedApp.engine.join(name);
   const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
@@ -51,14 +105,14 @@ test('cancelled, unchanged, stale and disconnected drags never write an order', 
   await pickUp(page, seat(page, 'First')); await page.mouse.up();
   await expect(page.locator('.order-feedback')).toHaveText('Listening order unchanged.');
   await pickUp(page, seat(page, 'First')); await movePast(page, seat(page, 'Third')); await page.keyboard.press('Escape'); await page.mouse.up();
-  await expect(page.locator('.order-drag-preview, .order-drop-marker')).toHaveCount(0);
+  await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
   await pickUp(page, seat(page, 'First')); await page.mouse.move(10, 700); await page.mouse.up();
   await seat(page, 'First').focus(); await page.keyboard.press('Space'); await page.keyboard.press('End'); await page.keyboard.press('Escape');
   await page.keyboard.press('Space'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Tab');
   await expect(page.locator('.is-keyboard-dragging')).toHaveCount(0);
   await pickUp(page, seat(page, 'First')); await movePast(page, seat(page, 'Third'));
   await isolatedApp.engine.join('Fourth'); await expect(names(page)).toHaveText(['First', 'Second', 'Third', 'Fourth']);
-  await expect(page.locator('.order-drag-preview, .order-drop-marker')).toHaveCount(0); await page.mouse.up();
+  await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0); await page.mouse.up();
   await expect(page.locator('.order-feedback')).toContainText('The room changed');
   await pickUp(page, seat(page, 'First')); await movePast(page, seat(page, 'Third')); await page.context().setOffline(true);
   await expect(page.locator('.order-status')).toHaveText('Offline'); await expect(page.locator('.order-drag-preview')).toHaveCount(0); await page.mouse.up();
@@ -66,13 +120,15 @@ test('cancelled, unchanged, stale and disconnected drags never write an order', 
   await page.context().setOffline(false); await expect(seat(page, 'First')).toHaveAttribute('aria-disabled', 'false');
   await seat(page, 'First').focus(); await page.keyboard.press('Space'); await page.keyboard.press('ArrowRight');
   await page.getByRole('button', { name: 'Done managing', exact: true }).click();
-  await expect(page.locator('.order-drop-marker, .is-keyboard-dragging')).toHaveCount(0);
+  await expect(page.locator('.is-dragging, .is-keyboard-dragging')).toHaveCount(0);
+  expect(await page.locator('.rotation-list .rotation-seat').evaluateAll(nodes => nodes.every(node => !(node as HTMLElement).style.transform))).toBe(true);
   expect(writes).toEqual([]);
 });
 
 test('pending and failed drops keep the authoritative order, block repeats and reconcile without retrying', async ({ page, isolatedApp }) => {
   for (const name of ['First', 'Second', 'Third']) await isolatedApp.engine.join(name);
   await page.goto('/host'); await page.getByRole('button', { name: 'Manage people', exact: true }).click();
+  const firstBox = (await seat(page, 'First').boundingBox())!; const lastBox = (await seat(page, 'Third').boundingBox())!;
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); let writes = 0;
   await page.route('**/api/host/reorder', async route => {
     writes++; await gate;
@@ -84,10 +140,12 @@ test('pending and failed drops keep the authoritative order, block repeats and r
     await expect(seat(page, 'First')).toHaveAttribute('aria-disabled', 'true');
     await page.keyboard.press('Space'); await page.keyboard.press('End'); await page.keyboard.press('Enter');
     await expect(names(page)).toHaveText(['First', 'Second', 'Third']);
+    await expect.poll(async () => (await seat(page, 'First').boundingBox())!.x).toBeCloseTo(lastBox.x, 0);
     release(); await expect(page.getByRole('alert')).toContainText('The room changed');
     await expect(page.locator('.order-feedback')).toContainText('Order could not be confirmed');
     await expect(seat(page, 'First')).toHaveAttribute('aria-disabled', 'false'); expect(writes).toBe(1);
     await expect(names(page)).toHaveText(['First', 'Second', 'Third']);
+    await expect.poll(async () => (await seat(page, 'First').boundingBox())!.x).toBeCloseTo(firstBox.x, 0);
     await page.unroute('**/api/host/reorder');
     await page.keyboard.press('Space'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter');
     await expect(names(page)).toHaveText(['Second', 'First', 'Third']);
@@ -112,7 +170,7 @@ test('touch dragging scrolls a long mobile order at its edge and Remove stays a 
     await expect.poll(() => list.evaluate(node => node.scrollWidth - node.clientWidth - node.scrollLeft)).toBeLessThan(2);
     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect(names(page)).toHaveText(['Person 2', 'Person 3', 'Person 4', 'Person 5', 'Person 6', 'Person 7', 'Person 8', 'Person 1']);
-    expect(writes).toBe(1); await expect(page.locator('.order-drag-preview, .order-drop-marker')).toHaveCount(0);
+    expect(writes).toBe(1); await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await seat(page, 'Person 8').getByRole('button', { name: 'Remove Person 8', exact: true }).tap();
     await expect(names(page)).toHaveCount(7); expect(writes).toBe(1);

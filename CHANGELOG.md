@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.4] — 2026-10-20
+
+- Keep participant cards compact with corner trash icons, and slide neighbouring cards into place while reordering.
+- Make the travelling border mark the current participant’s turn, including while choosing a song, paused or stopped.
+
 ## [1.0.3] — 2026-10-20
 
 - Replace the pulsing playing-participant border with a glowing segment that travels around the card every eight seconds.

@@ -1,13 +1,13 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 
-async function expectGlowing(pages: Page[], playing: boolean) {
+async function expectGlowing(pages: Page[], animated: boolean) {
   for (const page of pages) {
-    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node.querySelector('.order-trace-head')!).animationName === 'order-trace').map(node => node.getAttribute('aria-current')))).toEqual(playing ? ['step'] : []);
+    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node.querySelector('.order-trace-head')!).animationName === 'order-trace').map(node => node.getAttribute('aria-current')))).toEqual(animated ? ['step'] : []);
   }
 }
 
-test('every route shares the directional listening order and only the actively playing participant glows', async ({ page, browser, isolatedApp }) => {
+test('every route highlights the current turn, including before playback, while paused, stopped and disconnected', async ({ page, browser, isolatedApp }) => {
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
   const member = await browser.newContext({ baseURL: isolatedApp.origin });
@@ -66,7 +66,7 @@ test('every route shares the directional listening order and only the actively p
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('You');
     for (const current of pages.slice(0, -1)) await expect(current.locator('.rotation-seat.is-you')).toHaveCount(0);
     const state = isolatedApp.engine.view({ kind: 'participant', credential: first });
-    await expectGlowing(pages, false);
+    await expectGlowing(pages, true);
     await isolatedApp.engine.play(first, state.turnId!, null, 'demo:aurora');
     const playing = isolatedApp.engine.view({ kind: 'participant', credential: first });
     await expectGlowing(pages, true);
@@ -88,22 +88,22 @@ test('every route shares the directional listening order and only the actively p
     await expectGlowing([page], true);
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
-    await expectGlowing(pages.slice(1, -1), false);
+    await expectGlowing(pages.slice(1, -1), true);
     await guest.setOffline(false); await expectGlowing(pages, true);
     Object.defineProperty(isolatedApp.engine.adapter, 'connected', { configurable: true, value: false }); isolatedApp.engine.emit('change', 'output');
-    await expectGlowing(pages, false);
+    await expectGlowing(pages, true);
     Reflect.deleteProperty(isolatedApp.engine.adapter, 'connected'); isolatedApp.engine.emit('change', 'output');
     await expectGlowing(pages, true);
     await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'pause');
-    await expectGlowing(pages, false);
+    await expectGlowing(pages, true);
     await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'resume');
     await expectGlowing(pages, true);
     await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'stop');
-    await expectGlowing(pages, false);
+    await expectGlowing(pages, true);
     await glow.dispose();
     await isolatedApp.engine.advance(state.turnId!, first);
     for (const current of pages) await expect(current.locator('.rotation-seat.is-current strong')).toHaveText('Second');
-    await expectGlowing(pages, false);
+    await expectGlowing(pages, true);
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('Next · You');
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
@@ -112,10 +112,8 @@ test('every route shares the directional listening order and only the actively p
   } finally { await guest.close(); await member.close(); }
 });
 
-test('the playing highlight visibly travels around the rounded perimeter at desktop, mobile and management sizes', async ({ page, isolatedApp }) => {
-  const credential = await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
-  const turn = isolatedApp.engine.view({ kind: 'host' }).turnId!;
-  await isolatedApp.engine.play(credential, turn, null, 'demo:aurora');
+test('the current-turn highlight visibly travels around the rounded perimeter before playback at desktop, mobile and management sizes', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectGlowing([page], true);
   const seat = page.locator('.rotation-seat.is-current');
   const motion = await seat.evaluateHandle(async node => {
@@ -186,15 +184,19 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
   isolatedApp.engine.emit('change');
   await expect(list).toBeFocused(); await expect(list).toHaveJSProperty('scrollLeft', 400);
   expect(await list.evaluate(node => node === (window as any).orderList && node.firstElementChild === (window as any).firstSeat)).toBe(true);
+  const normalHeight = (await page.locator('.rotation-seat').first().boundingBox())!.height;
   await page.getByRole('button', { name: 'Manage people' }).click();
   const controls = page.locator('.rotation-seat').nth(1);
   await controls.scrollIntoViewIfNeeded();
   await expect(controls).toBeInViewport({ ratio: 1 });
   const seatBox = (await controls.boundingBox())!;
+  expect(seatBox.height).toBe(normalHeight);
   for (const action of await controls.getByRole('button').all()) {
     const box = (await action.boundingBox())!;
-    expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
-    expect(box.x).toBeGreaterThanOrEqual(seatBox.x); expect(box.x + box.width).toBeLessThanOrEqual(seatBox.x + seatBox.width);
+    expect(box.width).toBeGreaterThanOrEqual(32); expect(box.height).toBeGreaterThanOrEqual(32);
+    expect(box.y - seatBox.y).toBeLessThan(5); expect(seatBox.x + seatBox.width - box.x - box.width).toBeLessThan(5);
+    expect(box.y + box.height).toBeLessThanOrEqual(seatBox.y + seatBox.height);
+    await expect(action).toHaveText(''); await expect(action).toHaveAccessibleName('Remove Listener 1');
   }
   await controls.focus(); await page.keyboard.press('Space'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Enter');
   await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 1');

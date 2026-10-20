@@ -1,25 +1,26 @@
 import type { Person } from '../src/model';
-import { el } from './dom';
 
 export type OrderMove = { id: string; ids: string[]; revision: number };
 type State = { enabled: boolean; roomId: string | null; revision: number; people: Person[] };
 type Options = { state(): State; commit(move: OrderMove): Promise<void>; announce(message: string): void };
+type Slot = { node: HTMLElement; left: number; width: number };
 type Drag = {
   state: State; source: HTMLElement; id: string; name: string; index: number; active: boolean;
   pointer?: number; x: number; y: number; startX: number; startY: number; offsetX: number; offsetY: number;
-  valid: boolean; ghost?: HTMLElement;
+  valid: boolean; ghost?: HTMLElement; slots: Slot[]; gap: number; targetLeft: number;
 };
 
 /** Pointer and keyboard previews stay local; only a completed drop writes the captured order. */
 export class OrderDrag {
   private drag?: Drag;
-  private marker = el('div', undefined, 'order-drop-marker');
+  private pending?: Drag;
+  private motions = new Map<HTMLElement, Animation>();
+  private reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   private frame = 0;
   private lastFrame = 0;
   private blockClick = false;
 
   constructor(private list: HTMLElement, private options: Options) {
-    this.marker.setAttribute('aria-hidden', 'true');
     list.addEventListener('pointerdown', this.pointerDown);
     list.addEventListener('pointermove', this.pointerMove);
     list.addEventListener('pointerup', this.pointerUp);
@@ -32,19 +33,23 @@ export class OrderDrag {
     }, true);
     window.addEventListener('blur', () => this.cancel());
     window.addEventListener('pagehide', () => this.cancel());
+    window.addEventListener('resize', () => { this.cancel('Reordering cancelled.', false); this.finishPending(false); });
+    this.reducedMotion.addEventListener('change', () => { if (this.reducedMotion.matches) for (const animation of this.motions.values()) animation.cancel(); });
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.cancel(); });
   }
 
   update() {
-    const drag = this.drag; if (!drag) return;
     const state = this.options.state();
+    if (this.pending && (state.roomId !== this.pending.state.roomId || state.revision !== this.pending.state.revision)) this.finishPending(false);
+    const drag = this.drag; if (!drag) return;
     if (!state.enabled || state.roomId !== drag.state.roomId || state.revision !== drag.state.revision) {
-      this.cancel('The room changed. Pick up the participant again to reorder.');
+      this.cancel('The room changed. Pick up the participant again to reorder.', false);
     }
   }
 
-  cancel(message = 'Reordering cancelled.') {
-    const active = this.drag?.active; this.clear();
+  cancel(message = 'Reordering cancelled.', animate = true) {
+    const drag = this.drag; const active = drag?.active; this.clear();
+    if (active) this.restore(drag, animate);
     if (active) this.options.announce(message);
   }
 
@@ -53,8 +58,14 @@ export class OrderDrag {
     const index = state.people.findIndex(person => person.id === source.dataset.personId); const person = state.people[index];
     if (!person) return;
     const box = source.getBoundingClientRect(); const x = pointer?.clientX ?? box.x; const y = pointer?.clientY ?? box.y;
+    const list = this.list.getBoundingClientRect();
+    const slots = [...this.list.querySelectorAll<HTMLElement>('.rotation-seat')].map(node => {
+      const rect = node.getBoundingClientRect(); const offset = new DOMMatrix(getComputedStyle(node).transform).m41;
+      return { node, left: rect.left - offset - list.left + this.list.scrollLeft, width: rect.width };
+    });
     return { state: { ...state, people: [...state.people] }, source, id: person.id, name: person.nickname, index, active: false,
-      pointer: pointer?.pointerId, x, y, startX: x, startY: y, offsetX: x - box.x, offsetY: y - box.y, valid: true };
+      pointer: pointer?.pointerId, x, y, startX: x, startY: y, offsetX: x - box.x, offsetY: y - box.y, valid: true,
+      slots, gap: parseFloat(getComputedStyle(this.list).columnGap), targetLeft: slots[index]!.left };
   }
 
   private begin(drag: Drag) {
@@ -111,8 +122,9 @@ export class OrderDrag {
     event.preventDefault();
     const index = event.key === 'Home' ? 0 : event.key === 'End' ? drag.state.people.length - 1 : drag.index + shift!;
     this.position(drag, Math.max(0, Math.min(drag.state.people.length - 1, index)));
-    const rows = this.remaining(drag); const target = rows[drag.index] ?? rows.at(-1);
-    target?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' }); this.paint(drag);
+    const right = drag.targetLeft + drag.slots.find(slot => slot.node === drag.source)!.width;
+    if (drag.targetLeft < this.list.scrollLeft) this.list.scrollLeft = drag.targetLeft;
+    else if (right > this.list.scrollLeft + this.list.clientWidth) this.list.scrollLeft = right - this.list.clientWidth;
   };
 
   private tick = (now: number) => {
@@ -127,22 +139,29 @@ export class OrderDrag {
     this.pointerPosition(drag); this.frame = requestAnimationFrame(this.tick);
   };
 
-  private remaining(drag: Drag) {
-    return [...this.list.querySelectorAll<HTMLElement>('.rotation-seat')].filter(row => row.dataset.personId !== drag.id);
-  }
-
   private pointerPosition(drag: Drag) {
     const box = this.list.getBoundingClientRect();
     drag.valid = drag.x >= box.left - 28 && drag.x <= box.right + 28 && drag.y >= box.top - 12 && drag.y <= box.bottom + 12;
-    const rows = this.remaining(drag);
-    const index = rows.findIndex(row => { const rect = row.getBoundingClientRect(); return drag.x < rect.left + rect.width / 2; });
-    if (drag.valid) this.position(drag, index < 0 ? rows.length : index);
+    // Hit-test stable layout slots, never the moving neighbours: a stationary pointer must not oscillate the order.
+    const width = drag.slots.find(slot => slot.node === drag.source)!.width;
+    const center = drag.x - drag.offsetX + width / 2 - box.left + this.list.scrollLeft;
+    const index = drag.slots.reduce((nearest, slot, index, slots) =>
+      Math.abs(center - slot.left - slot.width / 2) < Math.abs(center - slots[nearest]!.left - slots[nearest]!.width / 2) ? index : nearest, 0);
+    if (drag.valid) this.position(drag, index);
     this.paint(drag);
   }
 
   private position(drag: Drag, index: number) {
     if (index === drag.index) return;
     drag.index = index;
+    const slots = drag.slots.filter(slot => slot.node !== drag.source); slots.splice(index, 0, drag.slots.find(slot => slot.node === drag.source)!);
+    let left = drag.slots[0]!.left;
+    for (const [position, slot] of slots.entries()) {
+      this.shift(slot.node, left - slot.left, slot.node !== drag.source || drag.pointer === undefined);
+      slot.node.querySelector('.seat-number')!.textContent = String(position + 1).padStart(2, '0');
+      if (slot.node === drag.source) drag.targetLeft = left;
+      left += slot.width + drag.gap;
+    }
     this.options.announce(`${drag.name}: position ${index + 1} of ${drag.state.people.length}. Drop to save the order.`);
   }
 
@@ -152,23 +171,41 @@ export class OrderDrag {
       drag.ghost.classList.toggle('is-invalid-drop', !drag.valid);
       drag.ghost.querySelector('.seat-number')!.textContent = String(drag.index + 1).padStart(2, '0');
     }
-    const rows = this.remaining(drag); const target = rows[drag.index] ?? rows.at(-1);
-    if (!drag.valid || !target || drag.state.people[drag.index]?.id === drag.id) { this.marker.remove(); return; }
-    const box = target.getBoundingClientRect(); const list = this.list.getBoundingClientRect();
-    const gap = parseFloat(getComputedStyle(this.list).columnGap);
-    const x = rows[drag.index] ? box.left - gap / 2 : box.right + gap / 2;
-    this.marker.style.left = `${Math.max(list.left + 2, Math.min(list.right - 4, x - 1.5))}px`;
-    this.marker.style.top = `${box.top}px`; this.marker.style.height = `${box.height}px`;
-    if (!this.marker.isConnected) document.body.append(this.marker);
+  }
+
+  private shift(node: HTMLElement, offset: number, animate: boolean) {
+    const from = getComputedStyle(node).transform;
+    this.motions.get(node)?.cancel(); this.motions.delete(node);
+    const to = offset ? `translateX(${offset}px)` : 'none';
+    if (offset) node.style.transform = to; else node.style.removeProperty('transform');
+    if (!animate || this.reducedMotion.matches || Math.abs(new DOMMatrix(from).m41 - offset) < .5) return;
+    const motion = node.animate([{ transform: from }, { transform: to }], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    this.motions.set(node, motion);
+    const finished = () => { if (this.motions.get(node) === motion) this.motions.delete(node); };
+    void motion.finished.then(finished, finished);
+  }
+
+  private restore(drag: Drag, animate: boolean) {
+    for (const slot of drag.slots) this.shift(slot.node, 0, animate);
+    // A live update may already have changed membership/order; restore the current DOM's numbering.
+    this.list.querySelectorAll('.seat-number').forEach((number, index) => { number.textContent = String(index + 1).padStart(2, '0'); });
+  }
+
+  private finishPending(animate: boolean) {
+    if (this.pending) this.restore(this.pending, animate);
+    this.pending = undefined;
   }
 
   private drop() {
     this.update(); const drag = this.drag; if (!drag?.active) return;
     const ids = drag.state.people.filter(person => person.id !== drag.id).map(person => person.id); ids.splice(drag.index, 0, drag.id);
     this.clear();
-    if (ids.every((id, index) => id === drag.state.people[index]?.id)) { this.options.announce('Listening order unchanged.'); return; }
+    if (ids.every((id, index) => id === drag.state.people[index]?.id)) { this.restore(drag, true); this.options.announce('Listening order unchanged.'); return; }
+    // Hold the preview until the authoritative update arrives, avoiding a jump back on release.
+    this.pending = drag;
     this.options.announce(`Saving ${drag.name} at position ${drag.index + 1}…`);
     void this.options.commit({ id: drag.id, ids, revision: drag.state.revision }).then(() => {
+      if (this.pending === drag) this.finishPending(true);
       if (!this.options.state().enabled) return;
       const row = [...this.list.querySelectorAll<HTMLElement>('.rotation-seat')].find(row => row.dataset.personId === drag.id);
       if (row && (document.activeElement === drag.source || document.activeElement === document.body || document.activeElement === this.list)) {
@@ -179,7 +216,7 @@ export class OrderDrag {
 
   private clear() {
     const drag = this.drag; this.drag = undefined; cancelAnimationFrame(this.frame); this.frame = 0;
-    this.marker.remove(); drag?.ghost?.remove(); drag?.source.classList.remove('is-dragging', 'is-keyboard-dragging');
+    drag?.ghost?.remove(); drag?.source.classList.remove('is-dragging', 'is-keyboard-dragging');
     this.list.classList.remove('is-dragging');
     if (drag?.pointer !== undefined && this.list.hasPointerCapture(drag.pointer)) this.list.releasePointerCapture(drag.pointer);
   }
