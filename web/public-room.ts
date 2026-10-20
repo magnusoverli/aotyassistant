@@ -72,7 +72,8 @@ export class PublicRoom {
       this.album.hidden = !this.album.textContent;
       this.credit.hidden = !revealed?.artist;
       if (active) {
-        const sticker = revealed ? undefined : publicRecordLabels.label(JSON.stringify([view.roomId, view.turnId, view.progress!.id, view.current?.id]), view.current?.nickname);
+        const sticker = revealed ? { owner: revealed.title, caption: revealed.artist }
+          : publicRecordLabels.label(JSON.stringify([view.roomId, view.turnId, view.progress!.id, view.current?.id]), view.current?.nickname);
         updateVinylLabel(this.record, sticker);
         if (revealed?.artwork) this.cover.append(artwork(revealed.artwork, 'Current album artwork', 'room-artwork', true));
         if (revealed?.artistArtwork) this.credit.append(artwork(revealed.artistArtwork, 'Current artist image', 'artist-portrait', true));

@@ -84,7 +84,8 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(tv.getByText('Northern Lights')).toHaveCount(0); await expect(host.getByText('Northern Lights')).toHaveCount(0);
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).focus();
     await host.getByRole('button', { name: 'Manage people' }).click();
-    await host.getByRole('button', { name: 'Move Jordan up', exact: true }).click();
+    await host.locator('.rotation-seat').filter({ has: host.locator('strong', { hasText: /^Jordan$/ }) }).focus();
+    await host.keyboard.press('Space'); await host.keyboard.press('ArrowLeft'); await host.keyboard.press('Enter');
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Jordan');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'next');
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 4 });

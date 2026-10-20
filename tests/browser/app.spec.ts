@@ -49,7 +49,7 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     expect(requests.some(url => url.includes('demo-cover.svg'))).toBe(false);
     await alex.getByRole('button', { name: 'Reveal song' }).click();
     await expect(tv.getByRole('heading', { name: 'Northern Lights' })).toBeVisible();
-    await expect(tv.getByText('The Paper Satellites')).toBeVisible();
+    await expect(tv.locator('.artist-credit').getByText('The Paper Satellites')).toBeVisible();
     await expect(sam.getByText('Northern Lights')).toHaveCount(0);
     await tv.screenshot({ path: 'test-results/display-revealed.png' });
     await alex.reload(); await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();

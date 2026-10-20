@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-10-20
+
+- Replace the pulsing playing-participant border with a glowing segment that travels around the card every eight seconds.
+- Reorder participants by dragging whole cards in Manage people, with touch, keyboard controls and edge scrolling instead of up/down buttons.
+- Show the revealed track title and artist on the spinning record when cover artwork is missing or unavailable.
+
 ## [1.0.2] — 2026-10-20
 
 - Double the room-display record’s rotation speed to one revolution every 17.65 seconds.

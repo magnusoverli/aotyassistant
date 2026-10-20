@@ -114,14 +114,13 @@ const music = new PreparationPanel(library, { getView: () => view, starting: () 
 const appHeader = new AppHeader(page, message => { error = message; render(); });
 const listeningOrder = new ListeningOrder(page === 'host' ? {
   disabled: () => busy || !realtime || !view?.connected,
-  move: (id, shift) => { void run(async () => {
+  reorder: ({ id, ids, revision }) => run(async () => {
     if (!view) return;
-    const ids = (view.rotation ?? []).map(person => person.id); const index = ids.indexOf(id);
-    if (index < 0 || index + shift < 0 || index + shift >= ids.length) return;
-    const name = view.rotation![index]!.nickname; const revision = view.revision;
-    [ids[index], ids[index + shift]] = [ids[index + shift]!, ids[index]!];
-    await mutate('/api/host/reorder', { ids, revision }); listeningOrder.message(`Moved ${name} ${shift < 0 ? 'up' : 'down'}.`);
-  }); },
+    const name = view.rotation?.find(person => person.id === id)?.nickname ?? 'Participant';
+    try {
+      await mutate('/api/host/reorder', { ids, revision }); listeningOrder.message(`Moved ${name} to position ${ids.indexOf(id) + 1}.`);
+    } catch (cause) { listeningOrder.message('Order could not be confirmed. Review the current order and try again.'); throw cause; }
+  }),
   remove: id => { void run(async () => {
     const person = view?.rotation?.find(person => person.id === id); if (!view || !person) return;
     if (id === view.current?.id && !confirm(`Remove ${person.nickname} from the room? This ends their turn and stops any app-owned song.`)) return;

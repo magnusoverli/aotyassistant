@@ -3,7 +3,7 @@ import { test } from './app-fixture';
 
 async function expectGlowing(pages: Page[], playing: boolean) {
   for (const page of pages) {
-    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node, '::before').animationName === 'order-glow').map(node => node.getAttribute('aria-current')))).toEqual(playing ? ['step'] : []);
+    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node.querySelector('.order-trace-head')!).animationName === 'order-trace').map(node => node.getAttribute('aria-current')))).toEqual(playing ? ['step'] : []);
   }
 }
 
@@ -112,6 +112,50 @@ test('every route shares the directional listening order and only the actively p
   } finally { await guest.close(); await member.close(); }
 });
 
+test('the playing highlight visibly travels around the rounded perimeter at desktop, mobile and management sizes', async ({ page, isolatedApp }) => {
+  const credential = await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
+  const turn = isolatedApp.engine.view({ kind: 'host' }).turnId!;
+  await isolatedApp.engine.play(credential, turn, null, 'demo:aurora');
+  await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectGlowing([page], true);
+  const seat = page.locator('.rotation-seat.is-current');
+  const motion = await seat.evaluateHandle(async node => {
+    const animations = node.getAnimations({ subtree: true });
+    for (const animation of animations) animation.pause();
+    await Promise.all(animations.map(animation => animation.ready)); return animations;
+  });
+  try {
+    for (const [width, manage] of [[1440, false], [320, false], [320, true]] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      if (manage) await page.getByRole('button', { name: 'Manage people', exact: true }).click();
+      const bounds = await seat.boundingBox();
+      const probes = await seat.evaluate(node => {
+        const head = node.querySelector<SVGRectElement>('.order-trace-head')!;
+        const box = node.getBoundingClientRect(); const matrix = head.getScreenCTM()!;
+        return [.20, .45, .70, .95].map(fraction => {
+          const point = head.getPointAtLength(head.getTotalLength() * fraction).matrixTransform(matrix);
+          return { x: point.x - box.x, y: point.y - box.y };
+        });
+      });
+      for (let frame = 0; frame < 4; frame++) {
+        await motion.evaluate((animations, time) => { for (const animation of animations) animation.currentTime = time; }, frame * 2000);
+        const image = await seat.screenshot({ path: `test-results/order-trace-${width}-${manage ? 'manage' : 'normal'}-${frame}.png`, scale: 'css' });
+        const painted = await page.evaluate(async ({ png, probes }) => {
+          const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
+          const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+          const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+          return probes.map(point => {
+            const pixels = context.getImageData(Math.max(0, Math.floor(point.x) - 2), Math.max(0, Math.floor(point.y) - 2), 5, 5).data;
+            for (let i = 0; i < pixels.length; i += 4) if (pixels[i]! > 225 && pixels[i + 1]! > 220 && pixels[i + 2]! > 160) return true;
+            return false;
+          });
+        }, { png: image.toString('base64'), probes });
+        expect(painted, `The bright head must move to a different edge at ${frame * 2000}ms (${width}px, management ${manage}).`).toEqual(probes.map((_, index) => index === frame));
+        expect(await seat.boundingBox()).toEqual(bounds);
+      }
+    }
+  } finally { await motion.dispose(); }
+});
+
 test('order feed exposes names, placement and playback status without song details even after reveal', async ({ isolatedApp }) => {
   const credential = await isolatedApp.engine.join('Listener');
   let view = isolatedApp.engine.view({ kind: 'participant', credential });
@@ -152,8 +196,9 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
     expect(box.width).toBeGreaterThanOrEqual(44); expect(box.height).toBeGreaterThanOrEqual(44);
     expect(box.x).toBeGreaterThanOrEqual(seatBox.x); expect(box.x + box.width).toBeLessThanOrEqual(seatBox.x + seatBox.width);
   }
-  await page.getByRole('button', { name: 'Move Listener 1 up', exact: true }).click();
+  await controls.focus(); await page.keyboard.press('Space'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Enter');
   await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 1');
+  await expect(page.locator('.rotation-seat').first()).toBeFocused();
   await page.getByRole('button', { name: 'Remove Listener 1', exact: true }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(19);
   await expect(list).toBeVisible();

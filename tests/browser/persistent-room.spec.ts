@@ -35,7 +35,9 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     await host.getByRole('button', { name: 'Remove Second', exact: true }).click();
     await expect(second.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
     await expect(first.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
-    await host.getByRole('button', { name: 'Move Late up', exact: true }).click();
+    const lateSeat = host.locator('.rotation-seat').filter({ has: host.locator('strong', { hasText: /^Late$/ }) });
+    await lateSeat.focus(); await host.keyboard.press('Space'); await host.keyboard.press('ArrowLeft'); await host.keyboard.press('Enter');
+    await expect(host.locator('.rotation-seat strong').first()).toHaveText('Late');
     await expect(late.locator('.turn-distance')).toHaveText('You’re next');
     await expect(host.getByRole('heading', { name: 'First', exact: true })).toBeVisible();
     host.once('dialog', dialog => dialog.accept());
