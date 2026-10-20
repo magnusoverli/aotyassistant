@@ -1,6 +1,6 @@
 {
   "name": "albums-of-the-year",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A Home Assistant app for taking turns sharing favourite music through Music Assistant.",
   "license": "MIT",
   "repository": {

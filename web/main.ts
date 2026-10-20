@@ -403,10 +403,25 @@ function host() {
   updateVolume(volume, player.project(view).volume); prop(volume.querySelector('input')!, 'disabled', !realtime || !view.connected || !view.volume?.available);
   children(audio, audioTitle, volume);
   const live = v.get('live', () => panel('host-live', { tone: 'highlight' })); const livePerson = v.el('person', 'div', undefined, 'host-live-person');
+  const ui = v.get('playback-ui', () => ({ identity: '', expanded: false, pending: '' }));
+  const playback = view.hostPlayback;
+  const identity = JSON.stringify([view.roomId, view.turnId, playback?.id]);
+  const changedPlayback = ui.identity !== identity;
+  if (changedPlayback) { ui.identity = identity; ui.expanded = false; }
+  const songActive = Boolean(realtime && playback && (playback.status === 'playing' || playback.status === 'paused'));
+  const stopping = Boolean(ui.pending && ui.pending === playback?.id);
   const personInfo = v.el('person-info', 'div');
-  const status = view.playbackStatus === 'playing' ? 'Playing' : view.playbackStatus === 'paused' ? 'Paused' : view.playbackStatus === 'unavailable' ? 'Unavailable' : 'Choosing a song';
+  const status = !realtime || view.playbackStatus === 'unavailable' ? 'Unavailable' : stopping ? 'Stopping…'
+    : playback?.status === 'stopped' ? `Stopped · ${view.current?.nickname ?? 'The participant'} keeps the turn`
+    : view.playbackStatus === 'playing' ? 'Playing' : view.playbackStatus === 'paused' ? 'Paused' : 'Choosing a song';
+  const progress = v.get('progress', () => { const node = progressBar(undefined, false, { hideStatus: true, positionFallback: true }); node.classList.add('host-progress'); return node; });
+  updateProgress(progress, songActive ? view.progress : undefined); prop(progress, 'hidden', !songActive);
+  const revealStatus = v.el('reveal-status', 'p', playback?.revealed ? 'Visible on room display' : 'Hidden on room display', 'host-reveal-status');
+  prop(revealStatus, 'hidden', !songActive);
+  const statusLine = v.el('status', 'p', `${status}${active.length > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status');
+  attr(statusLine, 'role', 'status');
   children(personInfo, v.get('current-caption', () => label('CURRENT PARTICIPANT')), v.el('current-name', 'h2', view.current?.nickname ?? 'Waiting for participants'),
-    v.el('status', 'p', `${status}${active.length > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status'));
+    statusLine, progress, revealStatus);
   const image = v.get('avatar', () => ({ key: '', node: avatar(undefined, 'avatar-large') }));
   const key = JSON.stringify(view.current); if (image.key !== key) { image.key = key; image.node = avatar(view.current, 'avatar-large'); }
   children(livePerson, image.node, personInfo);
@@ -414,7 +429,34 @@ function host() {
   const advance = v.get('advance', () => button('Skip turn', () => {
     if (view?.playbackStatus !== 'idle' && !confirm('Stop the current song and skip to the next person?')) return;
     return mutate('/api/host/advance', { turnId: view?.turnId });
-  })); prop(advance, 'disabled', busy || !realtime || !view.connected || !view.current); children(controls, advance);
+  })); advance.id = 'host-skip-turn'; prop(advance, 'disabled', busy || !realtime || !view.connected || !view.current);
+  const more = v.get('more', () => { const node = el('button', 'More', 'secondary'); node.type = 'button'; node.id = 'host-more'; node.setAttribute('aria-controls', 'host-more-actions'); return node; });
+  const moreActions = v.el('more-actions', 'div', undefined, 'host-more-actions'); moreActions.id = 'host-more-actions';
+  const stop = v.get('stop', () => { const node = el('button', 'Stop song — keep turn', 'secondary'); node.type = 'button'; node.id = 'host-stop';
+    node.onclick = () => {
+      const target = view; const song = target?.hostPlayback;
+      if (busy || !realtime || !target?.connected || !song || song.status === 'stopped') return;
+      if (!confirm(`Stop ${target.current?.nickname ?? 'the participant'}’s song and keep their turn?`)) return;
+      ui.expanded = false; ui.pending = song.id; more.focus({ preventScroll: true });
+      void run(async () => {
+        try { await mutate('/api/host/stop', { turnId: target.turnId, playbackId: song.id }); }
+        finally { ui.pending = ''; }
+      }).then(() => {
+        if (document.activeElement === more || document.activeElement === document.body) {
+          const next = more.hidden ? advance : more; if (!next.disabled) next.focus({ preventScroll: true });
+        }
+      });
+    }; return node; });
+  const showMore = songActive || Boolean(ui.pending);
+  const restoreFocus = (changedPlayback || !showMore) && (moreActions.contains(document.activeElement) || document.activeElement === more);
+  if (!showMore) ui.expanded = false;
+  prop(more, 'hidden', !showMore); prop(more, 'disabled', busy || !realtime || !view.connected);
+  more.onclick = () => { ui.expanded = !ui.expanded; render(); };
+  attr(more, 'aria-expanded', String(ui.expanded)); prop(moreActions, 'hidden', !ui.expanded);
+  prop(stop, 'disabled', busy || !realtime || !view.connected || !songActive);
+  controls.onkeydown = event => { if (event.key === 'Escape' && ui.expanded) { event.preventDefault(); ui.expanded = false; render(); more.focus({ preventScroll: true }); } };
+  children(moreActions, stop); children(controls, advance, more, moreActions);
+  if (restoreFocus) { const next = showMore ? more : advance; if (!next.disabled) next.focus({ preventScroll: true }); }
   children(live, livePerson, controls); children(workspace, live, audio);
   return main;
 }

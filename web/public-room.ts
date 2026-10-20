@@ -53,8 +53,8 @@ export class PublicRoom {
     const state = publicPlaybackState(view, online);
     const active = state === 'playing' || state === 'paused';
     attr(this.element, 'data-playback', state);
-    text(this.turn, view.current ? `${view.current.nickname}’s turn` : '');
-    prop(this.turn, 'hidden', !view.current);
+    text(this.turn, view.current ? `Currently playing: ${view.current.nickname}` : '');
+    prop(this.turn, 'hidden', state !== 'playing' || !view.current);
     prop(this.rest, 'hidden', active); prop(this.stage, 'hidden', !active);
     text(this.restTitle, state === 'unavailable' ? 'Playback unavailable.' : 'Nothing playing.');
     text(this.restHint, state === 'unavailable' ? (online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…')

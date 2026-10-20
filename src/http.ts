@@ -173,6 +173,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const input = body(req, z.object({ turnId: turn }).strict());
     await engine.advance(input.turnId); res.json(engine.view({ kind: 'host' }));
   });
+  app.post('/api/host/stop', async (req, res) => {
+    const input = body(req, z.object({ turnId: turn, playbackId: turn }).strict());
+    await engine.stopForHost(input.turnId, input.playbackId); res.json(engine.view({ kind: 'host' }));
+  });
   app.post('/api/participant/finish', async (req, res) => {
     const input = body(req, z.object({ turnId: turn }).strict());
     await engine.advance(input.turnId, participantCredential(req)); res.json(engine.view(participant(req)));
@@ -211,7 +215,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const key = JSON.stringify(view); if (key === previous) return;
       previous = key; stream.sendEncoded('state', key);
     };
-    const changed = (kind?: EngineChange) => { if (!kind || kind === 'room') send(); };
+    const changed = (kind?: EngineChange) => { if (kind !== 'playback') send(); };
     send(initial); engine.on('change', changed);
     stream.onClose(() => engine.off('change', changed));
     stream.every(() => { stream.send('state', snapshot()); }, 15_000);

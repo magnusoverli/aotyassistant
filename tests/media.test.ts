@@ -122,8 +122,10 @@ test('public progress contains no times before reveal and never advances a turn 
   f.remote.queue.elapsed_time = 90; f.remote.queue.elapsed_time_last_updated = Date.now() / 1000; await delay(65);
   const hidden = f.display().progress!; assert.equal(hidden.status, 'playing'); assert.ok(hidden.fraction! >= .5 && hidden.fraction! < .6);
   assert.deepEqual(Object.keys(hidden).sort(), ['fraction', 'id', 'status']);
-  assert.equal(f.participant(f.sam).progress, undefined); assert.equal(f.host().progress, undefined);
+  assert.equal(f.participant(f.sam).progress, undefined);
+  assert.deepEqual(Object.keys(f.host().progress!).sort(), ['fraction', 'id', 'status']);
   await f.engine.reveal(f.alex, f.host().turnId!, id); assert.equal(f.display().progress!.duration, 180); assert.ok(f.display().progress!.elapsed! >= 90);
+  assert.equal(f.host().progress!.duration, 180); assert.ok(f.host().progress!.elapsed! >= 90);
   await f.engine.control(f.alex, f.host().turnId!, id, 'pause'); await delay(50);
   const elapsed = f.display().progress!.elapsed!; await delay(60); assert.ok(Math.abs(f.display().progress!.elapsed! - elapsed) < .01);
   assert.equal(f.display().progress!.status, 'paused');

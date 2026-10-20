@@ -6,7 +6,7 @@ import { ViewNodes, children, prop, attr, text } from './view-nodes';
 
 type Management = { disabled(): boolean; move(id: string, shift: number): void; remove(id: string): void };
 
-/** One persistent names-only bar, shared by every application route. */
+/** One persistent participant bar, shared by every application route. */
 export class ListeningOrder {
   readonly element = el('div', undefined, 'listening-order');
   readonly mobileManagement = el('button', 'Manage people', 'secondary order-manage-mobile');
@@ -40,7 +40,7 @@ export class ListeningOrder {
     if (view) {
       this.stop();
       this.me = view.me;
-      this.accept({ roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [] });
+      this.accept({ roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [], playbackStatus: view.playbackStatus ?? 'unavailable' });
       this.connection(online);
     } else {
       this.me = undefined;
@@ -79,6 +79,7 @@ export class ListeningOrder {
 
   private render() {
     const view = this.snapshot; const people = view?.rotation ?? [];
+    attr(this.element, 'data-playing', String(view?.playbackStatus === 'playing'));
     text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
     prop(this.empty, 'hidden', people.length > 0); prop(this.list, 'hidden', !people.length);
     for (const button of [this.manage, this.mobileManagement]) {

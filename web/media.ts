@@ -47,9 +47,13 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
   if (status.textContent !== caption && !status.classList.contains('player-pending')) status.textContent = caption;
   attr(frame, 'data-status', progress?.status ?? 'waiting');
   const bar = frame.querySelector<HTMLProgressElement>('progress')!;
+  const fallback = frame.querySelector<HTMLElement>('.progress-unavailable');
+  const unavailable = Boolean(progress && progress.fraction == null);
+  if (fallback) prop(fallback, 'hidden', !unavailable);
   if (progress?.fraction != null) prop(bar, 'value', progress.fraction); else attr(bar, 'value', undefined);
-  prop(bar, 'hidden', !progress);
+  prop(bar, 'hidden', !progress || Boolean(fallback && unavailable));
   const times = frame.querySelector<HTMLElement>('.track-times')!;
+  prop(times, 'hidden', Boolean(fallback && unavailable));
   if (progress?.duration !== undefined) {
     if (times.children.length !== 2) times.replaceChildren(el('span'), el('span'));
     const elapsed = progress.elapsed === undefined ? '—:—' : time(progress.elapsed); const duration = progress.duration > 0 ? time(progress.duration) : '—:—';
@@ -59,11 +63,14 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
     if (bar.getAttribute('aria-valuetext') !== description) bar.setAttribute('aria-valuetext', description);
   } else { if (times.childNodes.length) times.replaceChildren(); attr(bar, 'aria-valuetext', 'Track progress. Times hidden until reveal.'); }
 }
-export function progressBar(progress?: PlaybackProgress, publicDisplay = false) {
+export function progressBar(progress?: PlaybackProgress, publicDisplay = false, options: { hideStatus?: boolean; positionFallback?: boolean } = {}) {
   const frame = el('section', undefined, `playback-progress${publicDisplay ? ' public-playback' : ''}`); frame.setAttribute('aria-label', 'Playback status and progress');
   const status = el('span', undefined, 'playback-status'); status.setAttribute('role', 'status');
+  status.hidden = Boolean(options.hideStatus);
   const bar = el('progress'); bar.max = 1; bar.setAttribute('aria-label', 'Track progress');
-  frame.append(status, bar, el('div', undefined, 'track-times')); updateProgress(frame, progress); return frame;
+  frame.append(status, bar, el('div', undefined, 'track-times'));
+  if (options.positionFallback) frame.append(el('p', 'Position unavailable', 'progress-unavailable muted small'));
+  updateProgress(frame, progress); return frame;
 }
 export function volumeControl(volume: VolumeState | undefined, change: (level: number, commit: boolean) => void, disabled: boolean) {
   const frame = el('div', undefined, 'volume-control');

@@ -46,6 +46,20 @@ test('configured Play uses six requests and still freshly validates schema, exac
   assert.equal(writes(f).filter(c => c.command === 'player_queues/play_media').length, 1);
 });
 
+test('host stop confirms the owned song without advancing and rejects externally replaced audio', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id); const id = f.host().hostPlayback!.id;
+  await f.engine.stopForHost(turn, id);
+  assert.equal(f.remote.queue.state, 'idle'); assert.equal(f.host().turnId, turn);
+  assert.equal(f.host().hostPlayback?.status, 'stopped');
+  await f.engine.play(f.alex, turn, id, track.id); const next = f.host().hostPlayback!.id;
+  f.remote.calls.length = 0; f.remote.queue.current_item!.queue_item_id = 'external-item';
+  await assert.rejects(f.engine.stopForHost(turn, next), error => error instanceof AppError && error.status === 409);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.host().turnId, turn);
+  assert.equal(writes(f).length, 0);
+});
+
 test('Play changes only incorrect queue policies and verifies them before starting audio', async t => {
   const f = await fixture(60_000); t.after(f.close);
   Object.assign(f.remote.queue, { autoplay_enabled: false, repeat_mode: 'all', shuffle_enabled: false });

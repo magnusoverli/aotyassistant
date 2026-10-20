@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-10-20
+
+- Double the room-display record’s rotation speed to one revolution every 17.65 seconds.
+- Show “Currently playing: <username>” on the room display only during active playback.
+- Add directional arrows between participants and a slow, subtle border glow during playback, replacing the arrow beside “Up next”.
+- Make the room-display join QR code 25% smaller.
+- Show playback progress and reveal status on the host desk, with a Stop song action that keeps the participant’s turn.
+
 ## [1.0.1] — 2026-10-19
 
 - Advance to the next participant when Music Assistant confirms a song’s natural end after its idle delay.

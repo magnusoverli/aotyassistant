@@ -33,14 +33,64 @@ test('role serializers conceal metadata until reveal, and never disclose it to o
     for (const sensitive of ['Northern Lights', 'The Paper Satellites', '/demo-cover.svg', 'credentialHash']) assert.ok(!json.includes(sensitive));
   }
   assert.equal(own.ownPlayback!.track.title, 'Northern Lights');
+  assert.deepEqual(f.host().hostPlayback, { id, status: 'playing', revealed: false });
+  assert.equal(typeof f.host().progress?.fraction, 'number');
+  assert.equal(f.host().progress?.duration, undefined); assert.equal(f.host().progress?.elapsed, undefined);
+  assert.equal(f.participant(f.sam).hostPlayback, undefined); assert.equal(f.display().hostPlayback, undefined);
   await f.engine.reveal(f.alex, own.turnId!, id);
   assert.equal(f.display().nowPlaying!.revealed, true);
   assert.ok(JSON.stringify(f.display()).includes('Northern Lights'));
   assert.ok(!JSON.stringify(f.participant(f.sam)).includes('Northern Lights'));
+  assert.equal(f.host().hostPlayback?.revealed, true); assert.equal(f.host().progress?.duration, 3600);
+  assert.ok(!JSON.stringify(f.host()).includes('Northern Lights'));
   await f.engine.play(f.alex, own.turnId!, id, 'demo:aurora');
   assert.notEqual(f.participant(f.alex).ownPlayback!.id, id);
   assert.deepEqual(f.display().nowPlaying, { revealed: false });
   await assert.rejects(f.engine.reveal(f.alex, own.turnId!, id), status(409));
+});
+
+test('host stop keeps the turn, deduplicates repeated stops and rejects stale playback before touching audio', async t => {
+  const f = await fixture(); t.after(() => f.adapter.close());
+  const turn = f.host().turnId!;
+  await f.engine.play(f.alex, turn, null, 'demo:aurora'); const id = f.host().hostPlayback!.id;
+  await f.engine.control(f.alex, turn, id, 'pause');
+  const order = f.host().rotation; let stops = 0; const control = f.adapter.control.bind(f.adapter);
+  f.adapter.control = async action => { if (action === 'stop') stops++; await control(action); };
+  await f.engine.stopForHost(turn, id); await f.engine.stopForHost(turn, id); await f.engine.complete(id);
+  assert.equal(stops, 1); assert.equal(f.host().turnId, turn); assert.deepEqual(f.host().rotation, order);
+  assert.equal(f.host().current!.nickname, 'Alex'); assert.equal(f.host().hostPlayback?.status, 'stopped');
+  assert.equal(f.host().progress, undefined); assert.equal(f.participant(f.alex).ownPlayback?.status, 'stopped');
+  await f.engine.play(f.alex, turn, id, 'demo:night'); const replacement = f.host().hostPlayback!.id;
+  await assert.rejects(f.engine.stopForHost(turn, id), status(409)); assert.equal(stops, 1);
+  await f.engine.advance(turn); const afterAdvance = stops;
+  await assert.rejects(f.engine.stopForHost(turn, replacement), status(409)); assert.equal(stops, afterAdvance);
+  assert.equal(f.host().current!.nickname, 'Sam');
+});
+
+test('host stop and natural completion serialize without stopping or advancing a subsequent turn', async t => {
+  for (const stopFirst of [true, false]) {
+    const f = await fixture(); t.after(() => f.adapter.close());
+    const turn = f.host().turnId!; await f.engine.play(f.alex, turn, null, 'demo:aurora'); const id = f.host().hostPlayback!.id;
+    const results = await Promise.allSettled(stopFirst
+      ? [f.engine.stopForHost(turn, id), f.engine.complete(id)]
+      : [f.engine.complete(id), f.engine.stopForHost(turn, id)]);
+    assert.equal(results[0]!.status, 'fulfilled');
+    assert.equal(results[1]!.status, stopFirst ? 'fulfilled' : 'rejected');
+    assert.equal(f.host().current!.nickname, stopFirst ? 'Alex' : 'Sam');
+    if (stopFirst) assert.equal(f.host().turnId, turn);
+    await f.engine.complete(id); assert.equal(f.host().current!.nickname, stopFirst ? 'Alex' : 'Sam');
+  }
+});
+
+test('an unconfirmed host stop preserves playback state and turn instead of reporting success', async t => {
+  const f = await fixture(); t.after(() => f.adapter.close());
+  const turn = f.host().turnId!; await f.engine.play(f.alex, turn, null, 'demo:aurora'); const before = f.host();
+  f.adapter.control = async () => { throw new AppError(503, 'Stop could not be confirmed.'); };
+  await assert.rejects(f.engine.stopForHost(turn, before.hostPlayback!.id), status(503));
+  assert.equal(f.host().revision, before.revision); assert.equal(f.host().turnId, turn);
+  assert.equal(f.host().hostPlayback?.status, 'playing');
+  f.adapter.connected = false;
+  assert.equal(f.host().hostPlayback, null); assert.equal(f.host().progress, undefined);
 });
 
 test('non-current participants may search, but cannot play, control, reveal, or finish', async t => {

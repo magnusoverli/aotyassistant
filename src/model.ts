@@ -58,7 +58,7 @@ export type Room = z.infer<typeof roomSchema>;
 export type Role = { kind: 'host' } | { kind: 'display' } | { kind: 'participant'; credential: string };
 
 export type Person = { id: string; nickname: string };
-export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[] };
+export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[]; playbackStatus: NonNullable<View['playbackStatus']> };
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
 /** Public output identity/health only; never a queue payload or current recording. */
@@ -71,6 +71,7 @@ export type View = {
   playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';
   revision: number; turnId: string | null; current: Person | null; next: Person | null;
   me?: Person; myTurn?: boolean; ownPlayback?: Room['playback'];
+  hostPlayback?: Pick<NonNullable<Room['playback']>, 'id' | 'status' | 'revealed'> | null;
   catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };
   playbackIssue?: string;
   progress?: PlaybackProgress; volume?: VolumeState;

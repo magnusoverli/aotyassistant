@@ -33,7 +33,7 @@ test('the display uses the shared numbered listening order and retains it across
   const listeners = [];
   const list = tv.getByRole('list', { name: 'Participant rotation' });
   try {
-    await expect(tv.locator('.room-turn')).toHaveText('Alex’s turn');
+    await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.locator('.room-topline, .room-next, .room-meter, .reveal-label')).toHaveCount(0);
     await expect(tv.getByText('Scan the QR code to join.', { exact: true })).toHaveCount(0);
     await expect(tv.locator('.rotation-seat.is-current .seat-state:visible')).toHaveText('Current turn');
@@ -50,16 +50,20 @@ test('the display uses the shared numbered listening order and retains it across
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
     await expect(list.locator('.seat-number')).toHaveCount(9);
     await f.play(); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
+    await expect(tv.locator('.room-turn')).toHaveText('Currently playing: Alex');
+    await expect(tv.locator('.room-turn')).toBeVisible();
     await expect(tv.getByText('Track details stay private until the reveal.', { exact: true })).toHaveCount(0);
     await list.focus(); await list.evaluate(node => { (window as any).orderList = node; (window as any).currentPerson = node.firstElementChild; });
     await f.reveal(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
     await expect(list).toBeFocused();
     expect(await list.evaluate(node => (window as any).orderList === node && (window as any).currentPerson === node.firstElementChild)).toBe(true);
     await f.control('pause'); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
+    await expect(tv.locator('.room-turn')).toBeHidden();
     await f.screen.setOffline(true); await expect(tv.getByRole('heading', { name: 'Playback unavailable.' })).toBeVisible();
     await expect(tv.locator('.order-status')).toHaveText('Offline');
     await f.screen.setOffline(false); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     await f.control('resume');
+    await expect(tv.locator('.room-turn')).toBeVisible();
     await list.evaluate(node => (node as HTMLElement).blur());
     for (const [width, height] of [[1366, 768], [1920, 1080], [1280, 720], [390, 844], [320, 700]]) {
       await tv.setViewportSize({ width: width!, height: height! });
@@ -70,7 +74,8 @@ test('the display uses the shared numbered listening order and retains it across
       if (width! > 700) await fits(tv);
     }
     await f.control('stop'); await expect(tv.locator('.rotation-seat.is-current .seat-state:visible')).toHaveText('Now');
-    await f.finish(); await expect(tv.locator('.room-turn')).toHaveText('Sam’s turn');
+    await expect(tv.locator('.room-turn')).toBeHidden();
+    await f.finish(); await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Sam');
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Jordan');
     expect(await tv.locator('.rotation-list strong').evaluateAll(nodes => nodes.slice(0, 3).map(node => node.textContent))).toEqual(['Alex', 'Sam', 'Jordan']);
@@ -139,9 +144,11 @@ test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and na
     await expect(tv.getByText('● Playing', { exact: true })).toBeVisible();
     await f.screen.setOffline(true);
     await expect(tv.getByRole('heading', { name: 'Playback unavailable.' })).toBeVisible();
+    await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.getByText('Night Bus Home', { exact: true })).toHaveCount(0); await expect(tv.locator('.now-playing')).toBeHidden();
     await f.screen.setOffline(false);
     await expect(tv.getByRole('heading', { name: 'Night Bus Home', exact: true })).toBeVisible();
+    await expect(tv.locator('.room-turn')).toBeVisible();
     await f.finish(); await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     const track = isolatedApp.demo.catalogue[0]!;
     track.title = 'A beautifully long song title that should never push the listening room beyond the television screen';
@@ -158,6 +165,7 @@ test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and na
     await f.finish(); track.duration = .8; await f.play();
     await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
+    await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.getByRole('progressbar')).toBeHidden(); await expect(tv.getByText(track.title, { exact: true })).toHaveCount(0);
     await frozen.dispose();
   } finally { await f.close(); }
@@ -181,7 +189,7 @@ test('only the small sticker is personalized, its shuffled history survives refr
       disc: record.getAnimations()[0]!,
     }));
     await expect.poll(() => spin.evaluate(saved => saved.disc.playState)).toBe('running');
-    expect(await spin.evaluate(saved => saved.disc.effect!.getTiming().duration)).toBe(35_300);
+    expect(await spin.evaluate(saved => saved.disc.effect!.getTiming().duration)).toBe(17_650);
     expect(await tv.locator('.room-record > .vinyl-label').evaluate(label => label.getAnimations().length)).toBe(0);
     const initialTime = await spin.evaluate(saved => Number(saved.disc.currentTime));
     await expect.poll(() => spin.evaluate(saved => Number(saved.disc.currentTime))).toBeGreaterThan(initialTime);
@@ -269,7 +277,7 @@ test('the visible sticker text turns with the record instead of only advancing a
       const combined = new DOMMatrix(getComputedStyle(record).transform).multiply(new DOMMatrix(getComputedStyle(record.querySelector('.vinyl-label')!).transform));
       return { a: combined.a, b: combined.b, c: combined.c, d: combined.d };
     });
-    const angle = 2 * Math.PI * 5000 / 35_300;
+    const angle = 2 * Math.PI * 5000 / 17_650;
     expect(orientation.a).toBeCloseTo(Math.cos(angle), 3); expect(orientation.b).toBeCloseTo(Math.sin(angle), 3);
     expect(orientation.c).toBeCloseTo(-Math.sin(angle), 3); expect(orientation.d).toBeCloseTo(Math.cos(angle), 3);
     await motion.dispose();

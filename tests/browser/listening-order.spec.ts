@@ -1,7 +1,13 @@
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 
-test('every application route has one matching live listening order directly under the header bar', async ({ page, browser, isolatedApp }) => {
+async function expectGlowing(pages: Page[], playing: boolean) {
+  for (const page of pages) {
+    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node, '::before').animationName === 'order-glow').map(node => node.getAttribute('aria-current')))).toEqual(playing ? ['step'] : []);
+  }
+}
+
+test('every route shares the directional listening order and only the actively playing participant glows', async ({ page, browser, isolatedApp }) => {
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
   const member = await browser.newContext({ baseURL: isolatedApp.origin });
@@ -26,6 +32,9 @@ test('every application route has one matching live listening order directly und
         expect(order.height).toBeLessThanOrEqual(width < 1100 ? 56 : 104);
         await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
         await expect(current.locator('.rotation-list')).toBeVisible();
+        await expect(current.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(3);
+        expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(['""', '""', 'none']);
+        expect(await current.locator('.rotation-seat.is-next .seat-state:visible').evaluate(node => getComputedStyle(node, '::before').content)).toBe('none');
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();
         const seat = current.locator('.rotation-seat').first();
         if (width < 1100) {
@@ -57,8 +66,44 @@ test('every application route has one matching live listening order directly und
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('You');
     for (const current of pages.slice(0, -1)) await expect(current.locator('.rotation-seat.is-you')).toHaveCount(0);
     const state = isolatedApp.engine.view({ kind: 'participant', credential: first });
+    await expectGlowing(pages, false);
+    await isolatedApp.engine.play(first, state.turnId!, null, 'demo:aurora');
+    const playing = isolatedApp.engine.view({ kind: 'participant', credential: first });
+    await expectGlowing(pages, true);
+    const glow = await page.locator('.rotation-seat.is-current').evaluateHandle(async node => {
+      const animation = node.getAnimations({ subtree: true })[0]!; await animation.ready; return { animation, start: animation.startTime };
+    });
+    await isolatedApp.engine.reveal(first, playing.turnId!, playing.ownPlayback!.id);
+    isolatedApp.engine.emit('change', 'playback');
+    await expect(page.locator('.host-live')).toBeVisible();
+    expect(await glow.evaluate(saved => document.getAnimations().includes(saved.animation) && saved.animation.startTime === saved.start)).toBe(true);
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.locator('.listening-order').screenshot({ path: `test-results/listening-order-playing-${width}.png` });
+    }
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await expectGlowing([page], false);
+    await expect(page.locator('.rotation-seat.is-current')).toHaveAttribute('aria-current', 'step');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await expectGlowing([page], true);
+    await guest.setOffline(true);
+    for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
+    await expectGlowing(pages.slice(1, -1), false);
+    await guest.setOffline(false); await expectGlowing(pages, true);
+    Object.defineProperty(isolatedApp.engine.adapter, 'connected', { configurable: true, value: false }); isolatedApp.engine.emit('change', 'output');
+    await expectGlowing(pages, false);
+    Reflect.deleteProperty(isolatedApp.engine.adapter, 'connected'); isolatedApp.engine.emit('change', 'output');
+    await expectGlowing(pages, true);
+    await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'pause');
+    await expectGlowing(pages, false);
+    await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'resume');
+    await expectGlowing(pages, true);
+    await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'stop');
+    await expectGlowing(pages, false);
+    await glow.dispose();
     await isolatedApp.engine.advance(state.turnId!, first);
     for (const current of pages) await expect(current.locator('.rotation-seat.is-current strong')).toHaveText('Second');
+    await expectGlowing(pages, false);
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('Next · You');
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
@@ -67,7 +112,7 @@ test('every application route has one matching live listening order directly und
   } finally { await guest.close(); await member.close(); }
 });
 
-test('order feed exposes only names and placement even after a track is revealed', async ({ isolatedApp }) => {
+test('order feed exposes names, placement and playback status without song details even after reveal', async ({ isolatedApp }) => {
   const credential = await isolatedApp.engine.join('Listener');
   let view = isolatedApp.engine.view({ kind: 'participant', credential });
   await isolatedApp.engine.play(credential, view.turnId!, null, 'demo:aurora');
@@ -80,7 +125,8 @@ test('order feed exposes only names and placement even after a track is revealed
     const reader = response.body!.getReader(); let frame = '';
     while (!frame.includes('\n\n')) frame += new TextDecoder().decode((await reader.read()).value);
     const snapshot = JSON.parse(frame.split('\n').find(line => line.startsWith('data: '))!.slice(6));
-    expect(Object.keys(snapshot).sort()).toEqual(['current', 'next', 'revision', 'roomId', 'rotation']);
+    expect(Object.keys(snapshot).sort()).toEqual(['current', 'next', 'playbackStatus', 'revision', 'roomId', 'rotation']);
+    expect(snapshot.playbackStatus).toBe('playing');
     expect(snapshot.rotation).toEqual([{ id: view.me!.id, nickname: 'Listener' }]);
     expect(Object.keys(snapshot.current).sort()).toEqual(['id', 'nickname']);
     expect(frame).not.toContain('Northern Lights'); expect(frame).not.toContain(credential);

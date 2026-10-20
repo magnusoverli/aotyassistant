@@ -68,6 +68,7 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   };
   t.after(() => { for (const controller of controllers) controller.abort(); });
   const displayEvent = await openStream('/api/display/events', displayCookie);
+  const hostEvent = await openStream('/api/host/events', '');
   const samEvent = await openStream('/api/participant/events', sam.cookie);
   const nextState = async (read: () => Promise<string>, matches: (state: View) => boolean) => {
     for (let i = 0; i < 30; i++) {
@@ -76,19 +77,33 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
     }
     throw new Error('The expected stream projection did not arrive.');
   };
-  await displayEvent(); await samEvent();
+  await displayEvent(); await samEvent(); await hostEvent();
   assert.equal((await request('/api/participant/play', { turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, sam.cookie)).status, 403);
   const own = await json('/api/participant/play', { turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, alex.cookie);
   assert.equal(own.ownPlayback!.track.title, 'Northern Lights');
-  for (const frame of [await nextState(displayEvent, state => state.progress?.id === own.ownPlayback!.id), await nextState(samEvent, state => state.revision >= own.revision), JSON.stringify(await json('/api/display/state', undefined, displayCookie))]) {
+  for (const frame of [await nextState(displayEvent, state => state.progress?.id === own.ownPlayback!.id), await nextState(hostEvent, state => state.hostPlayback?.id === own.ownPlayback!.id), await nextState(samEvent, state => state.revision >= own.revision), JSON.stringify(await json('/api/display/state', undefined, displayCookie))]) {
     for (const sensitive of ['Northern Lights', 'The Paper Satellites', '/demo-cover.svg', 'demo:aurora']) assert.ok(!frame.includes(sensitive));
   }
   const resumed = await json('/api/participant/state', undefined, alex.cookie);
   assert.equal(resumed.me!.id, alex.state.me!.id);
   const playbackId = own.ownPlayback!.id;
+  const hostPlaying = await json('/api/host/state');
+  assert.equal(hostPlaying.progress?.duration, undefined); assert.equal(hostPlaying.progress?.elapsed, undefined);
+  assert.equal((await request('/api/host/stop', { turnId })).status, 400);
+  assert.equal((await request('/api/host/stop', { turnId, playbackId, action: 'pause' })).status, 400);
+  assert.equal((await request('/api/host/stop', { turnId, playbackId }, '', 'https://evil.example')).status, 403);
+  assert.equal((await request('/api/host/stop', { turnId, playbackId: crypto.randomUUID() })).status, 409);
+  assert.equal((await request('/api/host/reveal', { turnId, playbackId })).status, 404);
   const revealed = await json('/api/participant/reveal', { turnId, playbackId }, alex.cookie);
   assert.ok((await nextState(displayEvent, state => state.revision >= revealed.revision)).includes('Northern Lights'));
   assert.ok(!(await nextState(samEvent, state => state.revision >= revealed.revision)).includes('Northern Lights'));
+  const revealedHost = JSON.parse((await nextState(hostEvent, state => state.hostPlayback?.revealed === true)).split('data: ')[1]!) as View;
+  assert.equal(revealedHost.progress?.duration, 3600); assert.ok(!JSON.stringify(revealedHost).includes('Northern Lights'));
+  const stopped = await json('/api/host/stop', { turnId, playbackId });
+  assert.equal(stopped.hostPlayback?.status, 'stopped'); assert.equal(stopped.turnId, turnId);
+  assert.equal(stopped.current!.id, own.current!.id); assert.equal(stopped.progress, undefined);
+  assert.equal(stopped.ownPlayback, undefined);
+  assert.equal((await json('/api/participant/state', undefined, alex.cookie)).ownPlayback?.status, 'stopped');
   const concurrent = await Promise.all([
     request('/api/host/advance', { turnId }), request('/api/participant/finish', { turnId }, alex.cookie),
   ]);

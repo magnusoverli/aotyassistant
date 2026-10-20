@@ -132,7 +132,7 @@ export class Engine extends EventEmitter {
     const people = new Map(room.participants.map(({ id, nickname }) => [id, { id, nickname }]));
     return { roomId: room.id, revision: room.revision, current: people.get(room.currentId ?? '') ?? null,
       next: room.currentId && room.active.length ? people.get(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) ?? null : null,
-      rotation: room.active.map(id => people.get(id)!) };
+      rotation: room.active.map(id => people.get(id)!), playbackStatus: this.playbackStatus(room) };
   }
   view(role: Role): View {
     const room = this.room();
@@ -140,16 +140,20 @@ export class Engine extends EventEmitter {
     const people = new Map(room.participants.map(p => [p.id, { id: p.id, nickname: p.nickname }]));
     const person = (id: string | null) => id ? people.get(id) ?? null : null;
     const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id,
-      playbackAvailable: this.playbackAvailable,
+      playbackAvailable: this.playbackAvailable, playbackStatus: this.playbackStatus(room),
       ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
       revision: room.revision, turnId: room.turnId, current: person(room.currentId),
       next: room.currentId && room.active.length ? person(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) : null,
       rotation: room.active.map(id => person(id)!), // Names/order only, never selections or credentials.
       ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue } : {}) };
     const joinUrl = `${this.guestUrl}/join`;
-    if (role.kind === 'host') return { ...base, active: room.active.map(id => person(id)!), volume: this.adapter.volume,
-      playbackStatus: !this.ready || this.concealPlayback || !this.catalogueState.playbackAvailable ? 'unavailable' : room.playback?.status === 'playing' ? 'playing' : room.playback?.status === 'paused' ? 'paused' : 'idle',
-      joinUrl, displayUrl: `${this.guestUrl}/display` };
+    if (role.kind === 'host') {
+      const playback = base.playbackStatus !== 'unavailable' ? room.playback : null;
+      return { ...base, active: room.active.map(id => person(id)!), volume: this.adapter.volume,
+        hostPlayback: playback ? { id: playback.id, status: playback.status, revealed: playback.revealed } : null,
+        progress: playback && playback.status !== 'stopped' ? this.progress(room, playback.revealed) : undefined,
+        joinUrl, displayUrl: `${this.guestUrl}/display` };
+    }
     if (role.kind === 'display') {
       const revealed = Boolean(room.playback?.revealed && !this.concealPlayback && this.ready);
       const track = room.playback ? structuredClone(room.playback.track) : undefined;
@@ -164,6 +168,9 @@ export class Engine extends EventEmitter {
     return { ...base, me: { id: me.id, nickname: me.nickname }, myTurn, catalogue: this.catalogueState,
       position: { seat: seat + 1, total: room.active.length, turnsUntil: (seat - currentSeat + room.active.length) % room.active.length },
       ...(myTurn ? { ownPlayback: structuredClone(room.playback), progress: this.progress(room, true), volume: this.adapter.volume } : {}) };
+  }
+  private playbackStatus(room: Room): NonNullable<View['playbackStatus']> {
+    return !this.playbackAvailable || this.concealPlayback ? 'unavailable' : room.playback?.status === 'playing' ? 'playing' : room.playback?.status === 'paused' ? 'paused' : 'idle';
   }
   private progress(room: Room, times: boolean): PlaybackProgress | undefined {
     const playback = room.playback; if (!playback || !this.ready || this.concealPlayback) return;
@@ -333,12 +340,24 @@ export class Engine extends EventEmitter {
     });
   }
   async control(credential: string, turnId: string, playbackId: string, action: 'pause' | 'resume' | 'stop'): Promise<void> {
+    return this.controlPlayback({ kind: 'participant', credential }, turnId, playbackId, action);
+  }
+  async stopForHost(turnId: string, playbackId: string): Promise<void> {
+    return this.controlPlayback({ kind: 'host' }, turnId, playbackId, 'stop');
+  }
+  private async controlPlayback(actor: Exclude<Role, { kind: 'display' }>, turnId: string, playbackId: string, action: 'pause' | 'resume' | 'stop'): Promise<void> {
     return maOperation(action, () => this.audio(async () => {
       const check = (room: Room) => {
-        this.current(credential, turnId, room); this.expectedPlayback(room, playbackId);
+        if (actor.kind === 'participant') this.current(actor.credential, turnId, room);
+        else {
+          if (room.turnId !== turnId) throw new AppError(409, 'The turn changed. Review the current participant.');
+          if (this.concealPlayback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before stopping.');
+        }
+        this.expectedPlayback(room, playbackId);
         if (!room.playback || (action !== 'stop' && room.playback.status === 'stopped')) throw new AppError(409, 'Select and play a track first.');
       };
-      await this.inspect(check);
+      const alreadyStopped = await this.inspect(room => { check(room); return room.playback!.status === 'stopped'; });
+      if (actor.kind === 'host' && alreadyStopped) return;
       await this.adapter.control(action); this.controlEpoch++;
       await this.transaction(async state => {
         const room = this.room(state); check(room);
