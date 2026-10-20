@@ -6,7 +6,7 @@ Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**
 
 The room is always ready. Participants join with a display name and enter the end of the listening order; the first person gets the first turn. Joining never starts music.
 
-The travelling border in the listening order marks whose turn it is, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
+In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
 
 On **Host desk**, drag any participant card into a new position or select its top-right trash icon to remove it. These controls are always available in the listening order. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. Names and turn order are public; private song lists are not.
 

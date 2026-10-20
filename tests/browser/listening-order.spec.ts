@@ -113,9 +113,11 @@ test('every route highlights the current turn, including before playback, while 
   } finally { await guest.close(); await member.close(); }
 });
 
-test('the current-turn highlight visibly travels around the rounded perimeter before playback at desktop and mobile sizes', async ({ page, isolatedApp }) => {
+test('a diffuse light travels on the actual card border without an inset trail at desktop and mobile sizes', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectGlowing([page], true);
+  const masks = await page.locator('.order-trace mask').evaluateAll(nodes => nodes.map(node => node.id));
+  expect(new Set(masks).size).toBe(masks.length);
   const seat = page.locator('.rotation-seat.is-current');
   const motion = await seat.evaluateHandle(async node => {
     const animations = node.getAnimations({ subtree: true });
@@ -126,6 +128,16 @@ test('the current-turn highlight visibly travels around the rounded perimeter be
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       const bounds = await seat.boundingBox();
+      const outline = await seat.evaluate(node => {
+        const box = node.getBoundingClientRect(); const mask = node.querySelector<SVGRectElement>('.order-trace-mask')!;
+        const geometry = mask.getBBox(); const matrix = node.querySelector<SVGSVGElement>('.order-trace')!.getScreenCTM()!;
+        const first = new DOMPoint(geometry.x, geometry.y).matrixTransform(matrix);
+        const last = new DOMPoint(geometry.x + geometry.width, geometry.y + geometry.height).matrixTransform(matrix);
+        return { left: first.x - box.left, top: first.y - box.top, right: box.right - last.x, bottom: box.bottom - last.y,
+          radius: parseFloat(getComputedStyle(mask).rx), cardRadius: parseFloat(getComputedStyle(node).borderTopLeftRadius), stroke: getComputedStyle(mask).strokeWidth };
+      });
+      for (const edge of [outline.left, outline.top, outline.right, outline.bottom]) expect(edge).toBeCloseTo(.5, 2);
+      expect(outline.radius).toBeCloseTo(outline.cardRadius - .5, 2); expect(outline.stroke).toBe('1px');
       const probes = await seat.evaluate(node => {
         const head = node.querySelector<SVGRectElement>('.order-trace-light')!;
         const box = node.getBoundingClientRect(); const matrix = head.getScreenCTM()!;
@@ -147,15 +159,31 @@ test('the current-turn highlight visibly travels around the rounded perimeter be
             const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0); return context;
           };
           const context = await pixels(png); const original = await pixels(baseline);
-          return probes.map(point => {
-            const x = Math.max(0, Math.floor(point.x) - 2); const y = Math.max(0, Math.floor(point.y) - 2);
-            const after = context.getImageData(x, y, 5, 5).data; const before = original.getImageData(x, y, 5, 5).data;
+          const gain = (point: { x: number; y: number }, size = 5) => {
+            const half = Math.floor(size / 2);
+            const x = Math.max(0, Math.floor(point.x) - half); const y = Math.max(0, Math.floor(point.y) - half);
+            const after = context.getImageData(x, y, size, size).data; const before = original.getImageData(x, y, size, size).data;
             let brighter = 0;
             for (let i = 0; i < after.length; i += 4) brighter += ((after[i]! - before[i]!) + (after[i + 1]! - before[i + 1]!) + (after[i + 2]! - before[i + 2]!)) / 3;
-            return brighter / 25 > 15;
+            return brighter / (size * size);
+          };
+          const inside = probes.map(point => {
+            const vertical = Math.min(point.x, context.canvas.width - point.x) < Math.min(point.y, context.canvas.height - point.y);
+            return gain({ x: point.x + (vertical ? point.x < context.canvas.width / 2 ? 8 : -8 : 0),
+              y: point.y + (!vertical ? point.y < context.canvas.height / 2 ? 8 : -8 : 0) }, 3);
           });
+          const profile = [-36, -24, -12, 0, 12, 24, 36].map(offset => gain({ x: probes[0]!.x + offset, y: probes[0]!.y }, 1));
+          return { edges: probes.map(point => gain(point) > 15), inside, profile };
         }, { png: image.toString('base64'), baseline: baseline.toString('base64'), probes });
-        expect(painted, `The soft glow must visibly move to a different edge at ${frame * 2500}ms (${width}px).`).toEqual(probes.map((_, index) => index === frame));
+        expect(painted.edges, `The soft glow must visibly move to a different edge at ${frame * 2500}ms (${width}px).`).toEqual(probes.map((_, index) => index === frame));
+        expect(painted.inside[frame], 'The card interior must not contain a second bright travelling line.').toBeLessThan(4);
+        if (frame === 0) {
+          const profile = painted.profile;
+          expect(profile[3]!).toBeGreaterThan(profile[2]! + 10);
+          expect(profile[2]!).toBeGreaterThan(profile[1]! + 10);
+          expect(profile[1]!).toBeGreaterThan(profile[0]! + 4);
+          for (let index = 0; index < 3; index++) expect(Math.abs(profile[index]! - profile[6 - index]!)).toBeLessThan(8);
+        }
         expect(await seat.boundingBox()).toEqual(bounds);
       }
     }

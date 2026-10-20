@@ -7,13 +7,29 @@ import { OrderDrag, type OrderMove } from './order-drag';
 
 type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void>; remove(id: string): void };
 
-/** A normalized perimeter keeps the light moving evenly as the card changes size. */
+let turnBorderSequence = 0;
+
+/** A diffuse point light follows a normalized perimeter, clipped to the actual border. */
 function turnBorder() {
   const namespace = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(namespace, 'svg');
   svg.classList.add('order-trace'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
-  const rect = document.createElementNS(namespace, 'rect'); rect.classList.add('order-trace-light');
-  rect.setAttribute('x', '1.5'); rect.setAttribute('y', '1.5'); rect.setAttribute('pathLength', '100'); svg.append(rect);
+  const rect = (className: string) => {
+    const node = document.createElementNS(namespace, 'rect'); node.classList.add(className);
+    node.setAttribute('x', '.5'); node.setAttribute('y', '.5'); node.setAttribute('pathLength', '100'); return node;
+  };
+  const definitions = document.createElementNS(namespace, 'defs');
+  const mask = document.createElementNS(namespace, 'mask'); const id = `order-border-${++turnBorderSequence}`;
+  mask.id = id; mask.setAttribute('maskUnits', 'userSpaceOnUse');
+  mask.setAttribute('x', '0'); mask.setAttribute('y', '0'); mask.setAttribute('width', '100%'); mask.setAttribute('height', '100%');
+  mask.append(rect('order-trace-mask')); definitions.append(mask); svg.append(definitions);
+  const light = () => {
+    const clipped = document.createElementNS(namespace, 'g'); clipped.setAttribute('mask', `url(#${id})`);
+    clipped.append(rect('order-trace-light')); return clipped;
+  };
+  // Blur a copy after masking, so only the border casts a halo into its surroundings.
+  const halo = document.createElementNS(namespace, 'g'); halo.classList.add('order-trace-halo'); halo.append(light());
+  svg.append(halo, light());
   return svg;
 }
 

@@ -19,15 +19,18 @@
   .rotation-seat.is-current .seat-state { color:#c9e8b1; font-weight:700; }
   .rotation-seat.is-current .seat-state:before { content:'● '; font-size:9px; }
   .rotation-seat.is-current .seat-number { color:#c9e8b1; font-weight:700; }
-  .order-trace { display:none; position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
-  .order-trace rect { width:calc(100% - 3px); height:calc(100% - 3px); rx:8px; fill:none; stroke-linecap:round; }
-  .order-trace-light { stroke:#e0ecc7; stroke-width:6px; stroke-dasharray:20 80; opacity:.85; filter:blur(3.5px); }
+  .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:visible; pointer-events:none; }
+  .order-trace rect { width:calc(100% - 1px); height:calc(100% - 1px); rx:9.5px; fill:none; }
+  .order-trace-mask { stroke:white; stroke-width:1px; }
+  .order-trace-light { stroke:#edf5d9; stroke-width:42px; stroke-linecap:round; stroke-dasharray:.001 99.999; opacity:.95; filter:blur(12px); }
+  .order-trace-halo { opacity:.65; filter:blur(2px); }
   .listening-order .rotation-seat.is-current .order-trace { display:block; }
-  .listening-order .rotation-seat.is-current .order-trace rect { animation:order-trace 10s linear infinite; }
-  @keyframes order-trace { from { stroke-dashoffset:-10px; } to { stroke-dashoffset:-110px; } }
+  .listening-order .rotation-seat.is-current .order-trace-light { animation:order-trace 10s linear infinite; }
+  @keyframes order-trace { from { stroke-dashoffset:-20px; } to { stroke-dashoffset:-120px; } }
   @media(prefers-reduced-motion:reduce) {
-    .listening-order .rotation-seat.is-current .order-trace rect { animation:none; stroke-dasharray:none; stroke-dashoffset:0; }
-    .order-trace-light { stroke-width:1.5px; opacity:.45; filter:none; }
+    .listening-order .rotation-seat.is-current .order-trace-light { animation:none; stroke-dasharray:none; stroke-dashoffset:0; }
+    .order-trace-light { stroke-width:1px; opacity:.55; filter:none; }
+    .order-trace-halo { display:none; }
   }
   .rotation-seat.is-manageable { padding-right:36px; }
   .order-actions { position:absolute; top:2px; right:2px; }
@@ -54,7 +57,7 @@
     .rotation-list { --order-gap:18px; flex-basis:100%; }
     .rotation-seat { flex-basis:clamp(120px,calc((100% - var(--order-gap)) / 2),150px); grid-template-columns:18px minmax(0,1fr); min-height:44px; padding:3px 8px; column-gap:6px; row-gap:0; border-color:transparent; border-radius:6px; background:transparent; }
     .rotation-seat:not(:last-child)::after { mask-size:12px 10px; }
-    .order-trace rect { rx:4px; }
+    .order-trace rect { rx:5.5px; }
     .rotation-seat .avatar,.seat-state:not(.seat-state-compact) { display:none; }
     .rotation-seat .seat-number { grid-row:1; }
     .rotation-seat strong { grid-column:2; }

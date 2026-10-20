@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.7] — 2026-10-20
+
+- Replace the inset, snake-like turn marker with a diffuse travelling light on the participant card’s actual border and a subtle surrounding glow.
+- Remove the redundant unavailable-volume hint and settings link from the host’s Speaker volume card.
+
 ## [1.0.6] — 2026-10-20
 
 - Rename the app to Listening Room and clarify turn-based sharing, private selections, reveal controls, and silent demo playback without changing existing installation or list access.

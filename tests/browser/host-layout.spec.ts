@@ -30,7 +30,7 @@ test('host desk prioritizes the current turn with a slim volume panel and respon
   }
 });
 
-test('unavailable host volume links directly to speaker settings without changing playback', async ({ page, isolatedApp }) => {
+test('unavailable host volume stays compact without redundant feedback or a settings shortcut', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('Volume listener');
   const writes: string[] = [];
   page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
@@ -41,19 +41,22 @@ test('unavailable host volume links directly to speaker settings without changin
     await route.fulfill({ response, json: { ...state, volume: { ...state.volume, available: false } } });
   });
   await page.goto('/host');
-  const settings = page.locator('.host-audio').getByRole('link', { name: 'Check speaker settings', exact: true });
-  await expect(settings).toHaveAttribute('href', '/host/settings');
-  await expect(page.locator('.host-audio').getByRole('slider')).toBeDisabled();
+  const audio = page.locator('.host-audio');
+  await expect(audio.getByRole('heading', { name: 'Speaker volume', exact: true })).toBeVisible();
+  await expect(audio.getByRole('slider')).toBeDisabled();
   for (const font of ['', 'Arial', 'DejaVu Sans']) {
     await page.evaluate(font => document.documentElement.style.fontFamily = font, font);
     for (const width of [1440, 800, 701, 390, 320]) {
       await page.setViewportSize({ width, height: 844 });
-      await expect(settings).toBeVisible();
+      await expect(audio.getByRole('link')).toHaveCount(0);
+      await expect(audio.getByText('Unavailable.', { exact: true })).toHaveCount(0);
+      await expect(audio).not.toContainText('Check speaker settings');
       expect((await page.locator('.host-audio').boundingBox())!.height, `${font || 'system font'} at ${width}px`).toBeLessThan(150);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     }
   }
-  await settings.click();
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Primary navigation' }).getByRole('link', { name: 'Settings', exact: true }).click();
   await expect(page).toHaveURL('/host/settings');
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
   expect(writes).toEqual([]);
