@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Slightly brighten the current-turn border light and strengthen its soft halo without changing its shape or speed.
+
 ## [1.0.7] — 2026-10-20
 
 - Replace the inset, snake-like turn marker with a diffuse travelling light on the participant card’s actual border and a subtle surrounding glow.

@@ -22,8 +22,8 @@
   .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:visible; pointer-events:none; }
   .order-trace rect { width:calc(100% - 1px); height:calc(100% - 1px); rx:9.5px; fill:none; }
   .order-trace-mask { stroke:white; stroke-width:1px; }
-  .order-trace-light { stroke:#edf5d9; stroke-width:42px; stroke-linecap:round; stroke-dasharray:.001 99.999; opacity:.95; filter:blur(12px); }
-  .order-trace-halo { opacity:.65; filter:blur(2px); }
+  .order-trace-light { stroke:#edf5d9; stroke-width:42px; stroke-linecap:round; stroke-dasharray:.001 99.999; opacity:1; filter:blur(12px); }
+  .order-trace-halo { opacity:.75; filter:blur(2.25px); }
   .listening-order .rotation-seat.is-current .order-trace { display:block; }
   .listening-order .rotation-seat.is-current .order-trace-light { animation:order-trace 10s linear infinite; }
   @keyframes order-trace { from { stroke-dashoffset:-20px; } to { stroke-dashoffset:-120px; } }
