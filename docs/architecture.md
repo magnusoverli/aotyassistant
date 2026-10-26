@@ -26,8 +26,11 @@ Only one process may own a data directory. JSON stores serialize mutations and u
 | HTTP, Ingress, events | `src/http.ts`, `src/integration-http.ts`, `src/ingress.ts`, `src/event-streams.ts` |
 | Durability, shutdown, diagnostics | `src/backup.ts`, `src/operation.ts`, `src/index.ts`, `src/diagnostics.ts` |
 | Browser UI and controllers | `web/` |
+| Shared host/participant playback UI | `web/playback.ts`, `web/player-controller.ts`, `web/media.ts` |
 
 Room changes and audio commands have distinct serialization boundaries. Network reads run outside mutation lanes with bounded concurrency, deadlines, cancellation, and generation/revision checks. An ambiguous write is reconciled through readback rather than replayed automatically.
+
+`web/playback.ts` owns the persistent host and participant playback UI, including transport, read-only progress, mute/volume, and role-specific turn actions. `web/main.ts` supplies action callbacks and page placement; `PlayerController` retains optimistic command handling for both roles. Host pause/resume and stop act only on the exact app-owned playback; the host receives no participant-only source/reveal controls or private track metadata.
 
 ## Playback contract
 

@@ -60,6 +60,18 @@ test('host stop confirms the owned song without advancing and rejects externally
   assert.equal(writes(f).length, 0);
 });
 
+test('host pause/resume confirms the owned MA transport and leaves an externally replaced item untouched', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id); const id = f.host().hostPlayback!.id;
+  await f.engine.controlForHost(turn, id, 'pause');
+  assert.equal(f.remote.queue.state, 'paused'); assert.equal(f.host().hostPlayback!.status, 'paused'); assert.equal(f.host().turnId, turn);
+  await f.engine.controlForHost(turn, id, 'resume'); assert.equal(f.remote.queue.state, 'playing');
+  f.remote.queue.current_item!.queue_item_id = 'external-item'; const before = writes(f).length;
+  await assert.rejects(f.engine.controlForHost(turn, id, 'pause'), error => error instanceof AppError && error.status === 409);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(writes(f).length, before); assert.equal(f.host().turnId, turn);
+});
+
 test('Play changes only incorrect queue policies and verifies them before starting audio', async t => {
   const f = await fixture(60_000); t.after(f.close);
   Object.assign(f.remote.queue, { autoplay_enabled: false, repeat_mode: 'all', shuffle_enabled: false });

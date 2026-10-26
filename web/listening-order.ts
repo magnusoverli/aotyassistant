@@ -4,6 +4,8 @@ import { avatar } from './visuals';
 import { appPath } from './paths';
 import { ViewNodes, children, prop, attr, text } from './view-nodes';
 import { OrderDrag, type OrderMove } from './order-drag';
+import { stackedLayout } from './page-layout';
+import { turnFirst, canonicalInsertion } from './order-presentation';
 
 type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void>; remove(id: string): void };
 
@@ -47,6 +49,9 @@ export class ListeningOrder {
   private source?: EventSource;
   private key = '';
   private rows = new Map<string, ViewNodes>();
+  private mobile = stackedLayout();
+  private presentedMobile = false;
+  private presentedCurrent?: string;
 
   constructor(private management?: Management) {
     const bar = el('section', undefined, 'order-bar'); bar.setAttribute('aria-label', 'Listening order');
@@ -59,8 +64,15 @@ export class ListeningOrder {
     if (management) this.element.append(this.help, this.announcement);
     if (management) this.drag = new OrderDrag(this.list, {
       state: () => ({ enabled: !management.disabled() && this.element.dataset.online === 'true',
-        roomId: this.snapshot?.roomId ?? null, revision: this.snapshot?.revision ?? 0, people: this.snapshot?.rotation ?? [] }),
-      commit: move => management.reorder(move), announce: message => this.announce(message),
+        roomId: this.snapshot?.roomId ?? null, revision: this.snapshot?.revision ?? 0, people: this.presentedPeople() }),
+      commit: async move => management.reorder(this.mobile ? { ...move,
+        ids: canonicalInsertion((this.snapshot?.rotation ?? []).map(person => person.id), move.id, move.ids),
+      } : move), announce: message => this.announce(message),
+    });
+    window.addEventListener('resize', () => {
+      const mobile = stackedLayout();
+      if (mobile === this.mobile) return;
+      this.mobile = mobile; this.render();
     });
   }
 
@@ -108,17 +120,24 @@ export class ListeningOrder {
     this.drag?.update();
   }
 
+  private presentedPeople() {
+    const people = this.snapshot?.rotation ?? [];
+    return this.mobile ? turnFirst(people, this.snapshot?.current?.id) : people;
+  }
+
   private render() {
-    const view = this.snapshot; const people = view?.rotation ?? [];
+    this.drag?.update();
+    const view = this.snapshot; const people = this.presentedPeople();
     text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
     prop(this.empty, 'hidden', people.length > 0); prop(this.list, 'hidden', !people.length);
     prop(this.help, 'hidden', !this.management || people.length < 2);
-    const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id]);
+    const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id, this.mobile]);
     if (key !== this.key) {
       this.key = key;
-      const left = this.list.scrollLeft;
+      const left = this.mobile && (!this.presentedMobile || this.presentedCurrent !== view?.current?.id) ? 0 : this.list.scrollLeft;
+      this.presentedMobile = this.mobile; this.presentedCurrent = view?.current?.id;
       const focused = document.activeElement instanceof HTMLElement && this.list.contains(document.activeElement) ? document.activeElement.dataset.focusKey : undefined;
-      children(this.list, ...people.map((person, index) => {
+      children(this.list, ...people.map(person => {
         let nodes = this.rows.get(person.id); if (!nodes) { nodes = new ViewNodes(); this.rows.set(person.id, nodes); } const v = nodes;
         const current = person.id === view?.current?.id; const me = person.id === this.me?.id;
         const next = !current && person.id === view?.next?.id;
@@ -130,9 +149,9 @@ export class ListeningOrder {
         const name = v.el('name', 'strong', person.nickname); prop(name, 'title', person.nickname);
         const image = v.get('avatar', () => ({ key: '', node: avatar(person) }));
         const imageKey = JSON.stringify(person); if (image.key !== imageKey) { image.key = imageKey; image.node = avatar(person); }
-        const content: Node[] = [v.el('number', 'span', String(index + 1).padStart(2, '0'), 'seat-number'), image.node, name,
-          v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : 'Listening', 'seat-state'),
-          v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : 'Listening', 'seat-state seat-state-compact'),
+        const content: Node[] = [image.node, name,
+          v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : '', 'seat-state'),
+          v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : '', 'seat-state seat-state-compact'),
           v.get('turn-border', turnBorder)];
         if (this.management) {
           const actions = v.el('actions', 'div', undefined, 'order-actions');

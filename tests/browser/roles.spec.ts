@@ -38,7 +38,10 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(sam.locator('main')).toHaveAttribute('data-turn-state', 'next');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 3, total: 4 });
-    await expect(jordan.getByText('2 turns away', { exact: true })).toBeVisible();
+    await expect(jordan.locator('.turn-distance')).toHaveText('2 turns away');
+    await expect(jordan.locator('.turn-distance')).toBeHidden();
+    await expect(jordan.locator('.rotation-seat').first().locator('strong')).toHaveText('Alex');
+    await expect(jordan.locator('.rotation-seat').nth(1).locator('strong')).toHaveText('Sam');
     await expect(jordan.getByRole('heading', { name: 'Alex’s turn.', exact: true })).toBeVisible();
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
     expect((await (await riley.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 4, total: 4 });
@@ -110,7 +113,8 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 5 });
     await expect(riley.locator('main')).toHaveAttribute('data-turn-state', 'listening');
-    await expect(riley.getByText('2 turns away', { exact: true })).toBeVisible();
+    await expect(riley.locator('.turn-distance')).toHaveText('2 turns away');
+    await expect(riley.locator('.turn-distance')).toBeHidden();
     // Keep the shared bar compact for a larger room without clipping the TV page.
     for (const name of ['A very long listener nickname for TV', 'Taylor', 'Morgan', 'Casey']) {
       const context = await browser.newContext(); contexts.push(context);

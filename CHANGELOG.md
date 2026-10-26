@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.0.8] — 2026-10-26
+
+- Update request parsing and schema validation dependencies to fix high-severity denial-of-service vulnerabilities.
+- Keep the current participant first and the next participant second in the mobile play-order bar without changing desktop or persisted turn order.
+- Keep waiting participants inside visible cards on mobile instead of showing their names without a background or border.
+- Narrow mobile play-order cards and centre participant names and turn labels, preserving desktop styling and host controls.
+- Extend the mobile header’s upper divider edge-to-edge to match the line beneath the play-order bar.
+- Slightly brighten the mobile header’s Menu button text and border without changing desktop styling.
+- Slightly compact the shared mobile header and play-order bar while preserving touch targets and desktop styling.
+- Remove the redundant turn-distance and music shortcut row from the mobile participant page to free up space, leaving desktop unchanged.
+- Add direct Stop and Mute/Unmute controls, host Pause/Resume, and a compact shared player layout with playback and turn actions kept separate.
+- Span the participant player across both desktop columns, with search and saved selections aligned below it.
+- Consolidate host and participant playback into one shared component with role-specific controls and privacy safeguards.
+- Keep participant names, avatars, and controls in fixed positions whether or not a turn label is shown.
+- Remove waiting participants’ “Listening” labels and dim their cards to 55% opacity, with the next turn at 85% and the current turn fully bright.
+- Widen the current-turn border light to 64px and strengthen its halo with 0.9 opacity and a 3px blur.
+- Make participant cards slightly narrower with less horizontal padding, keeping removal controls unchanged.
+- Remove participant card numbers to give names and turn labels more room on desktop and mobile.
 - Slightly brighten the current-turn border light and strengthen its soft halo without changing its shape or speed.
 
 ## [1.0.7] — 2026-10-20

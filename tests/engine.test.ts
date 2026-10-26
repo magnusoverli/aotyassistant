@@ -67,6 +67,33 @@ test('host stop keeps the turn, deduplicates repeated stops and rejects stale pl
   assert.equal(f.host().current!.nickname, 'Sam');
 });
 
+test('host pause and resume preserve the turn, privacy and exact playback guards', async t => {
+  const f = await fixture(); t.after(() => f.adapter.close());
+  const turn = f.host().turnId!; await f.engine.play(f.alex, turn, null, 'demo:aurora');
+  const id = f.host().hostPlayback!.id; const order = f.host().rotation;
+  let calls = 0; const control = f.adapter.control.bind(f.adapter);
+  f.adapter.control = async action => { calls++; await control(action); };
+  await f.engine.controlForHost(turn, id, 'pause');
+  assert.equal(f.host().hostPlayback!.status, 'paused'); assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused');
+  assert.equal(f.host().turnId, turn); assert.deepEqual(f.host().rotation, order);
+  assert.ok(!JSON.stringify(f.host()).includes('Northern Lights')); assert.equal(f.host().ownPlayback, undefined);
+  await f.engine.controlForHost(turn, id, 'resume'); assert.equal(f.host().hostPlayback!.status, 'playing');
+  await assert.rejects(f.engine.controlForHost(turn, crypto.randomUUID(), 'pause'), status(409)); assert.equal(calls, 2);
+  await f.engine.stopForHost(turn, id);
+  await assert.rejects(f.engine.controlForHost(turn, id, 'resume'), status(409)); assert.equal(calls, 3);
+  await f.engine.advance(turn);
+  const afterAdvance = calls;
+  await assert.rejects(f.engine.controlForHost(turn, id, 'pause'), status(409)); assert.equal(calls, afterAdvance);
+});
+
+test('a rejected host pause never reports a paused track or changes the turn', async t => {
+  const f = await fixture(); t.after(() => f.adapter.close());
+  const turn = f.host().turnId!; await f.engine.play(f.alex, turn, null, 'demo:aurora'); const before = f.host();
+  f.adapter.control = async () => { throw new AppError(503, 'Pause could not be confirmed.'); };
+  await assert.rejects(f.engine.controlForHost(turn, before.hostPlayback!.id, 'pause'), status(503));
+  assert.equal(f.host().revision, before.revision); assert.equal(f.host().hostPlayback!.status, 'playing'); assert.equal(f.host().turnId, turn);
+});
+
 test('host stop and natural completion serialize without stopping or advancing a subsequent turn', async t => {
   for (const stopFirst of [true, false]) {
     const f = await fixture(); t.after(() => f.adapter.close());

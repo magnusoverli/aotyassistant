@@ -28,7 +28,7 @@ async function fits(tv: Page) {
   expect(size.contentHeight).toBeLessThanOrEqual(size.height + 2);
 }
 
-test('the display uses the shared numbered listening order and retains it across playback updates', async ({ browser, page: host, isolatedApp }) => {
+test('the display uses the shared listening order without numbers and retains it across playback updates', async ({ browser, page: host, isolatedApp }) => {
   const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
   const listeners = [];
   const list = tv.getByRole('list', { name: 'Participant rotation' });
@@ -48,7 +48,7 @@ test('the display uses the shared numbered listening order and retains it across
     }
     await expect(list.getByRole('listitem')).toHaveCount(9);
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
-    await expect(list.locator('.seat-number')).toHaveCount(9);
+    await expect(list.locator('.seat-number')).toHaveCount(0);
     await f.play(); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     await expect(tv.locator('.room-turn')).toHaveText('Currently playing: Alex');
     await expect(tv.locator('.room-turn')).toBeVisible();
@@ -78,7 +78,12 @@ test('the display uses the shared numbered listening order and retains it across
     await f.finish(); await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Sam');
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Jordan');
-    expect(await tv.locator('.rotation-list strong').evaluateAll(nodes => nodes.slice(0, 3).map(node => node.textContent))).toEqual(['Alex', 'Sam', 'Jordan']);
+    await expect(tv.locator('.rotation-list strong').nth(0)).toHaveText('Sam');
+    await expect(tv.locator('.rotation-list strong').nth(1)).toHaveText('Jordan');
+    await expect(tv.locator('.rotation-list strong').nth(2)).toHaveText('Riley');
+    await tv.setViewportSize({ width: 1366, height: 768 });
+    await expect(tv.locator('.rotation-list strong').nth(0)).toHaveText('Alex');
+    await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Sam');
   } finally { await f.close(); for (const context of listeners) await context.close(); }
 });
 

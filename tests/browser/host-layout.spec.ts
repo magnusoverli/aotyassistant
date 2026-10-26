@@ -1,14 +1,14 @@
 import { expect } from '@playwright/test';
 import { test } from './app-fixture';
 
-test('host desk prioritizes the current turn with a slim volume panel and responsive invitation sidebar', async ({ page, isolatedApp }) => {
+test('host desk combines playback and volume in one player with a responsive invitation sidebar', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('Host layout listener');
   await page.goto('/host');
   await expect(page.locator('.host-live')).toBeVisible();
   await expect(page.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Room display', exact: true })).toHaveCount(0);
   expect(await page.locator('.host-workspace').evaluate(node => Array.from(node.children).map(child => child.className))).toEqual([
-    'panel host-live', 'panel host-audio',
+    'panel host-live',
   ]);
   await expect(page.getByRole('button', { name: 'Skip turn' })).toBeEnabled();
   await expect(page.locator('.host-invitations img')).toBeVisible();
@@ -17,7 +17,7 @@ test('host desk prioritizes the current turn with a slim volume panel and respon
     await page.setViewportSize({ width, height: 1000 });
     const workspace = (await page.locator('.host-workspace').boundingBox())!;
     const sidebar = (await page.locator('.host-invitations').boundingBox())!;
-    const audio = (await page.locator('.host-audio').boundingBox())!;
+    const audio = (await page.locator('.playback-volume').boundingBox())!;
     if (width >= 1100) {
       expect(sidebar.x).toBeGreaterThanOrEqual(workspace.x + workspace.width);
       expect(Math.abs(sidebar.y - workspace.y)).toBeLessThan(1);
@@ -41,8 +41,8 @@ test('unavailable host volume stays compact without redundant feedback or a sett
     await route.fulfill({ response, json: { ...state, volume: { ...state.volume, available: false } } });
   });
   await page.goto('/host');
-  const audio = page.locator('.host-audio');
-  await expect(audio.getByRole('heading', { name: 'Speaker volume', exact: true })).toBeVisible();
+  const audio = page.locator('.playback-volume');
+  await expect(audio.getByRole('slider', { name: 'Volume', exact: true })).toHaveCount(1);
   await expect(audio.getByRole('slider')).toBeDisabled();
   for (const font of ['', 'Arial', 'DejaVu Sans']) {
     await page.evaluate(font => document.documentElement.style.fontFamily = font, font);
@@ -51,7 +51,7 @@ test('unavailable host volume stays compact without redundant feedback or a sett
       await expect(audio.getByRole('link')).toHaveCount(0);
       await expect(audio.getByText('Unavailable.', { exact: true })).toHaveCount(0);
       await expect(audio).not.toContainText('Check speaker settings');
-      expect((await page.locator('.host-audio').boundingBox())!.height, `${font || 'system font'} at ${width}px`).toBeLessThan(150);
+      expect((await audio.boundingBox())!.height, `${font || 'system font'} at ${width}px`).toBeLessThan(150);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     }
   }

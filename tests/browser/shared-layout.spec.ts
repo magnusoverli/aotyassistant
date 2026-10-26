@@ -43,16 +43,23 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
     expect(await geometry(settings, ['main'])).toEqual(frame);
     expect(await geometry(participant, ['main'])).toEqual(frame);
     const columns = (await geometry(host, ['.host-workspace', '.host-invitations'])).map(({ x, width }) => ({ x, width }));
-    for (const [page, selectors] of [[settings, ['.settings-connection', '.settings-output']], [participant, ['.playback-card', '.preparation-list']]] as const) {
+    for (const [page, selectors] of [[settings, ['.settings-connection', '.settings-output']], [participant, ['.catalogue-panel', '.preparation-list']]] as const) {
       expect((await geometry(page, [...selectors])).map(({ x, width }) => ({ x, width }))).toEqual(columns);
     }
     const card = await appearance(host, '.qr-card');
     await expect.poll(() => appearance(settings, '.settings-connection')).toEqual(card);
     expect(await appearance(participant, '.catalogue-panel')).toEqual(card);
     const player = (await participant.locator('.playback-card').boundingBox())!;
+    const music = (await participant.locator('.music-workspace').boundingBox())!;
     const search = (await participant.locator('.catalogue-panel').boundingBox())!;
     const list = (await participant.locator('.preparation-list').boundingBox())!;
-    if (width >= 1100) expect(Math.abs(player.y - list.y)).toBeLessThan(1);
+    expect(player.x).toBeCloseTo(music.x, 2);
+    expect(player.width).toBeCloseTo(music.width, 2);
+    if (width >= 1100) {
+      expect(search.y).toBeGreaterThanOrEqual(player.y + player.height);
+      expect(list.y).toBeGreaterThanOrEqual(player.y + player.height);
+      expect(search.y).toBeCloseTo(list.y, 2);
+    }
     else {
       expect(list.y).toBeGreaterThanOrEqual(player.y + player.height);
       expect(search.y).toBeGreaterThanOrEqual(list.y + list.height);

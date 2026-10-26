@@ -345,13 +345,16 @@ export class Engine extends EventEmitter {
   async stopForHost(turnId: string, playbackId: string): Promise<void> {
     return this.controlPlayback({ kind: 'host' }, turnId, playbackId, 'stop');
   }
+  async controlForHost(turnId: string, playbackId: string, action: 'pause' | 'resume'): Promise<void> {
+    return this.controlPlayback({ kind: 'host' }, turnId, playbackId, action);
+  }
   private async controlPlayback(actor: Exclude<Role, { kind: 'display' }>, turnId: string, playbackId: string, action: 'pause' | 'resume' | 'stop'): Promise<void> {
     return maOperation(action, () => this.audio(async () => {
       const check = (room: Room) => {
         if (actor.kind === 'participant') this.current(actor.credential, turnId, room);
         else {
           if (room.turnId !== turnId) throw new AppError(409, 'The turn changed. Review the current participant.');
-          if (this.concealPlayback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before stopping.');
+          if (this.concealPlayback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before controlling it.');
         }
         this.expectedPlayback(room, playbackId);
         if (!room.playback || (action !== 'stop' && room.playback.status === 'stopped')) throw new AppError(409, 'Select and play a track first.');

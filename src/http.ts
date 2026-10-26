@@ -177,6 +177,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const input = body(req, z.object({ turnId: turn, playbackId: turn }).strict());
     await engine.stopForHost(input.turnId, input.playbackId); res.json(engine.view({ kind: 'host' }));
   });
+  app.post('/api/host/control', async (req, res) => {
+    const input = body(req, z.object({ turnId: turn, playbackId: turn, action: z.enum(['pause', 'resume']) }).strict());
+    await engine.controlForHost(input.turnId, input.playbackId, input.action); res.json(engine.view({ kind: 'host' }));
+  });
   app.post('/api/participant/finish', async (req, res) => {
     const input = body(req, z.object({ turnId: turn }).strict());
     await engine.advance(input.turnId, participantCredential(req)); res.json(engine.view(participant(req)));

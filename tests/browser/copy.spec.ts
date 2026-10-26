@@ -84,7 +84,7 @@ test('Move to top only changes the first selection and Play first selection star
     await page.getByRole('button', { name: 'Add to list', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
   }
-  await page.locator('.music-shortcuts').getByRole('button', { name: 'Your selections', exact: true }).click();
+  await page.getByRole('button', { name: 'Open list', exact: true }).click();
   const list = page.getByRole('complementary', { name: /^Your selections/ });
   await expect(list.locator('.saved-track')).toHaveCount(2);
   await list.locator('.saved-track').nth(1).locator('.saved-menu summary').click();

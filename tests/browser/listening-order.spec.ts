@@ -8,6 +8,7 @@ async function expectGlowing(pages: Page[], animated: boolean) {
 }
 
 test('every route highlights the current turn, including before playback, while paused, stopped and disconnected', async ({ page, browser, isolatedApp }) => {
+  test.setTimeout(60_000); // Six routes across six viewport sizes, plus live playback/reconnection checks.
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
   const member = await browser.newContext({ baseURL: isolatedApp.origin });
@@ -24,6 +25,7 @@ test('every route highlights the current turn, including before playback, while 
       for (const current of pages) {
         await current.setViewportSize({ width, height });
         await expect(current.locator('.rotation-seat')).toHaveCount(3);
+        await expect(current.locator('.seat-number')).toHaveCount(0);
         await expect(current.locator('.listening-order')).toHaveCount(1);
         await expect(current.locator('main .rotation-list, .host-people, .room-turn-order')).toHaveCount(0);
         const bar = (await current.locator('.header-inner').boundingBox())!;
@@ -37,14 +39,32 @@ test('every route highlights the current turn, including before playback, while 
         await expect(current.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
         await expect(current.locator('.order-remove')).toHaveCount(current === page ? 3 : 0);
         await expect(current.locator('.rotation-seat[tabindex="0"]')).toHaveCount(current === page ? 3 : 0);
+        await expect(current.locator('.listening-order').getByText('Listening', { exact: true })).toHaveCount(0);
+        await expect(current.locator('.rotation-seat.is-current')).toHaveCSS('opacity', '1');
+        await expect(current.locator('.rotation-seat.is-next')).toHaveCSS('opacity', '0.85');
+        const waiting = current.locator('.rotation-seat:not(.is-current):not(.is-next)');
+        await expect(waiting).toHaveCSS('opacity', '0.55');
+        if (current !== participant) {
+          await expect(waiting.locator('.seat-state:visible')).toHaveCount(0);
+          await expect(waiting.locator('strong')).toHaveCSS('grid-row-start', '1');
+        }
+        const nameOffsets = await current.locator('.rotation-seat').evaluateAll(rows => rows.map(row =>
+          row.querySelector('strong')!.getBoundingClientRect().top - row.getBoundingClientRect().top));
+        for (const offset of nameOffsets) expect(offset).toBeCloseTo(nameOffsets[0]!, 2);
         expect(await current.locator('.rotation-seat.is-next .seat-state:visible').evaluate(node => getComputedStyle(node, '::before').content)).toBe('none');
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();
         const seat = current.locator('.rotation-seat').first();
+        await expect(seat).toHaveCSS('padding-left', width < 1100 ? '4px' : '6px');
+        expect((await seat.boundingBox())!.width).toBeLessThanOrEqual(width < 1100 ? current === page ? 160 : 140 : 180);
         if (width < 1100) {
           await expect(seat.locator('.avatar')).toBeHidden();
+          await expect(seat.locator('strong')).toHaveCSS('grid-column-start', '1');
+          await expect(seat.locator('.seat-state-compact')).toHaveCSS('grid-column-start', '1');
           await expect(current.locator('.rotation-seat').nth(1)).toBeInViewport({ ratio: 1 });
           await expect(seat.locator('.seat-state:visible')).toHaveText('Now');
         } else {
+          await expect(seat.locator('.avatar')).toHaveCSS('grid-column-start', '1');
+          await expect(seat.locator('strong')).toHaveCSS('grid-column-start', '2');
           const avatar = (await seat.locator('.avatar').boundingBox())!;
           const name = (await seat.locator('strong').boundingBox())!;
           expect(avatar.x + avatar.width).toBeLessThanOrEqual(name.x);
@@ -104,6 +124,12 @@ test('every route highlights the current turn, including before playback, while 
     await glow.dispose();
     await isolatedApp.engine.advance(state.turnId!, first);
     for (const current of pages) await expect(current.locator('.rotation-seat.is-current strong')).toHaveText('Second');
+    for (const current of pages) {
+      await expect(current.locator('.rotation-seat.is-current')).toHaveCSS('opacity', '1');
+      await expect(current.locator('.rotation-seat.is-next')).toHaveCSS('opacity', '0.85');
+      await expect(current.locator('.rotation-seat:not(.is-current):not(.is-next)')).toHaveCSS('opacity', '0.55');
+      await expect(current.locator('.rotation-seat:not(.is-current):not(.is-next) .seat-state:visible')).toHaveCount(0);
+    }
     await expectGlowing(pages, true);
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('Next · You');
     await guest.setOffline(true);
@@ -113,12 +139,112 @@ test('every route highlights the current turn, including before playback, while 
   } finally { await guest.close(); await member.close(); }
 });
 
+test('card names, avatars and controls stay in their slots as status labels appear and disappear', async ({ page, browser, isolatedApp }) => {
+  await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
+  const member = await browser.newContext({ baseURL: isolatedApp.origin });
+  try {
+    await member.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'My seat' } });
+    const participant = await member.newPage();
+    await page.goto('/host'); await participant.goto('/participant');
+    const pages = [page, participant];
+    const layout = (current: Page) => current.locator('.rotation-seat').evaluateAll(rows => rows.map(row => {
+      const card = row.getBoundingClientRect();
+      const box = (selector: string) => {
+        const element = row.querySelector(selector); if (!element || !element.getClientRects().length) return null;
+        const rect = element.getBoundingClientRect();
+        return { x: rect.x - card.x, y: rect.y - card.y, width: rect.width, height: rect.height };
+      };
+      return { id: row.getAttribute('data-person-id'), width: card.width, height: card.height,
+        name: box('strong'), avatar: box('.avatar'), remove: box('.order-remove') };
+    }));
+    for (const width of [1440, 390, 320]) {
+      for (const current of pages) {
+        await current.setViewportSize({ width, height: 900 });
+        await expect(current.locator('.rotation-seat')).toHaveCount(3);
+        for (const card of await current.locator('.rotation-seat').all()) {
+          const box = (await card.boundingBox())!;
+          if (width < 1100) {
+            expect(box.width).toBeLessThanOrEqual(current === page ? 132 : 112);
+            expect(box.height).toBeGreaterThanOrEqual(44);
+            await expect(card.locator('strong')).toHaveCSS('text-align', 'center');
+            await expect(card.locator('.seat-state-compact')).toHaveCSS('text-align', 'center');
+            await expect(card).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+            await expect(card).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+          } else {
+            expect(box.width).toBe(180);
+            await expect(card.locator('strong')).toHaveCSS('text-align', 'start');
+          }
+        }
+        expect(await current.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        const waiting = current.locator('.rotation-seat:not(.is-current):not(.is-next)');
+        await expect(waiting).toHaveCSS('background-color', 'rgb(24, 37, 27)');
+        await expect(waiting).toHaveCSS('opacity', '0.55');
+      }
+      const before = await Promise.all(pages.map(layout));
+      for (let turn = 0; turn < 3; turn++) {
+        await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
+        for (const [index, current] of pages.entries()) {
+          await expect(current.locator('.rotation-seat.is-current strong')).toHaveText(isolatedApp.engine.view({ kind: 'host' }).current!.nickname);
+          const after = await layout(current);
+          if (width < 1100) {
+            expect(after.map(({ id, ...slot }) => slot)).toEqual(before[index]!.map(({ id, ...slot }) => slot));
+            await expect(current.locator('.rotation-seat').first()).toHaveClass(/is-current/);
+            await expect(current.locator('.rotation-seat').nth(1)).toHaveClass(/is-next/);
+          } else expect(after).toEqual(before[index]);
+        }
+      }
+    }
+  } finally { await member.close(); }
+});
+
+test('mobile keeps Now and Next in the first slots across turns, scrolling and resizing without changing desktop or saving an order', async ({ page, context, isolatedApp }) => {
+  await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'First' } });
+  for (const name of ['Second', 'Third', 'Fourth', 'Fifth']) await isolatedApp.engine.join(name);
+  const saved = isolatedApp.engine.view({ kind: 'host' }).rotation!;
+  await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
+  await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
+  const desktop = await context.newPage(); await desktop.setViewportSize({ width: 1440, height: 900 }); await desktop.goto('/host');
+  const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
+  const names = page.locator('.rotation-seat strong'); const list = page.locator('.rotation-list');
+  const assertOrder = async () => {
+    const state = isolatedApp.engine.view({ kind: 'host' });
+    const index = saved.findIndex(person => person.id === state.current!.id);
+    await expect(names).toHaveText([...saved.slice(index), ...saved.slice(0, index)].map(person => person.nickname));
+    await expect(page.locator('.rotation-seat').first()).toHaveClass(/is-current/);
+    await expect(page.locator('.rotation-seat').nth(1)).toHaveClass(/is-next/);
+    await expect(page.locator('.rotation-seat').first()).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('.rotation-seat').nth(1)).toBeInViewport({ ratio: 1 });
+    await expect(list).toHaveJSProperty('scrollLeft', 0);
+    await expect(desktop.locator('.rotation-seat strong')).toHaveText(saved.map(person => person.nickname));
+    expect(state.rotation).toEqual(saved);
+  };
+  for (const path of ['/participant', '/host', '/', '/join', '/display', '/host/settings']) {
+    await page.setViewportSize({ width: 390, height: 844 }); await page.goto(path);
+    await assertOrder();
+    await list.evaluate(node => { node.scrollLeft = 120; });
+    isolatedApp.engine.emit('change');
+    await expect(list).toHaveJSProperty('scrollLeft', 120);
+    await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
+    await assertOrder();
+    await page.setViewportSize({ width: 1100, height: 844 });
+    await expect(names).toHaveText(saved.map(person => person.nickname));
+    await page.setViewportSize({ width: 1099, height: 844 });
+    await assertOrder();
+    await page.setViewportSize({ width: 320, height: 700 });
+    await assertOrder();
+  }
+  expect(writes).toEqual([]);
+});
+
 test('a diffuse light travels on the actual card border without an inset trail at desktop and mobile sizes', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectGlowing([page], true);
   const masks = await page.locator('.order-trace mask').evaluateAll(nodes => nodes.map(node => node.id));
   expect(new Set(masks).size).toBe(masks.length);
   const seat = page.locator('.rotation-seat.is-current');
+  await expect(seat.locator('.order-trace-light').first()).toHaveCSS('stroke-width', '64px');
+  await expect(seat.locator('.order-trace-halo')).toHaveCSS('filter', 'blur(3px)');
+  await expect(seat.locator('.order-trace-halo')).toHaveCSS('opacity', '0.9');
   const motion = await seat.evaluateHandle(async node => {
     const animations = node.getAnimations({ subtree: true });
     for (const animation of animations) animation.pause();
@@ -172,7 +298,9 @@ test('a diffuse light travels on the actual card border without an inset trail a
             return gain({ x: point.x + (vertical ? point.x < context.canvas.width / 2 ? 8 : -8 : 0),
               y: point.y + (!vertical ? point.y < context.canvas.height / 2 ? 8 : -8 : 0) }, 3);
           });
-          const profile = [-36, -24, -12, 0, 12, 24, 36].map(offset => gain({ x: probes[0]!.x + offset, y: probes[0]!.y }, 1));
+          // Follow the light's width so a wider head still samples its feathered edges.
+          const step = parseFloat(getComputedStyle(document.querySelector('.rotation-seat.is-current .order-trace-light')!).strokeWidth) / 4;
+          const profile = [-3, -2, -1, 0, 1, 2, 3].map(offset => gain({ x: probes[0]!.x + offset * step, y: probes[0]!.y }, 1));
           return { edges: probes.map(point => gain(point) > 15), inside, profile };
         }, { png: image.toString('base64'), baseline: baseline.toString('base64'), probes });
         expect(painted.edges, `The soft glow must visibly move to a different edge at ${frame * 2500}ms (${width}px).`).toEqual(probes.map((_, index) => index === frame));
@@ -237,8 +365,10 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
   await controls.focus(); await expect(page.locator('.order-help')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
   expect(await page.locator('.host-page').boundingBox()).toEqual(workspace);
   await page.keyboard.press('Space'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Enter');
-  await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 1');
-  await expect(page.locator('.rotation-seat').first()).toBeFocused();
+  const moved = page.locator('.rotation-seat').filter({ has: page.getByText('Listener 1', { exact: true }) });
+  await expect(moved).toBeFocused();
+  await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 0');
+  expect(isolatedApp.engine.view({ kind: 'host' }).rotation![0]!.nickname).toBe('Listener 1');
   await page.getByRole('button', { name: 'Remove Listener 1', exact: true }).click();
   await expect(page.locator('.rotation-seat')).toHaveCount(19);
   await expect(list).toBeVisible();

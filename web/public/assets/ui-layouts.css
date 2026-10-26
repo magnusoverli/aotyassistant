@@ -13,7 +13,7 @@
   .workspace-grid[data-composition='sidebar'] { grid-template-areas:'primary secondary'; }
   [data-composition='sidebar'] > [data-slot='primary'] { grid-area:primary; }
   [data-composition='sidebar'] > [data-slot='secondary'] { grid-area:secondary; }
-  .workspace-grid[data-composition='music'] { grid-template-rows:auto minmax(0,1fr); grid-template-areas:'player list' 'find list'; overflow-anchor:none; }
+  .workspace-grid[data-composition='music'] { grid-template-rows:auto minmax(0,1fr); grid-template-areas:'player player' 'find list'; overflow-anchor:none; }
   [data-composition='music'] > [data-slot='player'] { grid-area:player; }
   [data-composition='music'] > [data-slot='find'] { grid-area:find; }
   [data-composition='music'] > [data-slot='list'] { grid-area:list; }

@@ -172,9 +172,8 @@ export class OrderDrag {
     drag.index = index;
     const slots = drag.slots.filter(slot => slot.node !== drag.source); slots.splice(index, 0, drag.slots.find(slot => slot.node === drag.source)!);
     let left = drag.slots[0]!.left;
-    for (const [position, slot] of slots.entries()) {
+    for (const slot of slots) {
       this.shift(slot.node, left - slot.left, slot.node !== drag.source || drag.pointer === undefined);
-      slot.node.querySelector('.seat-number')!.textContent = String(position + 1).padStart(2, '0');
       if (slot.node === drag.source) drag.targetLeft = left;
       left += slot.width + drag.gap;
     }
@@ -185,7 +184,6 @@ export class OrderDrag {
     if (drag.ghost) {
       drag.ghost.style.transform = `translate(${drag.x - drag.offsetX}px,${drag.y - drag.offsetY}px)`;
       drag.ghost.classList.toggle('is-invalid-drop', !drag.valid);
-      drag.ghost.querySelector('.seat-number')!.textContent = String(drag.index + 1).padStart(2, '0');
     }
   }
 
@@ -203,8 +201,6 @@ export class OrderDrag {
 
   private restore(drag: Drag, animate: boolean) {
     for (const slot of drag.slots) this.shift(slot.node, 0, animate);
-    // A live update may already have changed membership/order; restore the current DOM's numbering.
-    this.list.querySelectorAll('.seat-number').forEach((number, index) => { number.textContent = String(index + 1).padStart(2, '0'); });
   }
 
   private finishPending(animate: boolean) {

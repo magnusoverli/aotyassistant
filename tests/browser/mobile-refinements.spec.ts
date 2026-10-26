@@ -1,17 +1,18 @@
 import { expect } from '@playwright/test';
 import { test } from './app-fixture';
 
-test('mobile shortcuts expose preparation and source choices fit narrow screens', async ({ page, isolatedApp }) => {
+test('mobile selections remain accessible and source choices fit narrow screens without shortcuts', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await isolatedApp.engine.join('Current'); await post('/api/participant/join', { nickname: 'Waiting' });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   const shortcuts = page.getByRole('navigation', { name: 'Your music shortcuts' });
-  await expect(shortcuts).toBeInViewport();
-  await shortcuts.getByRole('button', { name: 'Your selections', exact: true }).click();
+  await expect(shortcuts).toBeHidden();
+  await expect(page.locator('.turn-distance')).toBeHidden();
+  await page.getByRole('button', { name: 'Open list', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Close list', exact: true })).toBeInViewport();
   await page.getByRole('button', { name: 'Close list', exact: true }).click();
-  await shortcuts.getByRole('link', { name: 'Find music', exact: true }).click();
+  await page.getByRole('searchbox').scrollIntoViewIfNeeded();
   await expect(page.getByRole('searchbox')).toBeInViewport();
   await page.getByRole('searchbox').fill('Metallica'); await page.getByRole('searchbox').press('Enter');
   const select = page.getByRole('combobox', { name: 'Source for Metallica', exact: true });
@@ -24,6 +25,27 @@ test('mobile shortcuts expose preparation and source choices fit narrow screens'
   await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
   expect(isolatedApp.calls.filter(call => call.command === 'player_queues/play_media')).toHaveLength(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('mobile removes the turn-status row without changing desktop geometry or the accessible heading', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('Current');
+  await page.request.post('/api/participant/join', { data: { nickname: 'Waiting' }, headers: { Origin: isolatedApp.origin } });
+  await page.setViewportSize({ width: 1100, height: 1000 }); await page.goto('/participant');
+  const hero = page.locator('.participant-hero');
+  const distance = page.locator('.turn-distance');
+  await expect(distance).toBeVisible(); await expect(distance).toHaveText('You’re next');
+  const desktop = await hero.boundingBox();
+  for (const width of [1099, 700, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await expect(distance).toBeHidden();
+    await expect(page.getByRole('navigation', { name: 'Your music shortcuts' })).toBeHidden();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Current’s turn.');
+    expect(await hero.evaluate(node => node.getBoundingClientRect().height)).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.setViewportSize({ width: 1100, height: 1000 });
+  await expect(distance).toBeVisible();
+  expect(await hero.boundingBox()).toEqual(desktop);
 });
 
 test('off-screen playback offers a read-only return with confirmed status and retains browsing position', async ({ page, isolatedApp }) => {

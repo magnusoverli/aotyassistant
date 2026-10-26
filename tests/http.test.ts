@@ -94,6 +94,16 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   assert.equal((await request('/api/host/stop', { turnId, playbackId }, '', 'https://evil.example')).status, 403);
   assert.equal((await request('/api/host/stop', { turnId, playbackId: crypto.randomUUID() })).status, 409);
   assert.equal((await request('/api/host/reveal', { turnId, playbackId })).status, 404);
+  assert.equal((await request('/api/host/control', { turnId, action: 'pause' })).status, 400);
+  assert.equal((await request('/api/host/control', { turnId, playbackId, action: 'stop' })).status, 400);
+  assert.equal((await request('/api/host/control', { turnId, playbackId, action: 'reveal' })).status, 400);
+  assert.equal((await request('/api/host/control', { turnId, playbackId, action: 'pause' }, '', 'https://evil.example')).status, 403);
+  assert.equal((await request('/api/host/control', { turnId, playbackId: crypto.randomUUID(), action: 'pause' })).status, 409);
+  const pausedByHost = await json('/api/host/control', { turnId, playbackId, action: 'pause' });
+  assert.equal(pausedByHost.hostPlayback?.status, 'paused'); assert.equal(pausedByHost.turnId, turnId);
+  assert.equal(pausedByHost.ownPlayback, undefined); assert.ok(!JSON.stringify(pausedByHost).includes('Northern Lights'));
+  assert.equal((await json('/api/participant/state', undefined, alex.cookie)).ownPlayback?.status, 'paused');
+  assert.equal((await json('/api/host/control', { turnId, playbackId, action: 'resume' })).hostPlayback?.status, 'playing');
   const revealed = await json('/api/participant/reveal', { turnId, playbackId }, alex.cookie);
   assert.ok((await nextState(displayEvent, state => state.revision >= revealed.revision)).includes('Northern Lights'));
   assert.ok(!(await nextState(samEvent, state => state.revision >= revealed.revision)).includes('Northern Lights'));
@@ -103,6 +113,7 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   assert.equal(stopped.hostPlayback?.status, 'stopped'); assert.equal(stopped.turnId, turnId);
   assert.equal(stopped.current!.id, own.current!.id); assert.equal(stopped.progress, undefined);
   assert.equal(stopped.ownPlayback, undefined);
+  assert.equal((await request('/api/host/control', { turnId, playbackId, action: 'resume' })).status, 409);
   assert.equal((await json('/api/participant/state', undefined, alex.cookie)).ownPlayback?.status, 'stopped');
   const concurrent = await Promise.all([
     request('/api/host/advance', { turnId }), request('/api/participant/finish', { turnId }, alex.cookie),

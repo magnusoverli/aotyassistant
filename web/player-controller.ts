@@ -27,6 +27,7 @@ export class PlayerController {
   private playbackId?: string;
   private volumeTimer?: ReturnType<typeof setTimeout>;
   constructor(private options: Options) {}
+  private playback(view: View) { return this.options.role === 'host' ? view.hostPlayback : view.ownPlayback; }
   private key(view: View) {
     return JSON.stringify([view.roomId, view.turnId, this.options.role === 'participant' ? view.me?.id : 'host', view.catalogue?.revision, view.volume?.revision]);
   }
@@ -37,9 +38,10 @@ export class PlayerController {
     this.identity = identity;
     if (!view.volume?.available || (this.options.role === 'participant' &&
       (this.playbackId !== view.ownPlayback?.id || !view.ownPlayback || view.ownPlayback.status === 'stopped'))) this.clearVolume();
-    this.playbackId = view.ownPlayback?.id;
+    this.playbackId = this.playback(view)?.id;
     if (this.draft?.ack !== undefined && (view.volume?.generation ?? 0) >= this.draft.ack && !view.volume?.pending) this.draft = undefined;
-    if (this.options.role === 'participant' && !this.starting && this.commands.some(command => typeof command.target === 'string' && command.target !== view.ownPlayback?.id)) {
+    if (!this.starting && this.commands.some(command => typeof command.target === 'string' &&
+      (command.target !== this.playback(view)?.id || this.playback(view)?.status === 'stopped'))) {
       this.commands = []; this.epoch++;
     }
   }
@@ -61,11 +63,12 @@ export class PlayerController {
         ids.set(command.seq, view.ownPlayback!.id);
       } else {
         const target = typeof command.target === 'number' ? ids.get(command.target) : command.target;
-        if (!view.ownPlayback || view.ownPlayback.id !== target) continue;
-        if (command.kind === 'reveal') view.ownPlayback.revealed = true; // Private badge only; public reveal still requires server acknowledgement.
+        const playback = this.playback(view);
+        if (!playback || playback.id !== target) continue;
+        if (command.kind === 'reveal') playback.revealed = true; // Private badge only; public reveal still requires server acknowledgement.
         else {
-          view.ownPlayback.status = command.action === 'pause' ? 'paused' : command.action === 'resume' ? 'playing' : 'stopped';
-          if (view.progress) view.progress = { ...(command.action === 'resume' ? view.progress : command.position ?? view.progress), id: view.ownPlayback.id, status: view.ownPlayback.status };
+          playback.status = command.action === 'pause' ? 'paused' : command.action === 'resume' ? 'playing' : 'stopped';
+          if (view.progress) view.progress = { ...(command.action === 'resume' ? view.progress : command.position ?? view.progress), id: playback.id, status: playback.status };
         }
       }
     }
@@ -74,20 +77,21 @@ export class PlayerController {
   }
   private allowed() { return this.options.canSend() && Boolean(this.options.getView()?.connected); }
   play(track: CatalogueTrack, prepared?: { entryId: string; revision: number }) {
-    const view = this.options.getView(); if (!view?.myTurn || !this.allowed() || this.starting) return;
+    const view = this.options.getView(); if (this.options.role !== 'participant' || !view?.myTurn || !this.allowed() || this.starting) return;
     this.commands.push({ kind: 'play', seq: ++this.seq, target: this.seq, track, previous: view.ownPlayback?.id ?? null, prepared });
     this.options.changed('player'); void this.drain();
   }
   control(action: 'pause' | 'resume' | 'stop') { this.enqueue({ kind: 'control', action }); }
   reveal() { this.enqueue({ kind: 'reveal' }); }
   private enqueue(intent: { kind: 'control'; action: 'pause' | 'resume' | 'stop' } | { kind: 'reveal' }) {
-    const base = this.options.getView(); if (!base?.myTurn || !this.allowed()) return;
-    const view = this.project(base); if (!view.ownPlayback) return;
+    const base = this.options.getView(); if (!base || !this.allowed() || (this.options.role === 'participant' && !base.myTurn)) return;
+    if (this.options.role === 'host' && (intent.kind !== 'control' || intent.action === 'stop')) return;
+    const view = this.project(base); const playback = this.playback(view); if (!playback) return;
     const play = this.commands.findLast(command => command.kind === 'play');
-    const target = play?.seq ?? base.ownPlayback?.id; if (target === undefined) return;
+    const target = play?.seq ?? this.playback(base)?.id; if (target === undefined) return;
     const last = this.commands.at(-1);
-    if (intent.kind === 'reveal' && (view.ownPlayback.revealed || this.commands.some(command => command.kind === 'reveal' && command.target === target))) return;
-    if (intent.kind === 'control' && view.ownPlayback.status === 'stopped') return;
+    if (intent.kind === 'reveal' && (playback.revealed || this.commands.some(command => command.kind === 'reveal' && command.target === target))) return;
+    if (intent.kind === 'control' && playback.status === 'stopped') return;
     const command = { ...intent, seq: ++this.seq, target, position: this.options.position?.(view.progress) ?? view.progress } as Command;
     if (last?.kind === 'control' && intent.kind === 'control' && last.target === target && last !== this.current) this.commands[this.commands.length - 1] = command;
     else this.commands.push(command);
@@ -102,11 +106,11 @@ export class PlayerController {
         this.current = command; const base = this.options.getView()!;
         try {
           const id = typeof command.target === 'number' ? this.confirmed.get(command.target) : command.target;
-          if (command.kind !== 'play' && (!id || base.ownPlayback?.id !== id)) throw new Error('Playback changed. The queued player update was cancelled.');
+          if (command.kind !== 'play' && (!id || this.playback(base)?.id !== id)) throw new Error('Playback changed. The queued player update was cancelled.');
           const data = command.kind === 'play'
             ? command.prepared ? { turnId: base.turnId, previousPlaybackId: command.previous, ...command.prepared } : { turnId: base.turnId, previousPlaybackId: command.previous, trackId: command.track.id }
             : command.kind === 'control' ? { turnId: base.turnId, playbackId: id, action: command.action } : { turnId: base.turnId, playbackId: id };
-          const response = await this.options.request(command.kind === 'play' && command.prepared ? '/api/participant/preparations/play' : `/api/participant/${command.kind}`, data);
+          const response = await this.options.request(command.kind === 'play' && command.prepared ? '/api/participant/preparations/play' : `/api/${this.options.role}/${command.kind}`, data);
           if (epoch !== this.epoch || identity !== this.identity) continue;
           if (command.kind === 'play') {
             if (!response.ownPlayback) throw new Error('Playback could not be confirmed.');

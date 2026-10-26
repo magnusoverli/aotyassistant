@@ -8,6 +8,8 @@ The room is always ready. Participants join with a display name and enter the en
 
 In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
 
+On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. This presentation does not change the saved turn order or desktop layout.
+
 On **Host desk**, drag any participant card into a new position or select its top-right trash icon to remove it. These controls are always available in the listening order. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. Names and turn order are public; private song lists are not.
 
 ## Prepare selections
@@ -29,9 +31,11 @@ The shared display shows **Track details hidden.** until the current participant
 
 When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song.
 
-The host and current playing participant can adjust volume when the selected speaker supports it. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.
+The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.
 
-**Host desk** shows playback progress and whether the song is hidden or visible on the room display. Exact times appear after the participant reveals the song. **More → Stop song — keep turn** stops the app-owned song without passing the turn. The participant chooses and starts a selection again; a successfully started saved selection remains in **Previously played** history. **Skip turn** stops the app-owned song and passes control to the next participant.
+Both players offer **Pause / Resume** and **Stop song** controls, separate from finishing or skipping the turn. Stopping keeps the current participant's turn; the participant chooses and starts a selection again. A successfully started saved selection remains in **Previously played** history. The progress bar is read-only: seeking, previous-track, repeat, and shuffle controls are not exposed.
+
+**Host desk** shows playback progress and whether the song is hidden or visible on the room display. Exact times appear after the participant reveals the song. **Stop song — keep turn** is directly available and asks for confirmation. **Skip turn** stops the app-owned song and passes control to the next participant.
 
 ## Returning to the room
 

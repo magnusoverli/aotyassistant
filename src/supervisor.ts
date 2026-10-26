@@ -6,7 +6,7 @@ const port = z.coerce.number().int().min(1).max(65535);
 const host = z.string().max(253).regex(/^[a-zA-Z0-9][a-zA-Z0-9.-]*$/);
 const appInfo = z.object({ slug: z.string().optional(), hostname: host.nullish(), ip_address: z.string().nullish(),
   state: z.string().nullish(), host_network: z.boolean().optional(), ingress_port: port.nullish(),
-  discovery: z.array(z.string()).optional(), url: z.string().nullish(), network: z.record(z.unknown()).nullable().optional() });
+  discovery: z.array(z.string()).optional(), url: z.string().nullish(), network: z.record(z.string(), z.unknown()).nullable().optional() });
 export type SupervisorHints = {
   enabled: boolean; available: boolean; versions: { core?: string; supervisor?: string };
   guestOrigins: string[]; mediaOrigins: string[]; maOrigins: string[]; guestPort: number | null; message: string;

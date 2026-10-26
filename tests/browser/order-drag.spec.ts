@@ -36,12 +36,13 @@ test('host cards are immediately draggable and save a single insertion while pre
   await expect.poll(async () => (await seat(page, 'Third').boundingBox())!.x).toBeCloseTo(secondBox.x, 0);
   expect((await seat(page, 'Second').boundingBox())!.x).toBeCloseTo(fourthBox.x, 0);
   expect(writes).toHaveLength(0); await expect(names(page)).toHaveText(['First', 'Second', 'Third', 'Fourth']);
-  await expect(page.locator('.rotation-list .seat-number')).toHaveText(['01', '04', '02', '03']);
+  await expect(page.locator('.order-announcement')).toHaveText('Second: position 4 of 4. Drop to save the order.');
+  await expect(page.locator('.seat-number')).toHaveCount(0);
   isolatedApp.engine.emit('change', 'playback');
   await expect(seat(page, 'Second')).toHaveClass(/is-dragging/);
   await page.screenshot({ path: 'test-results/order-drag-desktop.png' }); await page.mouse.up();
   await expect(names(page)).toHaveText(['First', 'Third', 'Fourth', 'Second']);
-  await expect(page.locator('.rotation-list .seat-number')).toHaveText(['01', '02', '03', '04']);
+  await expect(page.locator('.seat-number')).toHaveCount(0);
   expect((await seat(page, 'Second').boundingBox())!.x).toBeCloseTo(fourthBox.x, 0);
   expect(writes).toEqual([{ ids: [before.rotation![0]!.id, before.rotation![2]!.id, before.rotation![3]!.id, before.rotation![1]!.id], revision: before.revision }]);
   await expect(seat(page, 'Second')).toBeFocused(); await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
@@ -90,7 +91,7 @@ test('neighbours visibly slide aside, stay stable under a still pointer and flow
     await page.keyboard.press('Escape'); await page.mouse.up();
     await expect.poll(async () => (await third.boundingBox())!.x).toBeCloseTo(end.x, 0);
     await expect(names(page)).toHaveText(['First', 'Second', 'Third']); expect(writes).toBe(0);
-    await expect(page.locator('.rotation-list .seat-number')).toHaveText(['01', '02', '03']);
+    await expect(page.locator('.order-announcement')).toHaveText('Reordering cancelled.');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await first.focus(); await page.keyboard.press('Space'); await page.keyboard.press('End');
     expect((await second.boundingBox())!.x).toBeCloseTo(origin.x, 0);
@@ -175,6 +176,25 @@ test('pending and failed drops keep the authoritative order, block repeats and r
   } finally { release(); }
 });
 
+test('mobile host reordering translates a turn-first view back to the saved order without changing the current turn', async ({ page, isolatedApp }) => {
+  for (const name of ['First', 'Second', 'Third', 'Fourth', 'Fifth']) await isolatedApp.engine.join(name);
+  for (let index = 0; index < 2; index++) await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
+  const before = isolatedApp.engine.view({ kind: 'host' });
+  const writes: unknown[] = []; page.on('request', request => { if (request.url().endsWith('/api/host/reorder')) writes.push(request.postDataJSON()); });
+  await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/host');
+  await expect(names(page)).toHaveText(['Third', 'Fourth', 'Fifth', 'First', 'Second']);
+  const fifth = seat(page, 'Fifth'); await fifth.scrollIntoViewIfNeeded(); await fifth.focus();
+  await page.keyboard.press('Space'); await page.keyboard.press('ArrowRight'); await page.keyboard.press('Enter');
+  await expect(names(page)).toHaveText(['Third', 'Fourth', 'First', 'Fifth', 'Second']);
+  await expect(fifth).toBeFocused(); expect(writes).toHaveLength(1);
+  const after = isolatedApp.engine.view({ kind: 'host' });
+  expect(after.rotation!.map(person => person.nickname)).toEqual(['First', 'Fifth', 'Second', 'Third', 'Fourth']);
+  expect(after.current).toEqual(before.current); expect(after.turnId).toBe(before.turnId); expect(after.hostPlayback).toEqual(before.hostPlayback);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(names(page)).toHaveText(['First', 'Fifth', 'Second', 'Third', 'Fourth']);
+  expect(writes).toHaveLength(1);
+});
+
 test('touch dragging scrolls a long mobile order at its edge and Remove stays a separate action', async ({ browser, isolatedApp }) => {
   for (let index = 1; index <= 8; index++) await isolatedApp.engine.join(`Person ${index}`);
   const context = await browser.newContext({ baseURL: isolatedApp.origin, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
@@ -192,7 +212,8 @@ test('touch dragging scrolls a long mobile order at its edge and Remove stays a 
     await page.screenshot({ path: 'test-results/order-drag-touch-390.png' });
     await expect.poll(() => list.evaluate(node => node.scrollWidth - node.clientWidth - node.scrollLeft)).toBeLessThan(2);
     await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await expect(names(page)).toHaveText(['Person 2', 'Person 3', 'Person 4', 'Person 5', 'Person 6', 'Person 7', 'Person 8', 'Person 1']);
+    await expect(names(page)).toHaveText(['Person 1', 'Person 2', 'Person 3', 'Person 4', 'Person 5', 'Person 6', 'Person 7', 'Person 8']);
+    expect(isolatedApp.engine.view({ kind: 'host' }).rotation!.map(person => person.nickname)).toEqual(['Person 2', 'Person 3', 'Person 4', 'Person 5', 'Person 6', 'Person 7', 'Person 8', 'Person 1']);
     expect(writes).toBe(1); await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await seat(page, 'Person 8').getByRole('button', { name: 'Remove Person 8', exact: true }).tap();

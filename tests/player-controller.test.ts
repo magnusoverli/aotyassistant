@@ -119,3 +119,33 @@ test('a stopped playback cancels debounced participant volume before it is sent'
   await delay(120);
   assert.equal(f.calls.length, 0);
 });
+
+test('host transport uses the filtered host playback identity and never sends participant-only actions', async () => {
+  const f = fixture('host');
+  f.observe({ ...f.view, me: undefined, myTurn: undefined, ownPlayback: undefined,
+    hostPlayback: { id: 'host-song', status: 'playing', revealed: false }, progress: { id: 'host-song', status: 'playing', fraction: .1 } });
+  f.controller.play(track); f.controller.reveal(); f.controller.control('stop'); assert.equal(f.calls.length, 0);
+  f.controller.control('pause');
+  assert.equal(f.calls[0]!.path, '/api/host/control');
+  assert.deepEqual(f.calls[0]!.data, { turnId: 'turn', playbackId: 'host-song', action: 'pause' });
+  assert.equal(f.controller.project(f.view).hostPlayback!.status, 'paused');
+  assert.equal(f.controller.project(f.view).ownPlayback, undefined);
+  assert.equal(f.view.hostPlayback!.status, 'playing');
+  f.calls[0]!.resolve({ ...f.view, revision: 2, hostPlayback: { ...f.view.hostPlayback!, status: 'paused' } }); await delay(0);
+  f.controller.control('resume'); assert.equal(f.calls[1]!.data.action, 'resume');
+  f.calls[1]!.reject(new Error('Resume not confirmed')); await delay(0);
+  assert.equal(f.controller.project(f.view).hostPlayback!.status, 'paused'); assert.equal(f.resyncs, 1);
+});
+
+test('host queued transport is discarded after replacement, stop or turn change, without replay', async () => {
+  for (const change of ['replacement', 'stop', 'turn']) {
+    const f = fixture('host'); f.observe({ ...f.view, ownPlayback: undefined, myTurn: undefined,
+      hostPlayback: { id: 'host-song', status: 'playing', revealed: false } });
+    f.controller.control('pause'); f.controller.control('resume');
+    const old = structuredClone(f.view);
+    f.observe({ ...f.view, revision: 3, turnId: change === 'turn' ? 'new-turn' : f.view.turnId,
+      hostPlayback: change === 'turn' ? null : { ...f.view.hostPlayback!, id: change === 'replacement' ? 'replacement' : 'host-song', status: change === 'stop' ? 'stopped' : 'playing' } });
+    f.calls[0]!.resolve(old); await delay(0);
+    assert.equal(f.calls.length, 1); assert.deepEqual(f.controller.project(f.view), f.view);
+  }
+});
