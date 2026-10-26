@@ -75,4 +75,7 @@
     /* Player failures have a reserved status slot and full text in its sheet. */
     body[data-view='participant']:has(#participant-player) .app-content > :is(.error,.connection) { display:none; }
   }
+  @media(max-width:359px) {
+    #participant-player .playback-transport button { font-size:.75rem; gap:0; }
+  }
 }

@@ -4,6 +4,7 @@
 
 ## [1.0.9] — 2026-10-26
 
+- Keep mobile playback button labels readable on narrow phones across system fonts.
 - Recheck membership when a participant event stream fails so removal during startup returns to the join form.
 - Clear failed or missing upload attempts on refresh without residual errors, while retaining background checks for uncertain uploads.
 - Remove manual upload cancellation and its cleanup flow while retaining progress, background completion checks, and interrupted-upload handling.
