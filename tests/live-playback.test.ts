@@ -119,7 +119,8 @@ test('successful recovery refreshes failed speaker readiness before acknowledgin
   assert.equal(recovered.output.state, 'ready'); assert.equal(recovered.playbackAvailable, true);
   assert.equal(recovered.playbackProblem, undefined); assert.equal(recovered.playbackIssue, '');
   assert.equal(f.remote.queue.state, 'idle'); assert.equal(f.host().turnId, turn);
-  assert.equal(f.host().playbackStatus, 'idle');
+  // Invalidated playback is cleared by the engine's asynchronous persistence lane.
+  await eventually(() => f.host().playbackStatus === 'idle');
   await f.engine.play(f.alex, turn, null, track.id);
   assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.host().turnId, turn);
 });
