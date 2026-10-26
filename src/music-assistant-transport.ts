@@ -6,6 +6,7 @@ import { AppError } from './model.js';
 import { maRemaining, maSignal, maStage, maTiming } from './ma-operation.js';
 import { requestPriority } from './operation.js';
 import { musicAssistantUrl, lookupAll, resolveLanAddresses } from './lan-network.js';
+import { UpstreamError, type UpstreamFailure } from './upstream-error.js';
 export { musicAssistantUrl, maToken, isAllowedAddress } from './lan-network.js';
 
 export type ArtworkData = { body: Buffer; contentType: string };
@@ -42,7 +43,7 @@ export class MusicAssistantTransport {
   }
 
   private async request(path: Path, command: string | undefined, args: object, binary: boolean): Promise<unknown> {
-    if (this.closed) throw new AppError(503, 'Music Assistant connection was closed. Refresh before trying again.');
+    if (this.closed) throw new UpstreamError('closed', 503, 'Music Assistant connection was closed. Refresh before trying again.');
     const start = performance.now();
     // MA awaits provider/player startup inside Play/Resume. Reads retain a shorter budget.
     const timeout = command === 'player_queues/play_media' || command === 'player_queues/resume' ? this.playbackTimeoutMs : this.timeoutMs;
@@ -52,14 +53,17 @@ export class MusicAssistantTransport {
     let addresses: { address: string; family: number }[];
     try {
       addresses = await resolveLanAddresses(hostname, deadline - performance.now(), this.resolveHost, maSignal());
+    } catch (error) {
+      if (error instanceof AppError && [502, 504].includes(error.status)) throw new UpstreamError(error.status === 504 ? 'timeout' : 'connection', error.status, error.message);
+      throw error;
     } finally { maTiming('dns', start); }
-    if (this.closed) throw new AppError(503, 'Music Assistant connection was closed. Refresh before trying again.');
+    if (this.closed) throw new UpstreamError('closed', 503, 'Music Assistant connection was closed. Refresh before trying again.');
     const remaining = Math.min(maRemaining(timeout), deadline - performance.now());
-    if (remaining <= 0) throw new AppError(504, 'Music Assistant did not respond in time. Check LAN connectivity.');
+    if (remaining <= 0) throw new UpstreamError('timeout', 504, 'Music Assistant did not respond in time. Check LAN connectivity.');
     const target = addresses[0]!;
     const payload = command ? JSON.stringify({ message_id: randomUUID(), command, args }) : undefined;
     return new Promise((resolve, reject) => {
-      const fail = (status: number, message: string) => reject(new AppError(status, message));
+      const fail = (kind: UpstreamFailure, status: number, message: string) => reject(new UpstreamError(kind, status, message));
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
         signal: maSignal(),
         method: command ? 'POST' : 'GET', agent: this.agent(url.protocol, binary ? 'artwork' : command?.startsWith('music/')
@@ -74,18 +78,18 @@ export class MusicAssistantTransport {
         const status = response.statusCode ?? 500;
         if (status !== 200) {
           response.destroy();
-          if (status === 401 || status === 403) fail(502, 'Music Assistant rejected the token or its permissions. Replace the token and check again.');
-          else if (status >= 300 && status < 400) fail(502, 'Music Assistant redirected the request. Use its direct LAN API origin; redirects are not followed.');
-          else fail(502, 'Music Assistant did not accept the request. Check the connection in Settings and confirm version compatibility.');
+          if (status === 401 || status === 403) fail('authorization', 502, 'Music Assistant rejected the token or its permissions. Replace the token and check again.');
+          else if (status >= 300 && status < 400) fail('rejected', 502, 'Music Assistant redirected the request. Use its direct LAN API origin; redirects are not followed.');
+          else fail(status >= 500 || status === 429 ? 'unavailable' : 'rejected', 502, 'Music Assistant did not accept the request. Check the connection in Settings and confirm version compatibility.');
           return;
         }
         const chunks: Buffer[] = []; let size = 0;
         response.on('data', (chunk: Buffer) => {
           size += chunk.length;
-          if (size > 2 * 1024 * 1024) { response.destroy(); fail(502, 'Music Assistant returned an oversized response.'); }
+            if (size > 2 * 1024 * 1024) { response.destroy(); fail('unsupported-response', 502, 'Music Assistant returned an oversized response.'); }
           else chunks.push(chunk);
         });
-        response.on('error', () => fail(502, 'Music Assistant connection was interrupted. Check the address and try again.'));
+        response.on('error', () => fail('connection', 502, 'Music Assistant connection was interrupted. Check the address and try again.'));
         response.on('end', () => {
           if (path === '/api-docs') { resolve(true); return; }
           const body = Buffer.concat(chunks);
@@ -94,15 +98,15 @@ export class MusicAssistantTransport {
             if (body.length >= 24 && body.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')) && body.readUInt32BE(16) <= 4096 && body.readUInt32BE(20) <= 4096) contentType = 'image/png';
             else if (body.length > 3 && body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff) contentType = 'image/jpeg';
             else if (body.length > 12 && body.toString('ascii', 0, 4) === 'RIFF' && body.toString('ascii', 8, 12) === 'WEBP') contentType = 'image/webp';
-            if (!contentType) { fail(502, 'Artwork is unavailable or not a supported raster image.'); return; }
+            if (!contentType) { fail('unsupported-response', 502, 'Artwork is unavailable or not a supported raster image.'); return; }
             resolve({ body, contentType } satisfies ArtworkData); return;
           }
           try { resolve(JSON.parse(body.toString('utf8'))); }
-          catch { fail(502, 'Music Assistant returned an unsupported response. Check for app updates; if the problem persists, report the app and Music Assistant versions.'); }
+          catch { fail('unsupported-response', 502, 'Music Assistant returned an unsupported response. Check for app updates; if the problem persists, report the app and Music Assistant versions.'); }
         });
       });
       // Absolute request deadline, including the response body; activity cannot extend it.
-      const timer = setTimeout(() => { request.destroy(); fail(504, 'Music Assistant did not respond in time. Check LAN connectivity.'); }, remaining);
+      const timer = setTimeout(() => { request.destroy(); fail('timeout', 504, 'Music Assistant did not respond in time. Check LAN connectivity.'); }, remaining);
       timer.unref(); request.on('close', () => clearTimeout(timer));
       request.on('socket', socket => {
         maTiming(request.reusedSocket ? 'connection-reused' : 'socket-wait', start);
@@ -111,7 +115,8 @@ export class MusicAssistantTransport {
           if (url.protocol === 'https:') socket.once('secureConnect', () => maTiming('tls', start));
         }
       });
-      request.on('error', () => fail(502, 'Cannot connect to Music Assistant. Check its LAN URL and trusted TLS certificate.'));
+      request.on('error', () => maSignal()?.aborted ? reject(new AppError(499, 'Request cancelled.'))
+        : fail('connection', 502, 'Cannot connect to Music Assistant. Check its LAN URL and trusted TLS certificate.'));
       if (payload) request.write(payload); request.end();
     });
   }

@@ -5,12 +5,15 @@ import type { MusicAssistantApi, QueueSnapshot } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
 import { maBackground, maBudget, maOperation, maRemaining, maStage } from './ma-operation.js';
 import { diagnostics } from './diagnostics.js';
+import { playbackRead } from './playback-read.js';
+import { playbackProblem, playbackFailure, type PlaybackProblem, type PlaybackProblemCode } from './playback-problem.js';
+import { retryableRead } from './upstream-error.js';
 
 type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?: () => void; suspend?: () => void; uploaded?: boolean };
 type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configurationRevision' | 'routeConfigured' | 'playbackAvailable' |
   'withPlayback' | 'withDemoPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
 type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback'>;
-type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
+type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; previousQueueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
   idleSince?: number; position?: { elapsed: number; duration: number; at: number } };
 
 // MA schema 65 settles a naturally finished queue after a five-second idle debounce.
@@ -19,6 +22,7 @@ const completionConfirmationMs = 10_000;
 /** Single-destination controller. Never sends a stop to a queue it does not own. */
 export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   issue = '';
+  problem?: PlaybackProblem;
   private closed = false;
   private draining = false;
   private capabilityRevision?: string;
@@ -151,7 +155,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         const queue = await api.queue(destination);
         const activeOwned = this.isOwned(queue, own) && !(own.status === 'paused' && queue.state === 'idle');
         if ((!activeOwned && !await this.isParkedPause(queue, own)) || !this.safeQueue(queue) || queue.ended) {
-          this.invalidate('Playback changed outside this app. Its audio was left untouched.', false);
+          this.invalidate('external-playback');
           throw new AppError(409, 'The application no longer owns this playback.');
         }
       }
@@ -184,7 +188,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.commandGeneration++;
     this.unsubscribeEvents?.(); this.unsubscribeEvents = undefined; this.eventRevision = undefined; this.eventsConnected = false;
     this.demoSelections = new WeakMap();
-    this.pending?.release?.(); this.pending = undefined; this.failed = false; this.issue = ''; this.capabilityRevision = undefined;
+    this.pending?.release?.(); this.pending = undefined; this.failed = false; this.issue = ''; this.problem = undefined; this.capabilityRevision = undefined;
     this.volumeEpoch++; this.volumeGeneration++; this.volumeTarget = undefined; clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
     this.volumeState = { available: false, level: null };
     if (this.available && !this.draining) {
@@ -229,7 +233,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   private sameQueueItem(q: QueueSnapshot, own: Ownership): boolean {
     return q.queue_id === own.queueId && Boolean(q.current_item) &&
-      (!own.queueItemId || q.current_item!.queue_item_id === own.queueItemId) &&
+      (own.queueItemId === null ? q.current_item!.queue_item_id !== own.previousQueueItemId : q.current_item!.queue_item_id === own.queueItemId) &&
       this.sameRecording(q.current_item?.media_item, own);
   }
   private async isParkedPause(q: QueueSnapshot, own: Ownership): Promise<boolean> {
@@ -253,26 +257,34 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         maRemaining(Infinity);
         if (this.closed) throw new Error('Playback controller closed.');
         const generation = this.eventGeneration;
-        const queue = await own.api.queue(own.destination);
+        const queue = await playbackRead(() => own.api.queue(own.destination), () => !this.closed && this.own === own);
         if (action === 'stop' && queue.queue_id === own.queueId && queue.state === 'idle' &&
           (!queue.current_item || this.sameQueueItem(queue, own))) return queue;
         if (!this.sameQueueItem(queue, own)) {
-          this.invalidate('Another source changed playback. Its audio was left untouched.', false);
+          this.invalidate('external-playback');
           throw new AppError(409, this.issue);
         }
         if (action !== 'stop' && (!this.safeQueue(queue) || queue.ended)) throw new Error('Unsafe queue state.');
-        if (action === 'pause' && await this.isParkedPause(queue, { ...own, status: 'paused' })) return queue;
+        if (action === 'pause' && await playbackRead(() => this.isParkedPause(queue, { ...own, status: 'paused' }))) return queue;
         if (action === 'resume' && queue.active && queue.state === 'playing') return queue;
         if (attempt < 19) await this.waitForUpdate(generation);
       }
       throw new Error('Transport change was not confirmed.');
     });
   }
-  private invalidate(message: string, fatal: boolean): void {
+  private async dispatchControl(own: Ownership, action: 'pause' | 'resume' | 'stop') {
+    try { await own.api.controlQueue(own.queueId, action); }
+    catch (error) { if (!retryableRead(error)) throw error; }
+    // A lost HTTP acknowledgement may still mean the write succeeded. Only read back;
+    // never repeat a mutation or infer that it failed from the lost response alone.
+    return this.confirmTransport(own, action);
+  }
+  private invalidate(code: PlaybackProblemCode): void {
+    const problem = playbackProblem(code); const { message, recoveryRequired: fatal } = problem;
     if (fatal && !this.failed) diagnostics.record('recovery', 1);
     this.commandGeneration++;
     const id = this.own?.appId;
-    this.issue = message; this.failed = fatal; clearTimeout(this.timer);
+    this.problem = problem; this.issue = message; this.failed = fatal; clearTimeout(this.timer);
     this.integrations.refreshOutputSoon();
     if (fatal && this.own?.suspend) this.own.suspend(); else this.own?.release?.();
     if (!fatal) this.own = undefined;
@@ -299,21 +311,24 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       catch (error) { pending.release?.(); throw error; }
       clearTimeout(this.timer);
       this.own?.release?.();
-      this.own = { ...pending, api, destination, queueId: initial.queue_id, queueItemId: null, appId, status: 'playing', seenPlaying: false };
+      this.own = { ...pending, api, destination, queueId: initial.queue_id, queueItemId: null,
+        previousQueueItemId: initial.current_item?.queue_item_id ?? null, appId, status: 'playing', seenPlaying: false };
+      let playDispatched = false;
       try {
         const changed = await maStage('queue-policy', () => api.configureSingle(initial));
-        const configured = changed ? await api.queue(destination) : initial;
+        const configured = changed ? await playbackRead(() => api.queue(destination)) : initial;
         if (this.closed || configured.queue_id !== initial.queue_id || configured.autoplay_enabled || configured.repeat_mode !== 'off' || configured.shuffle_enabled) throw new Error();
-        await maStage('play-command', () => api.playSingle(initial.queue_id, pending.uri));
+        try { playDispatched = true; await maStage('play-command', () => api.playSingle(initial.queue_id, pending.uri)); }
+        catch (error) { if (!retryableRead(error)) throw error; } // A lost acknowledgement is reconciled below, never replayed.
         // Verify the exact queue item and observed PLAYING state, not just command acceptance.
         await maStage('play-confirmation', () => maBudget(5000, async () => {
           for (let attempt = 0; attempt < 20; attempt++) {
             maRemaining(Infinity);
             const generation = this.eventGeneration;
-            const q = await api.queue(destination);
+            const q = await playbackRead(() => api.queue(destination), () => !this.closed && Boolean(this.own));
             if (this.closed || !this.own) throw new Error();
             if (this.isOwned(q, this.own) && this.safeQueue(q) && q.state === 'playing' && !q.ended) {
-              const items = await api.queueItems(q.queue_id);
+              const items = await playbackRead(() => api.queueItems(q.queue_id));
               if (!this.closed && this.own && items.length === 1 && items[0]!.queue_item_id === q.current_item!.queue_item_id &&
                 this.sameRecording(items[0]!.media_item, pending)) {
                 this.own.queueItemId = q.current_item!.queue_item_id; this.own.seenPlaying = true; this.observe(this.own, q); return;
@@ -323,11 +338,11 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
           }
           throw new Error('Playback was not confirmed.');
         }));
-        this.issue = ''; this.schedule();
-      } catch {
+        this.issue = ''; this.problem = undefined; this.schedule();
+      } catch (error) {
         // A timed-out command may already have started audio. Stop only an exact owned item.
         try { const q = await api.queue(destination); if (this.own && q.active && this.isOwned(q, this.own)) await api.controlQueue(q.queue_id, 'stop'); } catch { /* Ownership/connectivity uncertain; retain the guard for host recovery. */ }
-        this.invalidate('Playback could not be verified. Host recovery is required; no alternative recording was substituted.', true);
+        this.invalidate(playbackFailure(error, playDispatched ? 'play-unconfirmed' : 'setup-unconfirmed'));
         throw new AppError(502, this.issue);
       }
     });
@@ -342,22 +357,23 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     await this.command(action, async () => {
       const own = this.own;
       if (!own) { if (action === 'stop') return; throw new AppError(409, 'There is no application-owned playback to control.'); }
+      // Failed read-only preflight has not changed the speaker. Keep the confirmed
+      // ownership/turn intact; the background monitor independently checks connectivity.
+      const q = await playbackRead(() => own.api.queue(own.destination), () => !this.closed && this.own === own);
+      const parked = await playbackRead(() => this.isParkedPause(q, own), () => !this.closed && this.own === own);
+      let dispatched = false;
       try {
-        const q = await own.api.queue(own.destination);
         if (this.closed) throw new Error();
-        const parked = await this.isParkedPause(q, own);
         const activeOwned = this.isOwned(q, own) && !(own.status === 'paused' && q.state === 'idle');
-        if (!activeOwned && !parked) { this.invalidate('Another source changed playback. Its audio was left untouched.', false); throw new AppError(409, this.issue); }
+        if (!activeOwned && !parked) { this.invalidate('external-playback'); throw new AppError(409, this.issue); }
         if (action !== 'stop' && (!this.safeQueue(q) || q.ended || (!q.active && !parked))) throw new Error();
         if (action === 'resume' && parked) {
-          const items = await own.api.queueItems(own.queueId);
+          const items = await playbackRead(() => own.api.queueItems(own.queueId));
           if (this.closed || items.length !== 1 || items[0]!.queue_item_id !== own.queueItemId || !this.sameRecording(items[0]!.media_item, own)) throw new Error();
-          await own.api.controlQueue(own.queueId, 'resume');
-          this.observe(own, await this.confirmTransport(own, 'resume'));
+          dispatched = true; this.observe(own, await this.dispatchControl(own, 'resume'));
         } else {
           if (q.active && (action !== 'stop' || q.state !== 'idle') && !(action === 'pause' && parked)) {
-            await own.api.controlQueue(own.queueId, action);
-            const confirmed = await this.confirmTransport(own, action);
+            dispatched = true; const confirmed = await this.dispatchControl(own, action);
             // A released paused stream may report zero; retain its last confirmed position.
             this.observe(own, action === 'pause' && confirmed.state === 'idle' ? q : confirmed);
           } else if (!parked) this.observe(own, q);
@@ -366,7 +382,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         else { own.status = action === 'pause' ? 'paused' : 'playing'; own.idleSince = undefined; }
       } catch (error) {
         if (error instanceof AppError && error.status === 409) throw error;
-        this.invalidate('Playback connectivity or queue state is uncertain. The host must recover playback controls.', true);
+        this.invalidate(playbackFailure(error, dispatched ? `${action}-unconfirmed` : 'queue-unverified'));
         throw new AppError(503, this.issue);
       }
     });
@@ -388,12 +404,11 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       const current = () => !this.closed && !this.draining && !this.failed && this.own === own && snapshot.generation === this.commandGeneration && snapshot.revision === this.integrations.configurationRevision;
       let q: QueueSnapshot; let parked: boolean;
       try {
-        q = await own.api.queue(own.destination);
-        if (!current()) return;
-        parked = await this.isParkedPause(q, own);
-      } catch {
+        q = await playbackRead(() => own.api.queue(own.destination), current);
+        parked = await playbackRead(() => this.isParkedPause(q, own), current);
+      } catch (error) {
         // Both stale successes and failures are discarded after any intervening command.
-        await this.integrations.withPlayback(async () => { if (current()) this.invalidate('Playback connection was lost. Controls are disabled until host recovery.', true); });
+        await this.integrations.withPlayback(async () => { if (current()) this.invalidate(playbackFailure(error, 'connection-lost')); });
         return;
       }
       await this.integrations.withPlayback(async () => {
@@ -407,52 +422,53 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
           // active source. Keep observing this exact item; time alone never advances a turn.
           own.idleSince ??= Date.now();
           if (Date.now() - own.idleSince < completionConfirmationMs) return;
-          this.invalidate('Playback stopped outside the app without a verified natural end. The turn was not advanced.', false); return;
+          this.invalidate('external-stop'); return;
         }
         own.idleSince = undefined;
-        if (!this.isOwned(q, own)) { this.invalidate('Playback changed outside this app. Its audio was left untouched.', false); return; }
+        if (!this.isOwned(q, own)) { this.invalidate('external-playback'); return; }
         if (!this.safeQueue(q)) {
           // A background snapshot may be old. Revalidate immediately before a write.
-          q = await own.api.queue(own.destination);
+          q = await playbackRead(() => own.api.queue(own.destination), current);
           if (!current()) return;
-          if (!this.isOwned(q, own)) { this.invalidate('Playback changed outside this app. Its audio was left untouched.', false); return; }
+          if (!this.isOwned(q, own)) { this.invalidate('external-playback'); return; }
           if (this.safeQueue(q)) return;
-          await own.api.controlQueue(own.queueId, 'stop');
-          try { await this.confirmTransport(own, 'stop'); }
+          try { await this.dispatchControl(own, 'stop'); }
           catch (error) {
             if (error instanceof AppError && error.status === 409) return;
-            this.invalidate('The single-track queue policy changed. Stopping could not be confirmed; host recovery is required.', true); return;
+            this.invalidate(playbackFailure(error, 'queue-policy')); return;
           }
-          this.invalidate('The single-track queue policy changed. Playback was stopped; host recovery is required.', true); return;
+          this.invalidate('queue-policy-stopped'); return;
         }
         if (q.ended && q.state === 'idle' && own.seenPlaying && own.status === 'playing') {
           own.release?.(); this.own = undefined; this.onComplete(own.appId); return;
         }
-        if (q.state === 'idle' || q.state === 'unknown') { this.invalidate('Playback stopped outside the app without a verified natural end. The turn was not advanced.', false); return; }
+        if (q.state === 'idle' || q.state === 'unknown') { this.invalidate('external-stop'); return; }
         if (q.state !== own.status) { own.status = q.state; this.onStatus(own.appId, own.status); }
         this.observe(own, q);
         maBackground(() => { void this.refreshVolume(own.api, own.destination); });
         this.onProgress();
       });
-    } catch { if (!this.closed && this.own && this.own === observed && generation === this.commandGeneration && !this.failed) this.invalidate('Playback connection was lost. Controls are disabled until host recovery.', true); }
+    } catch (error) { if (!this.closed && this.own && this.own === observed && generation === this.commandGeneration && !this.failed) this.invalidate(playbackFailure(error, 'connection-lost')); }
     finally { this.polling = false; this.integrations.playbackChanged(); if (this.own && !this.failed) { if (this.eventPollPending) this.schedule(50); else this.schedule(); } }
   }
   async recover(): Promise<void> {
     this.commandGeneration++;
     const own = this.own;
     if (own) {
-      const q = await own.api.queue(own.destination);
+      let q: QueueSnapshot;
+      try { q = await playbackRead(() => own.api.queue(own.destination), () => !this.closed && this.own === own); }
+      catch (error) { this.invalidate(playbackFailure(error, 'recovery-unconfirmed')); throw new AppError(503, this.issue); }
       if (q.active && this.isOwned(q, own)) {
-        try { await own.api.controlQueue(own.queueId, 'stop'); await this.confirmTransport(own, 'stop'); }
+        try { await this.dispatchControl(own, 'stop'); }
         catch (error) {
           if (error instanceof AppError && error.status === 409) throw error;
-          this.invalidate('Playback recovery could not confirm that the owned track stopped. Try recovery again after checking connectivity.', true);
+          this.invalidate(playbackFailure(error, 'recovery-unconfirmed'));
           throw new AppError(503, this.issue);
         }
       }
       this.onInvalidated(own.appId, 'Playback controls recovered. Select a track to start again.');
     }
-    this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.failed = false; this.issue = ''; clearTimeout(this.timer);
+    this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.pending = undefined; this.failed = false; this.issue = ''; this.problem = undefined; clearTimeout(this.timer);
     this.integrations.playbackChanged();
   }
   beginShutdown() {

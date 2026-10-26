@@ -16,7 +16,7 @@ import { fixtureUploadAnalysis } from '../fixtures/uploads.js';
 import type { Express } from 'express';
 
 // Each workflow has its own room, simulated speakers and join-rate limit; no lifecycle reset endpoint is needed.
-export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantOrigin: string; dataDirectory: string; demo: DemoAdapter; engine: Engine; app: Express; manager: IntegrationManager; calls: { command: string; args: Record<string, unknown> }[]; setSpeakers: Awaited<ReturnType<typeof startMusicAssistantFixture>>['setSpeakers']; setSchema(schema: number): void } }>({
+export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantOrigin: string; dataDirectory: string; demo: DemoAdapter; engine: Engine; app: Express; manager: IntegrationManager; remote: Awaited<ReturnType<typeof startMusicAssistantFixture>>; calls: { command: string; args: Record<string, unknown> }[]; setSpeakers: Awaited<ReturnType<typeof startMusicAssistantFixture>>['setSpeakers']; setSchema(schema: number): void } }>({
   isolatedApp: async ({}, use) => {
     const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-browser-isolated-');
     const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
@@ -29,7 +29,7 @@ export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantO
     const uploads = new UploadAssets(dir, fixtureUploadAnalysis);
     const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, mode: 'demo', demoSeconds: 60 }, 'dist/web', manager, preparations, uploads);
     server.on('request', http.app);
-    try { await use({ origin, musicAssistantOrigin: remote.origin, dataDirectory: dir, demo, engine, app: http.app, manager, calls: remote.calls, setSpeakers: remote.setSpeakers,
+    try { await use({ origin, musicAssistantOrigin: remote.origin, dataDirectory: dir, demo, engine, app: http.app, manager, remote, calls: remote.calls, setSpeakers: remote.setSpeakers,
       setSchema(schema) { remote.info.schema_version = schema; } }); }
     finally { http.close(); adapter.close(); remote.close(); server.closeAllConnections(); server.close(); }
   },

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Track speaker-inventory freshness explicitly, retain labelled last-known choices during refreshes, and expire stale readiness in the browser without changing speaker-selection controls.
+- Tolerate temporary playback-status read failures without replaying commands, and distinguish connection, command-confirmation, queue-policy and external-playback problems.
+- Refresh speaker readiness after playback recovery so stale connection checks do not block the next song.
+
 ## [1.0.8] — 2026-10-26
 
 - Update request parsing and schema validation dependencies to fix high-severity denial-of-service vulnerabilities.

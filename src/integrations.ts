@@ -11,6 +11,8 @@ import { maOperation } from './ma-operation.js';
 import { CatalogueReferences } from './catalogue-references.js';
 import { OutputMonitor } from './output-monitor.js';
 import { playbackCompatibility, supportsPlaybackSchema } from './music-assistant-policy.js';
+import type { PlaybackProblem } from './playback-problem.js';
+import { speakerFreshnessMs, type SpeakerInventory } from './speaker-inventory.js';
 import type { IntegrationState, IntegrationStore } from './integration-store.js';
 export { integrationSchema, IntegrationFileStore, type IntegrationStore } from './integration-store.js';
 
@@ -21,6 +23,8 @@ export type IntegrationView = {
   destinationStatus: 'not-selected' | 'not-checked' | 'checked' | 'error';
   destinationMessage: string;
   message: string; report: ConnectionReport | null; playbackAvailable: boolean; playbackIssue: string;
+  playbackProblem?: PlaybackProblem;
+  speakerInventory?: SpeakerInventory;
   mediaOrigin?: string | null;
   browserUrl?: string; tokenExpiresAt?: number;
   settingsChangesBlocked?: boolean;
@@ -33,6 +37,7 @@ export type IntegrationView = {
 };
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
+  readonly problem?: PlaybackProblem;
   readonly requiresRecovery?: boolean;
   configurationChanged(): void;
   recover(): Promise<void>;
@@ -41,6 +46,8 @@ export interface PlaybackController {
 export class IntegrationManager implements CatalogueProvider {
   private state: IntegrationState = { schema: 1, revision: 0, musicAssistant: null };
   private report: ConnectionReport | null = null;
+  private lastInventoryReport: ConnectionReport | null = null;
+  private inventoryChecks = new Set<{ revision: number }>();
   private failure = '';
   private destinationFailure: string | null = null;
   private destinationCheckedAt: number | null = null;
@@ -90,8 +97,17 @@ export class IntegrationManager implements CatalogueProvider {
   get routeConfigured(): boolean { return !this.settingsUncertain && Boolean(this.state.musicAssistant?.destination && this.playback); }
   get playbackAvailable(): boolean { return this.routeConfigured && this.output.state === 'ready'; }
   get uploadPlaybackAvailable(): boolean { return Boolean(this.uploads && this.routeConfigured); }
-  private get freshReport() { return this.report && Date.now() - this.report.checkedAt < 45_000 ? this.report : null; }
-  private get destinationFresh() { return this.destinationCheckedAt !== null && Date.now() - this.destinationCheckedAt < 45_000; }
+  private get freshReport() { return this.report && Date.now() - this.report.checkedAt < speakerFreshnessMs ? this.report : null; }
+  private get destinationFresh() { return this.destinationCheckedAt !== null && Date.now() - this.destinationCheckedAt < speakerFreshnessMs; }
+  private inventory(): SpeakerInventory {
+    const asOf = Date.now(); const report = this.lastInventoryReport;
+    const expiresAt = report ? report.checkedAt + speakerFreshnessMs : null;
+    const pending = [...this.inventoryChecks].some(check => check.revision === this.state.revision);
+    const state = !this.configured ? 'not-configured' : pending ? report ? 'refreshing' : 'loading'
+      : this.settingsUncertain || this.failure ? 'failed' : !report ? 'loading' : expiresAt! <= asOf ? 'stale' : 'verified';
+    return { state, checkedAt: report?.checkedAt ?? null, expiresAt, asOf,
+      players: report?.players.map(({ id, name, available }) => ({ id, name, available })) ?? [] };
+  }
   get output(): OutputState {
     const selected = this.state.musicAssistant?.destination;
     const report = this.freshReport;
@@ -108,7 +124,7 @@ export class IntegrationManager implements CatalogueProvider {
   stopMonitoring() { this.monitor.stop(); }
   refreshOutputSoon() { if (this.configured && !this.closed) this.monitor.refreshSoon(); }
   playbackChanged() {
-    const key = JSON.stringify([this.playback?.ownsPlayback, this.playback?.requiresRecovery, this.playback?.issue]);
+    const key = JSON.stringify([this.playback?.ownsPlayback, this.playback?.requiresRecovery, this.playback?.issue, this.playback?.problem]);
     if (key !== this.playbackKey) { this.playbackKey = key; this.changed(); }
   }
   attachUploads(uploads: UploadAssets, guestUrl: string) { this.uploads = uploads; this.defaultMediaOrigin = guestUrl; }
@@ -321,7 +337,13 @@ export class IntegrationManager implements CatalogueProvider {
     });
   }
   async recoverPlayback(revision: number): Promise<IntegrationView> {
-    return maOperation('recover', () => this.withPlayback(async () => { this.expected(revision); await this.playback?.recover(); return this.view(); }));
+    return maOperation('recover', async () => {
+      await this.withPlayback(async () => { this.expected(revision); await this.playback?.recover(); });
+      // Recovery may outlive a failed background inventory read. Publish a fresh
+      // observation, not that cached failure, before promising the UI it can play again.
+      // Network reads stay outside the command lock; observation/revision checks fence stale results.
+      return this.inspectSettings(revision);
+    });
   }
   private serial<T>(work: () => Promise<T>): Promise<T> {
     return this.queue.run(work, 'integration');
@@ -336,7 +358,7 @@ export class IntegrationManager implements CatalogueProvider {
     try { await this.store.save(next); }
     catch (error) {
       if (!(error instanceof PersistenceError) || error.outcome === 'uncertain') {
-        this.settingsUncertain = true; this.observation++; this.report = null; this.destinationCheckedAt = null;
+        this.settingsUncertain = true; this.observation++; this.report = null; this.lastInventoryReport = null; this.destinationCheckedAt = null;
         this.failure = 'The settings save could not be confirmed. Refresh speakers to reconcile saved settings before playback.';
         this.playback?.configurationChanged(); this.changed(); this.refreshOutputSoon();
       }
@@ -349,7 +371,7 @@ export class IntegrationManager implements CatalogueProvider {
     const destinationChanged = this.state.musicAssistant?.destination?.id !== next.musicAssistant?.destination?.id;
     this.state = next;
     this.observation++;
-    if (connectionChanged) { this.report = null; this.failure = ''; this.authorization = undefined; }
+    if (connectionChanged) { this.report = null; this.lastInventoryReport = null; this.failure = ''; this.authorization = undefined; }
     if (connectionChanged || destinationChanged) { this.destinationFailure = null; this.destinationCheckedAt = null; }
     this.mediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Addresses or settings changed. Check file access again; no audio has been started.' };
     if (connectionChanged) {
@@ -380,10 +402,12 @@ export class IntegrationManager implements CatalogueProvider {
         ? 'Music Assistant is connected and authorized.'
         : 'Music Assistant is configured. Its connection has not been checked.'),
       report: structuredClone(report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,
+      speakerInventory: this.inventory(),
+      ...(this.playback?.problem ? { playbackProblem: { ...this.playback.problem } } : {}),
       ...(ma?.browserUrl ? { browserUrl: ma.browserUrl } : {}), ...(ma?.tokenExpiresAt ? { tokenExpiresAt: ma.tokenExpiresAt } : {}),
       addressing: this.addressing(), compatibility: report ? playbackCompatibility(report.schemaVersion, report.serverVersion) : null,
       ...(this.authorization ? { authorization: { ...this.authorization } } : {}) };
-    const key = JSON.stringify(result);
+    const key = JSON.stringify({ ...result, speakerInventory: { ...result.speakerInventory, asOf: undefined } });
     if (key !== this.lastView) { this.lastView = key; this.sequence++; }
     return { ...result, sequence: this.sequence, instanceId: this.runtimeId };
   }
@@ -463,7 +487,8 @@ export class IntegrationManager implements CatalogueProvider {
     }
     this.expected(revision);
     if (this.inspection?.revision === revision) return this.inspection.pending;
-    const pending = maOperation('settings-discovery', () => this.inspectSettings(revision));
+    // Register coalescing before publishing Loading/Refreshing to subscribers.
+    const pending = Promise.resolve().then(() => maOperation('settings-discovery', () => this.inspectSettings(revision)));
     this.inspection = { revision, pending };
     try { return await pending; }
     finally { if (this.inspection?.pending === pending) this.inspection = undefined; }
@@ -480,7 +505,16 @@ export class IntegrationManager implements CatalogueProvider {
     if (ma.serverId && report.serverId !== ma.serverId) throw new AppError(409, 'Music Assistant server identity changed. Disconnect explicitly before replacing the catalogue.');
     return report;
   }
-  private async inspectSettings(revision: number): Promise<IntegrationView> {
+  private async withInventoryCheck(revision: number, work: () => Promise<unknown>): Promise<IntegrationView> {
+    const check = { revision }; this.inventoryChecks.add(check); this.changed();
+    try { await work(); }
+    finally { this.inventoryChecks.delete(check); this.changed(); }
+    return this.view();
+  }
+  private inspectSettings(revision: number): Promise<IntegrationView> {
+    return this.withInventoryCheck(revision, () => this.inspectAndPublishSettings(revision));
+  }
+  private async inspectAndPublishSettings(revision: number): Promise<IntegrationView> {
     const observation = ++this.observation;
     const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(400, 'Save a Music Assistant connection first.');
@@ -507,18 +541,19 @@ export class IntegrationManager implements CatalogueProvider {
         try { await this.store.save(next); this.state = next; }
         catch (error) {
           if (!(error instanceof PersistenceError) || error.outcome === 'uncertain') {
-            this.settingsUncertain = true; this.report = null; this.destinationCheckedAt = null;
+            this.settingsUncertain = true; this.report = null; this.lastInventoryReport = null; this.destinationCheckedAt = null;
             this.failure = 'Saved settings could not be confirmed. Refresh speakers to reconcile them.'; this.changed();
           }
           throw new AppError(503, 'Integration identity could not be saved. Check the data directory.');
         }
       }
       this.report = report; this.failure = failure; this.destinationFailure = destinationFailure;
+      if (report) this.lastInventoryReport = report;
       this.destinationCheckedAt = report && ma.destination ? Date.now() : null; this.changed(); return this.view();
     });
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
-    return maOperation('speaker-selection', () => this.validateDestination(id, revision));
+    return maOperation('speaker-selection', () => this.withInventoryCheck(revision, () => this.validateDestination(id, revision)));
   }
   private async validateDestination(id: string, revision: number): Promise<IntegrationView> {
     this.expected(revision); const ma = this.state.musicAssistant;
@@ -534,7 +569,7 @@ export class IntegrationManager implements CatalogueProvider {
       });
     }
     const publish = <T>(work: () => T) => this.serial(async () => {
-      this.expected(revision); this.observation++; this.report = report; this.failure = ''; try { return work(); } finally { this.changed(); }
+      this.expected(revision); this.observation++; this.report = report; this.lastInventoryReport = report; this.failure = ''; try { return work(); } finally { this.changed(); }
     });
     const player = report.players.find(p => p.id === id && p.available);
     if (!player) return publish(() => { throw new AppError(409, 'This speaker is unavailable in Music Assistant. Choose an available speaker or group.'); });
@@ -550,7 +585,7 @@ export class IntegrationManager implements CatalogueProvider {
       this.expected(revision);
       await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...this.state.musicAssistant!,
         ...(report.serverId ? { serverId: report.serverId } : {}), destination: { id: player.id, name: player.name } } });
-      this.report = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed(); return this.view();
+      this.report = report; this.lastInventoryReport = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed(); return this.view();
     });
   }
 }

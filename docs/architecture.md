@@ -41,6 +41,24 @@ Room changes and audio commands have distinct serialization boundaries. Network 
 - Turn, destination, connection, and playback revisions reject stale commands and optimistic browser intentions.
 - Restart drops playback/reveal, retains room/list/settings data, and never resumes audio automatically.
 
+### Playback verification and failures
+
+`src/playback-read.ts` is the read-only reconciliation boundary. It permits at most three attempts for classified temporary connection, timeout or destination-availability failures, with 150/350 ms backoff inside the existing eight-second read budget. It does not shorten the first request's timeout or extend the caller's deadline; retries run only while time remains. Authorization, unsupported responses, blocked addresses, cancellation and closed clients are not retried. Background snapshots remain outside the command serializer and are discarded if the command generation, connection revision or owned playback changes.
+
+Audio and queue-policy writes are never retried. A lost Play/Pause/Resume/Stop acknowledgement may be reconciled through authoritative reads; success requires the exact safe queue/item and requested transport state. Play additionally requires a new queue-item identity, not an older instance of the same recording. Failed read-only control preflight sends no command and does not itself discard confirmed ownership. Once command confirmation is genuinely uncertain or monitoring retries are exhausted, existing fail-closed ownership, upload leases and explicit host recovery safeguards remain in effect.
+
+Explicit recovery performs a fresh connection/speaker inspection after releasing the command lock, rather than acknowledging readiness from a cached failed inspection. Observation and configuration revisions prevent older inspections from undoing the recovered status.
+
+`src/playback-problem.ts` defines fixed, sanitized problem codes, messages and whether recovery is required. Room and integration views retain the legacy `playbackIssue` string and add `playbackProblem`; public display views expose neither. The UI shows the specific reason and offers recovery only when required. External playback changes and a confirmed protective queue-policy stop retain the turn without requesting unnecessary recovery. Unconfirmed stops retain ownership and never advance the turn. Settings shows the problem directly and its diagnostic code under **Details**; no upstream exception, token, source URL or private recording metadata is included.
+
+## Speaker inventory and readiness
+
+Music Assistant's `players/all` is the inventory authority; the app does not probe physical speakers or infer availability from saved routing preferences. Only the selected destination ID/name is persisted. Runtime inventory observations have a 45-second freshness window and explicit `loading`, `refreshing`, `verified`, `stale` or `failed` state. Events prompt coalesced reads, with a 15-second polling fallback. Ordinary background refreshes leave existing fresh playback readiness intact and do not send audio commands.
+
+Integration views expose `speakerInventory` with last-known public player IDs/names/availability, `checkedAt`, `expiresAt` and serialization time `asOf`. Last-known entries survive a failed read for labelled presentation only; the legacy `report` and playback-readiness checks still reject failed/expired evidence. A successful inventory replaces the list, removing absent/offline choices. Credential/origin changes clear observations, and in-flight checks are fenced by the existing configuration and observation revisions. Inventory freshness is distinct from the selected queue's readiness.
+
+Settings retains its select node, options, draft fields and focus during updates, marks normal refreshes **Updating…**, and labels stale/failed data as last known. `web/speaker-freshness.ts` expires readiness independently of event delivery using relative server leases and client elapsed time, with no clock-synchronization requirement. Both inventory and queue certificates must be fresh; queued or replayed snapshots cannot restart a lease. One expiry wake-up initiates a coalesced read, not a polling/reselection loop. Selection and Play retain fresh backend validation, with no automatic target switch or fallback.
+
 ## Privacy contract
 
 Membership credentials and private-list credentials are separate HttpOnly cookies. Recovery keys authorize list recovery, not room membership. Host controls on the LAN listener are unauthenticated and require a trusted network.

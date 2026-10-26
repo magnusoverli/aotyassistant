@@ -610,7 +610,14 @@ function render() {
   if (error) { const message = pageNodes.get('error', () => notice('', 'error')); text(message, error); content.push(message); }
   if (view && !realtime) content.push(pageNodes.get('connection', () => notice('Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection')));
   else if (view?.playbackIssue) {
-    content.push(pageNodes.get('recovery', () => { const message = notice('', 'warning'); message.append('Playback controls lost; the speaker may still be playing. ', page === 'host' ? link('Recover controls in Settings', '/host/settings', 'inline-link') : 'Ask the host to recover controls.'); return message; }));
+    const message = pageNodes.get('recovery', () => notice('', 'warning'));
+    const reason = pageNodes.el('playback-reason', 'span', view.playbackProblem?.message ?? view.playbackIssue);
+    const recovery = view.playbackProblem?.recoveryRequired ?? true;
+    const action = pageNodes.get('playback-recovery-action', () => page === 'host'
+      ? link('Recover controls in Settings', '/host/settings', 'inline-link') : el('span', 'Ask the host to recover controls.'));
+    attr(message, 'data-playback-problem', view.playbackProblem?.code);
+    children(message, reason, recovery && pageNodes.get('playback-reason-space', () => document.createTextNode(' ')), recovery && action);
+    content.push(message);
   } else if (view && !view.connected) content.push(pageNodes.get('unavailable', () => notice('The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error')));
   if (page === 'host') content.push(host());
   else if (page === 'join' && !view) content.push(participantEntry());

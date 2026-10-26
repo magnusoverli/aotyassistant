@@ -145,7 +145,8 @@ export class Engine extends EventEmitter {
       revision: room.revision, turnId: room.turnId, current: person(room.currentId),
       next: room.currentId && room.active.length ? person(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) : null,
       rotation: room.active.map(id => person(id)!), // Names/order only, never selections or credentials.
-      ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue } : {}) };
+      ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue,
+        ...(this.adapter.problem ? { playbackProblem: { ...this.adapter.problem } } : {}) } : {}) };
     const joinUrl = `${this.guestUrl}/join`;
     if (role.kind === 'host') {
       const playback = base.playbackStatus !== 'unavailable' ? room.playback : null;
@@ -170,7 +171,7 @@ export class Engine extends EventEmitter {
       ...(myTurn ? { ownPlayback: structuredClone(room.playback), progress: this.progress(room, true), volume: this.adapter.volume } : {}) };
   }
   private playbackStatus(room: Room): NonNullable<View['playbackStatus']> {
-    return !this.playbackAvailable || this.concealPlayback ? 'unavailable' : room.playback?.status === 'playing' ? 'playing' : room.playback?.status === 'paused' ? 'paused' : 'idle';
+    return !this.playbackAvailable || this.concealPlayback && Boolean(room.playback) ? 'unavailable' : room.playback?.status === 'playing' ? 'playing' : room.playback?.status === 'paused' ? 'paused' : 'idle';
   }
   private progress(room: Room, times: boolean): PlaybackProgress | undefined {
     const playback = room.playback; if (!playback || !this.ready || this.concealPlayback) return;

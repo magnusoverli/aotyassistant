@@ -183,7 +183,11 @@ test('explicit sign-in cancellation invalidates its callback and preserves a wor
   login.callback.searchParams.set('code', 'login-code');
   const callback = await fetch(login.callback, { headers: { Cookie: login.cookie }, redirect: 'manual' });
   assert.match(callback.headers.get('location')!, /expired$/);
-  assert.deepEqual(f.manager.view(), before); assert.deepEqual(f.calls, []);
+  const after = f.manager.view();
+  assert.ok(after.speakerInventory && before.speakerInventory);
+  assert.ok(after.speakerInventory.asOf >= before.speakerInventory.asOf);
+  assert.deepEqual(after, { ...before, speakerInventory: { ...before.speakerInventory, asOf: after.speakerInventory.asOf } });
+  assert.deepEqual(f.calls, []);
 });
 
 test('Ingress requires its dedicated trusted listener; prefixes assets/auth and preserves canonical guest links', async t => {

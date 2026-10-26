@@ -6,6 +6,7 @@ import type { SavedSelection } from './preparations.js';
 import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
+import { UpstreamError } from './upstream-error.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
 export type Destination = { id: string; name: string; available: boolean };
@@ -369,13 +370,15 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   async queue(playerId: string): Promise<QueueSnapshot> {
     const result = queueSchema.safeParse(await this.read('/api', 'player_queues/get_active_queue', { player_id: playerId }));
-    if (!result.success || !result.data.available) throw new AppError(502, 'The playback destination is unavailable or its queue response is unsupported.');
+    if (!result.success) throw new UpstreamError('unsupported-response', 502, 'The playback queue response is unsupported.');
+    if (!result.data.available) throw new UpstreamError('destination-unavailable', 502, 'The playback destination is unavailable.');
+    if (result.data.state === 'unknown') throw new UpstreamError('state-unconfirmed', 502, 'Music Assistant could not confirm the speaker’s playback state.');
     return result.data;
   }
   async queueItems(queueId: string): Promise<{ queue_item_id: string; media_item?: z.infer<typeof searchTrackSchema> | null }[]> {
     const result = z.array(z.object({ queue_item_id: z.string(), media_item: searchTrackSchema.nullable().optional() })).max(2)
       .safeParse(await this.read('/api', 'player_queues/items', { queue_id: queueId, limit: 2, offset: 0 }));
-    if (!result.success) throw new AppError(502, 'The destination queue could not be verified.'); return result.data;
+    if (!result.success) throw new UpstreamError('unsupported-response', 502, 'The destination queue could not be verified.'); return result.data;
   }
   async configureSingle(queue: QueueSnapshot): Promise<boolean> {
     const queue_id = queue.queue_id;
@@ -405,7 +408,8 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const result = z.object({ player_id: z.string(), available: z.boolean(), playback_state: z.enum(['idle', 'paused', 'playing', 'unknown']),
       active_source: z.string().nullable(), active_group: z.string().nullable().optional(), synced_to: z.string().nullable().optional() })
       .safeParse(await this.read('/api', 'players/get', { player_id: playerId }));
-    if (!result.success || result.data.player_id !== playerId || !result.data.available) throw new AppError(502, 'The paused destination could not be verified.');
+    if (!result.success || result.data.player_id !== playerId) throw new UpstreamError('unsupported-response', 502, 'The paused destination could not be verified.');
+    if (!result.data.available) throw new UpstreamError('destination-unavailable', 502, 'The paused destination is unavailable.');
     const player = result.data;
     return ['idle', 'paused'].includes(player.playback_state) && (!player.active_source || [playerId, queueId].includes(player.active_source)) &&
       (!player.active_group || [playerId, queueId].includes(player.active_group)) && (!player.synced_to || [playerId, queueId].includes(player.synced_to));

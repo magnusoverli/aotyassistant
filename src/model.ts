@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PlaybackProblem } from './playback-problem.js';
 
 export const trackSchema = z.object({
   id: z.string(), title: z.string(), artist: z.string(), album: z.string(),
@@ -74,6 +75,7 @@ export type View = {
   hostPlayback?: Pick<NonNullable<Room['playback']>, 'id' | 'status' | 'revealed'> | null;
   catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };
   playbackIssue?: string;
+  playbackProblem?: PlaybackProblem;
   progress?: PlaybackProgress; volume?: VolumeState;
   nowPlaying?: { revealed: false } | { revealed: true; track: Track };
   active?: Person[];

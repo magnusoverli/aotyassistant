@@ -7,6 +7,7 @@ import type { SetupView } from '../src/setup';
 import { pageFrame, workspaceGrid, slot } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-nodes';
+import { SpeakerFreshness } from './speaker-freshness';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement) {
@@ -17,6 +18,9 @@ export async function mountSettings(container: HTMLElement) {
   let tokenDraft = '';
   let pendingDestination = '';
   let refreshingSpeakers = false;
+  let refreshing = false;
+  const speakerFreshness = new SpeakerFreshness();
+  let freshnessTimer: ReturnType<typeof setTimeout> | undefined;
   let queuedSnapshot: IntegrationView | undefined;
   let live: EventSource | undefined;
   let busy = false;
@@ -51,6 +55,7 @@ export async function mountSettings(container: HTMLElement) {
   async function request(path: string, data?: unknown): Promise<IntegrationView> {
     try {
       const result = await requestJson<IntegrationView>(`/api/host/integrations${path}`, data, 60_000);
+      speakerFreshness.receive(result);
       online = true; return result;
     } catch (error) {
       if (error instanceof RequestError) { online = true; throw error; }
@@ -68,9 +73,21 @@ export async function mountSettings(container: HTMLElement) {
       urlDraft = next.url ?? ''; if (browserDraft === (settings.browserUrl ?? '')) browserDraft = next.browserUrl ?? '';
     }
     settings = next;
+    speakerFreshness.accept(next); scheduleSpeakerExpiry();
     if (next.addressing) addresses.observe(next.addressing);
     if (!next.tokenConfigured || next.status === 'error') speakerError = '';
     if (updateDraft) { urlDraft = next.url ?? ''; browserDraft = next.browserUrl ?? ''; tokenDraft = ''; }
+  }
+  function queueSnapshot(next: IntegrationView) {
+    if (queuedSnapshot?.instanceId === next.instanceId && queuedSnapshot && (next.revision < queuedSnapshot.revision ||
+      next.sequence !== undefined && queuedSnapshot.sequence !== undefined && next.sequence < queuedSnapshot.sequence)) return;
+    queuedSnapshot = next;
+  }
+  function scheduleSpeakerExpiry() {
+    clearTimeout(freshnessTimer);
+    const remaining = speakerFreshness.remaining(settings?.output.state === 'ready' && speakerFreshness.ready);
+    if (remaining === undefined) return;
+    freshnessTimer = setTimeout(() => { render(); scheduleSpeakerExpiry(); void refreshSnapshot(); }, Math.ceil(remaining) + 1);
   }
   async function loadSetup(refresh = false) {
     const next = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
@@ -245,14 +262,19 @@ export async function mountSettings(container: HTMLElement) {
       for (const control of detected.querySelectorAll('button')) prop(control, 'disabled', control.disabled || Boolean(settings?.settingsChangesBlocked));
       outputNodes.push(detected);
     }
-    const activeOutput = settings?.output;
+    const inventory = settings?.speakerInventory;
+    const inventoryState = speakerFreshness.state;
+    const updatingSpeakers = refreshingSpeakers || refreshing || inventoryState === 'loading' || inventoryState === 'refreshing';
+    const activeOutput = settings?.output.state === 'ready' && !speakerFreshness.ready ? { ...settings.output, state: 'checking' as const } : settings?.output;
     const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !online ? 'Connection lost'
-      : activeOutput?.state === 'ready' ? 'Ready' : activeOutput?.state === 'checking' ? 'Checking…' : activeOutput?.state === 'recovery' ? 'Recovery needed'
+      : inventoryState === 'loading' && activeOutput?.state !== 'recovery' ? 'Loading…'
+      : activeOutput?.state === 'ready' ? updatingSpeakers ? 'Updating…' : 'Ready' : activeOutput?.state === 'checking' ? 'Checking…' : activeOutput?.state === 'recovery' ? 'Recovery needed'
       : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : activeOutput?.state === 'incompatible' ? 'Playback unsupported' : 'No active speaker';
     const destination = panel('destination', '2. Active speaker', speakerState);
+    attr(destination, 'data-inventory-state', inventoryState);
     const destinationNodes: Node[] = [destination.firstElementChild!];
     const report = online && settings?.status === 'checked' ? settings.report : null;
-    const availableSpeakers = report?.players.filter(player => player.available) ?? [];
+    const availableSpeakers = (online ? inventory?.players ?? report?.players : undefined)?.filter(player => player.available) ?? [];
     if (pendingDestination) destinationNodes.push(v.el('speaker-description', 'p', `Selecting ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
     else if (online && activeOutput?.state === 'ready') destinationNodes.push(v.el('speaker-description', 'p', `Active speaker: ${activeOutput.name}`, 'active-destination'));
     else if (activeOutput?.state === 'incompatible') destinationNodes.push(v.el('speaker-description', 'p', `Selected speaker: ${activeOutput.name}. Playback needs a compatible Music Assistant API.`, 'muted small'));
@@ -262,18 +284,18 @@ export async function mountSettings(container: HTMLElement) {
     const select = v.el('speaker-select', 'select'); prop(select, 'id', 'ma-destination');
     prop(select, 'disabled', busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.settingsChangesBlocked));
     const placeholder = !settings ? 'Loading speakers…' : !settings.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant first'
-      : !report ? busy && busyScope === 'speaker' ? 'Discovering speakers…' : 'Speakers not checked'
+      : !report && inventory?.checkedAt == null ? updatingSpeakers ? 'Discovering speakers…' : 'Speakers not checked'
       : availableSpeakers.length ? 'Choose a speaker or group' : 'No available speakers or groups';
     const empty = v.el('speaker-placeholder', 'option', placeholder); prop(empty, 'value', ''); prop(empty, 'disabled', true); const speakerOptions = [empty];
-    // The saved routing preference is not evidence that a speaker is currently selectable.
+    // Retain last-known options, never synthesize one from a saved routing preference.
     for (const player of availableSpeakers) {
       const option = v.el(`speaker-option-${player.id}`, 'option', player.name); prop(option, 'value', player.id); speakerOptions.push(option);
     }
-    const selectedId = pendingDestination || (activeOutput?.state === 'ready' || activeOutput?.state === 'recovery' || activeOutput?.state === 'incompatible' ? settings?.destination?.id : undefined);
+    const selectedId = pendingDestination || (inventory || activeOutput?.state === 'ready' || activeOutput?.state === 'recovery' || activeOutput?.state === 'incompatible' ? settings?.destination?.id : undefined);
     children(select, ...speakerOptions); v.retain('speaker-option-', availableSpeakers.map(player => `speaker-option-${player.id}`)); prop(select, 'value', availableSpeakers.find(player => player.id === selectedId)?.id ?? '');
     select.onchange = () => {
       const id = select.value;
-      if (busy || select.disabled || !id || id === settings?.destination?.id && settings.output.state === 'ready') return;
+      if (busy || select.disabled || !id || id === settings?.destination?.id && settings.output.state === 'ready' && speakerFreshness.ready) return;
       const restoreFocus = document.activeElement === select;
       pendingDestination = id;
       void run(async () => {
@@ -286,10 +308,18 @@ export async function mountSettings(container: HTMLElement) {
         if (restoreFocus && main.isConnected && document.activeElement === document.body) main.querySelector<HTMLSelectElement>('#ma-destination')?.focus({ preventScroll: true });
       });
     };
-    const speakerHelp = v.el('speaker-help', 'p', 'Music plays here when you press Play. Speaker availability updates automatically.', 'muted field-hint'); prop(speakerHelp, 'id', 'ma-destination-help');
+    const checked = inventory?.checkedAt === null || inventory?.checkedAt === undefined ? '' : ` Last checked ${new Date(inventory.checkedAt).toLocaleTimeString()}.`;
+    const speakerExplanation = !inventory ? 'Music plays here when you press Play. Speaker availability updates automatically.'
+      : inventoryState === 'loading' ? 'Checking speakers in Music Assistant…'
+      : updatingSpeakers ? `Updating speakers… Showing the last ${speakerFreshness.fresh ? 'verified' : 'known, unverified'} list.${checked}`
+      : inventoryState === 'failed' ? `Speaker refresh failed. Showing last-known speakers; availability is not verified.${checked}`
+      : inventoryState === 'stale' ? `Speaker information has expired. Showing last-known speakers; each selection is checked again.${checked}`
+      : inventoryState === 'not-configured' ? 'Connect Music Assistant to discover speakers.'
+      : `Available in Music Assistant. The selected speaker’s queue is checked separately.${checked}`;
+    const speakerHelp = v.el('speaker-help', 'p', speakerExplanation, 'muted field-hint'); prop(speakerHelp, 'id', 'ma-destination-help');
     attr(select, 'aria-describedby', speakerHelp.id);
     const group = v.el('speaker-field', 'div', undefined, 'field'); children(group, destinationLabel, select, speakerHelp); destinationNodes.push(group);
-    if (report && !availableSpeakers.length) destinationNodes.push(v.el('empty-speakers', 'p', report.players.length
+    if (report && speakerFreshness.fresh && !availableSpeakers.length) destinationNodes.push(v.el('empty-speakers', 'p', report.players.length
       ? 'No speakers are currently available. Turn one on or check Music Assistant; available speakers will appear here.'
       : 'No speakers found. Add or enable one in Music Assistant; available speakers will appear here.', 'muted small'));
     else if (!report && !settings?.destination) {
@@ -308,13 +338,16 @@ export async function mountSettings(container: HTMLElement) {
     if (settings?.destination) destinationNodes.push(v.el('speaker-safe-note', 'p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
     children(destination, ...destinationNodes); outputNodes.push(destination, addresses.render());
     if (settings?.playbackIssue) {
-      const playback = panel('recovery', 'Playback recovery');
+      const requiresRecovery = settings.playbackProblem?.recoveryRequired ?? true;
+      const playback = panel('recovery', requiresRecovery ? 'Playback recovery' : 'Playback status');
       const recovery = action('Recover playback controls', async () => {
         if (!confirm('Recover playback controls? This stops the recording only if the app still owns that exact queue item. Externally replaced audio is left untouched. The turn will not advance.')) return;
         apply(await request('/recover', { revision: settings!.revision })); notice = 'Playback controls recovered. Select a track to start again.';
       }, true, 'speaker');
-      const details = v.el('recovery-details', 'details'); children(details, v.el('recovery-summary', 'summary', 'Details'), v.el('recovery-issue', 'p', settings.playbackIssue, 'muted small'));
-      children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', 'The speaker may still be playing. Recovery stops only the song this app still controls; other audio is left alone. It does not start music or pass the turn.', 'warning'), recovery, details);
+      const details = v.el('recovery-details', 'details'); children(details, v.el('recovery-summary', 'summary', 'Details'),
+        v.el('recovery-issue', 'p', settings.playbackProblem ? `Diagnostic code: ${settings.playbackProblem.code}` : settings.playbackIssue, 'muted small'));
+      const explanation = settings.playbackProblem?.message ?? 'The speaker may still be playing. Recovery stops only the song this app still controls; other audio is left alone. It does not start music or pass the turn.';
+      children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', explanation, 'warning'), requiresRecovery && recovery, requiresRecovery && details);
       outputNodes.push(playback);
     }
     children(output, ...outputNodes); children(grid, slot(connection, 'primary'), output); workspaceNodes.push(grid);
@@ -346,26 +379,28 @@ export async function mountSettings(container: HTMLElement) {
       else { authPending = false; loginUrl = ''; notice = result.result === 'cancelled' ? 'Sign-in cancelled. Your saved connection was kept.' : result.result === 'expired' ? 'Sign-in expired. Try connecting again.' : 'Sign-in could not finish. Try connecting again.'; render(); }
     } catch { /* Ignore unrelated/malformed browser storage. */ }
   });
-  let refreshing = false;
   async function refreshSnapshot(discoverSpeakers = true) {
     if (busy || refreshing) return;
-    refreshing = true; let changed = false; const wasOnline = online;
+    refreshing = true; render();
     try {
       const next = await request(discoverSpeakers && settings?.tokenConfigured ? '/destinations' : '');
-      if (busy) { queuedSnapshot = next; return; }
-      const before = visibleSnapshot(); apply(next); changed = before !== visibleSnapshot();
+      if (busy) { queueSnapshot(next); return; }
+      apply(next);
     } catch { /* Keep the current form and explicit retry; a read cannot replay a mutation. */ }
-    finally { refreshing = false; if (changed || wasOnline !== online) render(); }
+    finally { refreshing = false; render(); }
   }
   window.addEventListener('focus', () => { void refreshSnapshot(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSnapshot(); });
   function visibleSnapshot() {
     return JSON.stringify(settings && { ...settings, sequence: undefined, instanceId: undefined, output: { ...settings.output, checkedAt: undefined },
-      report: settings.report && { ...settings.report, checkedAt: undefined } });
+      report: settings.report && { ...settings.report, checkedAt: undefined },
+      speakerInventory: settings.speakerInventory && { ...settings.speakerInventory, asOf: undefined },
+      inventoryFresh: speakerFreshness.fresh, readyFresh: speakerFreshness.ready });
   }
   function acceptLive(next: IntegrationView) {
+    speakerFreshness.receive(next);
     const wasOnline = online; online = true;
-    if (busy) { queuedSnapshot = next; return; }
+    if (busy) { queueSnapshot(next); return; }
     const before = visibleSnapshot(); apply(next);
     if (!wasOnline || before !== visibleSnapshot()) render();
   }
@@ -381,6 +416,6 @@ export async function mountSettings(container: HTMLElement) {
   connectLive();
   window.addEventListener('offline', () => { online = false; render(); });
   window.addEventListener('online', () => { void refreshSnapshot(); });
-  window.addEventListener('pagehide', () => live?.close());
-  window.addEventListener('pageshow', event => { if (event.persisted) { connectLive(); void refreshSnapshot(); } });
+  window.addEventListener('pagehide', () => { live?.close(); clearTimeout(freshnessTimer); });
+  window.addEventListener('pageshow', event => { if (event.persisted) { render(); scheduleSpeakerExpiry(); connectLive(); void refreshSnapshot(); } });
 }

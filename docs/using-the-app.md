@@ -4,6 +4,8 @@
 
 Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**, share its join QR/link, and open **Room display** on a TV or other shared browser. Full screen is available where the browser supports it.
 
+The speaker list updates automatically from Music Assistant. **Updating…** keeps the previous selection visible while checking again; the help text identifies last-known, expired or failed observations and the last-check time. **Ready** requires fresh inventory and selected-queue checks, not just a saved speaker name. Last-known choices remain visible if a refresh fails, but are not presented as verified. Choosing a target checks it again before saving; discovery never changes the target or starts audio automatically.
+
 The room is always ready. Participants join with a display name and enter the end of the listening order; the first person gets the first turn. Joining never starts music.
 
 In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
@@ -36,6 +38,12 @@ The host and current playing participant can adjust volume when the selected spe
 Both players offer **Pause / Resume** and **Stop song** controls, separate from finishing or skipping the turn. Stopping keeps the current participant's turn; the participant chooses and starts a selection again. A successfully started saved selection remains in **Previously played** history. The progress bar is read-only: seeking, previous-track, repeat, and shuffle controls are not exposed.
 
 **Host desk** shows playback progress and whether the song is hidden or visible on the room display. Exact times appear after the participant reveals the song. **Stop song — keep turn** is directly available and asks for confirmation. **Skip turn** stops the app-owned song and passes control to the next participant.
+
+### Playback problems
+
+Temporary status-read failures are retried automatically without repeating audio commands. If playback cannot be safely verified, the warning identifies the problem: connection or speaker availability, rejected access, an unsupported Music Assistant response, an unconfirmed Play/Pause/Resume/Stop, or changed queue settings. When recovery is required, the host uses **Settings → Playback recovery → Recover playback controls** after checking the stated cause. Recovery stops only audio the app can still identify as its own and does not pass the turn or start another song. **Details** contains a diagnostic code for reporting the problem.
+
+If another source changes playback, its audio is left untouched and the app does not request recovery unnecessarily. A confirmed protective stop after queue-policy changes also keeps the turn; the participant can select a song again. Saved selections and browsing are retained.
 
 ## Returning to the room
 

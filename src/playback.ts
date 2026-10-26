@@ -1,11 +1,13 @@
 import { AppError, type Track, type VolumeState } from './model.js';
 import type { SavedSelection } from './preparations.js';
+import type { PlaybackProblem } from './playback-problem.js';
 
 export interface PlaybackAdapter {
   readonly mode: 'demo' | 'music-assistant';
   /** Playback controls are usable; this is not process liveness or catalogue health. */
   readonly connected: boolean;
   readonly issue?: string;
+  readonly problem?: PlaybackProblem;
   readonly volume?: VolumeState;
   setVolume?(level: number, playbackId?: string): Promise<void>;
   progress?(id: string): { elapsed: number; duration: number } | null;

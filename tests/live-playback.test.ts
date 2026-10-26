@@ -60,6 +60,166 @@ test('host stop confirms the owned song without advancing and rejects externally
   assert.equal(writes(f).length, 0);
 });
 
+test('a transient background read failure retains playback, reveal, turn and ownership without any write or recovery', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const playback = f.participant(f.alex).ownPlayback!; const turn = f.host().turnId!;
+  await f.engine.reveal(f.alex, turn, playback.id);
+  const before = writes(f).length;
+  f.remote.failReads('player_queues/get_active_queue', 2);
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.problem, undefined); assert.equal(f.adapter.requiresRecovery, false);
+  assert.equal(f.adapter.ownsPlayback, true); assert.equal(f.engine.ready, true);
+  assert.equal(f.participant(f.alex).ownPlayback?.id, playback.id); assert.equal(f.display().nowPlaying?.revealed, true);
+  assert.equal(f.host().turnId, turn); assert.equal(writes(f).length, before);
+});
+
+test('exhausted read-only control preflight keeps confirmed ownership and sends no mutation', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const playback = f.participant(f.alex).ownPlayback!; const turn = f.host().turnId!; const before = writes(f).length;
+  f.remote.failReads('player_queues/get_active_queue', 3);
+  await assert.rejects(f.engine.control(f.alex, turn, playback.id, 'pause'));
+  assert.equal(f.adapter.requiresRecovery, false); assert.equal(f.engine.ready, true);
+  assert.equal(f.participant(f.alex).ownPlayback?.id, playback.id); assert.equal(f.host().turnId, turn);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(writes(f).length, before);
+  await f.engine.control(f.alex, turn, playback.id, 'pause');
+  assert.equal(f.remote.queue.state, 'paused'); assert.equal(f.host().turnId, turn);
+});
+
+test('persistent read failures fail closed after bounded retries with a distinct safe problem and no public diagnostics', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const turn = f.host().turnId!; const before = writes(f).length;
+  f.remote.failReads('player_queues/get_active_queue', 3);
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.problem?.code, 'connection-lost'); assert.equal(f.adapter.problem?.recoveryRequired, true);
+  assert.equal(f.engine.ready, false); assert.equal(f.adapter.ownsPlayback, true);
+  assert.equal(f.host().playbackProblem?.code, 'connection-lost');
+  assert.equal(f.participant(f.sam).playbackProblem?.code, 'connection-lost');
+  assert.equal(f.display().playbackProblem, undefined); assert.equal(f.display().playbackIssue, undefined);
+  assert.equal(f.manager.view().playbackProblem?.code, 'connection-lost');
+  assert.ok(!JSON.stringify(f.host().playbackProblem).includes('PRIVATE'));
+  assert.equal(f.host().turnId, turn); assert.equal(writes(f).length, before);
+});
+
+test('successful recovery refreshes failed speaker readiness before acknowledging the next Play', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id);
+  f.remote.fail(true);
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  await f.manager.check(f.manager.view().revision);
+  assert.equal(f.manager.playbackAvailable, false);
+  f.remote.fail(false);
+  const recovered = await f.manager.recoverPlayback(f.manager.view().revision);
+  assert.equal(recovered.output.state, 'ready'); assert.equal(recovered.playbackAvailable, true);
+  assert.equal(recovered.playbackProblem, undefined); assert.equal(recovered.playbackIssue, '');
+  assert.equal(f.remote.queue.state, 'idle'); assert.equal(f.host().turnId, turn);
+  assert.equal(f.host().playbackStatus, 'idle');
+  await f.engine.play(f.alex, turn, null, track.id);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.host().turnId, turn);
+});
+
+test('a late failed inventory inspection cannot overwrite freshly recovered readiness or block the next song', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id);
+  f.remote.failReads('player_queues/get_active_queue', 1, 200);
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  const gate = f.remote.holdNextQueueRead(); t.after(() => gate.release());
+  const oldInspection = f.manager.check(f.manager.view().revision); await gate.entered;
+  const recovered = await f.manager.recoverPlayback(f.manager.view().revision);
+  assert.equal(recovered.output.state, 'ready');
+  gate.release(true); await oldInspection;
+  assert.equal(f.manager.output.state, 'ready');
+  await f.engine.play(f.alex, turn, null, track.id);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.host().turnId, turn);
+});
+
+test('an authorization failure is not retried or mislabeled as a connectivity problem', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const before = f.remote.calls.filter(call => call.command === 'player_queues/get_active_queue').length;
+  f.remote.failReads('player_queues/get_active_queue', 1, 401);
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.problem?.code, 'authorization');
+  assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/get_active_queue').length, before + 1);
+});
+
+test('unsupported queue responses are not retried, while speaker unavailability gets its own bounded failure', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const poll = () => (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  const before = f.remote.calls.filter(call => call.command === 'player_queues/get_active_queue').length;
+  f.remote.failReads('player_queues/get_active_queue', 1, 200); await poll();
+  assert.equal(f.adapter.problem?.code, 'unsupported-response');
+  assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/get_active_queue').length, before + 1);
+  await f.manager.recoverPlayback(f.manager.view().revision);
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  f.remote.queue.available = false; await poll();
+  assert.equal(f.adapter.problem?.code, 'speaker-unavailable'); assert.equal(f.adapter.requiresRecovery, true);
+});
+
+test('an unknown playback state is rechecked and never mislabeled as stopped or completed', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id);
+  const before = writes(f).length; f.remote.queue.state = 'unknown';
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.problem?.code, 'state-unconfirmed'); assert.equal(f.adapter.requiresRecovery, true);
+  assert.equal(f.adapter.ownsPlayback, true); assert.equal(f.host().turnId, turn); assert.equal(writes(f).length, before);
+  assert.ok(!f.adapter.issue.includes('Playback stopped'));
+});
+
+for (const action of ['play_media', 'pause', 'resume', 'stop'] as const) test(`a lost ${action} acknowledgement is reconciled without dispatching the mutation twice`, async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  if (action === 'play_media') f.remote.loseAcknowledgement('player_queues/play_media');
+  await f.engine.play(f.alex, turn, null, track.id);
+  const id = f.participant(f.alex).ownPlayback!.id;
+  if (action !== 'play_media') {
+    if (action === 'resume') await f.engine.control(f.alex, turn, id, 'pause');
+    f.remote.loseAcknowledgement(`player_queues/${action}`);
+    await f.engine.control(f.alex, turn, id, action);
+  }
+  assert.equal(f.adapter.requiresRecovery, false); assert.equal(f.adapter.problem, undefined);
+  assert.equal(f.host().turnId, turn); assert.equal(f.engine.ready, true);
+  assert.equal(writes(f).filter(call => call.command === `player_queues/${action}`).length, 1);
+  assert.equal(f.remote.queue.state, action === 'pause' ? 'paused' : action === 'stop' ? 'idle' : 'playing');
+});
+
+test('an unreceived replacement Play cannot mistake the old identical recording for a newly started queue item', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id);
+  const previous = f.participant(f.alex).ownPlayback!.id;
+  f.remote.loseAcknowledgement('player_queues/play_media', false);
+  await assert.rejects(maOperation('lost-replacement', () => f.engine.play(f.alex, turn, previous, track.id), 300));
+  assert.equal(f.adapter.problem?.code, 'play-unconfirmed'); assert.equal(f.engine.ready, false);
+  assert.equal(f.host().turnId, turn); assert.equal(f.display().nowPlaying?.revealed, false);
+  assert.equal(writes(f).filter(call => call.command === 'player_queues/play_media').length, 2);
+});
+
+test('a lost unreceived Play cannot claim or stop a pre-existing external item with identical recording metadata', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  Object.assign(f.remote.queue, { items: 1, state: 'playing', autoplay_enabled: false, repeat_mode: 'off', shuffle_enabled: false,
+    current_item: { queue_item_id: 'external-before-play', media_item: { ...f.remote.track } } });
+  f.remote.loseAcknowledgement('player_queues/play_media', false);
+  await assert.rejects(maOperation('lost-initial-play', () => f.engine.play(f.alex, turn, null, track.id), 300));
+  assert.equal(f.adapter.problem?.code, 'play-unconfirmed');
+  assert.equal(writes(f).filter(call => call.command === 'player_queues/stop').length, 0);
+  await f.manager.recoverPlayback(f.manager.view().revision);
+  assert.equal(writes(f).filter(call => call.command === 'player_queues/stop').length, 0);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.host().turnId, turn);
+});
+
 test('host pause/resume confirms the owned MA transport and leaves an externally replaced item untouched', async t => {
   const f = await fixture(60_000); t.after(f.close);
   const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
@@ -112,7 +272,8 @@ test('an elapsed confirmation budget retains uncertain playback and never retrie
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   const id = f.participant(f.alex).ownPlayback!.id;
   f.remote.ignoreControl('pause');
-  await assert.rejects(maOperation('test-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 150), /uncertain/);
+  await assert.rejects(maOperation('test-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 150), /Pause could not be confirmed/);
+  assert.equal(f.adapter.problem?.code, 'pause-unconfirmed');
   assert.equal(f.engine.ready, false); assert.equal(f.adapter.ownsPlayback, true);
   assert.equal(writes(f).filter(c => c.command === 'player_queues/pause').length, 1);
   assert.ok(f.remote.calls.filter(c => c.command === 'player_queues/get_active_queue').length < 10);
@@ -335,6 +496,7 @@ test('externally replaced queue items invalidate reveal without stopping somebod
   f.remote.queue.current_item!.queue_item_id = 'someone-else-same-recording';
   await eventually(() => f.participant(f.alex).ownPlayback === null);
   assert.equal(f.display().nowPlaying!.revealed, false); assert.equal(f.engine.ready, true);
+  assert.equal(f.adapter.problem?.code, 'external-playback'); assert.equal(f.adapter.problem?.recoveryRequired, false);
   await f.engine.advance(f.host().turnId!);
   assert.equal(f.remote.queue.state, 'playing'); assert.equal(writes(f).filter(c => c.command === 'player_queues/stop').length, 0);
 });
@@ -367,7 +529,11 @@ test('unsafe continuation changes stop owned playback and never advance the turn
   const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   f.remote.queue.autoplay_enabled = true;
-  await eventually(() => !f.engine.ready);
+  await eventually(() => f.adapter.problem?.code === 'queue-policy-stopped');
+  assert.equal(f.engine.ready, true); assert.equal(f.adapter.ownsPlayback, false);
+  assert.equal(f.adapter.problem?.recoveryRequired, false);
+  await eventually(() => f.participant(f.alex).ownPlayback === null);
+  assert.equal(f.host().playbackStatus, 'idle');
   assert.equal(f.remote.queue.state, 'idle'); assert.equal(f.host().current!.nickname, 'Alex');
 });
 

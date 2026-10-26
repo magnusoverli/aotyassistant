@@ -56,6 +56,10 @@ export async function startMusicAssistantFixture(port = 0) {
   let ignoredControl: 'pause' | 'resume' | 'stop' | undefined;
   let ignoredPolicy: 'autoplay' | 'repeat' | 'shuffle' | undefined;
   let queueGate: { entered(): void; result: Promise<boolean> } | undefined;
+  let inventoryGate: { entered(): void; result: Promise<boolean> } | undefined;
+  const readFailures = new Map<string, { remaining: number; status: number }>();
+  let lostAcknowledgement: string | undefined;
+  let applyLostCommand = true;
   let connections = 0;
   const requests: { path: string; port: number | undefined }[] = [];
   const events = new WebSocketServer({ noServer: true });
@@ -91,6 +95,14 @@ export async function startMusicAssistantFixture(port = 0) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     if (!authorizations.includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('PRIVATE unauthorized details'); return; }
     const { command, args } = JSON.parse(raw); calls.push({ command, args });
+    if (command === 'players/all' && inventoryGate) {
+      const gate = inventoryGate; inventoryGate = undefined; gate.entered();
+      const failed = await gate.result; res.statusCode = failed ? 503 : 200;
+      res.end(failed ? 'PRIVATE synthetic inventory failure' : JSON.stringify(speakers)); return;
+    }
+    if (lostAcknowledgement === command && !applyLostCommand) { lostAcknowledgement = undefined; res.destroy(); return; }
+    const readFailure = readFailures.get(command);
+    if (readFailure && readFailure.remaining-- > 0) { res.statusCode = readFailure.status; res.end('PRIVATE synthetic read failure'); return; }
     if (command === 'player_queues/get_active_queue' && queueGate) {
       const gate = queueGate; queueGate = undefined;
       const snapshot = JSON.stringify(queue); gate.entered();
@@ -166,7 +178,8 @@ export async function startMusicAssistantFixture(port = 0) {
     else if (command === 'player_queues/resume') { queue.state = 'playing'; queue.active = true; queue.elapsed_time = queue.resume_pos; player.playback_state = 'playing'; player.active_source = queue.queue_id; }
     else { res.statusCode = 400; res.end('Unexpected command'); return; }
     if (volumeDelay) { await new Promise(resolve => setTimeout(resolve, volumeDelay)); volumeReadPending = false; }
-    res.end(JSON.stringify(result));
+    if (lostAcknowledgement === command) { lostAcknowledgement = undefined; res.destroy(); }
+    else res.end(JSON.stringify(result));
     if (/^player_queues\/(play_media|pause|resume|stop|autoplay|repeat|shuffle)$/.test(command)) notify();
     if (command.startsWith('players/cmd/')) notify('player_updated', player.player_id);
   });
@@ -188,11 +201,23 @@ export async function startMusicAssistantFixture(port = 0) {
     requests, get connections() { return connections; },
     websocketCommands, get eventClients() { return authenticated.size; },
     notify, disconnectEvents() { for (const client of events.clients) client.terminate(); },
+    failReads(command: 'player_queues/get_active_queue' | 'player_queues/items' | 'players/get', count = 1, status = 503) {
+      readFailures.set(command, { remaining: count, status });
+    },
+    loseAcknowledgement(command: 'player_queues/play_media' | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/stop', apply = true) {
+      lostAcknowledgement = command; applyLostCommand = apply;
+    },
     holdNextQueueRead() {
       let enter!: () => void; let release!: (failed?: boolean) => void;
       const entered = new Promise<void>(resolve => { enter = resolve; });
       const result = new Promise<boolean>(resolve => { release = (failed = false) => resolve(failed); });
       queueGate = { entered: enter, result }; return { entered, release };
+    },
+    holdNextInventoryRead() {
+      let enter!: () => void; let release!: (failed?: boolean) => void;
+      const entered = new Promise<void>(resolve => { enter = resolve; });
+      const result = new Promise<boolean>(resolve => { release = (failed = false) => resolve(failed); });
+      inventoryGate = { entered: enter, result }; return { entered, release };
     },
     imageMode(mode: typeof imageMode) { imageMode = mode; },
     holdNextImageRead() {
