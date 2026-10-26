@@ -91,6 +91,7 @@ test('a failed start offers the visible error rather than claiming playback or r
   await page.request.post('/api/participant/join', { data: { nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('searchbox').press('Enter');
+  await expect(page.getByRole('button', { name: 'Play', exact: true }).first()).toBeVisible();
   await page.locator('.catalogue-results').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
   let plays = 0;
   await page.route('**/api/participant/play', async route => { plays++; await route.fulfill({ status: 503, json: { error: 'The speaker could not start this song.' } }); });
