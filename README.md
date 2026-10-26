@@ -46,7 +46,7 @@ The app discovers local addresses and Music Assistant automatically. Setup check
 
 ## How it works
 
-The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, open **Your music**, browse **Find music**, and add tracks to **Your selections** or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play first selection** in the player, then **Reveal details** to show the track information. The turn passes automatically when Music Assistant confirms the track has finished, or earlier with **Finish turn**.
+The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, open **Your music**, browse **Find music**, and add tracks to **Your playlist** or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play first selection** in the player, then **Reveal details** to show the track information. The turn passes automatically when Music Assistant confirms the track has finished, or earlier with **Finish turn**.
 
 There is one persistent room, not separate events or temporary sessions. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, or advancing a turn never starts the next track automatically. Before Music Assistant is connected, **Demo mode — no audio** lets you try the workflow without playing sound.
 
@@ -56,13 +56,13 @@ Pressing Play replaces the selected speaker or group’s queue with one track an
 
 Use this app on a **trusted LAN**. Anyone who can reach its guest port can also open the host controls, change settings, and manage the listening order. Home Assistant authentication protects the Ingress interface, not the separate LAN port. Do not publish that port to the internet.
 
-Private track lists are tied to browser credentials. Save a recovery key to retain access when changing phones or browser addresses. The app keeps unrevealed track details off the shared display, but cannot hide them in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
+Each participant browser has one automatic private track list. Use the same browser and guest address to retain access; there are no list-switching or cross-device recovery flows. The app keeps unrevealed track details off the shared display, but cannot hide them in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
 
 ## Guides and support
 
 - [Install, configure, update, and back up](DOCS.md)
 - [Host and participant guide](docs/using-the-app.md)
-- [Private lists and recovery](docs/private-lists.md)
+- [Private selections and persistence](docs/private-lists.md)
 - [Uploading audio](docs/uploaded-audio.md)
 - [Connection and playback troubleshooting](docs/troubleshooting.md)
 - [All documentation](docs/README.md) · [Changelog](CHANGELOG.md)

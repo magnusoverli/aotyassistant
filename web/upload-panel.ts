@@ -4,6 +4,7 @@ import { fieldControl } from './ui-components';
 import { ArtworkView } from './media';
 import { ViewNodes, children, prop, text } from './view-nodes';
 import { operationId, preparationRequest, type PreparationController } from './preparation-controller';
+import { RequestError } from './request';
 
 const prefix = '/api/participant/preparations';
 type Text = { title: string; artist: string; album: string };
@@ -19,6 +20,7 @@ export class UploadPanel {
   private get busy() { return Boolean(this.selection); }
   private recovering = false;
   private discarding = false;
+  private available = false;
   private progress = 0;
   private error = '';
   private notice = '';
@@ -42,10 +44,9 @@ export class UploadPanel {
     const ownerId = this.library.view?.ownerId;
     if (ownerId === this.ownerId) return;
     this.epoch++; this.xhr?.abort(); this.xhr = undefined; this.ownerId = ownerId; this.uploadId = undefined; this.preview = undefined;
-    // The first owner may be created by this selection. An already-bound selection
-    // cannot follow recovery or revocation into a different private list.
+    // An in-flight selection cannot cross an authorization change.
     if (this.selection?.ownerId) this.selection = undefined;
-    this.recovering = false; this.discarding = false; this.error = ''; this.notice = ''; this.text = { title: '', artist: '', album: '' };
+    this.recovering = false; this.discarding = false; this.available = false; this.error = ''; this.notice = ''; this.text = { title: '', artist: '', album: '' };
     if (!ownerId) return;
     try {
       const raw = localStorage.getItem(this.key(ownerId));
@@ -54,26 +55,33 @@ export class UploadPanel {
       if (!/^[a-f0-9-]{36}$/.test(draft.id)) return;
       this.uploadId = draft.id;
       if (draft.text && ['title', 'artist', 'album'].every(key => typeof draft.text[key] === 'string' && draft.text[key].length <= 1000)) this.text = draft.text;
-      const epoch = this.epoch;
-      queueMicrotask(() => { if (this.epoch === epoch) void this.recover(); });
     } catch { /* The server list remains authoritative. */ }
   }
   private async recover() {
-    if (!this.uploadId || this.recovering || this.discarding || this.busy || !navigator.onLine) return;
+    if (!this.uploadId || this.recovering || this.discarding || this.busy || !this.member() || this.library.loading || !navigator.onLine) return;
     const epoch = this.epoch; const id = this.uploadId; this.recovering = true; this.changed();
     try {
       const preview = await preparationRequest<UploadPreview>(`/uploads/${id}`);
       if (epoch !== this.epoch || id !== this.uploadId) return;
       this.preview = preview; if (!this.text.title) this.text = { title: preview.title, artist: preview.artist, album: preview.album };
       this.error = ''; this.persist();
-    } catch { if (epoch === this.epoch) this.error = 'The upload is unfinished or unavailable. Check again, or select the file again. Tracks already saved in your list are kept.'; }
+    } catch (error) {
+      if (epoch !== this.epoch || id !== this.uploadId) return;
+      if (error instanceof RequestError && error.status === 404) this.forgetAttempt();
+      // Background checks never recreate an old error after refresh. Keep uncertain
+      // drafts for a later check, but a missing upload has nothing left to review.
+    }
     finally { if (epoch === this.epoch) { this.recovering = false; this.changed(); } }
+  }
+  private forgetAttempt() {
+    this.uploadId = undefined; this.preview = undefined; this.text = { title: '', artist: '', album: '' }; this.persist();
   }
   private async choose(file: File) {
     this.syncOwner();
     if (this.busy || this.recovering || this.discarding || this.library.loading || this.library.saving || this.library.pending || !this.member() || !navigator.onLine) return;
     if (this.uploadId && (this.preview || this.text.title) && !confirm('Replace this uploaded song and its reviewed details? Your saved list will be kept.')) return;
     const selection = { ownerId: this.ownerId }; this.selection = selection; this.epoch++;
+    let uncertain = false; let rejected = false;
     this.progress = 0; this.error = ''; this.notice = ''; this.changed();
     try {
       await this.library.ensureOwner(); this.syncOwner();
@@ -92,15 +100,29 @@ export class UploadPanel {
           const progress = event.lengthComputable ? Math.round(event.loaded / event.total * 100) : 0;
           if (progress !== this.progress) { this.progress = progress; this.changed(); }
         };
-        xhr.onload = () => xhr.status === 200 ? resolve(xhr.response) : reject(new Error(xhr.response?.error ?? 'The file upload could not be confirmed.'));
-        xhr.onerror = () => reject(new Error('Upload connection lost. Check for a completed upload before selecting the file again.'));
-        xhr.onabort = () => reject(new Error('Upload interrupted. Check for a completed upload or select the file again.'));
+        xhr.onload = () => {
+          if (xhr.status === 200) resolve(xhr.response);
+          else { uncertain = xhr.status >= 500 || xhr.status === 0; rejected = !uncertain; reject(new Error(xhr.response?.error ?? 'The file upload could not be confirmed.')); }
+        };
+        xhr.onerror = () => { uncertain = true; reject(new Error('Upload connection lost. Reconnect or choose the file again.')); };
+        xhr.onabort = () => { uncertain = true; reject(new Error('Upload interrupted. Reconnect or choose the file again.')); };
         xhr.send(file);
       });
       if (this.selection !== selection) return;
       this.preview = preview; this.text = { title: preview.title, artist: preview.artist, album: preview.album }; this.persist();
-    } catch (error) { if (this.selection === selection) this.error = error instanceof Error ? error.message : 'The file was not uploaded.'; }
-    finally { if (this.selection === selection) { this.xhr = undefined; this.selection = undefined; this.changed(); } }
+    } catch (error) {
+      if (this.selection === selection) {
+        if (rejected) this.forgetAttempt();
+        this.error = error instanceof Error ? error.message : 'The file was not uploaded.';
+      }
+    }
+    finally {
+      if (this.selection === selection) {
+        this.xhr = undefined; this.selection = undefined; this.changed();
+        // Read back an uncertain upload; never resend the file or add it automatically.
+        if (uncertain) await this.recover();
+      }
+    }
   }
   private async discard() {
     if (!this.uploadId || this.recovering || this.discarding || this.library.saving || this.library.pending || !navigator.onLine) return;
@@ -109,18 +131,17 @@ export class UploadPanel {
       await preparationRequest(`/uploads/${id}/discard`, {});
       if (epoch !== this.epoch || id !== this.uploadId) return;
       this.uploadId = undefined; this.preview = undefined; this.error = ''; this.persist();
-    } catch (error) { if (epoch === this.epoch) this.error = error instanceof Error ? error.message : 'The draft could not be discarded.'; }
+    } catch (error) { if (epoch === this.epoch) this.error = error instanceof Error ? error.message : 'The previous file could not be cleared. Choose the file again. Your playlist is kept.'; }
     finally { if (epoch === this.epoch) { this.discarding = false; this.changed(); } }
   }
   private button(label: string, action: () => void | Promise<void>, disabled = false) {
     const button = el('button', label, 'secondary'); button.type = 'button'; button.disabled = disabled;
     button.onclick = () => { void action(); }; return button;
   }
-  stop(cancelled = false) {
+  stop() {
     this.epoch++;
     if (this.selection) {
-      this.error = cancelled ? '' : 'Upload interrupted. Check for a completed upload or select the file again.';
-      if (cancelled) this.notice = 'Upload cancelled.';
+      this.error = 'Upload interrupted. Reconnect or choose the file again.';
     }
     this.selection = undefined; this.xhr?.abort(); this.xhr = undefined;
     this.recovering = false; this.discarding = false; this.changed();
@@ -132,6 +153,9 @@ export class UploadPanel {
     if (this.uploadId && this.library.lastSavedUploadId === this.uploadId) {
       this.uploadId = undefined; this.preview = undefined; this.persist(); this.notice = 'Added to your list.';
     }
+    const available = this.member() && navigator.onLine && !this.library.loading && Boolean(this.ownerId);
+    if (available && !this.available) queueMicrotask(() => { if (!this.preview) void this.recover(); });
+    this.available = available;
     const disabled = !this.member() || !navigator.onLine || this.busy || this.recovering || this.discarding || this.library.loading || this.library.saving || Boolean(this.library.pending);
     const v = this.nodes;
     const button = (key: string, caption: string, action: () => void | Promise<void>, disabled = false) => {
@@ -143,7 +167,7 @@ export class UploadPanel {
       const message = v.el('progress-message', 'p', this.progress >= 100 ? 'Processing audio and artwork…' : `Uploading… ${this.progress}%`, 'muted small');
       const progress = v.get('progress', () => { const node = el('progress'); node.max = 100; node.setAttribute('aria-label', 'File upload progress'); message.setAttribute('role', 'status'); return node; });
       prop(progress, 'value', this.progress);
-      nodes.push(message, progress, button('cancel', 'Cancel upload', () => this.stop(true)));
+      nodes.push(message, progress);
     } else if (allowSelection) {
       const formats = v.el('formats', 'p', 'Supported formats: MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small');
       nodes.push(v.el('instructions', 'p', 'Choose one audio file, then review it before adding.', 'muted small'), button('choose', this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled), formats);
@@ -177,11 +201,6 @@ export class UploadPanel {
           }
         })();
       }; nodes.push(form);
-    }
-    if (this.uploadId && !this.busy) {
-      const actions = v.el('actions', 'div', undefined, 'actions');
-      children(actions, !this.preview && button('recover', 'Check completed upload', () => this.recover(), !navigator.onLine || this.recovering || this.discarding),
-        button('discard', 'Discard upload draft', () => this.discard(), !navigator.onLine || this.recovering || this.discarding || this.library.saving || Boolean(this.library.pending))); nodes.push(actions);
     }
     children(this.element, ...nodes); return this.element;
   }

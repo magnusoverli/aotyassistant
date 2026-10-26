@@ -80,7 +80,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await jordan.screenshot({ path: 'test-results/participant-circle.png', fullPage: true });
     await jordan.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern');
     await jordan.getByRole('button', { name: 'Search', exact: true }).click(); await saveChoice(jordan);
-    await expect(jordan.getByRole('button', { name: 'Play first selection' })).toBeDisabled();
+    await expect(jordan.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeDisabled();
     await expect(jordan.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await jordan.screenshot({ path: 'test-results/participant-prepared.png', fullPage: true });
     await showFind(jordan);
@@ -92,7 +92,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'next');
     expect((await (await jordan.request.get('/api/participant/state')).json()).position).toMatchObject({ seat: 2, total: 4 });
     await expect(host.getByRole('heading', { name: 'Alex', exact: true })).toBeVisible();
-    await expect(jordan.getByRole('button', { name: 'Play first selection', includeHidden: true })).toBeDisabled();
+    await expect(jordan.locator('#player-play-next')).toBeDisabled();
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
     await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeVisible();
@@ -100,7 +100,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Jordan');
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');
-    await expect(jordan.getByRole('button', { name: 'Play first selection', includeHidden: true })).toBeEnabled();
+    await expect(jordan.locator('#player-play-next')).toBeEnabled();
     await expect(sam.getByRole('heading', { name: 'Jordan’s turn.', exact: true })).toBeVisible();
     // Direct late joining preserves the current turn and the host's reordered rotation.
     const beforeArrival = await (await host.request.get('/api/host/state')).json();
@@ -134,7 +134,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(tv.getByRole('list', { name: 'Participant rotation' })).toHaveCount(0);
     await expect(jordan.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(jordan.locator('.preparation-list')).toHaveCount(0);
-    await expect(jordan.getByRole('button', { name: 'Play first selection' })).toHaveCount(0);
+    await expect(jordan.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toHaveCount(0);
   } finally {
     for (const context of contexts) await context.close(); await tvContext.close();
   }

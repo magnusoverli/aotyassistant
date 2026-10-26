@@ -26,6 +26,7 @@ export class ParticipantAccess {
     }).catch(error => {
       if (epoch !== this.epoch) return;
       if (error instanceof RequestError && error.status === 401) {
+        if (this.state === 'member') this.removed = true;
         this.state = 'unjoined'; this.message = ''; this.denied();
       } else {
         this.state = this.online() ? 'error' : 'offline';

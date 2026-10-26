@@ -7,6 +7,7 @@ import { outputLabel, updateOutputLabel } from './output';
 import { slot } from './page-layout';
 import { panel } from './ui-components';
 import { ViewNodes, attr, children, prop, text } from './view-nodes';
+import { ParticipantPlayerDetails } from './participant-player-details';
 
 type CommonOptions = {
   volume(level: number, commit: boolean): void;
@@ -27,7 +28,7 @@ type ParticipantOptions = CommonOptions & {
 };
 type PlaybackState = {
   view: View; projected: View; online: boolean; busy: boolean; starting: boolean;
-  firstSelection?: PreparedEntryView; selectionReady: boolean;
+  firstSelection?: PreparedEntryView; selectionReady: boolean; error?: string;
 };
 
 /** One persistent playback UI. Roles select presentation/actions, never broaden server permissions. */
@@ -36,6 +37,7 @@ export class Playback {
   private state?: PlaybackState;
   private volumeState?: VolumeState;
   private audibleVolume = 35;
+  private details?: ParticipantPlayerDetails;
 
   constructor(private options: HostOptions | ParticipantOptions) {}
 
@@ -61,7 +63,7 @@ export class Playback {
   }
   private get output() { return this.nodes.get('output', () => outputLabel(undefined, false)); }
 
-  clear() { this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear(); }
+  clear() { this.details?.destroy(); this.details = undefined; this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear(); }
 
   updateVolume(volume?: VolumeState) {
     if (!this.state) return;
@@ -69,6 +71,7 @@ export class Playback {
     if (volume?.available && volume.level && volume.level > 0) this.audibleVolume = volume.level;
     this.volumeState = volume;
     updateVolume(this.volume, volume);
+    if (this.options.role === 'participant') attr(this.volume.querySelector('output')!, 'data-unavailable', volume?.level == null ? '' : undefined);
     const mute = this.muteButton;
     const muted = volume?.level === 0;
     this.decorate(mute, muted ? 'Unmute' : 'Mute', muted ? 'muted' : 'volume');
@@ -84,7 +87,7 @@ export class Playback {
     }, true);
   }
 
-  private decorate(button: HTMLButtonElement, caption: string, icon: 'play' | 'pause' | 'stop' | 'volume' | 'muted' | 'reveal' | 'advance') {
+  private decorate(button: HTMLButtonElement, caption: string, icon: 'play' | 'pause' | 'stop' | 'volume' | 'muted' | 'reveal' | 'advance', mobileCaption?: string) {
     const paths = { play: 'M8 5l11 7-11 7Z', pause: 'M8 5v14M16 5v14', stop: 'M6 6h12v12H6Z',
       volume: 'M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
       muted: 'M11 5 6 9H3v6h3l5 4ZM16 9l6 6M22 9l-6 6',
@@ -98,7 +101,11 @@ export class Playback {
       svg.append(document.createElementNS('http://www.w3.org/2000/svg', 'path')); return svg;
     });
     attr(image.firstElementChild!, 'd', paths[icon]);
-    children(button, image, this.nodes.el(`${button.id}-caption`, 'span', caption));
+    // Keep descriptive names where the short visible label is already contained
+    // in it (e.g. Reveal details); Play pick uses its own visible mobile name.
+    attr(button, 'aria-label', mobileCaption && mobileCaption !== 'Play pick' ? caption : undefined);
+    children(button, image, this.nodes.el(`${button.id}-caption`, 'span', caption, mobileCaption ? 'player-desktop-only' : ''),
+      mobileCaption ? this.nodes.el(`${button.id}-mobile-caption`, 'span', mobileCaption, 'player-mobile-only') : undefined);
   }
 
   /** Telemetry never remounts buttons, artwork, disclosures or a slider being dragged. */
@@ -159,7 +166,7 @@ export class Playback {
         if ((document.activeElement === stop || document.activeElement === document.body) && next && !next.disabled) next.focus({ preventScroll: true });
       });
     }, true);
-    this.decorate(stop, host ? 'Stop song — keep turn' : 'Stop song', 'stop');
+    this.decorate(stop, host ? 'Stop song — keep turn' : 'Stop song', 'stop', host ? undefined : 'Stop');
     prop(stop, 'title', 'Stop the song without advancing the turn');
     prop(stop, 'disabled', !permitted || !playback || playback.status === 'stopped' || (host && state.busy));
     const controls = this.nodes.el('transport', 'div', undefined, 'playback-transport');
@@ -171,7 +178,7 @@ export class Playback {
       const next = state.firstSelection;
       const ready = Boolean(next && next.sourceAvailable !== false && permitted && view.catalogue?.playbackAvailable && state.selectionReady);
       prop(play, 'hidden', !next); prop(play, 'disabled', !ready || starting); attr(play, 'data-player-ready', String(ready));
-      prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here'); this.decorate(play, 'Play first selection', 'play');
+      prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here'); this.decorate(play, 'Play first selection', 'play', 'Play pick');
     }
     children(controls, play, transport, stop);
     return controls;
@@ -226,21 +233,37 @@ export class Playback {
     const playback = view.myTurn ? projected.ownPlayback : undefined;
     const next = state.firstSelection; const preview = playback?.track ?? next;
     const card = this.element;
+    const details = this.details ??= new ParticipantPlayerDetails();
+    details.update({ title: preview?.title, artist: preview?.artist, album: preview?.album,
+      next: next?.title, error: state.error || (!online ? 'Connection lost. Your saved songs are kept. Controls return when the room reconnects.'
+        : !view.connected ? 'The room cannot confirm playback or save changes. Ask the host to check Settings.' : undefined) });
     const now = v.el('now', 'div', undefined, 'private-now-playing');
     const track = v.el('track', 'div'); const title = v.el('title', 'h2', preview?.title ?? (view.myTurn ? 'Choose a song' : 'Waiting for your turn'));
     prop(title, 'title', title.textContent!);
     const artist = v.el('artist', 'div', undefined, 'artist-credit');
     const credit = v.el('credit', 'p', preview?.artist ?? 'Search or use your list.', 'artist'); prop(credit, 'title', credit.textContent!);
     children(artist, Boolean(preview?.artistArtwork) && v.get('portrait', () => new ArtworkView('Artist image', 'artist-portrait')).update(preview?.artistArtwork), credit);
-    children(track, title, artist, this.output);
+    children(track, title, artist, this.output, details.button);
     children(now, v.get('cover', () => new ArtworkView('Album artwork', 'mini-record')).update(preview?.artwork), track);
     const progress = this.progress; const status = progress.querySelector<HTMLElement>('.playback-status')!;
     const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
-    children(statusLine, status, v.el('privacy', 'span', playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player', 'privacy-tag'));
+    const privacy = playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player';
+    const notice = state.error ? 'Action failed · tap details' : !online ? 'Connection lost' : !view.connected ? 'Player unavailable'
+      : !view.myTurn ? 'Waiting for turn' : !playback && !starting ? next ? 'Ready to play' : 'Choose a song' : '';
+    const mobileNotice = v.el('mobile-notice', 'span', undefined, 'player-mobile-only player-mobile-notice');
+    children(mobileNotice, v.el('mobile-notice-caption', 'span', notice),
+      state.error ? v.el('mobile-error-detail', 'span', ` ${state.error}`, 'sr-only') : undefined);
+    attr(mobileNotice, 'role', state.error ? 'alert' : 'status');
+    card.classList.toggle('has-player-notice', Boolean(notice));
+    card.classList.toggle('has-player-error', Boolean(state.error));
+    const mobilePrivacy = v.el('mobile-privacy', 'span', playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Revealed' : 'Revealing' : 'Hidden' : '', 'player-mobile-only player-mobile-privacy');
+    prop(mobilePrivacy, 'title', playback ? privacy : '');
+    children(statusLine, status, mobileNotice, v.el('privacy', 'span', privacy, 'privacy-tag'), mobilePrivacy);
     if (statusLine.parentElement !== progress) progress.prepend(statusLine);
     card.classList.toggle('has-next-pick', Boolean(next));
+    card.classList.toggle('has-active-song', Boolean(playback && playback.status !== 'stopped'));
     const reveal = this.button('player-reveal', 'Reveal details', () => options.reveal()); reveal.classList.add('reveal-button');
-    this.decorate(reveal, playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal');
+    this.decorate(reveal, playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal', playback?.revealed ? 'Revealed' : 'Reveal');
     prop(reveal, 'title', playback?.revealed ? 'Details revealed' : 'Reveal track details on the room display');
     prop(reveal, 'disabled', !online || !view.connected || !view.myTurn || !playback || playback.revealed);
     const finish = this.button('finish-my-turn', 'Pass turn', () => { void options.run(() => options.finish()); }, true);
@@ -248,6 +271,6 @@ export class Playback {
     prop(finish, 'title', playback ? 'Finish your turn and pass to the next participant' : 'Pass to the next participant');
     prop(finish, 'disabled', busy || !online || !view.connected || !view.myTurn || starting);
     const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, reveal, finish);
-    children(card, now, this.transport(state), progress, this.footer(ending));
+    children(card, now, this.transport(state), progress, this.footer(ending), details.dialog);
   }
 }

@@ -27,14 +27,14 @@ for (const paused of [false, true]) test(`direct and prepared replacement both r
   try {
     const plays: string[] = []; page.on('request', request => { if (/\/participant\/(play|preparations\/play)$/.test(new URL(request.url()).pathname)) plays.push(request.url()); });
     await page.getByRole('button', { name: 'Add to list', exact: true }).click();
-    await expect(page.locator('.list-count')).toHaveText(' · 1');
+    await expect(page.locator('.list-count')).toHaveText('1 track');
     await page.getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(page.locator('.player-pending')).toHaveCount(0);
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
     const original = await (await page.request.get('/api/participant/state')).json();
     const prompts: string[] = [];
-    for (const name of ['Play', 'Play first selection']) {
+    for (const name of ['Play', 'Play pick']) {
       page.once('dialog', async dialog => { prompts.push(dialog.message()); await dialog.dismiss(); });
       await page.getByRole('button', { name, exact: true }).click();
       expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).toBe(original.ownPlayback.id);
@@ -112,7 +112,7 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     expect(finishes).toBe(1); expect(actions).not.toContain('stop');
     await page.getByRole('button', { name: 'Reveal details', exact: true }).click();
-    await expect(page.getByText('Revealing…', { exact: true })).toBeVisible();
+    await expect(page.locator('.player-mobile-privacy')).toHaveText('Revealing');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     reveal.release(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();

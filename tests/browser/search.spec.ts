@@ -25,7 +25,8 @@ test('participant searches privately with empty/errors but cannot play until a s
       if (response.url().includes('/api/participant/search')) void response.text().then(text => responses.push(text)).catch(() => {});
     });
     await showFind(alice);
-    await expect(alice.getByText('Your search', { exact: true })).toBeVisible();
+    await expect(alice.getByText('Your search', { exact: true })).toBeHidden();
+    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
     await expect(alice.getByText('Choose a speaker in host settings before playing. You can still prepare tracks.', { exact: true })).toBeVisible();
     await expect(alice.locator('.catalogue-panel').getByRole('link', { name: 'host settings', exact: true })).toHaveAttribute('href', '/host/settings');
     await expect(alice.getByRole('button', { name: 'Artists', exact: true })).toBeVisible();

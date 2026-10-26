@@ -10,6 +10,7 @@ export class PlayerReturn {
   private target?: HTMLElement;
   private available = false;
   private failed = false;
+  private reviewPlayer = false;
   private observer = new IntersectionObserver(() => this.visibility());
 
   constructor() {
@@ -17,16 +18,18 @@ export class PlayerReturn {
     this.status.setAttribute('role', 'status'); this.element.hidden = true;
     this.jump.onclick = event => {
       if (!this.target) return;
-      const destination = this.failed ? document.getElementById('main-content')! : this.target;
+      const destination = this.failed && !this.reviewPlayer ? document.getElementById('main-content')! : this.target;
       event.preventDefault(); destination.focus({ preventScroll: true });
       destination.scrollIntoView({ block: 'start', behavior: 'instant' });
+      if (this.failed && this.reviewPlayer) destination.querySelector<HTMLButtonElement>('.player-details-open')?.click();
     };
     this.element.append(this.status, this.jump);
     window.visualViewport?.addEventListener('resize', () => this.visibility());
   }
 
   update(view: View | undefined, starting: boolean, connected: boolean, error: string) {
-    const target = (error ? document.querySelector<HTMLElement>('.app-content > .error') : document.getElementById('participant-player')) ?? undefined;
+    this.reviewPlayer = Boolean(error && document.getElementById('participant-player'));
+    const target = (error && !this.reviewPlayer ? document.querySelector<HTMLElement>('.app-content > .error') : document.getElementById('participant-player')) ?? undefined;
     if (target !== this.target) {
       this.observer.disconnect(); this.target = target;
       if (target) this.observer.observe(target);
@@ -34,7 +37,7 @@ export class PlayerReturn {
     const playback = view?.myTurn ? view.ownPlayback : undefined;
     this.failed = Boolean(error);
     text(this.jump, error ? 'Review status' : 'Go to player');
-    attr(this.jump, 'href', error ? '#main-content' : '#participant-player');
+    attr(this.jump, 'href', error && !this.reviewPlayer ? '#main-content' : '#participant-player');
     this.available = Boolean(target && view?.myTurn && (starting || playback || error));
     // Only authoritative snapshots can say Playing, Paused or Revealed.
     const caption = error ? 'Check playback' : !connected ? 'Connection lost' : starting ? 'Starting…'

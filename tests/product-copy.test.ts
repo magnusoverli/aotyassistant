@@ -24,7 +24,7 @@ test('documentation and distribution metadata describe the same music-sharing pr
   assert.ok(read('.github/ISSUE_TEMPLATE/bug-report.yml').includes(`label: ${productName} version`));
 });
 
-test('the display rename preserves installation, browser and recovery identities', () => {
+test('the display rename preserves installation, browser and retained-draft identities', () => {
   assert.equal(JSON.parse(read('package.json')).name, 'albums-of-the-year');
   assert.match(read('config.yaml'), /^slug: albums_of_the_year$/m);
   assert.match(read('config.yaml'), /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);

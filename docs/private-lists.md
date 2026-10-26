@@ -1,6 +1,6 @@
-# Private lists and recovery
+# Private selections and persistence
 
-**Your selections** contains a participant’s ordered track choices. Access is tied to private browser credentials, not a display name. Other participants, the host, and the room display do not receive its contents or counts.
+**Your playlist** is the participant browser’s one automatic, persistent list of track choices. Its subtitle shows the number of upcoming tracks, excluding played or removed songs. There is no list creation, selection, switching, or recovery workflow. An empty list is ready for searching and adding songs immediately after joining. Access is tied to private browser credentials, not a display name. Other participants, the host, and the room display do not receive its contents or counts.
 
 ## Save and arrange
 
@@ -14,17 +14,17 @@ The app never autoplays a list or sends the whole list to Music Assistant. Faile
 
 **Saved** means the server acknowledged durable storage. **Saving** and **Save not confirmed** do not. A pending edit is retained in that browser for explicit retry/review, not automatically replayed. If another tab changed the list, the latest saved list is loaded before retrying the change.
 
-Lists allow 200 upcoming choices, 1,000 retained entries including history, and 10 authorized devices. Capacity errors leave existing work intact. Save-operation retries are retained for seven days.
+Lists allow 200 upcoming choices and 1,000 retained entries including history. Capacity errors leave existing work intact. Save-operation retries are retained for seven days.
 
-## Keep access when changing devices
+## Keep the same browser identity
 
-Open **List access → Create recovery key**. Keep the key private: anyone with it can access the saved list. On another browser/device, open **Recover a saved list**, enter the key, and select **Recover list**. Use **Revoke other devices** to remove other browsers’ access if needed.
+Use the same browser and guest address. Refreshes, additional tabs and server restarts reuse the same list. Removing a participant from the listening order does not delete their songs or uploads; rejoining from that browser reuses its existing list. If only the list cookie is missing, a still-valid room membership can reattach the same server-side list automatically.
 
-- A display name does not recover a list.
-- Removing a person from the listening order does not delete their music.
-- Clearing cookies/site data, using a different browser, or changing the guest address can lose browser access. Use the recovery key.
-- Without browser credentials or a recovery key, there is no host-assisted recovery path.
-- A recovery key cannot restore files deleted from the server or lost without a backup.
+- A matching display name never grants access to another participant’s songs.
+- Clearing all browser credentials, using a different browser, or changing the guest origin can lose access. There is no cross-device transfer or host-assisted list recovery feature.
+- A load or storage failure is reported as an error, not treated as permission to replace saved songs with an empty list.
+- A leftover list cookie from an earlier installation does not block initial setup when no saved file exists for it. Missing or unreadable data for an already-linked participant still fails safely instead of being replaced.
+- Existing authorized lists and uploaded-file references are preserved when upgrading. Legacy list records are read compatibly and written in schema 2 without obsolete recovery fields when adopted or saved. Unassociated old files are not deleted or merged by nickname.
 
 ## Connection changes
 
@@ -32,4 +32,4 @@ Speaker changes retain saved choices and private browsing. Reauthorizing the sam
 
 Disconnecting and replacing a server does not delete old choices, but they remain unavailable rather than being silently matched to another catalogue. Provider removals or unavailable recordings also leave saved entries visible. Refresh expired search results and select the intended recording again; saved list entries are independently durable.
 
-Uploaded files use the same privacy, history, and recovery rules. Reversible removal retains the audio; [permanent deletion](uploaded-audio.md#storage-and-deletion) is a separate action.
+Uploaded files use the same ownership, persistence and history rules. Reversible removal retains the audio; [permanent deletion](uploaded-audio.md#storage-and-deletion) is a separate action.

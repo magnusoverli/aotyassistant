@@ -10,6 +10,7 @@ import { UploadAssets, uploadTextSchema } from './uploads.js';
 import { artworkSize, body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { maOperation } from './ma-operation.js';
+import { PreparationIdentity } from './preparation-identity.js';
 
 const prefix = '/api/participant/preparations';
 const uuid = z.string().uuid();
@@ -20,43 +21,33 @@ const empty = z.object({}).strict();
 export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets) {
   const streams = new EventStreams(200, 'Too many private-list connections. Close unused tabs.');
   const rates = new Map<string, { count: number; start: number }>();
-  const initializing = new Map<string, { credential: string; expires: number }>();
-  const inits = new Map<string, ReturnType<PreparationManager['createOwner']>>();
+  const identity = new PreparationIdentity(manager, config.dataDir);
   const member = (req: Request) => rawCookie(req, 'aoty_participant');
   const credential = (req: Request) => rawCookie(req, cookieName);
   const setCookie = (res: Response, value: string) => setPrivateCookie(res, cookieName, value, prefix, config.guestUrl);
   const timer = setInterval(() => {
     const now = Date.now(); for (const [key, value] of rates) if (now - value.start > 60_000) rates.delete(key);
-    for (const [key, value] of initializing) if (value.expires < now) initializing.delete(key);
   }, 60_000); timer.unref();
   app.use(prefix, (req, _res, next) => {
     if (req.method === 'GET' || req.path === '/play') return next();
-    const recovery = req.path === '/recover' || req.path === '/init';
-    const key = recovery ? `identity:${req.socket.remoteAddress}` : `owner:${createHash('sha256').update(credential(req)).digest('hex')}`;
+    const initializing = req.path === '/init';
+    const key = initializing ? `identity:${createHash('sha256').update(member(req)).digest('hex')}` : `owner:${createHash('sha256').update(credential(req)).digest('hex')}`;
     const now = Date.now(); let rate = rates.get(key); if (!rate || now - rate.start > 60_000) rate = { count: 0, start: now };
     if (rates.size > 5000) return next(new AppError(503, 'Private lists are busy. Try again shortly.'));
-    rates.set(key, rate); rate.count++; next(rate.count > (recovery ? 20 : 180) ? new AppError(429, 'Too many list changes. Wait a minute; saved entries were kept.') : undefined);
+    rates.set(key, rate); rate.count++; next(rate.count > (initializing ? 60 : 180) ? new AppError(429, 'Too many list changes. Wait a minute; saved entries were kept.') : undefined);
   });
   app.get(`${prefix}/state`, async (req, res) => {
-    if (!credential(req)) { res.status(401).json({ code: 'missing-library', error: 'No private list is linked to this browser. Add a track to create one, or recover your existing list.' }); return; }
+    if (!credential(req)) throw new AppError(401, 'Your selections are not ready. Reload the participant page.');
     const view = await manager.read(credential(req)); setCookie(res, credential(req)); res.json(view);
     void manager.cleanupDeletedUploads(credential(req), (ownerId, assetId) => uploads.remove(ownerId, assetId)).catch(() => {});
   });
   app.post(`${prefix}/init`, async (req, res) => {
     body(req, empty);
-    if (credential(req)) { const view = await manager.read(credential(req)); setCookie(res, credential(req)); res.json(view); return; }
     const context = engine.catalogueContext(member(req));
-    const existing = initializing.get(context);
-    if (existing && existing.expires > Date.now()) { const view = await manager.read(existing.credential); setCookie(res, existing.credential); res.json(view); return; }
-    // Coalesce simultaneous first-page requests for this authenticated room member.
-    const key = `init:${context}`;
-    const previous = inits.get(key);
-    const pending = previous ?? manager.createOwner(); if (!previous) inits.set(key, pending);
-    try {
-      const owner = await pending;
-      if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed before the list was linked.');
-      initializing.set(context, { credential: owner.credential, expires: Date.now() + 5 * 60_000 }); setCookie(res, owner.credential); res.json(owner.view);
-    } finally { if (inits.get(key) === pending) inits.delete(key); }
+    const owner = await identity.ensure(member(req), credential(req));
+    if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed before selections were ready.');
+    setCookie(res, owner.credential); res.json(owner.view);
+    void manager.cleanupDeletedUploads(owner.credential, (ownerId, assetId) => uploads.remove(ownerId, assetId)).catch(() => {});
   });
   app.post(`${prefix}/add`, async (req, res) => {
     const input = body(req, z.object({ operation: preparationOperationSchema, trackId: z.string().min(1).max(1000) }).strict());
@@ -145,22 +136,6 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     const latest = await manager.selection(credential(req), entryId);
     if (JSON.stringify(selection) !== JSON.stringify(latest)) throw new AppError(403, 'Saved artwork access changed.');
     res.type(image.contentType).send(image.body);
-  });
-  app.post(`${prefix}/recovery-key`, async (req, res) => {
-    const input = body(req, z.object({ revision: z.number().int().nonnegative() }).strict());
-    res.json(await manager.issueRecoveryKey(credential(req), input.revision));
-  });
-  app.post(`${prefix}/recover`, async (req, res) => {
-    const input = body(req, z.object({ recoveryKey: z.string().min(1).max(100), replace: z.boolean().default(false) }).strict());
-    if (credential(req) && !input.replace) {
-      let current;
-      try { current = await manager.read(credential(req)); } catch (error) { if (!(error instanceof AppError) || error.status !== 401) throw error; }
-      if (current && current.ownerId !== input.recoveryKey.split('.')[0]) throw new AppError(409, 'This browser already has a private list. Save its recovery key before explicitly replacing access.');
-    }
-    const result = await manager.recover(input.recoveryKey); setCookie(res, result.credential); res.json(result.view);
-  });
-  app.post(`${prefix}/revoke-devices`, async (req, res) => {
-    const input = body(req, z.object({ revision: z.number().int().nonnegative() }).strict()); res.json(await manager.revokeOtherDevices(credential(req), input.revision));
   });
   // This path receives both HttpOnly cookies. One connection carries independently filtered feeds.
   app.get(`${prefix}/live`, async (req, res) => {

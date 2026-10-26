@@ -49,7 +49,7 @@ CI runs both suites on native amd64 and aarch64 runners. They exercise actual pa
 
 - Describe product behaviour in the present tense. Use neutral language and direct instructions, such as “Select a speaker”.
 - Use exact interface labels in procedures. Distinguish participant, host, and public-display access.
-- Use **listening room**, **display name**, **Your music**, **Your selections**, **Play first selection**, **Move to top**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
+- Use **listening room**, **display name**, **Your music**, **Your playlist**, **Play first selection**, **Move to top**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
 - Describe music discovery and turn-taking, not annual awards, voting, continuous playlist playback, or remote synchronized listening. Scope privacy claims to this app.
 - Keep display copy in `src/product.ts` aligned with app/package/image metadata and the GitHub About description. Preserve installation IDs, API paths, cookies, and storage keys during wording changes.
 - Keep internal discussions, personal accounts, and temporary progress reports out of product documentation.

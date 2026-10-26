@@ -88,7 +88,7 @@ test('uploads stream privately, retry identically, reject changed/foreign IDs an
   assert.equal(f.remote.calls.filter(call => /play_media|add_track/.test(call.command)).length, 0);
 });
 
-test('uploaded entries preserve list privacy, metadata corrections, durable recovery and idempotent save replies without catalogue bindings', async t => {
+test('uploaded entries preserve privacy, metadata, automatic list persistence and idempotent saves without catalogue bindings', async t => {
   const f = await fixture(t); const added = await f.add();
   assert.equal(added.view.upcoming[0]!.title, 'My exact recording'); assert.equal(added.view.upcoming[0]!.source, 'upload');
   assert.equal(added.view.upcoming[0]!.sourceAvailable, false);
@@ -99,8 +99,7 @@ test('uploaded entries preserve list privacy, metadata corrections, durable reco
   assert.equal((await f.request(prefix + '/add-upload', { ...added.body, operation: op(0) }, f.second.credentials)).status, 404);
   const duplicate = await f.add(); assert.equal(duplicate.entryId, added.entryId); assert.equal(duplicate.view.upcoming.length, 1);
   assert.equal((await readdir(join(f.directory, 'uploads'))).length, 1, 'Unreferenced duplicate bytes are discarded only after durable list commit.');
-  const recovery = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: duplicate.view.revision }, f.first.library);
-  const recovered = await f.request(prefix + '/recover', { recoveryKey: recovery.recoveryKey }); const newCookie = cookie(recovered);
+  const initialized = await f.request(prefix + '/init', {}, f.first.membership); const newCookie = cookie(initialized);
   assert.equal((await f.json<PreparationView>(prefix + '/state', undefined, newCookie)).upcoming[0]!.title, 'My exact recording');
   await f.connect(); assert.equal((await f.json<PreparationView>(prefix + '/state', undefined, newCookie)).upcoming[0]!.sourceAvailable, true);
   await f.integrations.clear(f.integrations.view().revision); await f.connect();
@@ -240,22 +239,22 @@ test('the real analysis child fails clearly when FFprobe is missing rather than 
   await assert.rejects(analyzeUpload(dir, 'test.mp3'), error => error instanceof AppError && [422, 503].includes(error.status));
 });
 
-test('large streamed files have no storage quota, and slow processing/device revocation stays outside the player lane', async t => {
+test('large streamed files have no storage quota, and slow processing/authorization changes stay outside the player lane', async t => {
   let enter!: () => void; let release!: () => void;
   const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
   t.after(() => release());
   const f = await fixture(t, async (directory, filename) => { if (filename === 'slow.mp3') { enter(); await gate; } return fixtureUploadAnalysis(directory, filename); });
   await f.connect(); const added = await f.add(); const played = await f.play(added);
   const large = await f.upload(f.second.credentials, randomUUID(), Buffer.alloc(5 * 1024 * 1024, 1), 'large.mp3'); assert.equal(large.status, 200);
-  const recovery = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: 0 }, f.second.library);
-  const recovered = await f.request(prefix + '/recover', { recoveryKey: recovery.recoveryKey }); const recoveredCookie = cookie(recovered); const recoveredView = await recovered.json() as PreparationView;
   const uploadId = randomUUID(); const uploading = f.upload(f.second.credentials, uploadId, uploadBytes, 'slow.mp3'); await entered;
   const paused = await f.json('/api/participant/control', { turnId: played.view.turnId, playbackId: played.view.ownPlayback!.id, action: 'pause' }, f.first.membership);
   assert.equal(paused.ownPlayback!.status, 'paused');
-  await f.json(prefix + '/revoke-devices', { revision: recoveredView.revision }, recoveredCookie);
+  const replacement = `${f.second.ownerId}.${'x'.repeat(43)}`; const replacementCookie = `aoty_preparation=${replacement}`;
+  const store = new PreparationFileStore(f.directory); const state = (await store.load(f.second.ownerId))!;
+  state.credentials = [{ hash: createHash('sha256').update(replacement).digest('hex'), createdAt: Date.now() }]; await store.save(state);
   release(); const finished = await uploading; assert.equal(finished.status, 401);
   assert.equal((await f.request(prefix + `/uploads/${uploadId}`, undefined, f.second.library)).status, 401);
-  assert.equal((await f.request(prefix + `/uploads/${uploadId}`, undefined, recoveredCookie)).status, 200);
+  assert.equal((await f.request(prefix + `/uploads/${uploadId}`, undefined, replacementCookie)).status, 200);
   assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/stop').length, 0);
 });
 

@@ -128,35 +128,21 @@ test('private owner events disclose nothing to another owner and disconnected li
   assert.equal(ownerEvents.length, 1); off(); offOther(); offBroken();
 });
 
-test('read access requires the private owner secret, never a nickname, owner ID, or recovery key used as a device credential', async () => {
+test('read access requires the private owner secret, never a nickname or owner ID', async () => {
   const f = await fixture(); await f.add();
   for (const credential of ['Alex', f.owner.view.ownerId, '../state', `${f.owner.view.ownerId}.${'z'.repeat(43)}`, `${randomUUID()}.${'z'.repeat(43)}`, '', null as unknown as string]) {
     await assert.rejects(f.manager.read(credential), status(401));
   }
-  const recovery = await f.manager.issueRecoveryKey(f.owner.credential, (await f.op()).revision);
-  await assert.rejects(f.manager.read(recovery.recoveryKey), status(401)); await assert.rejects(f.manager.recover(f.owner.credential), status(401));
 });
 
-test('private recovery survives restart, stores hashes only, rotates explicitly, and revokes other devices without deleting tracks', async () => {
+test('participant binding keeps existing authorization and saves only hashed credentials', async () => {
   const f = await fixture(); const first = await f.add();
-  const oldKey = await f.manager.issueRecoveryKey(f.owner.credential, first.view.revision);
-  const key = await f.manager.issueRecoveryKey(f.owner.credential, oldKey.view.revision);
-  await assert.rejects(f.manager.recover(oldKey.recoveryKey), status(401));
-  const manager = new PreparationManager(f.store, f.now); const device = await manager.recover(key.recoveryKey);
-  assert.equal(device.view.ownerId, f.owner.view.ownerId); assert.equal(device.view.upcoming[0]!.id, first.entryId); assert.notEqual(device.credential, f.owner.credential);
-  const oldEvents: unknown[] = []; const off = await manager.subscribe(f.owner.credential, view => oldEvents.push(view));
-  const view = await manager.revokeOtherDevices(device.credential, device.view.revision); assert.equal(view.upcoming.length, 1); assert.deepEqual(oldEvents, [null]); off();
-  await assert.rejects(manager.read(f.owner.credential), status(401)); assert.deepEqual(await manager.read(device.credential), view);
-  const raw = JSON.stringify(await f.store.load(view.ownerId));
-  for (const secret of [f.owner.credential, device.credential, key.recoveryKey, oldKey.recoveryKey]) assert.ok(!raw.includes(secret));
-});
-
-test('device capacity never silently revokes an existing device or deletes preparation', async () => {
-  const f = await fixture(); await f.add(); const recovery = await f.manager.issueRecoveryKey(f.owner.credential, (await f.op()).revision);
-  let last = f.owner.credential;
-  for (let i = 1; i < preparationLimits.devices; i++) last = (await f.manager.recover(recovery.recoveryKey)).credential;
-  await assert.rejects(f.manager.recover(recovery.recoveryKey), status(409));
-  assert.equal((await f.manager.read(f.owner.credential)).upcoming.length, 1); assert.equal((await f.manager.read(last)).upcoming.length, 1);
+  const credential = `${first.view.ownerId}.${'x'.repeat(43)}`;
+  await f.manager.bindParticipant(first.view.ownerId, credential);
+  assert.deepEqual(await f.manager.read(credential), first.view);
+  assert.deepEqual(await f.manager.read(f.owner.credential), first.view);
+  const raw = JSON.stringify(await f.store.load(first.view.ownerId));
+  assert.ok(!raw.includes(credential)); assert.ok(!raw.includes(f.owner.credential)); assert.ok(!raw.includes('recoveryHash'));
 });
 
 test('failed writes retain saved data; ambiguous committed writes reconcile by operation ID without duplicate adds', async () => {
@@ -201,7 +187,7 @@ test('corrupt/mismatched/oversized preparation files fail closed and never overw
   const other = await f.manager.createOwner(); const filename = join(dir, 'preparations', `${f.owner.view.ownerId}.json`);
   const initial = await readFile(filename, 'utf8');
   await writeFile(join(dir, 'state.json'), 'Unrelated existing event state');
-  for (const bad of ['broken json', JSON.stringify({ ...JSON.parse(initial), schema: 2 }), JSON.stringify({ ...JSON.parse(initial), ownerId: randomUUID() })]) {
+  for (const bad of ['broken json', JSON.stringify({ ...JSON.parse(initial), schema: 3 }), JSON.stringify({ ...JSON.parse(initial), ownerId: randomUUID() })]) {
     await writeFile(filename, bad); await assert.rejects(f.manager.read(f.owner.credential), status(503)); assert.equal(await readFile(filename, 'utf8'), bad);
     assert.equal((await f.manager.read(other.credential)).ownerId, other.view.ownerId);
   }
@@ -276,7 +262,7 @@ test('captured additions retry by receipt even after their original catalogue re
   await assert.rejects(f.manager.addCaptured(f.owner.credential, operation, 'different-reference', async () => selected()), status(409));
 });
 
-test('future private uploads share list ordering/history/recovery without disclosing or accepting file paths', async () => {
+test('private uploads share the same persistent ordering and history without disclosing or accepting file paths', async () => {
   const f = await fixture(); const first = await f.add(); const assetId = randomUUID();
   const upload: SavedSelection = { source: 'upload', assetId, artworkAssetId: randomUUID(), metadata: { ...selected().metadata, provider: 'Uploaded file' } };
   const added = await f.manager.add(f.owner.credential, await f.op(), upload);
@@ -284,8 +270,7 @@ test('future private uploads share list ordering/history/recovery without disclo
   const moved = await f.manager.move(f.owner.credential, await f.op(), added.entryId, first.entryId);
   assert.deepEqual(moved.view.upcoming.map(entry => entry.source), ['upload', 'music-assistant']);
   assert.ok(!JSON.stringify(moved.view).includes(assetId));
-  const key = await f.manager.issueRecoveryKey(f.owner.credential, moved.view.revision); const restored = await new PreparationManager(f.store, f.now).recover(key.recoveryKey);
-  assert.deepEqual(await f.manager.selection(restored.credential, added.entryId), upload);
+  assert.deepEqual(await new PreparationManager(f.store, f.now).selection(f.owner.credential, added.entryId), upload);
   await assert.rejects(f.manager.add(f.owner.credential, await f.op(), { ...upload, path: '/etc/passwd' } as SavedSelection), status(400));
 });
 

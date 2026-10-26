@@ -20,7 +20,7 @@ test('the shared playback component preserves host and participant actions, priv
     const start = await participant.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId: null, trackId: 'demo:aurora' } });
     expect(start.ok()).toBe(true);
     await expect(participant.locator('#player-transport')).toBeEnabled();
-    await expect(participant.locator('.playback-card h2')).toHaveText('Northern Lights');
+    await expect(participant.locator('.private-now-playing h2')).toHaveText('Northern Lights');
     await expect(host.locator('.host-live')).not.toContainText('Northern Lights');
     await expect(host.locator('.host-progress .track-times')).toBeEmpty();
     await expect(waiting.locator('#player-transport')).toBeDisabled();

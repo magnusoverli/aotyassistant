@@ -105,7 +105,7 @@ test('saved catalogue entries/artwork survive expired references, fresh readers,
   assert.equal(plays.length, 1); assert.deepEqual(plays[0]!.args.media, [f.remote.track.uri]);
 });
 
-test('one participant stream separates room and owner events, keeps room access after private revocation and revokes removed membership', async t => {
+test('one participant stream separates room and owner events and revokes removed membership', async t => {
   const f = await fixture(t); const added = await f.add();
   assert.equal((await f.request(prefix + '/live', undefined, f.first.privateCookie)).status, 401);
   const events = await f.openStream(prefix + '/live', f.first.credentials);
@@ -127,12 +127,6 @@ test('one participant stream separates room and owner events, keeps room access 
       return;
     }
   };
-  const key = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: added.view.revision }, f.first.privateCookie);
-  await expectEvent('preparation');
-  const recovered = await f.request(prefix + '/recover', { recoveryKey: key.recoveryKey }); const newCookie = cookie(recovered); const view = await recovered.json() as PreparationView;
-  await expectEvent('preparation');
-  await f.json(prefix + '/revoke-devices', { revision: view.revision }, newCookie);
-  await expectEvent('preparation-revoked');
   await f.running.engine.join('Late'); await expectEvent('state', 'Late');
   const host = f.running.engine.view({ kind: 'host' }); await f.running.engine.remove(host.current!.id, host.revision);
   await expectEvent('revoked');
@@ -152,7 +146,7 @@ test('bounded thumbnail variants remain owner-authorized and independently cache
   assert.equal((await f.request(`${url}?size=128`, undefined, f.second.privateCookie)).status, 404);
 });
 
-test('owner APIs and streams stay private across matching nicknames, recovery, device revocation and room removal', async t => {
+test('owner APIs and streams stay private across matching nicknames and room removal; obsolete identity endpoints are absent', async t => {
   const f = await fixture(t);
   assert.notEqual(f.first.preparation.ownerId, f.second.preparation.ownerId);
   assert.equal((await f.request(prefix + '/state')).status, 401);
@@ -174,18 +168,11 @@ test('owner APIs and streams stay private across matching nicknames, recovery, d
   assert.equal((await f.request(prefix + '/remove', { operation: operation(other.view.revision), entryId: added.entryId }, f.second.privateCookie)).status, 404);
   const current = await f.json('/api/participant/state', undefined, f.first.membership);
   assert.equal((await f.request(prefix + '/play', { entryId: other.entryId, revision: other.view.revision, turnId: current.turnId, previousPlaybackId: null }, f.second.credentials)).status, 403);
-  const recovery = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: added.view.revision }, f.first.privateCookie);
-  await firstEvent();
-  assert.equal((await f.request(prefix + '/recover', { recoveryKey: recovery.recoveryKey }, f.second.privateCookie)).status, 409);
-  const recovered = await f.request(prefix + '/recover', { recoveryKey: recovery.recoveryKey }); assert.equal(recovered.status, 200);
-  const newCookie = cookie(recovered); const recoveredView = await recovered.json() as PreparationView; await firstEvent();
-  assert.equal(recoveredView.upcoming[0]!.id, added.entryId);
-  await f.json(prefix + '/revoke-devices', { revision: recoveredView.revision }, newCookie);
-  assert.match(await firstEvent(), /event: revoked/); assert.equal((await f.request(prefix + '/state', undefined, f.first.privateCookie)).status, 401);
+  for (const removed of ['/recovery-key', '/recover', '/revoke-devices']) assert.equal((await f.request(prefix + removed, {}, f.first.credentials)).status, 404);
   const host = await f.json('/api/host/state'); await f.json('/api/host/remove', { id: host.current!.id, revision: host.revision });
   assert.equal((await f.request('/api/participant/state', undefined, f.first.membership)).status, 401);
-  assert.equal((await f.json<PreparationView>(prefix + '/state', undefined, newCookie)).upcoming[0]!.id, added.entryId);
-  const raw = await readFile(join(f.dir, 'preparations', `${added.view.ownerId}.json`), 'utf8'); assert.ok(!raw.includes(recovery.recoveryKey)); assert.ok(!raw.includes(newCookie.split('=')[1]!));
+  assert.equal((await f.json<PreparationView>(prefix + '/state', undefined, f.first.privateCookie)).upcoming[0]!.id, added.entryId);
+  const raw = await readFile(join(f.dir, 'preparations', `${added.view.ownerId}.json`), 'utf8'); assert.ok(!raw.includes('recoveryHash')); assert.ok(!raw.includes(f.first.privateCookie.split('=')[1]!));
 });
 
 test('exact/source failures retain entries for review and never substitute or send an audio command', async t => {
@@ -250,13 +237,14 @@ test('a slow or failed private save cannot hold up another participant’s playe
   assert.equal(resumed.ownPlayback!.status, 'playing'); assert.equal(resumed.ownPlayback!.revealed, true);
 });
 
-test('saved artwork revalidates device and source after downloads; stale access returns no private image', async t => {
-  const f = await fixture(t); const first = await f.add(); const recovery = await f.json<{ recoveryKey: string; view: PreparationView }>(prefix + '/recovery-key', { revision: first.view.revision }, f.first.privateCookie);
-  const recovered = await f.request(prefix + '/recover', { recoveryKey: recovery.recoveryKey }); const recoveredView = await recovered.json() as PreparationView;
-  const newCookie = cookie(recovered); f.remote.delayImages(150);
+test('saved artwork revalidates authorization and source after downloads; stale access returns no private image', async t => {
+  const f = await fixture(t); const first = await f.add();
+  const replacement = `${first.view.ownerId}.${'x'.repeat(43)}`;
+  await f.running.preparations.bindParticipant(first.view.ownerId, replacement);
+  const newCookie = `aoty_preparation=${replacement}`; f.remote.delayImages(150);
   let pending = f.request(first.view.upcoming[0]!.artwork!, undefined, f.first.privateCookie);
   for (let i = 0; i < 100 && !f.remote.imageCalls.length; i++) await delay(2);
-  await f.json(prefix + '/revoke-devices', { revision: recoveredView.revision }, newCookie);
+  const state = (await f.running.preparationStore.load(first.view.ownerId))!; state.credentials.shift(); await f.running.preparationStore.save(state);
   assert.equal((await pending).status, 401);
   pending = f.request(first.view.upcoming[0]!.artistArtwork!, undefined, newCookie);
   for (let i = 0; i < 100 && f.remote.imageCalls.length < 2; i++) await delay(2);

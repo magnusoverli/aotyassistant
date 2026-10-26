@@ -1,8 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 export async function showList(page: Page) {
-  const expand = page.getByRole('button', { name: 'Open list', exact: true });
-  if (await expand.isVisible()) await expand.click();
-  await expect(page.getByRole('complementary', { name: /^Your selections/ })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'Your playlist', exact: true })).toBeVisible();
 }
 export async function showFind(page: Page) { await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible(); }
 export async function saveChoice(page: Page) {

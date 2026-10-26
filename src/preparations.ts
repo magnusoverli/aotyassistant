@@ -9,7 +9,7 @@ import { KeyedSerialQueue } from './serial.js';
 import { diagnostics } from './diagnostics.js';
 
 export const preparationLimits = {
-  upcoming: 200, entries: 1000, devices: 10, receipts: 5000,
+  upcoming: 200, entries: 1000, receipts: 5000,
   operationLifetime: 7 * 24 * 60 * 60_000, futureClockTolerance: 5 * 60_000,
 } as const;
 const id = z.string().uuid().regex(/^[a-f0-9-]+$/);
@@ -41,10 +41,17 @@ const entry = z.object({
 export const preparationOperationSchema = z.object({ id, revision: z.number().int().nonnegative(), issuedAt: timestamp }).strict();
 export type PreparationOperation = z.infer<typeof preparationOperationSchema>;
 const receipt = z.object({ id, intent: digest, issuedAt: timestamp, revision: z.number().int().nonnegative(), entryId: id }).strict();
-export const preparationStateSchema = z.object({
-  schema: z.literal(1), ownerId: id, revision: z.number().int().nonnegative(),
-  credentials: z.array(z.object({ hash: digest, createdAt: timestamp }).strict()).min(1).max(preparationLimits.devices),
-  recoveryHash: digest.nullable(), entries: z.array(entry).max(preparationLimits.entries),
+export const preparationStateSchema = z.preprocess(value => {
+  if (value && typeof value === 'object' && 'schema' in value && value.schema === 1 && 'recoveryHash' in value &&
+    (value.recoveryHash === null || digest.safeParse(value.recoveryHash).success)) {
+    const { recoveryHash: _obsolete, ...state } = value;
+    return { ...state, schema: 2 };
+  }
+  return value;
+}, z.object({
+  schema: z.literal(2), ownerId: id, revision: z.number().int().nonnegative(),
+  credentials: z.array(z.object({ hash: digest, createdAt: timestamp }).strict()).min(1).max(1024),
+  entries: z.array(entry).max(preparationLimits.entries),
   order: z.array(id).max(preparationLimits.upcoming), receipts: z.array(receipt).max(preparationLimits.receipts),
   pendingPlay: z.object({ entryId: id, startedAt: timestamp }).strict().optional(),
   deletedUploads: z.array(id).optional(), // Durable deletion intents/tombstones; never exposed in private views.
@@ -61,7 +68,7 @@ export const preparationStateSchema = z.object({
     state.entries.some(item => (item.state === 'played' && (item.playedAt === undefined || !item.playbackIds.length)) || (item.state === 'removed' && item.removedAt === undefined))) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid preparation state.' });
   }
-});
+}));
 export type PreparationState = z.infer<typeof preparationStateSchema>;
 type Entry = PreparationState['entries'][number];
 
@@ -135,7 +142,6 @@ export type PreparationView = {
   ownerId: string; revision: number; capacity: { upcoming: number; entries: number };
   upcoming: PreparedEntryView[]; played: PreparedEntryView[]; removed: PreparedEntryView[];
   reviewEntryId?: string;
-  recoveryKeyCreated?: boolean;
 };
 export type PreparationResult = { view: PreparationView; entryId: string; replayed: boolean; warning?: string };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -144,9 +150,9 @@ function input<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value); if (!parsed.success) throw new AppError(400, 'Invalid list request. Refresh your list and try again.'); return parsed.data;
 }
 function identity(credential: string) {
-  if (typeof credential !== 'string' || credential.length > 100) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
+  if (typeof credential !== 'string' || credential.length > 100) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
   const [ownerId, secret, extra] = credential.split('.');
-  if (extra !== undefined || !id.safeParse(ownerId).success || !secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
+  if (extra !== undefined || !id.safeParse(ownerId).success || !secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
   return { ownerId: ownerId!, secretHash: hash(credential) };
 }
 const newCredential = (ownerId: string) => `${ownerId}.${randomBytes(32).toString('base64url')}`;
@@ -173,7 +179,7 @@ export class PreparationManager {
   }
   private async authorize(ownerId: string, secretHash: string, readonly = false) {
     const state = await (readonly && this.store.snapshot ? this.store.snapshot(ownerId) : this.store.load(ownerId));
-    if (!state || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Private-list access is unavailable. Use the original browser or a private recovery key.');
+    if (!state || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
     return state;
   }
   private view(state: PreparationState): PreparationView {
@@ -186,7 +192,7 @@ export class PreparationManager {
         ? { artwork: item.selection.metadata.artworkId === 'demo-cover' ? '/demo-cover.svg' : `/api/participant/preparations/artwork/${item.id}/artwork` } : {}),
       ...(item.selection.metadata.artistArtworkId ? { artistArtwork: `/api/participant/preparations/artwork/${item.id}/artistArtwork` } : {}),
       ...(this.sourceAvailable ? { sourceAvailable: this.sourceAvailable(item.selection) } : {}) });
-    return { ownerId: state.ownerId, revision: state.revision, recoveryKeyCreated: Boolean(state.recoveryHash), capacity: { upcoming: preparationLimits.upcoming, entries: preparationLimits.entries },
+    return { ownerId: state.ownerId, revision: state.revision, capacity: { upcoming: preparationLimits.upcoming, entries: preparationLimits.entries },
       upcoming: state.order.map(key => entry(byId.get(key)!)),
       played: state.entries.filter(item => item.state === 'played').sort((a, b) => b.playedAt! - a.playedAt!).map(entry),
       removed: state.entries.filter(item => item.state === 'removed').sort((a, b) => b.removedAt! - a.removedAt!).map(entry),
@@ -199,12 +205,23 @@ export class PreparationManager {
   }
   async createOwner() {
     const ownerId = randomUUID(); const credential = newCredential(ownerId);
-    const state: PreparationState = { schema: 1, ownerId, revision: 0,
-      credentials: [{ hash: hash(credential), createdAt: this.now() }], recoveryHash: null, entries: [], order: [], receipts: [] };
+    const state: PreparationState = { schema: 2, ownerId, revision: 0,
+      credentials: [{ hash: hash(credential), createdAt: this.now() }], entries: [], order: [], receipts: [] };
     await this.save(state); return { credential, view: this.view(state) };
   }
   async read(credential: string): Promise<PreparationView> {
     const access = identity(credential); return this.serial(access.ownerId, async () => this.view(await this.authorize(access.ownerId, access.secretHash, true)));
+  }
+  /** Internal cookie adoption: a leftover cookie alone is not proof that saved data exists.
+   * Corrupt files and invalid authorization for an existing list still fail closed. */
+  async ownerForBinding(credential: string): Promise<string | undefined> {
+    const access = identity(credential);
+    return this.serial(access.ownerId, async () => {
+      const state = await this.store.load(access.ownerId);
+      if (!state) return undefined;
+      if (!state.credentials.some(item => sameHash(item.hash, access.secretHash))) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
+      return state.ownerId;
+    });
   }
   /** Owner-targeted events only. A null snapshot revokes a device; no global engine event is emitted. */
   async subscribe(credential: string, listener: (view: PreparationView | null) => void) {
@@ -428,33 +445,22 @@ export class PreparationManager {
       state.order.splice(beforeId === null ? state.order.length : state.order.indexOf(beforeId), 0, entryId); return entryId;
     });
   }
-  /** Explicitly replaces the previous recovery key; the raw new key is returned once, never stored. */
-  async issueRecoveryKey(credential: string, expectedRevision: number) {
+  /** Internal bootstrap for a server-owned participant binding, never a list selector.
+   * Existing authorization aliases stay valid through upgrades and rejoining. */
+  async bindParticipant(ownerId: string, credential: string, create = false) {
     const access = identity(credential);
-    return this.serial(access.ownerId, async () => {
-      const state = await this.authorize(access.ownerId, access.secretHash);
-      if (state.revision !== expectedRevision) throw new AppError(409, 'The saved list changed. Refresh before creating a recovery key.');
-      const recoveryKey = newCredential(state.ownerId); state.recoveryHash = hash(recoveryKey); state.revision++;
-      await this.save(state); return { recoveryKey, view: this.view(state) };
-    });
-  }
-  async recover(recoveryKey: string) {
-    const access = identity(recoveryKey);
-    return this.serial(access.ownerId, async () => {
-      const state = await this.store.load(access.ownerId);
-      if (!state?.recoveryHash || !sameHash(state.recoveryHash, access.secretHash)) throw new AppError(401, 'The private recovery key is invalid or unavailable.');
-      if (state.credentials.length >= preparationLimits.devices) throw new AppError(409, 'The list’s device limit has been reached. Use an existing device to revoke other device access first.');
-      const credential = newCredential(state.ownerId); state.credentials.push({ hash: hash(credential), createdAt: this.now() }); state.revision++;
-      await this.save(state); return { credential, view: this.view(state) };
-    });
-  }
-  async revokeOtherDevices(credential: string, expectedRevision: number) {
-    const access = identity(credential);
-    return this.serial(access.ownerId, async () => {
-      const state = await this.authorize(access.ownerId, access.secretHash);
-      if (state.revision !== expectedRevision) throw new AppError(409, 'The saved list changed. Refresh before changing device access.');
-      state.credentials = state.credentials.filter(item => sameHash(item.hash, access.secretHash)); state.revision++;
-      await this.save(state); return this.view(state);
+    if (access.ownerId !== input(id, ownerId)) throw new AppError(401, 'Invalid selections binding.');
+    return this.serial(ownerId, async () => {
+      let state = await this.store.load(ownerId);
+      if (!state) {
+        if (!create) throw new AppError(503, 'Your saved selections could not be read. Nothing was reset.');
+        state = { schema: 2, ownerId, revision: 0, credentials: [], entries: [], order: [], receipts: [] };
+      }
+      if (!state.credentials.some(item => sameHash(item.hash, access.secretHash))) {
+        state.credentials.push({ hash: access.secretHash, createdAt: this.now() });
+        await this.save(state);
+      }
+      return { credential, view: this.view(state) };
     });
   }
 }

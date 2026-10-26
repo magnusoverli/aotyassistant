@@ -155,9 +155,10 @@ const participantAccess = new ParticipantAccess(
     if (page === 'join') { view = next; location.replace(appPath('/participant')); return; }
     const changed = view?.roomId !== next.roomId || view.me?.id !== next.me?.id;
     accept(next); if (!stream || changed) subscribe('participant');
+    if (changed || !library.view) void library.start();
   },
   () => {
-    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel();
+    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.stop();
     participantNodes.clear(); playback?.clear(); catalogueRows.clear();
     resetCatalogueTask();
     results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
@@ -325,7 +326,12 @@ function subscribe(role: 'host' | 'participant' | 'display') {
     error = '';
     participantAccess.revoke(); music.uploads.stop();
   };
-  const failed = () => { if (stream === connection) { realtime = false; player.cancel(); render(); } };
+  const failed = () => {
+    if (stream !== connection) return;
+    realtime = false; player.cancel(); render();
+    // Removal can race the initial/reopened stream before it can emit revoked.
+    if (role === 'participant') void participantAccess.check();
+  };
   const connection = role === 'participant'
     ? { close: participantEvents.subscribe('room', { state, revoked, error: failed }) }
     : new EventSource(appPath(`/api/${role}/events`));
@@ -406,6 +412,7 @@ function renderParticipantPlayer() {
 }
 function renderPlayback(current: View) {
   return playback!.update({ view: current, projected: player.project(current), online: realtime, busy, starting: player.starting,
+    error,
     firstSelection: page === 'participant' ? library.view?.upcoming[0] : undefined,
     selectionReady: !library.loading && !library.saving && !library.pending && !library.view?.reviewEntryId });
 }
@@ -430,7 +437,7 @@ function participant() {
   const shortcuts = v.el('shortcuts', 'nav', undefined, 'music-shortcuts'); attr(shortcuts, 'aria-label', 'Your music shortcuts');
   const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));
   find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
-  const list = v.el('list-shortcut', 'button', 'Your selections', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.openList();
+  const list = v.el('list-shortcut', 'button', 'Your playlist', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.focusList();
   children(shortcuts, find, list); children(hero, title, distance, shortcuts);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
   const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
@@ -593,9 +600,8 @@ function participantEntry() {
     attr(message, 'role', state === 'error' ? 'alert' : 'status');
     const retry = v.el('retry', 'button', 'Retry', 'secondary'); prop(retry, 'type', 'button'); prop(retry, 'id', 'retry-room'); prop(retry, 'disabled', !navigator.onLine);
     retry.onclick = () => { void participantAccess.check(); };
-    children(status, title, message, state !== 'checking' && retry, status.querySelector('.entry-library-access')); content = status;
+    children(status, title, message, state !== 'checking' && retry); content = status;
   }
-  const access = music.renderEntry(); if (access.parentElement !== content) content.append(access);
   children(layout, content); children(main, layout); return main;
 }
 function render() {

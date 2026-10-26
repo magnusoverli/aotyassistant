@@ -36,7 +36,9 @@ for (const width of [1440, 390]) test(`playback problems show distinct reasons a
   await expect(settings.locator('.settings-recovery')).toContainText('Playback changed outside this app');
   await expect(settings.getByRole('button', { name: 'Recover playback controls', exact: true })).toHaveCount(0);
   expect((await start()).ok()).toBe(true);
-  remote.failReads('player_queues/get_active_queue', 1, 401); remote.notify();
+  // Settings also reads the queue; keep authorization unavailable until the
+  // playback monitor observes it rather than racing for a single failed read.
+  remote.failReads('player_queues/get_active_queue', 100, 401); remote.notify();
   await expect(warning).toHaveAttribute('data-playback-problem', 'authorization');
   await expect(warning).toContainText('Music Assistant rejected this app’s access');
   await expect(warning).toContainText('Ask the host to recover controls');
@@ -47,6 +49,7 @@ for (const width of [1440, 390]) test(`playback problems show distinct reasons a
   await expect(input).toBeFocused(); await expect(input).toHaveValue('Keep this private search');
   expect(await input.evaluate(node => node === (window as unknown as { originalSearch: Element }).originalSearch)).toBe(true);
   expect(isolatedApp.engine.view({ kind: 'host' }).turnId).toBe(joined.turnId);
+  remote.failReads('player_queues/get_active_queue', 0);
   settings.once('dialog', dialog => dialog.accept());
   await settings.getByRole('button', { name: 'Recover playback controls', exact: true }).click();
   await expect(warning).toHaveCount(0);

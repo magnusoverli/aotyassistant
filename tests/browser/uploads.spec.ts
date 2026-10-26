@@ -1,4 +1,5 @@
 import { expect, type Browser, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 import { test } from './app-fixture';
 import { uploadBytes } from '../fixtures/uploads';
 import { showList } from './preparation-helpers';
@@ -11,12 +12,13 @@ async function room(browser: Browser, host: Page, origin: string) {
   const page = await context.newPage(); await page.goto(origin + '/participant');
   await page.locator('#list-upload').click();
   await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /^(Check completed upload|Discard upload draft)$/ })).toHaveCount(0);
   return { page, context, post };
 }
 const selectFile = (page: Page, name = 'local-song.mp3') => page.locator('#track-upload-file').setInputFiles({ name, mimeType: 'audio/mpeg', buffer: uploadBytes });
 const list = async (page: Page) => (await page.request.get('/api/participant/preparations/state')).json();
 
-test('file selection reserves the upload lane while private-list initialization is pending', async ({ browser, page: host, isolatedApp }) => {
+test('automatic list initialization finishes before file selection, and overlapping selections upload only once', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const page = r.page;
   let release = () => {};
   try {
@@ -24,7 +26,17 @@ test('file selection reserves the upload lane while private-list initialization 
     const gate = new Promise<void>(resolve => { release = resolve; }); let uploads = 0;
     await page.route('**/api/participant/preparations/init', async route => { enter(); await gate; await route.continue(); });
     page.on('request', request => { if (request.method() === 'POST' && /\/uploads\/[a-f0-9-]{36}$/.test(request.url())) uploads++; });
-    await selectFile(page, 'first.mp3'); await entered;
+    await page.reload(); await entered; await page.locator('#list-upload').click();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeDisabled();
+    expect(uploads).toBe(0);
+    release();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
+    let uploadEnter!: () => void; const uploadEntered = new Promise<void>(resolve => { uploadEnter = resolve; });
+    const uploadGate = new Promise<void>(resolve => { release = resolve; });
+    await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => { uploadEnter(); await uploadGate; await route.continue(); });
+    await selectFile(page, 'first.mp3'); await uploadEntered;
+    await expect(page.getByRole('button', { name: 'Cancel upload', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('progressbar', { name: 'File upload progress' })).toBeVisible();
     await selectFile(page, 'overlapping.mp3'); release();
     await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     await expect(page.locator('.upload-preview')).toContainText('first.mp3');
@@ -32,26 +44,7 @@ test('file selection reserves the upload lane while private-list initialization 
   } finally { release(); await r.context.close(); }
 });
 
-test('cancelling during private-list initialization prevents a delayed upload and permits a fresh selection', async ({ browser, page: host, isolatedApp }) => {
-  const r = await room(browser, host, isolatedApp.origin); const page = r.page;
-  let release = () => {};
-  try {
-    let enter!: () => void; const entered = new Promise<void>(resolve => { enter = resolve; });
-    const gate = new Promise<void>(resolve => { release = resolve; }); let uploads = 0;
-    await page.route('**/api/participant/preparations/init', async route => { enter(); await gate; await route.continue(); });
-    page.on('request', request => { if (request.method() === 'POST' && /\/uploads\/[a-f0-9-]{36}$/.test(request.url())) uploads++; });
-    await selectFile(page, 'cancelled.mp3'); await entered;
-    await page.getByRole('button', { name: 'Cancel upload', exact: true }).click({ timeout: 3000 });
-    const initialized = page.waitForResponse('**/api/participant/preparations/init'); release(); await initialized;
-    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
-    await selectFile(page, 'fresh.mp3');
-    await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
-    await expect(page.locator('.upload-preview')).toContainText('fresh.mp3');
-    expect(uploads).toBe(1);
-  } finally { release(); await r.context.close(); }
-});
-
-test('single-file metadata review, private save/reload/recovery and reversible/permanent deletion work at phone width without autoplay', async ({ browser, page: host, isolatedApp }) => {
+test('single-file metadata review, private save/reload and reversible/permanent deletion work at phone width without autoplay', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const page = r.page;
   try {
     await selectFile(page);
@@ -93,16 +86,20 @@ test('single-file metadata review, private save/reload/recovery and reversible/p
   } finally { await r.context.close(); }
 });
 
-test('lost upload and add acknowledgements recover through read-only checks and explicit idempotent save retries', async ({ browser, page: host, isolatedApp }) => {
+test('lost upload replies are checked automatically, while playlist saves still need explicit idempotent retries', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const page = r.page;
   try {
-    let uploads = 0;
+    let uploads = 0; let checks = 0;
     await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
-      if (route.request().method() !== 'POST') { await route.continue(); return; }
+      if (route.request().method() !== 'POST') { checks++; await route.continue(); return; }
       uploads++; await route.fetch(); await route.abort('failed');
     });
-    await selectFile(page); await expect(page.getByText('Upload connection lost.', { exact: false })).toBeVisible();
-    await page.reload(); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song'); expect(uploads).toBe(1);
+    await selectFile(page); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
+    expect(uploads).toBe(1); expect(checks).toBe(1);
+    await expect(page.getByRole('button', { name: /^(Check completed upload|Discard upload draft)$/ })).toHaveCount(0);
+    await expect(page.locator('.upload-panel [role="alert"]')).toHaveCount(0);
+    await page.getByLabel('Track title', { exact: true }).fill('My reviewed upload');
+    await page.reload(); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My reviewed upload'); expect(uploads).toBe(1);
     await page.unroute(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/);
     let adds = 0;
     await page.route('**/api/participant/preparations/add-upload', async route => { adds++; await route.fetch(); await route.abort('failed'); });
@@ -116,6 +113,72 @@ test('lost upload and add acknowledgements recover through read-only checks and 
   } finally { await r.context.close(); }
 });
 
+test('choosing another file cleans an unsaved upload but never deletes an already-saved recording', async ({ browser, page: host, isolatedApp }) => {
+  const r = await room(browser, host, isolatedApp.origin); const page = r.page;
+  try {
+    const uploads: string[] = [];
+    page.on('request', request => { if (request.method() === 'POST' && /\/uploads\/[a-f0-9-]{36}$/.test(request.url())) uploads.push(request.url()); });
+    await selectFile(page, 'first.mp3'); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
+    await page.getByLabel('Track title', { exact: true }).fill('Keep my reviewed details');
+    page.once('dialog', dialog => dialog.dismiss()); await selectFile(page, 'second.mp3');
+    await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Keep my reviewed details'); expect(uploads).toHaveLength(1);
+    expect((await page.request.get(uploads[0]!)).status()).toBe(200);
+    page.once('dialog', dialog => dialog.accept()); await selectFile(page, 'second.mp3');
+    await expect(page.locator('.upload-preview')).toContainText('second.mp3'); expect(uploads).toHaveLength(2);
+    expect((await page.request.get(uploads[0]!)).status()).toBe(404);
+    const saved = await page.request.post('/api/participant/preparations/add-upload', { headers: { Origin: isolatedApp.origin }, data: {
+      uploadId: uploads[1]!.split('/').pop(), operation: { id: randomUUID(), revision: (await list(page)).revision, issuedAt: Date.now() },
+      text: { title: 'Saved recording', artist: 'Artist', album: 'Album' },
+    } }); expect(saved.ok()).toBe(true);
+    page.once('dialog', dialog => dialog.accept()); await selectFile(page, 'third.mp3');
+    await expect(page.locator('.upload-preview')).toContainText('third.mp3');
+    expect((await page.request.get(uploads[1]!)).status()).toBe(200);
+    expect((await list(page)).upcoming.map((entry: { title: string }) => entry.title)).toEqual(['Saved recording']);
+    await expect(page.getByRole('button', { name: /^(Check completed upload|Discard upload draft)$/ })).toHaveCount(0);
+  } finally { await r.context.close(); }
+});
+
+test('an uncertain completed upload is checked again after reconnecting without reuploading or adding it', async ({ browser, page: host, isolatedApp }) => {
+  const r = await room(browser, host, isolatedApp.origin); const page = r.page;
+  try {
+    let uploads = 0; let checks = 0; let unavailable = true;
+    await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
+      if (route.request().method() === 'POST') { uploads++; await route.fetch(); await route.abort('failed'); return; }
+      checks++;
+      if (unavailable) await route.fulfill({ status: 503, json: { error: 'Status temporarily unavailable.' } });
+      else await route.continue();
+    });
+    await selectFile(page); await expect(page.getByText('Upload connection lost.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Choose another file', exact: true })).toBeEnabled(); expect(checks).toBe(1);
+    await r.context.setOffline(true); await expect(page.getByRole('button', { name: 'Choose another file', exact: true })).toBeDisabled();
+    unavailable = false; await r.context.setOffline(false);
+    await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
+    expect(uploads).toBe(1); expect(checks).toBeGreaterThanOrEqual(2); expect((await list(page)).upcoming).toHaveLength(0);
+    await expect(page.getByRole('button', { name: /^(Check completed upload|Discard upload draft)$/ })).toHaveCount(0);
+  } finally { await r.context.close(); }
+});
+
+test('leaving during an unconfirmed upload preserves the completed file for automatic checks on return', async ({ browser, page: host, isolatedApp }) => {
+  const r = await room(browser, host, isolatedApp.origin); const page = r.page;
+  let release = () => {};
+  try {
+    let enter!: () => void; const entered = new Promise<void>(resolve => { enter = resolve; });
+    const gate = new Promise<void>(resolve => { release = resolve; }); let uploaded = '';
+    await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
+      if (route.request().method() !== 'POST') { await route.continue(); return; }
+      const response = await route.fetch(); uploaded = route.request().url(); enter(); await gate;
+      await route.fulfill({ response }).catch(() => {});
+    });
+    await selectFile(page); await entered;
+    await page.goto('/'); release();
+    expect((await page.request.get(uploaded)).status()).toBe(200);
+    await page.goto('/participant');
+    await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
+    await expect(page.getByRole('button', { name: 'Cancel upload', exact: true })).toHaveCount(0);
+    expect((await list(page)).upcoming).toHaveLength(0);
+  } finally { release(); await r.context.close(); }
+});
+
 test('an uploaded file uses the normal explicit player and never exposes Music Assistant source URLs', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const page = r.page;
   try {
@@ -125,8 +188,8 @@ test('an uploaded file uses the normal explicit player and never exposes Music A
     await selectFile(page); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     await page.locator('.upload-preview').getByRole('button', { name: 'Add to list' }).click();
     await showList(page);
-    await expect(page.getByRole('button', { name: 'Play first selection' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Play first selection' }).click();
+    await expect(page.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeEnabled();
+    await page.getByRole('button', { name: /^(Play first selection|Play pick)$/ }).click();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
     const state = await (await page.request.get('/api/participant/state')).json();
@@ -137,28 +200,39 @@ test('an uploaded file uses the normal explicit player and never exposes Music A
   } finally { await r.context.close(); }
 });
 
-test('unsupported standalone AAC and explicit cancellation leave existing lists untouched and allow a fresh selection', async ({ browser, page: host, isolatedApp }) => {
+test('unsupported standalone AAC leaves existing lists untouched and allows a fresh selection', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const page = r.page;
-  let release = () => {};
   try {
     await selectFile(page, 'unsupported.aac'); await expect(page.getByText('Standalone AAC is not supported.', { exact: false })).toBeVisible();
     expect((await list(page)).upcoming).toHaveLength(0);
-    await page.getByRole('button', { name: 'Discard upload draft' }).click();
-    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
-    let enter!: () => void; const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
-    await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
-      if (route.request().method() !== 'POST') { await route.continue(); return; }
-      enter(); await gate; try { await route.abort('aborted'); } catch { /* The explicit client abort may have already closed this request. */ }
-    });
-    await selectFile(page); await entered;
-    await page.getByRole('button', { name: 'Cancel upload', exact: true }).click();
-    await expect(page.getByText('Upload cancelled.', { exact: false })).toBeVisible(); release();
-    await page.unroute(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/);
-    await page.getByRole('button', { name: 'Discard upload draft' }).click();
+    await expect(page.getByRole('button', { name: /^(Check completed upload|Discard upload draft)$/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
     await selectFile(page, 'fresh.mp3'); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
     expect((await list(page)).upcoming).toHaveLength(0);
-  } finally { release(); await r.context.close(); }
+  } finally { await r.context.close(); }
+});
+
+test('failed analysis and old missing uploads leave no residual errors or drafts after refresh', async ({ browser, page: host, isolatedApp }) => {
+  const r = await room(browser, host, isolatedApp.origin); const page = r.page;
+  try {
+    const owner = (await list(page)).ownerId; const key = `aoty.upload-draft.v1.${owner}`;
+    await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
+      if (route.request().method() !== 'POST') { await route.continue(); return; }
+      await route.fulfill({ status: 503, json: { error: 'File analysis needs FFprobe on the application server. Ask the host to check the installation.' } });
+    });
+    await selectFile(page);
+    await expect(page.locator('.upload-panel [role="alert"]')).toContainText('File analysis needs FFprobe');
+    await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+    await page.reload(); await page.locator('#list-upload').click();
+    await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
+    await expect(page.locator('.upload-panel [role="alert"]')).toHaveCount(0);
+    // A failed draft left by an older client is silently cleared on its first check.
+    await page.evaluate(({ key, id }) => localStorage.setItem(key, JSON.stringify({ id, text: { title: '', artist: '', album: '' } })), { key, id: randomUUID() });
+    await page.reload();
+    await expect.poll(() => page.evaluate(key => localStorage.getItem(key), key)).toBeNull();
+    await expect(page.locator('.upload-panel [role="alert"]')).toHaveCount(0);
+    expect((await list(page)).upcoming).toHaveLength(0);
+  } finally { await r.context.close(); }
 });
 
 test('host saves and reloads the file callback address without changing the music connection or starting audio', async ({ page: host, isolatedApp }) => {

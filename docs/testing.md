@@ -10,7 +10,7 @@ The test suites cover application behaviour with isolated services and disposabl
 | Typecheck and production build | Backend/browser TypeScript and packaged browser assets |
 | Backend/controller tests | Turns, private-list access, persistence, uploads, connection identity, playback ownership, recovery, and compatibility handling |
 | Chromium workflows | Host, participant, settings, and display interactions against isolated Music Assistant fixtures |
-| Native amd64/aarch64 package tests | Packaged audio analysis, file permissions, restart persistence, private-list recovery, and backup restore |
+| Native amd64/aarch64 package tests | Packaged audio analysis, file permissions, automatic list persistence across restarts, and backup restore |
 | Dependency audit | Known vulnerabilities reported for the locked dependency tree at the time of the check |
 | Published-image verification | Anonymous registry access, both architectures, content digests, and version/license labels |
 
@@ -38,7 +38,7 @@ Use a designated test speaker or group: Play replaces its current queue and can 
 
 ### Browsers and devices
 
-- Check iPhone/Safari and Android joining, list recovery, file selection, large/interrupted uploads, and mobile keyboards.
+- Check iPhone/Safari and Android joining, automatic empty lists, same-browser list persistence, file selection, large/interrupted uploads, and mobile keyboards.
 - Check Music Assistant sign-in inside the Home Assistant companion app.
 - Check shared-display layout, full-screen controls, and reconnection on the intended TV/browser.
 

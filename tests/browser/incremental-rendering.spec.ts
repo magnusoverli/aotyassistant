@@ -135,7 +135,7 @@ test('speaker discovery, errors and live updates retain forms, picker options an
   } finally { release(); }
 });
 
-test('unchanged membership revalidation and list edits retain the workspace and recovery input', async ({ page, isolatedApp }) => {
+test('unchanged membership revalidation and list edits retain the workspace and search input', async ({ page, isolatedApp }) => {
   await page.addInitScript(() => {
     const state = window as unknown as { eventConnections: number }; state.eventConnections = 0;
     const Original = EventSource;
@@ -144,16 +144,16 @@ test('unchanged membership revalidation and list edits retain the workspace and 
   await join(page, isolatedApp.origin); await search(page, 'Northern');
   await page.getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
-  await page.locator('#list-recovery').click(); await page.getByLabel('Recover with a private key').fill('draft-recovery-key');
-  await page.locator('#preparation-recovery-key').evaluate((node: HTMLInputElement) => node.setSelectionRange(3, 7));
-  await retain(page, [...workspace, '.saved-track', '#preparation-recovery-key', '.catalogue-results .track-row']);
+  await page.getByRole('searchbox').fill('draft kept');
+  await page.locator('#catalogue-search').evaluate((node: HTMLInputElement) => node.setSelectionRange(3, 7));
+  await retain(page, [...workspace, '.saved-track', '#catalogue-search', '.catalogue-results .track-row']);
   const connections = await page.evaluate(() => (window as unknown as { eventConnections: number }).eventConnections);
-  const room = page.waitForResponse('**/api/participant/state'); const library = page.waitForResponse('**/api/participant/preparations/state');
+  const room = page.waitForResponse('**/api/participant/state'); const library = page.waitForResponse('**/api/participant/preparations/init');
   await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); await Promise.all([room, library]);
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓'); await retained(page);
   expect(await page.evaluate(() => (window as unknown as { eventConnections: number }).eventConnections)).toBe(connections);
-  await expect(page.locator('#preparation-recovery-key')).toBeFocused();
-  expect(await page.locator('#preparation-recovery-key').evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd])).toEqual([3, 7]);
+  await expect(page.locator('#catalogue-search')).toBeFocused();
+  expect(await page.locator('#catalogue-search').evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd])).toEqual([3, 7]);
   await page.getByRole('button', { name: 'Edit order', exact: true }).click(); await retained(page);
 });
 

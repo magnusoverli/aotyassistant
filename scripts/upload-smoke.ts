@@ -74,8 +74,7 @@ try {
     assert.equal(rejected.status, 422, name);
   }
   assert.equal(library.upcoming.length, formats.length);
-  const recovery = await post('/api/participant/preparations/recovery-key', { revision: library.revision }, libraryCookie); assert.equal(recovery.status, 200);
-  const saved = await recovery.json() as { recoveryKey: string; view: PreparationView };
+  const saved = library;
   await docker('exec', container, 'node', '/app/dist/server/backup-hook.js', 'freeze');
   try {
     assert.equal((await (await fetch(origin + '/api/health')).json()).backupPaused, true);
@@ -87,13 +86,13 @@ try {
   await docker('stop', '--time', '5', container); container = await launch(restoredVolume); await ready();
   const restored = await fetch(origin + '/api/participant/preparations/state', { headers: { Cookie: libraryCookie } }); assert.equal(restored.status, 200);
   const restoredLibrary = await restored.json() as PreparationView; assert.equal(restoredLibrary.upcoming.length, formats.length);
-  assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.title), saved.view.upcoming.map(entry => entry.title));
+  assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.title), saved.upcoming.map(entry => entry.title));
   assert.equal((await fetch(origin + restoredLibrary.upcoming[0]!.artwork!, { headers: { Cookie: libraryCookie } })).status, 200);
   assert.equal((await fetch(origin + restoredLibrary.upcoming[0]!.artwork!)).status, 401);
-  const recovered = await post('/api/participant/preparations/recover', { recoveryKey: saved.recoveryKey }); assert.equal(recovered.status, 200);
-  assert.equal((await recovered.json() as PreparationView).ownerId, library.ownerId);
+  const initializedAgain = await post('/api/participant/preparations/init', {}, membership); assert.equal(initializedAgain.status, 200);
+  assert.equal((await initializedAgain.json() as PreparationView).ownerId, library.ownerId);
   assert.equal((await (await fetch(origin + '/api/participant/state', { headers: { Cookie: membership } })).json() as View).ownPlayback, null);
-  console.info('Upload container smoke passed: packaged audio formats, HA backup write coordination, private-list/cover recovery from a restored volume; no audio commands.');
+  console.info('Upload container smoke passed: packaged audio formats, HA backup write coordination, the same automatic list and covers after volume restore; no audio commands.');
 } finally {
   if (container) await docker('stop', '--time', '5', container).catch(() => {});
   await docker('volume', 'rm', volume).catch(() => {});

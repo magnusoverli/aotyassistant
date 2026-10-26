@@ -48,8 +48,7 @@ try {
   }
   const moved = await post('/api/participant/preparations/move', { entryId: library.upcoming[1]!.id, beforeId: library.upcoming[0]!.id, operation: { id: randomUUID(), revision: library.revision, issuedAt: Date.now() } }, libraryCookie);
   assert.equal(moved.status, 200); library = (await moved.json() as PreparationResult).view;
-  const recovery = await post('/api/participant/preparations/recovery-key', { revision: library.revision }, libraryCookie); assert.equal(recovery.status, 200);
-  const savedLibrary = await recovery.json() as { recoveryKey: string; view: PreparationView };
+  const savedLibrary = library;
   const guestOrigin = origin.replace('127.0.0.1', 'localhost');
   const addressing = await fetch(origin + '/api/host/addressing'); assert.equal(addressing.status, 200);
   const addresses = await addressing.json() as { revision: number };
@@ -81,18 +80,18 @@ try {
   assert.ok(!JSON.stringify(restoredSettings).includes('container-fixture-token'));
   const restored = await fetch(origin + '/api/participant/preparations/state', { headers: { Cookie: libraryCookie } }); assert.equal(restored.status, 200);
   const restoredLibrary = await restored.json() as PreparationView;
-  assert.equal(restoredLibrary.revision, savedLibrary.view.revision);
-  assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.id), savedLibrary.view.upcoming.map(entry => entry.id));
+  assert.equal(restoredLibrary.revision, savedLibrary.revision);
+  assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.id), savedLibrary.upcoming.map(entry => entry.id));
   assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.title), ['Late Summer', 'Northern Lights']);
   assert.ok(restoredLibrary.upcoming.every(entry => entry.sourceAvailable === false));
-  const recovered = await post('/api/participant/preparations/recover', { recoveryKey: savedLibrary.recoveryKey }); assert.equal(recovered.status, 200);
-  assert.equal((await recovered.json() as PreparationView).ownerId, library.ownerId);
+  const initializedAgain = await post('/api/participant/preparations/init', {}, membership); assert.equal(initializedAgain.status, 200);
+  assert.equal((await initializedAgain.json() as PreparationView).ownerId, library.ownerId);
   for (const path of ['/api/host/admit', '/api/host/start', '/api/host/create', '/api/host/end', '/api/host/invitation', '/api/display/auth']) assert.equal((await post(path, { revision: after.revision })).status, 404);
   const saved = JSON.parse(await docker('exec', container, 'node', '--input-type=module', '-e', `import {readFile} from 'node:fs/promises';const state=JSON.parse(await readFile('/data/state.json','utf8'));console.log(JSON.stringify({schema:state.schema,session:'session' in state,playback:state.room.playback}));`));
   assert.deepEqual(saved, { schema: 3, session: false, playback: null });
   const memberState = await fetch(origin + '/api/participant/state', { headers: { Cookie: membership } }); assert.equal(memberState.status, 200);
   assert.equal((await fetch(origin + '/api/display/state')).status, 200);
-  console.info('Container smoke passed: persistent room/membership, public display, removed lifecycle APIs, settings/guest URL and private-list recovery survive restart.');
+  console.info('Container smoke passed: persistent room/membership, public display, removed lifecycle APIs, settings/guest URL and the same automatic list survive restart.');
 } finally {
   if (container) await docker('stop', '--time', '5', container).catch(() => {});
   await docker('volume', 'rm', volume).catch(() => {});

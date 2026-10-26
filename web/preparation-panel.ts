@@ -4,16 +4,13 @@ import { el } from './dom';
 import { artwork } from './media';
 import { PreparationController } from './preparation-controller';
 import { UploadPanel } from './upload-panel';
-import { copyButton } from './copy-text';
 import { workspaceGrid, slot } from './page-layout';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
 type Options = { getView(): View | undefined; starting(): boolean; changed(): void };
 export class PreparationPanel {
-  private expanded = false;
   private editing = false;
   private dragging?: string;
-  private recoveryDraft = '';
   private open = new Set<string>();
   private feedback = el('span', undefined, 'sr-only');
   private list?: HTMLElement;
@@ -27,6 +24,7 @@ export class PreparationPanel {
   private uploadDisclosure?: HTMLDetailsElement;
   private nodes = new ViewNodes();
   private disclosures = new Map<string, HTMLDetailsElement>();
+  private collection?: HTMLElement;
   constructor(private library: PreparationController, private options: Options) {
     this.feedback.setAttribute('role', 'status'); this.feedback.setAttribute('aria-live', 'polite');
     this.uploads = new UploadPanel(library, () => Boolean(options.getView()?.me), () => {
@@ -75,34 +73,9 @@ export class PreparationPanel {
     // Keep the acknowledgement focusable, so saving does not strand keyboard users on the page body.
     if (added) button.setAttribute('aria-disabled', 'true');
     button.dataset.preparationTrack = track.id;
-    button.disabled ||= Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading || (!this.library.view && !this.library.missing);
+    button.disabled ||= Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading || !this.library.view;
     return button;
   }
-  renderEntry() {
-    this.listKey = '';
-    const library = this.library;
-    const v = this.nodes;
-    const access = v.el('entry', 'section', undefined, 'entry-library-access'); attr(access, 'aria-label', 'Saved music access'); const content: Node[] = [];
-    if (library.loading) { const status = v.el('entry-loading', 'p', 'Checking your saved music…', 'muted small'); attr(status, 'role', 'status'); content.push(status); }
-    if (library.recovered) {
-      const status = v.el('entry-recovered', 'p', 'List recovered. Enter a display name to join the room.', 'muted small'); attr(status, 'role', 'status'); content.push(status);
-    }
-    if (library.pending) {
-      const notice = v.el('entry-pending', 'p', 'Your unsynced list change is kept. Join the room to review it.', 'muted small'); attr(notice, 'role', 'status'); content.push(notice);
-    } else if (library.error) {
-      const notice = v.el('entry-error', 'div', undefined, 'list-notice'); attr(notice, 'role', 'alert'); children(notice, v.el('entry-error-message', 'p', library.error),
-        this.control('entry-refresh-library', 'Retry saved music', () => library.start())); content.push(notice);
-    }
-    content.push(this.recovery(true));
-    const uploadPanel = this.uploads.render(false);
-    if (this.uploads.hasWork) {
-      const upload = v.el('entry-upload', 'section', undefined, 'music-upload'); attr(upload, 'aria-label', 'Upload a private track');
-      children(upload, v.el('entry-upload-help', 'p', 'Your unfinished upload is kept. Join the room to finish adding it.', 'muted small'), uploadPanel); content.push(upload);
-    }
-    children(access, ...content);
-    return access;
-  }
-
   render(search?: HTMLElement, player?: HTMLElement) {
     this.withSearch = Boolean(search);
     const panel = this.workspace ??= workspaceGrid('music', 'music-workspace');
@@ -114,13 +87,18 @@ export class PreparationPanel {
     attr(uploads, 'aria-label', 'Upload a private track'); if (this.uploads.hasWork && !uploads.open) uploads.open = true;
     children(uploads, uploads.firstChild!, this.uploads.render());
     if (search && uploads.parentElement !== search) search.insertBefore(uploads, search.querySelector('.catalogue-results'));
-    children(panel, player, this.feedback, slot(this.renderList(), 'list'), search, !search && uploads);
+    const list = slot(this.renderList(), 'list');
+    if (search) {
+      const collection = this.collection ??= el('div', undefined, 'music-collection');
+      collection.id = 'music-collection'; collection.dataset.composition = 'music';
+      children(collection, list, search);
+      children(panel, player, this.feedback, collection);
+    } else children(panel, player, this.feedback, list, uploads);
     return panel;
   }
-  /** The phone shortcut opens the same list, retaining the current browse context. */
-  openList() {
-    this.expanded = true; this.refresh();
-    this.list?.querySelector<HTMLButtonElement>('.list-expand')?.focus({ preventScroll: true });
+  /** Navigate to the always-visible list without changing the browse context. */
+  focusList() {
+    this.list?.focus({ preventScroll: true });
     this.list?.scrollIntoView({ block: 'start', behavior: 'instant' });
   }
 
@@ -145,34 +123,32 @@ export class PreparationPanel {
       text(button, added ? 'Added ✓' : 'Add to list');
       attr(button, 'aria-disabled', added ? 'true' : undefined);
       prop(button, 'disabled', this.library.saving || !navigator.onLine || Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading ||
-        (!this.library.view && !this.library.missing) || button.dataset.sourceSelectable === 'false');
+        !this.library.view || button.dataset.sourceSelectable === 'false');
       button.closest('.track-row')?.classList.toggle('is-prepared', added);
   }
   private renderList() {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      library.recoveryKey, this.expanded, this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
+      this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
-    const expanded = this.expanded || !this.withSearch;
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
-    list.classList.toggle('is-expanded', expanded); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
+    list.classList.add('is-expanded'); list.classList.toggle('is-editing', this.editing); prop(list, 'tabIndex', -1); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
     const heading = v.el('heading', 'div', undefined, 'list-heading');
-    const title = v.get('title', () => { const node = el('h2', 'Your selections'); node.id = 'music-list-title'; node.append(el('span', '', 'list-count')); return node; });
-    text(title.querySelector('.list-count')!, ` · ${snapshot?.upcoming.length ?? 0}`);
-    const expand = v.el('expand', 'button', expanded ? 'Close list' : 'Open list', 'secondary list-expand'); prop(expand, 'type', 'button'); prop(expand, 'id', 'music-list-expand');
-    attr(expand, 'aria-expanded', String(expanded)); attr(expand, 'aria-controls', 'music-list-body');
-    expand.onclick = () => {
-      this.expanded = !expanded;
-      if (expanded) this.editing = false; this.refresh();
-    };
+    const title = v.get('title', () => { const node = el('h2', 'Your playlist'); node.id = 'music-list-title'; return node; });
+    const count = snapshot?.upcoming.length;
+    const countLabel = v.el('count', 'span', count === undefined ? '' : `${count} ${count === 1 ? 'track' : 'tracks'}`, 'list-count');
+    prop(countLabel, 'hidden', count === undefined);
     const summary = v.el('summary', 'div', undefined, 'list-summary');
     const attention = Boolean(library.error || library.warning || library.pending || snapshot?.reviewEntryId || snapshot?.upcoming.some(entry => entry.sourceAvailable === false));
+    list.classList.toggle('needs-attention', attention);
+    attr(list, 'data-save-state', library.loading ? 'loading' : library.saving ? 'saving' : library.pending ? 'pending' : !navigator.onLine ? 'offline' : 'ready');
     const preview = v.el('preview', 'p', attention ? 'Needs attention' : snapshot?.upcoming[0] ? `Your next pick: ${snapshot.upcoming[0].title}` : 'Save songs for your turn', 'list-preview');
     prop(preview, 'hidden', !attention && !snapshot?.upcoming.length);
-    prop(preview, 'title', preview.textContent ?? ''); children(summary, title, preview); children(heading, summary, this.withSearch && expand);
-    const status = v.el('status', 'p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Private · saved when you add a song', 'list-save-status'); attr(status, 'role', 'status');
+    const meta = v.el('meta', 'div', undefined, 'list-meta');
+    prop(preview, 'title', preview.textContent ?? ''); children(meta, countLabel, preview); children(summary, title, meta); children(heading, summary);
+    const status = v.el('status', 'p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Selections unavailable', 'list-save-status'); attr(status, 'role', 'status');
     const body = v.get('body', () => { const node = el('div', undefined, 'list-body'); node.id = 'music-list-body'; node.dataset.scrollKey = 'private-list'; return node; });
     const bodyNodes: Node[] = []; const listNodes: Node[] = [heading, status];
     if (library.error) {
@@ -189,7 +165,7 @@ export class PreparationPanel {
       const review = v.el('review', 'div', undefined, 'list-notice'); children(review, v.el('review-message', 'p', 'A previous play attempt needs review. The track is still saved; check the player before trying again.'),
         this.control('review', 'Keep in list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
     }
-    if (!snapshot?.upcoming.length) bodyNodes.push(v.el('empty', 'p', 'Add songs as you browse.', 'muted list-empty'));
+    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', 'No songs yet. Search below to add one.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
     const upcomingRows: HTMLElement[] = [];
     snapshot?.upcoming.forEach((entry, index) => {
@@ -234,7 +210,7 @@ export class PreparationPanel {
     children(history, ...historyNodes);
     for (const id of this.historyRows.keys()) if (!historyIds.has(id)) this.historyRows.delete(id);
     if (snapshot?.played.length || snapshot?.removed.length) toolNodes.push(history);
-    toolNodes.push(this.recovery()); children(tools, ...toolNodes); listNodes.push(body, tools); children(list, ...listNodes);
+    children(tools, ...toolNodes); listNodes.push(body, tools); children(list, ...listNodes);
     for (const id of this.rows.keys()) if (!snapshot?.upcoming.some(entry => entry.id === id)) { this.rows.delete(id); this.disclosures.delete(`entry-${id}`); }
     return list;
   }
@@ -271,6 +247,7 @@ export class PreparationPanel {
       cached = { key, element: row }; this.rows.set(entry.id, cached);
     }
     const row = cached.element;
+    row.classList.toggle('is-unavailable', entry.sourceAvailable === false);
     row.classList.toggle('is-next', index === 0);
     const number = row.querySelector('.saved-number')!; const text = String(index + 1).padStart(2, '0'); if (number.textContent !== text) number.textContent = text;
     const hide = (selector: string, hidden: boolean) => { const node = row.querySelector<HTMLElement>(selector)!; if (node.hidden !== hidden) node.hidden = hidden; };
@@ -281,31 +258,6 @@ export class PreparationPanel {
     return row;
   }
 
-  private recovery(compact = false) {
-    const library = this.library; const snapshot = library.view;
-    const v = this.nodes;
-    const recovery = this.details('recovery', compact ? 'Recover a saved list' : 'List access');
-    const content: Node[] = [recovery.firstElementChild!, v.el('recovery-help', 'p', 'Your songs stay saved. Keep a private recovery key to open your list on another device.', 'muted small')];
-    if (snapshot) {
-      content.push(v.el('backup-title', 'h3', 'Back up access'), this.control('recovery-create', snapshot.recoveryKeyCreated ? 'Replace recovery key' : 'Create recovery key', () => {
-        if (!snapshot.recoveryKeyCreated || confirm('Replace your private recovery key? The previous key will stop working.')) return library.createRecoveryKey();
-      }));
-    }
-    if (library.recoveryKey) {
-      const key = v.get('recovery-key', () => { const node = el('textarea'); node.readOnly = true; node.setAttribute('aria-label', 'Your private recovery key'); node.rows = 3; return node; }); prop(key, 'value', library.recoveryKey);
-      content.push(key, v.el('recovery-private', 'p', 'Keep this private. It grants access to your list.', 'small muted'), v.get('recovery-copy', () => copyButton('Copy key', key)), this.control('recovery-hide', 'Hide key', () => library.hideRecoveryKey()));
-    }
-    content.push(v.el('recovery-title', 'h3', 'Use a recovery key'));
-    const form = v.el('recovery-form', 'form', undefined, 'list-recovery-form');
-    const input = v.get('recovery-input', () => { const node = el('input'); node.type = 'password'; node.autocomplete = 'off'; node.maxLength = 100; node.placeholder = 'Private recovery key'; node.id = 'preparation-recovery-key'; node.setAttribute('aria-label', 'Recover with a private key'); node.oninput = () => { this.recoveryDraft = node.value; }; return node; });
-    prop(input, 'value', this.recoveryDraft);
-    const recover = v.el('recovery-submit', 'button', 'Recover list', compact ? 'secondary' : ''); prop(recover, 'type', 'submit'); prop(recover, 'disabled', library.loading || library.saving || !navigator.onLine); children(form, input, recover);
-    form.onsubmit = event => { event.preventDefault(); if (snapshot && !confirm('Replace this browser’s list access? Save its recovery key first; its saved tracks will not be deleted.')) return; const key = input.value; this.recoveryDraft = ''; void library.recover(key, Boolean(snapshot)); };
-    content.push(form);
-    if (snapshot) content.push(v.el('devices-title', 'h3', 'Other devices'), this.control('revoke', 'Revoke other devices', () => { if (confirm('End private-list access on your other devices? Their saved songs will be kept.')) return library.revokeOtherDevices(); }));
-    children(recovery, ...content);
-    return recovery;
-  }
   private row(entry: PreparedEntryView) {
     const row = el('li', undefined, 'saved-track'); const identity = el('div', undefined, 'result-identity'); const copy = el('div');
     copy.append(el('strong', entry.title), el('p', [entry.artist, entry.album, entry.version].filter(Boolean).join(' · '), 'muted'), el('span', entry.source === 'upload' ? 'Uploaded file' : entry.provider, 'saved-source'));

@@ -3,7 +3,7 @@ import { test } from './app-fixture';
 import { uploadBytes } from '../fixtures/uploads';
 import type { IntegrationView } from '../../src/integrations';
 
-test('compact phone workspace keeps results visible, expands the list inline and preserves browsing on turn arrival', async ({ page, browser, isolatedApp }) => {
+test('compact phone workspace keeps the editable list inline and preserves browsing on turn arrival', async ({ page, browser, isolatedApp }) => {
   const current = await browser.newContext();
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   try {
@@ -18,12 +18,11 @@ test('compact phone workspace keeps results visible, expands the list inline and
     await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     const add = page.getByRole('button', { name: 'Add to list', exact: true });
     await expect(add).toBeInViewport();
-    expect((await page.locator('.preparation-list').boundingBox())!.height).toBeLessThanOrEqual(88);
-    await add.click(); await expect(page.locator('.list-count')).toHaveText(' · 1');
-    await page.getByRole('button', { name: 'Open list', exact: true }).click();
+    expect((await page.locator('.preparation-list').boundingBox())!.height).toBeLessThanOrEqual(232);
+    await add.click(); await expect(page.locator('.list-count')).toHaveText('1 track');
     await expect(page.locator('.saved-track.is-next')).toBeVisible();
-    expect(await page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('static');
-    await page.getByRole('button', { name: 'Close list', exact: true }).click();
+    expect(await page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('sticky');
+    await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
     const before = await page.evaluate(() => scrollY);
     const state = await (await page.request.get('/api/host/state')).json(); await post('/api/host/advance', { turnId: state.turnId });
     await expect(page.locator('.preparation-list a[href="#participant-player"]')).toHaveCount(0);
@@ -31,7 +30,7 @@ test('compact phone workspace keeps results visible, expands the list inline and
     expect(await page.evaluate(() => scrollY)).toBe(before);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
     await page.setViewportSize({ width: 390, height: 440 });
-    await expect.poll(() => page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('static');
+    await expect.poll(() => page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('sticky');
     await page.screenshot({ path: 'test-results/simplified-workspace-short.png', fullPage: true });
   } finally { await current.close(); }
 });
@@ -71,7 +70,7 @@ test('browser and in-page Back restore private browsing without putting results 
   expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });
 
-test('upload review, history restoration and recovery-key copy fallback keep saved music intact', async ({ page, isolatedApp }) => {
+test('upload review and inline history restoration keep saved music intact without list-access controls', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { nickname: 'Keeper' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await page.locator('#list-upload').click(); await expect(page.getByText('Choose one audio file, then review it before adding.')).toBeVisible();
@@ -82,19 +81,14 @@ test('upload review, history restoration and recovery-key copy fallback keep sav
   await page.locator('#track-upload-file').setInputFiles({ name: 'other.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
   await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Keep this draft');
   await page.locator('.upload-preview').getByRole('button', { name: 'Add to list', exact: true }).click();
-  await expect(page.locator('.list-count')).toHaveText(' · 1');
-  await page.getByRole('button', { name: 'Open list' }).click();
+  await expect(page.locator('.list-count')).toHaveText('1 track');
   await page.getByLabel('Options for Keep this draft', { exact: true }).click();
   await page.getByRole('button', { name: 'Remove', exact: true }).click();
   await page.locator('#list-history').click();
   await page.locator('#list-history').locator('..').getByRole('button', { name: 'Add back', exact: true }).click();
   await expect(page.locator('.saved-track.is-next')).toContainText('Keep this draft');
-  await page.locator('#list-recovery').click(); await page.getByRole('button', { name: 'Create recovery key', exact: true }).click();
-  const key = page.getByRole('textbox', { name: 'Your private recovery key' }); await expect(key).toBeVisible();
-  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }));
-  await page.getByRole('button', { name: 'Copy key' }).click();
-  await expect(key).toBeFocused(); expect(await key.evaluate(node => (node as HTMLTextAreaElement).selectionEnd)).toBe((await key.inputValue()).length);
-  await expect(page.getByRole('button', { name: 'Replace recovery key' })).toBeVisible();
+  await expect(page.getByText('List access', { exact: true })).toHaveCount(0);
+  await page.reload(); await expect(page.locator('.saved-track.is-next')).toContainText('Keep this draft');
   expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });
 

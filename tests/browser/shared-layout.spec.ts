@@ -41,14 +41,17 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
     for (const page of [host, settings, participant]) await page.setViewportSize({ width, height: 1000 });
     const frame = await geometry(host, ['main']);
     expect(await geometry(settings, ['main'])).toEqual(frame);
-    expect(await geometry(participant, ['main'])).toEqual(frame);
+    expect(await geometry(participant, ['main'])).toEqual(frame.map(item => width < 1100
+      ? { ...item, padding: item.padding.replace(/^\S+/, '10px') } : item));
     const columns = (await geometry(host, ['.host-workspace', '.host-invitations'])).map(({ x, width }) => ({ x, width }));
     for (const [page, selectors] of [[settings, ['.settings-connection', '.settings-output']], [participant, ['.catalogue-panel', '.preparation-list']]] as const) {
-      expect((await geometry(page, [...selectors])).map(({ x, width }) => ({ x, width }))).toEqual(columns);
+      const expected = page === participant && width < 1100 ? columns.map(column => ({ x: column.x + 1, width: column.width - 2 })) : columns;
+      expect((await geometry(page, [...selectors])).map(({ x, width }) => ({ x, width }))).toEqual(expected);
     }
     const card = await appearance(host, '.qr-card');
     await expect.poll(() => appearance(settings, '.settings-connection')).toEqual(card);
-    expect(await appearance(participant, '.catalogue-panel')).toEqual(card);
+    if (width < 1100) expect(await appearance(participant, '#music-collection')).toEqual({ ...card, padding: '0px' });
+    else expect(await appearance(participant, '.catalogue-panel')).toEqual(card);
     const player = (await participant.locator('.playback-card').boundingBox())!;
     const music = (await participant.locator('.music-workspace').boundingBox())!;
     const search = (await participant.locator('.catalogue-panel').boundingBox())!;
@@ -71,6 +74,11 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
   }
   await context.setOffline(true);
   await expect(host.locator('.app-content > .connection')).toBeVisible();
+  // Mobile keeps the connection message inside the fixed player; desktop keeps
+  // the existing full-width notice shared with the host workspace.
+  await expect(participant.locator('.player-mobile-notice')).toHaveText('Connection lost');
+  await expect(participant.locator('.app-content > .connection')).toBeHidden();
+  await participant.setViewportSize({ width: 1100, height: 1000 });
   await expect(participant.locator('.app-content > .connection')).toBeVisible();
   for (const page of [host, participant]) {
     const [message, grid] = await geometry(page, ['.app-content > .connection', '.workspace-grid']);
@@ -91,7 +99,8 @@ test('both entry routes render the same form geometry and compact frame as home'
       const style = getComputedStyle(node);
       const input = node.querySelector('input')!.getBoundingClientRect();
       const button = node.querySelector('button')!.getBoundingClientRect();
-      return { y: node.getBoundingClientRect().y, gap: style.gap, margin: style.margin, controlGap: button.y - input.bottom };
+      // The participant's mobile header is shorter; the form's own spacing is shared.
+      return { y: node.getBoundingClientRect().y - node.closest('main')!.getBoundingClientRect().y, gap: style.gap, margin: style.margin, controlGap: button.y - input.bottom };
     });
     expect(await positions(participant)).toEqual(await positions(join));
     expect(await appearance(participant, '#nickname')).toEqual(await appearance(join, '#nickname'));

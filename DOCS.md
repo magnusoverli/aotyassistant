@@ -35,7 +35,7 @@ Use **Reconnect Music Assistant** to renew authorization for the same server whi
 
 Supervisor supplies LAN-address and published-port suggestions. Choose a stable address in Settings if several interfaces are available. Phones and the display must be able to reach that address; isolated guest Wi-Fi may block it. Home Assistant remote access does not automatically expose the guest port.
 
-Keep the address stable. Changing its hostname, IP, port, or HTTP/HTTPS scheme can require participants to rejoin and recover their private lists. Save recovery keys first. See [application addresses](docs/application-addressing.md).
+Keep the address stable. Changing its hostname, IP, port, or HTTP/HTTPS scheme can require participants to rejoin and lose access to previous selections. Browser identities do not move between origins, and there is no list-recovery feature. See [application addresses](docs/application-addressing.md).
 
 **Host controls on the LAN port are open to everyone who can reach it.** Use a trusted network and do not forward the port to the internet. Ingress authentication does not secure the LAN port. See [security and privacy](SECURITY.md).
 
@@ -58,7 +58,7 @@ Normal setup takes place in **Settings**. The Home Assistant Configuration tab c
 
 Update the existing installation from the same repository; uninstalling is not required. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue playing independently if playback was active before the restart.
 
-Listening Room was previously named **Albums of the Year**. The display-name change keeps the same installation ID, repository/image addresses, browser credentials, recovery keys, and stored data. It does not require rejoining or reconnecting Music Assistant. Existing Music Assistant tokens may retain the old application label; they remain valid until their normal expiry or revocation.
+Listening Room was previously named **Albums of the Year**. The display-name change keeps the same installation ID, repository/image addresses, browser credentials, and stored data. It does not require rejoining or reconnecting Music Assistant. Existing Music Assistant tokens may retain the old application label; they remain valid until their normal expiry or revocation.
 
 Room data in legacy schemas 1 and 2 is not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the installed and target versions](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records also stop startup rather than replacing saved state.
 
@@ -68,6 +68,6 @@ Include **Listening Room** in the Home Assistant backup selection. Its private `
 
 Hot-backup hooks coordinate persistent writes while Supervisor archives the data. Existing read-only pages and audio streams remain available. If a backup fails and writes remain paused, restart the app and retry the backup. Avoid large uploads during backups.
 
-Restore the app through Home Assistant’s backup interface. Recheck the guest address, Music Assistant connection, and speaker after restoring, especially on a replacement host. Keep participant recovery keys: restoring server data cannot restore credentials that a phone’s browser has lost. Uninstalling the app may remove its data.
+Restore the app through Home Assistant’s backup interface. Recheck the guest address, Music Assistant connection, and speaker after restoring, especially on a replacement host. Preserve the guest origin and browser credentials: restoring server data cannot restore a browser identity that was cleared. Uninstalling the app may remove its data.
 
 For a rollback, restore the pre-update backup together with its matching app version; do not assume an older image can read a newer data format. See [troubleshooting](docs/troubleshooting.md) for common recovery paths.

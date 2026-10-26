@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.0.9] — 2026-10-26
+
+- Recheck membership when a participant event stream fails so removal during startup returns to the join form.
+- Clear failed or missing upload attempts on refresh without residual errors, while retaining background checks for uncertain uploads.
+- Remove manual upload cancellation and its cleanup flow while retaining progress, background completion checks, and interrupted-upload handling.
+- Simplify uploading to choose, review and add, with automatic completion checks and safe cleanup instead of upload-draft management buttons.
+- Rename the list card to “Your playlist” and show its track count as a separate subtitle instead of part of the title.
+- Let stale list cookies from an earlier empty installation open the automatic list instead of showing “Needs attention,” without replacing existing saved data.
+- Make selections one automatic persistent list per participant browser, remove list recovery and device-management flows, and show a useful empty list beside search.
+- Combine mobile selections and search into one music card with an always-visible, inline-editable list, preserving desktop and the player.
+- Halve the mobile participant page’s gap between the play-order bar and player from 20px to 10px without changing desktop.
+- Trim mobile participant play-order cards to 40px and their bar to 49px, preserving text size, stable turn positions, desktop, and host controls.
+- Slim the mobile participant header to 44px with a 40px Menu button while retaining its full 44px tap area and unchanged desktop styling.
+- Remove the mobile participant header subtitle and reduce its top bar from 56px to 48px while preserving menu touch targets and desktop styling.
+- Shorten the mobile player by 28px with compact playback buttons and no unused output row, preserving padding, 44px touch targets, state stability, and desktop.
+- Remove redundant Private and Private pick labels from the idle mobile player without changing its layout or desktop.
+- Remove the mobile player’s info icon and output text, and reserve a blank artist line until a song is active without moving its content or changing desktop.
+- Give the mobile participant player a fixed-size layout, permanent touch controls, labelled turn actions, and a full-details sheet without changing desktop.
 - Track speaker-inventory freshness explicitly, retain labelled last-known choices during refreshes, and expire stale readiness in the browser without changing speaker-selection controls.
 - Tolerate temporary playback-status read failures without replaying commands, and distinguish connection, command-confirmation, queue-policy and external-playback problems.
 - Refresh speaker readiness after playback recovery so stale connection checks do not block the next song.

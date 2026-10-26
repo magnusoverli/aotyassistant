@@ -9,9 +9,8 @@ test('mobile selections remain accessible and source choices fit narrow screens 
   const shortcuts = page.getByRole('navigation', { name: 'Your music shortcuts' });
   await expect(shortcuts).toBeHidden();
   await expect(page.locator('.turn-distance')).toBeHidden();
-  await page.getByRole('button', { name: 'Open list', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Close list', exact: true })).toBeInViewport();
-  await page.getByRole('button', { name: 'Close list', exact: true }).click();
+  await expect(page.locator('.preparation-list')).toBeVisible();
+  await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
   await page.getByRole('searchbox').scrollIntoViewIfNeeded();
   await expect(page.getByRole('searchbox')).toBeInViewport();
   await page.getByRole('searchbox').fill('Metallica'); await page.getByRole('searchbox').press('Enter');
@@ -49,19 +48,25 @@ test('mobile removes the turn-status row without changing desktop geometry or th
 });
 
 test('off-screen playback offers a read-only return with confirmed status and retains browsing position', async ({ page, isolatedApp }) => {
+  for (let index = 1; index <= 2; index++) isolatedApp.demo.catalogue.push({ ...isolatedApp.demo.catalogue[0]!, id: `demo:shortcut-${index}`, title: `Northern extra ${index}` });
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/participant/join', { nickname: 'Player' });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('searchbox').press('Enter');
   // Keep a genuine scrolled browsing viewport; click Play only once while the request is held.
   await page.locator('.catalogue-results').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
+  const play = page.getByRole('button', { name: 'Play', exact: true }).first();
+  // Keep focus from starting a browser smooth scroll during the playback-position assertion.
+  await play.evaluate(node => (node as HTMLButtonElement).focus({ preventScroll: true }));
+  await expect.poll(() => play.evaluate(node => node.getBoundingClientRect().top >= document.querySelector('.preparation-list')!.getBoundingClientRect().bottom + 11)).toBe(true);
   await expect(page.locator('.playback-card')).not.toBeInViewport();
   const before = await page.evaluate(() => scrollY);
   let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
   let plays = 0;
   await page.route('**/api/participant/play', async route => { plays++; await held; await route.continue(); });
   try {
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    // It is already visible and focused; avoid automation's scroll-margin adjustment.
+    await play.evaluate(node => (node as HTMLButtonElement).click());
     const shortcut = page.getByRole('complementary', { name: 'Playback shortcut' });
     await expect(shortcut).toBeInViewport(); await expect(shortcut).toContainText('Starting…');
     await expect(shortcut).not.toContainText('Playing');
@@ -82,16 +87,18 @@ test('off-screen playback offers a read-only return with confirmed status and re
 });
 
 test('a failed start offers the visible error rather than claiming playback or retrying it', async ({ page, isolatedApp }) => {
+  for (let index = 1; index <= 2; index++) isolatedApp.demo.catalogue.push({ ...isolatedApp.demo.catalogue[0]!, id: `demo:shortcut-${index}`, title: `Northern extra ${index}` });
   await page.request.post('/api/participant/join', { data: { nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('searchbox').press('Enter');
   await page.locator('.catalogue-results').evaluate(node => node.scrollIntoView({ block: 'start', behavior: 'instant' }));
   let plays = 0;
   await page.route('**/api/participant/play', async route => { plays++; await route.fulfill({ status: 503, json: { error: 'The speaker could not start this song.' } }); });
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
   const shortcut = page.getByRole('complementary', { name: 'Playback shortcut' });
   await expect(shortcut).toBeInViewport(); await expect(shortcut).toContainText('Check playback');
   await expect(shortcut).not.toContainText('Playing');
   await shortcut.getByRole('link', { name: 'Review status', exact: true }).click();
-  await expect(page.locator('.app-content > .error')).toBeInViewport(); expect(plays).toBe(1);
+  const details = page.getByRole('dialog', { name: 'Player details' });
+  await expect(details).toBeVisible(); await expect(details).toContainText('The speaker could not start this song.'); expect(plays).toBe(1);
 });

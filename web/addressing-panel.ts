@@ -84,7 +84,7 @@ export class AddressingPanel {
       const guestSettings = v.el('guest-settings', 'details', undefined, 'settings-address-help'); prop(guestSettings, 'open', this.guestExpanded);
       const guestNodes: Node[] = [v.el('guest-summary', 'summary', 'Change guest address')];
       guestSettings.ontoggle = () => { if (guestSettings.isConnected) this.guestExpanded = guestSettings.open; };
-      guestNodes.push(v.el('guest-warning', 'p', 'Changing address may require people to rejoin or recover their private lists. Keep recovery keys before switching.', 'muted small'));
+      guestNodes.push(v.el('guest-warning', 'p', 'Changing address may require people to rejoin and lose access to previous selections. Keep the guest address stable; saved server data is kept.', 'muted small'));
       if (!inIngress()) guestNodes.push(this.button('Use this browser address for guest links', async () => {
         if (!this.confirmGuestChange(location.origin)) return;
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
@@ -132,6 +132,6 @@ export class AddressingPanel {
     return panel;
   }
   private confirmGuestChange(origin: string) {
-    return origin === this.view?.guestOrigin || confirm(`Change the guest link from ${this.view?.guestOrigin}/join to ${origin}/join? Browser access does not move between addresses. Keep private recovery keys before switching; saved songs are kept.`);
+    return origin === this.view?.guestOrigin || confirm(`Change the guest link from ${this.view?.guestOrigin}/join to ${origin}/join? Browser identities do not move between addresses. People may lose access to previous selections; saved server data is kept.`);
   }
 }

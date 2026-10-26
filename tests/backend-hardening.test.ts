@@ -127,17 +127,17 @@ test('private capture releases the owner lane, coalesces retries and drains the 
 
 test('capture reauthorizes and checks the current revision after provider work', async t => {
   const directory = await mkdtemp('/tmp/opencode/aoty-capture-revocation-'); t.after(() => rm(directory, { recursive: true, force: true }));
-  const manager = new PreparationManager(new PreparationFileStore(directory)); const owner = await manager.createOwner();
-  const key = await manager.issueRecoveryKey(owner.credential, 0); const recovered = await manager.recover(key.recoveryKey);
+  const store = new PreparationFileStore(directory); const manager = new PreparationManager(store); const owner = await manager.createOwner();
   const held = gate(); t.after(held.release);
-  const adding = manager.addCaptured(owner.credential, edit(recovered.view.revision), 'reference', async () => { held.enter(); await held.pending; return selected; });
-  const rejected = assert.rejects(adding, /access is unavailable/); await held.entered;
-  await manager.revokeOtherDevices(recovered.credential, recovered.view.revision); held.release(); await rejected;
-  assert.equal((await manager.read(recovered.credential)).upcoming.length, 0);
-  const stale = gate(); t.after(stale.release); const view = await manager.read(recovered.credential);
-  const pending = manager.addCaptured(recovered.credential, edit(view.revision), 'reference', async () => { stale.enter(); await stale.pending; return selected; });
+  const adding = manager.addCaptured(owner.credential, edit(0), 'reference', async () => { held.enter(); await held.pending; return selected; });
+  const rejected = assert.rejects(adding, /selections are unavailable/); await held.entered;
+  const state = (await store.load(owner.view.ownerId))!; state.credentials[0]!.hash = '0'.repeat(64); await store.save(state);
+  held.release(); await rejected;
+  const replacement = await manager.createOwner();
+  const stale = gate(); t.after(stale.release); const view = await manager.read(replacement.credential);
+  const pending = manager.addCaptured(replacement.credential, edit(view.revision), 'reference', async () => { stale.enter(); await stale.pending; return selected; });
   const conflict = assert.rejects(pending, /changed in another page/); await stale.entered;
-  await manager.issueRecoveryKey(recovered.credential, view.revision); stale.release(); await conflict;
+  await manager.add(replacement.credential, edit(view.revision), selected); stale.release(); await conflict;
 });
 
 test('completed upload deletions are not retried; legacy tombstones migrate in bounded durable batches', async t => {

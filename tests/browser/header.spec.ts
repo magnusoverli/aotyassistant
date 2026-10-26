@@ -9,11 +9,16 @@ test('shared mobile header is compact across routes while desktop sizing and tou
   for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
     await page.goto(path);
     await expect(page.locator('.rotation-seat')).toHaveCount(1);
+    const participantPage = await page.locator('body').getAttribute('data-view') === 'participant';
     for (const width of [1440, 1100, 1099, 701, 700, 390, 320, 1100]) {
       await page.setViewportSize({ width, height: 844 });
       const mobile = width < 1100;
-      await expect(page.locator('.header-inner')).toHaveCSS('height', mobile ? '56px' : '72px');
-      await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? '53px' : '89px');
+      const compactParticipant = mobile && participantPage;
+      const barHeight = mobile ? compactParticipant ? '44px' : '56px' : '72px';
+      await expect(page.locator('.header-inner')).toHaveCSS('height', barHeight);
+      if (compactParticipant) await expect(page.locator('.brand-subtitle')).toBeHidden();
+      else await expect(page.locator('.brand-subtitle')).toBeVisible();
+      await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? compactParticipant ? '49px' : '53px' : '89px');
       await expect(page.locator('.brand-mark')).toHaveCSS('width', mobile ? width <= 380 ? '28px' : '30px' : '38px');
       await expect(page.locator('.brand strong')).toHaveCSS('font-size', mobile ? '14px' : '16px');
       await expect(page.locator('.rotation-seat strong')).toHaveCSS('font-size', mobile ? '13px' : '14px');
@@ -23,16 +28,30 @@ test('shared mobile header is compact across routes while desktop sizing and tou
         const line = getComputedStyle(node, '::after');
         return { content: line.content, width: line.width, top: line.top, border: line.borderTopWidth, pointerEvents: line.pointerEvents };
       });
-      if (mobile) expect(divider).toEqual({ content: '""', width: `${width}px`, top: '56px', border: '1px', pointerEvents: 'none' });
+      if (mobile) expect(divider).toEqual({ content: '""', width: `${width}px`, top: barHeight, border: '1px', pointerEvents: 'none' });
       else expect(divider.content).toBe('none');
       await expect(page.locator('.app-header')).toHaveCSS('border-bottom-width', '1px');
       await expect(page.locator('.order-bar')).toHaveCSS('border-top-color', mobile ? 'rgba(0, 0, 0, 0)' : 'rgb(48, 61, 51)');
       const menu = (await page.locator('.header-menu-toggle').boundingBox())!;
-      expect(menu.height).toBeGreaterThanOrEqual(44); expect(menu.width).toBeGreaterThanOrEqual(44);
-      if (mobile) expect((await page.locator('.rotation-seat').boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      expect(menu.height).toBeGreaterThanOrEqual(compactParticipant ? 40 : 44); expect(menu.width).toBeGreaterThanOrEqual(44);
+      if (compactParticipant) {
+        const extension = await page.locator('.header-menu-toggle').evaluate(node => {
+          const hit = getComputedStyle(node, '::before');
+          return { content: hit.content, top: parseFloat(hit.top), bottom: parseFloat(hit.bottom) };
+        });
+        expect(extension.content).toBe('""');
+        expect(menu.height - extension.top - extension.bottom).toBeGreaterThanOrEqual(44);
+      }
+      if (mobile) expect((await page.locator('.rotation-seat').boundingBox())!.height).toBe(compactParticipant ? 40 : 44);
       await noOverflow(page);
     }
     await page.setViewportSize({ width: 390, height: 844 });
+    if (participantPage) {
+      const menu = (await page.locator('.header-menu-toggle').boundingBox())!;
+      await page.mouse.click(menu.x + menu.width / 2, menu.y - 1);
+      await expect(page.locator('#app-navigation')).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
     await openNavigation(page);
     await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
     await page.keyboard.press('Escape');
@@ -190,5 +209,6 @@ test('skip navigation preserves a stable join URL and menu access never triggers
   expect(writes).toEqual([]);
   await page.getByLabel('Display name').fill('Keyboard listener'); await page.getByRole('button', { name: 'Join room' }).click();
   await expect(page).toHaveURL('/participant'); await expect(page.getByRole('banner')).toContainText('Keyboard listener');
-  expect(writes).toEqual(['/api/participant/join']);
+  await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
+  expect(writes).toEqual(['/api/participant/join', '/api/participant/preparations/init']);
 });

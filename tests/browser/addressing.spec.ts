@@ -14,7 +14,7 @@ test('host suggests the opened address, verifies media automatically without a s
   await expect(panel.getByText('Last tested:', { exact: false })).toBeHidden();
   expect((await (await page.request.get('/api/host/integrations')).json()).destination).toBeNull();
   await panel.getByText('Change guest address', { exact: true }).click();
-  await expect(panel.getByText('Changing address may require people to rejoin or recover their private lists.', { exact: false })).toBeVisible();
+  await expect(panel.getByText('Changing address may require people to rejoin and lose access to previous selections.', { exact: false })).toBeVisible();
   await panel.getByRole('button', { name: 'Use this browser address for guest links' }).click();
   await expect(panel.getByText('Guest address saved.', { exact: false })).toBeVisible();
   await expect(panel.getByLabel('Guest address', { exact: true })).toHaveValue(origin);
@@ -54,7 +54,7 @@ test('the host can select the opened local hostname without MA and new invitatio
   const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
   await panel.getByText('Change guest address', { exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Use this browser address for guest links' })).toBeEnabled();
-  page.once('dialog', async dialog => { expect(dialog.message()).toContain('Browser access does not move'); await dialog.accept(); });
+  page.once('dialog', async dialog => { expect(dialog.message()).toContain('Browser identities do not move'); await dialog.accept(); });
   await panel.getByRole('button', { name: 'Use this browser address for guest links' }).click();
   await expect(panel.getByText('Guest address saved.', { exact: false })).toBeVisible();
   const saved = await (await page.request.get(origin + '/api/host/addressing')).json(); expect(saved.guestOrigin).toBe(origin);

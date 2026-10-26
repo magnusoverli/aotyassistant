@@ -1,5 +1,5 @@
 name: Listening Room
-version: "1.0.8"
+version: "1.0.9"
 slug: albums_of_the_year
 url: https://github.com/magnusoverli/aotyassistant
 description: Turn-based music sharing for Home Assistant, powered by Music Assistant.

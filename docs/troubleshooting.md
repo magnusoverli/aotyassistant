@@ -34,7 +34,7 @@ Open Settings and choose **Recover playback controls**. The app checks ownership
 
 ## A private list disappeared
 
-Use the same guest address and browser as before, or open **Recover a saved list** and enter its recovery key. After joining, recovery is also available under **List access**. A matching display name is not proof of ownership. Clearing browser data or switching HTTP/HTTPS, hostnames, or ports changes browser access. The host cannot inspect or recover another person’s list.
+Use the same guest address and browser as before, then join the room. The app automatically reuses that browser’s selections; it does not offer list selection or recovery controls. A matching display name is not proof of ownership. Clearing all browser credentials or switching HTTP/HTTPS, hostnames, or ports can lose access. Load failures show an error and do not replace existing songs with an empty list. The host cannot inspect or claim another person’s list.
 
 ## Saving or backup fails
 
@@ -50,4 +50,4 @@ Use the [issue form](https://github.com/magnusoverli/aotyassistant/issues/new/ch
 - Host architecture, browser/device, speaker integration, and whether the page is Ingress or the guest link.
 - Exact steps, expected result, actual result, and a short sanitized log excerpt from the app’s **Log** tab.
 
-Do not upload `/data`, backups, cookies, tokens, recovery keys, protected media URLs, or other people’s music. Report credential leaks and privacy vulnerabilities through the [private security channel](../SECURITY.md#reporting-a-vulnerability).
+Do not upload `/data`, backups, cookies, tokens, protected media URLs, or other people’s music. Report credential leaks and privacy vulnerabilities through the [private security channel](../SECURITY.md#reporting-a-vulnerability).

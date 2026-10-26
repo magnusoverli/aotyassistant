@@ -23,11 +23,13 @@ Open **Your music** after joining:
 3. Use **Add to list** to save a choice for later. Preparation remains available while another participant is playing.
 4. Use **Upload a song** for an audio file on the device. Review its details and add it to the private list.
 
-See [private lists](private-lists.md) and [uploaded audio](uploaded-audio.md). Without a Music Assistant connection, the app offers a simulated demo catalogue. **Demo mode — no audio** appears on the host, participant, and room-display pages; playback and volume controls are simulated and produce no sound.
+On phones, **Your playlist** and search share one card. The number of upcoming tracks appears beneath the playlist title. The saved list stays visible in the main page, with its own compact scrolling area. Reorder with **Edit order**, or use a song’s **⋯** menu to move it to the top or remove it; no separate list screen is needed.
+
+See [private lists](private-lists.md) and [uploaded audio](uploaded-audio.md). Without a Music Assistant connection, the app offers a simulated demo catalogue. The host, desktop participant, and room-display pages identify **Demo mode — no audio**; playback and volume controls are simulated and produce no sound on every device.
 
 ## Play a turn
 
-Only the current participant can start a track or reveal its details. Participant playback controls are available only during their turn. Choose **Play** from a search result or **Play first selection** in the player to start the first entry in **Your selections**. The list’s **Move to top** action changes which saved track comes first without starting playback. Playing takes over the chosen Music Assistant speaker or group with one track, replacing its existing queue and disabling repeat, shuffle, and autoplay.
+Only the current participant can start a track or reveal its details. Participant playback controls are available only during their turn. Choose **Play** from a search result or **Play first selection** (**Play pick** on phones) in the player to start the first entry in **Your playlist**. The list’s **Move to top** action changes which saved track comes first without starting playback. Playing takes over the chosen Music Assistant speaker or group with one track, replacing its existing queue and disabling repeat, shuffle, and autoplay.
 
 The shared display shows **Track details hidden.** until the current participant selects **Reveal details** to show the title, artist, and cover. If cover artwork is unavailable, the revealed title and artist appear on the spinning record’s label. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the track controlled by the app and pass to the next person, or **Pass turn** to advance without playing a track. Other Music Assistant and speaker interfaces may independently show track information before reveal.
 
@@ -49,4 +51,4 @@ If another source changes playback, its audio is left untouched and the app does
 
 There is no Create/Start/End session step. The room and join/display links persist. The host can remove people from the rotation; removal does not delete their private lists. Returning participants can rejoin and use the same list when their browser credentials are retained.
 
-Lists, settings, and order survive restart, while playback and reveal reset. Keep a private-list recovery key and include the app in Home Assistant backups.
+Lists, settings, and order survive restart, while playback and reveal reset. Keep the same browser and guest address, and include the app in Home Assistant backups. Lists are automatic; there is no recovery-key or list-switching workflow.

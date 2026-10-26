@@ -66,9 +66,8 @@ test('participant typography, surfaces and desktop alignment match the host page
       await page.setViewportSize({ width, height: 1000 });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       if (width < 1100) {
-        await page.getByRole('button', { name: 'Open list', exact: true }).click();
-        expect(await page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('static');
-        await page.getByRole('button', { name: 'Close list', exact: true }).click();
+        await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
+        expect(await page.locator('.preparation-list').evaluate(node => getComputedStyle(node).position)).toBe('sticky');
       }
     }
     await page.setViewportSize({ width: 390, height: 844 });
@@ -105,18 +104,17 @@ test('saved-list changes update the player selection without adding playback con
     const saved = await (await page.request.get('/api/participant/preparations/state')).json();
     const next = saved.upcoming[1];
     expect((await r.request('/move', { entryId: next.id, beforeId: saved.upcoming[0].id, operation: { id: randomUUID(), issuedAt: Date.now(), revision: saved.revision } })).ok()).toBe(true);
-    await expect(page.locator('.playback-card h2')).toHaveText(next.title);
+    await expect(page.locator('.private-now-playing h2')).toHaveText(next.title);
     await expect(input).toBeFocused(); await expect(input).toHaveValue('Keep this query');
     expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 6]);
-    await page.getByRole('button', { name: 'Open list', exact: true }).click();
     await expect(page.locator('.preparation-list').getByRole('button', { name: /^(Play|Pause|Resume|Finish turn)/, includeHidden: true })).toHaveCount(0);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
-    await page.locator('.playback-card').getByRole('button', { name: 'Play first selection', exact: true }).click();
+    await page.locator('.playback-card').getByRole('button', { name: 'Play pick', exact: true }).click();
     await expect(page.locator('.playback-card').getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
-    await expect(page.locator('.list-count')).toHaveText(' · 2');
+    await expect(page.locator('.list-count')).toHaveText('2 tracks');
     const playing = await (await page.request.get('/api/participant/state')).json();
     expect(playing.ownPlayback.track.title).toBe(next.title);
-    await expect(page.locator('.playback-card h2')).toHaveText(next.title);
+    await expect(page.locator('.private-now-playing h2')).toHaveText(next.title);
     for (const [width, height] of [[1440, 1000], [390, 844], [320, 700], [844, 390]]) {
       await page.setViewportSize({ width: width!, height: height! });
       await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
@@ -143,14 +141,12 @@ test('search and one private list share desktop/phone layouts, including long me
         return { sideBySide: list.left >= search.right, previewRows: [...document.querySelectorAll('.saved-tracks[aria-label="Your prepared tracks"] > li')].filter(node => node.getClientRects().length > 0).length };
       });
       expect(layout.sideBySide).toBe(width! >= 1100);
-      expect(layout.previewRows).toBe(width! >= 1100 ? 24 : 0);
+      expect(layout.previewRows).toBe(24);
       await page.screenshot({ path: `test-results/participant-workspace-${width}x${height}-initial.png` });
       if (width! < 1100) {
-        await page.getByRole('button', { name: 'Open list', exact: true }).click();
-        await expect(page.getByRole('button', { name: 'Close list', exact: true })).toHaveAttribute('aria-expanded', 'true');
-        expect(await page.locator('.list-body').evaluate(node => getComputedStyle(node).overflowY)).toBe('visible');
+        await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
+        expect(await page.locator('.list-body').evaluate(node => getComputedStyle(node).overflowY)).toBe('auto');
         await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
-        await page.getByRole('button', { name: 'Close list', exact: true }).click();
       }
       // Keyboard focus must not be obscured by either sticky surface.
       const add = page.locator('.catalogue-results .track-row').nth(12).getByRole('button', { name: 'Add to list', exact: true });
@@ -171,21 +167,20 @@ test('owner and room updates preserve search/caret, expanded list scroll, and th
   const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo); const page = r.page;
   try {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.getByRole('button', { name: 'Open list', exact: true }).click();
-    await page.locator('.list-body').evaluate(node => { node.scrollTop = 260; });
     const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Still searching');
     await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 7));
+    await page.locator('.list-body').evaluate(node => { node.scrollTop = 260; });
     await page.locator('header').evaluate(node => { (node as HTMLElement).dataset.sameNode = 'yes'; });
     const before = await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }));
     const saved = await (await page.request.get('/api/participant/preparations/state')).json();
     expect((await r.request('/add', { trackId: 'demo:aurora', operation: { id: randomUUID(), issuedAt: Date.now(), revision: saved.revision } })).ok()).toBe(true);
-    await expect(page.locator('.list-count')).toHaveText(' · 25');
+    await expect(page.locator('.list-count')).toHaveText('25 tracks');
     let session = await (await host.request.get('/api/host/state')).json();
     session = await (await r.post('/api/host/reorder', { ids: session.active.map((person: { id: string }) => person.id), revision: session.revision })).json();
     await expect(input).toBeFocused(); await expect(input).toHaveValue('Still searching');
     expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 7]);
     expect(await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }))).toEqual(before);
-    await expect(page.getByRole('button', { name: 'Close list', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
     await expect(page.locator('header')).toHaveAttribute('data-same-node', 'yes');
     await r.post('/api/host/remove', { id: session.current.id, revision: session.revision });
     await expect(page.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
@@ -205,8 +200,8 @@ test('adding from results keeps compact list, query, focus and scroll without st
     const before = await page.evaluate(() => scrollY); const buttonTop = (await add.boundingBox())!.y; await add.press('Enter');
     const added = page.getByRole('button', { name: 'Added ✓', exact: true }); await expect(added).toBeFocused();
     await expect(added).toHaveAttribute('aria-disabled', 'true');
-    await expect(page.locator('.list-count')).toHaveText(' · 2'); await expect(input).toHaveValue('Summer');
-    await expect(page.getByRole('button', { name: 'Open list', exact: true })).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('.list-count')).toHaveText('2 tracks'); await expect(input).toHaveValue('Summer');
+    await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
     expect(await page.evaluate(() => scrollY)).toBe(before);
     expect(Math.abs((await added.boundingBox())!.y - buttonTop)).toBeLessThanOrEqual(1);
     await expect(page.getByRole('status').filter({ hasText: 'Added Late Summer to your list.' })).toHaveCount(1);

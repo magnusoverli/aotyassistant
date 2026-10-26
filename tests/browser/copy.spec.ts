@@ -84,15 +84,14 @@ test('Move to top only changes the first selection and Play first selection star
     await page.getByRole('button', { name: 'Add to list', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
   }
-  await page.getByRole('button', { name: 'Open list', exact: true }).click();
-  const list = page.getByRole('complementary', { name: /^Your selections/ });
+  const list = page.getByRole('complementary', { name: 'Your playlist', exact: true });
   await expect(list.locator('.saved-track')).toHaveCount(2);
   await list.locator('.saved-track').nth(1).locator('.saved-menu summary').click();
   await list.getByRole('button', { name: 'Move to top', exact: true }).click();
   await expect(list.locator('.saved-track').first().locator('strong')).toHaveText('Night Bus Home');
   const before = await (await page.request.get('/api/participant/state')).json();
   expect(before.ownPlayback).toBeNull(); expect(before.playbackStatus).toBe('idle');
-  await page.getByRole('button', { name: 'Play first selection', exact: true }).click();
+  await page.getByRole('button', { name: /^(Play first selection|Play pick)$/ }).click();
   await expect(page.locator('.playback-card .playback-status')).toHaveText('● Playing');
   const after = await (await page.request.get('/api/participant/state')).json();
   expect(after.turnId).toBe(before.turnId); expect(after.ownPlayback.track.title).toBe('Night Bus Home');

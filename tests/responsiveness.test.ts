@@ -81,7 +81,7 @@ test('private snapshots reuse validated immutable state but detect external repl
   assert.ok(Object.isFrozen(first)); assert.ok(Object.isFrozen(first!.entries));
   const mutable = await store.load(owner.view.ownerId); mutable!.revision = 123;
   assert.equal((await manager.read(owner.credential)).revision, 0);
-  await manager.issueRecoveryKey(owner.credential, 0);
+  const changed = (await store.load(owner.view.ownerId))!; changed.revision++; await store.save(changed);
   assert.notEqual(await store.snapshot(owner.view.ownerId), first);
   await writeFile(`${dir}/preparations/${owner.view.ownerId}.json`, 'broken');
   await assert.rejects(manager.read(owner.credential), /could not be read/);
@@ -107,18 +107,18 @@ test('private reads remain available during a reserved saved Play, but review, e
 });
 
 test('private revocation during a saved start cannot disclose a cached list or consume its retained review marker', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-list-revoked-start-'); const manager = new PreparationManager(new PreparationFileStore(dir));
-  const owner = await manager.createOwner(); const key = await manager.issueRecoveryKey(owner.credential, 0);
+  const dir = await mkdtemp('/tmp/opencode/aoty-list-revoked-start-'); const store = new PreparationFileStore(dir); const manager = new PreparationManager(store);
+  const owner = await manager.createOwner();
   const selected: SavedSelection = { source: 'demo', trackId: 'demo:aurora', metadata: { title: 'Private', artist: '', album: '', version: '', provider: 'Demo', duration: 60 } };
-  const added = await manager.add(owner.credential, { id: randomUUID(), issuedAt: Date.now(), revision: key.view.revision }, selected);
+  const added = await manager.add(owner.credential, { id: randomUUID(), issuedAt: Date.now(), revision: 0 }, selected);
   const held = gate(); t.after(held.release);
   const playing = manager.playHead(owner.credential, added.entryId, added.view.revision, async () => {
     held.enter(); await held.pending; return { playbackId: randomUUID(), value: 'audio confirmed' };
   });
   await held.entered;
-  const recovered = await manager.recover(key.recoveryKey); await manager.revokeOtherDevices(recovered.credential, recovered.view.revision);
-  await assert.rejects(manager.selection(owner.credential, added.entryId), /access is unavailable/);
+  const state = (await store.load(owner.view.ownerId))!; state.credentials[0]!.hash = '0'.repeat(64); await store.save(state);
+  await assert.rejects(manager.selection(owner.credential, added.entryId), /selections are unavailable/);
   held.release(); const result = await playing;
   assert.equal(result.value, 'audio confirmed'); assert.equal(result.preparation, undefined); assert.ok(result.warning);
-  assert.equal((await manager.read(recovered.credential)).reviewEntryId, added.entryId);
+  assert.equal((await store.load(owner.view.ownerId))!.pendingPlay?.entryId, added.entryId);
 });

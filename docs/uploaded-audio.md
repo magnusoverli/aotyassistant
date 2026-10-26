@@ -1,6 +1,6 @@
 # Uploaded audio
 
-Upload one audio file from a phone or computer, review its title, artist, album, and embedded cover, then add it to **Your selections**. The Home Assistant app includes the required audio-analysis tools.
+Upload one audio file from a phone or computer, review its title, artist, album, and embedded cover, then add it to **Your playlist**. The Home Assistant app includes the required audio-analysis tools.
 
 ## Supported formats
 
@@ -28,9 +28,11 @@ Files can be prepared while Music Assistant is unavailable. Playback requires a 
 
 ## Interrupted uploads
 
-A reload can check a completed upload and recover review text. An incomplete transfer may require selecting the file again. Retry and Add are explicit; the app does not automatically resend audio commands or duplicate an acknowledged entry.
+Failed uploads show their error for the current attempt, not again after refreshing. Rejected or missing uploads are forgotten automatically; saved tracks are unaffected.
 
-**Discard upload draft** removes only an unreferenced draft. Completed drafts not added to a list expire after seven days. Saved files do not expire.
+The app automatically checks uncertain upload responses and restores completed uploads and edited review text after a reload or reconnection. An incomplete transfer may require choosing the file again. Adding to the playlist and retrying an unconfirmed save remain explicit; the app does not automatically resend files or audio commands, or duplicate an acknowledged entry.
+
+Upload progress is shown until processing finishes. Use **Choose another file** afterward to replace an unsaved selection. The app handles cleanup internally and never deletes a file referenced by a saved track. Completed uploads not added to a list expire after seven days if they cannot be cleaned up sooner. Saved files do not expire.
 
 ## Storage and deletion
 

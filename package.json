@@ -1,6 +1,6 @@
 {
   "name": "albums-of-the-year",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {

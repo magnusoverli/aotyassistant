@@ -6,7 +6,7 @@ Listening Room is a Home Assistant app for turn-based music sharing through Musi
 
 - [Installation, options, updates, and backups](../DOCS.md)
 - [Host and participant guide](using-the-app.md)
-- [Private lists and recovery](private-lists.md)
+- [Private selections and persistence](private-lists.md)
 - [Uploaded audio](uploaded-audio.md)
 - [Music Assistant and compatibility](music-assistant.md)
 - [Application addresses](application-addressing.md)

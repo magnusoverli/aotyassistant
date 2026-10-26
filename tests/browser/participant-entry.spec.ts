@@ -22,7 +22,7 @@ async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, c
 }
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
-test('a first visit offers the shared inline join form and optional recovery, without a fake empty workspace or automatic writes', async ({ page }) => {
+test('a first visit offers only the join form, then automatically opens one empty list alongside search', async ({ page }) => {
   const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
   await page.goto('/join'); await expect(page.getByLabel('Display name')).toBeVisible();
   const form = await page.locator('.join-panel > form').innerHTML();
@@ -31,7 +31,7 @@ test('a first visit offers the shared inline join form and optional recovery, wi
   await expect(page.locator('.brand-subtitle')).toHaveText('Your music');
   await expect(page.locator('.preparation-list, .catalogue-panel, .playback-card')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
-  await expect(page.getByLabel('Recover with a private key')).toBeHidden();
+  await expect(page.getByText('Recover a saved list', { exact: true })).toHaveCount(0);
   for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
     await page.setViewportSize({ width: width!, height: height! }); await noOverflow(page);
     await expect(page.getByRole('button', { name: 'Join room', exact: true })).toBeInViewport();
@@ -42,7 +42,25 @@ test('a first visit offers the shared inline join form and optional recovery, wi
   await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   await expect(page).toHaveURL('/participant');
-  expect(writes).toEqual(['/api/participant/join']);
+  await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search below to add one.');
+  await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
+  expect(writes).toContain('/api/participant/preparations/init');
+  expect(writes.filter(path => !['/api/participant/join', '/api/participant/preparations/init'].includes(path))).toEqual([]);
+});
+
+test('a stale cookie from an earlier installation opens the automatic empty list instead of Needs attention', async ({ page, isolatedApp }) => {
+  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Old browser cookie' } });
+  expect(joined.ok()).toBe(true);
+  const staleOwner = randomUUID();
+  await page.context().addCookies([{ name: 'aoty_preparation', value: `${staleOwner}.${'x'.repeat(43)}`,
+    domain: new URL(isolatedApp.origin).hostname, path: '/api/participant/preparations', httpOnly: true, sameSite: 'Strict' }]);
+  await page.goto('/participant'); await expect(page.locator('.list-empty')).toBeVisible();
+  await expect(page.getByText('Needs attention', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Refresh list', exact: true })).toHaveCount(0);
+  const saved = await (await page.request.get('/api/participant/preparations/state')).json();
+  expect(saved.ownerId).not.toBe(staleOwner);
+  await page.reload(); await expect(page.locator('.list-empty')).toBeVisible();
+  expect((await (await page.request.get('/api/participant/preparations/state')).json()).ownerId).toBe(saved.ownerId);
 });
 
 test('checking valid membership never flashes a join form and failed checks require a read-only retry', async ({ page, isolatedApp }) => {
@@ -55,17 +73,37 @@ test('checking valid membership never flashes a join form and failed checks requ
     await expect(page.locator('.list-count')).toHaveCount(0);
     release(); await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   } finally { release(); await page.unroute('**/api/participant/state'); }
+  await page.goto('about:blank');
   await page.context().clearCookies({ name: 'aoty_participant' });
   let fail = true; const writes: string[] = [];
   page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
   await page.route('**/api/participant/state', async route => {
     if (fail) { fail = false; await route.fulfill({ status: 503, json: { error: 'Room temporarily unavailable.' } }); } else await route.continue();
   });
-  await page.reload(); await expect(page.getByRole('heading', { name: 'Can’t reach the room.' })).toBeVisible();
+  await page.goto('/participant'); await expect(page.getByRole('heading', { name: 'Can’t reach the room.' })).toBeVisible();
   await expect(page.getByRole('alert')).toHaveText('Room temporarily unavailable.');
   await expect(page.getByLabel('Display name')).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); expect(writes).toEqual([]);
+});
+
+test('failed automatic list initialization reports an error rather than an empty replacement, and retry keeps saved songs', async ({ browser, isolatedApp }) => {
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 2);
+  try {
+    let fail = true;
+    await r.page.route('**/api/participant/preparations/init', async route => {
+      if (fail) { fail = false; await route.fulfill({ status: 503, json: { error: 'Selections temporarily unavailable. Nothing was reset.' } }); }
+      else await route.continue();
+    });
+    await r.page.goto(isolatedApp.origin + '/participant');
+    await expect(r.page.getByRole('alert')).toContainText('Selections temporarily unavailable. Nothing was reset.');
+    await expect(r.page.locator('.list-empty')).toHaveCount(0);
+    await expect(r.page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
+    await r.page.getByRole('button', { name: 'Refresh list', exact: true }).click();
+    await expect(r.page.locator('.saved-track strong')).toHaveText(['Saved selection 1', 'Saved selection 2']);
+    const saved = await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
+    expect(saved.ownerId).toBe(r.library.ownerId); expect(saved.upcoming).toEqual(r.library.upcoming);
+  } finally { await r.context.close(); }
 });
 
 test('offline entry retains the nickname and returns to the join form after reconnecting without joining automatically', async ({ page }) => {
@@ -83,7 +121,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list, .saved-track, .music-workspace')).toHaveCount(0);
-    await expect(r.page.getByRole('button', { name: 'Play first selection' })).toHaveCount(0);
+    await expect(r.page.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toHaveCount(0);
     await expect(r.page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
     for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
       await r.page.setViewportSize({ width: width!, height: height! }); await noOverflow(r.page);
@@ -99,33 +137,31 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await r.page.getByLabel('Display name').fill('Returning listener');
     await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.locator('.participant-hero')).toBeVisible();
-    await showList(r.page); await expect(r.page.locator('.list-count')).toHaveText(` · ${count}`);
+    await showList(r.page); await expect(r.page.locator('.list-count')).toHaveText(`${count} tracks`);
     await expect(r.page.locator('.saved-tracks[aria-label="Your prepared tracks"] > li')).toHaveCount(count);
     const library = await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
     expect(library.ownerId).toBe(r.library.ownerId); expect(library.upcoming).toEqual(r.library.upcoming);
   } finally { await r.context.close(); }
 });
 
-for (const entryPath of ['/participant', '/join']) test(`recovering through ${entryPath} keeps the list private until explicit joining`, async ({ browser, isolatedApp }) => {
+for (const entryPath of ['/participant', '/join']) test(`joining through ${entryPath} uses one private list without recovery or nickname-based access`, async ({ browser, isolatedApp }) => {
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 2);
   const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
-    const key = await r.post('/api/participant/preparations/recovery-key', { revision: r.library.revision });
     const page = await fresh.newPage(); await page.goto(isolatedApp.origin + entryPath);
     await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
-    await page.getByText('Recover a saved list', { exact: true }).click();
-    await page.getByLabel('Recover with a private key').fill(key.recoveryKey); await page.getByRole('button', { name: 'Recover list', exact: true }).click();
-    await expect.poll(async () => (await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
-    await expect(page.getByRole('status').filter({ hasText: 'List recovered. Enter a display name to join the room.' })).toBeVisible();
+    await expect(page.getByText('Recover a saved list', { exact: true })).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('Saved selection');
     await expect(page.locator('.preparation-list')).toHaveCount(0);
     expect((await page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
-    expect(page.url()).not.toContain(key.recoveryKey); expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain(key.recoveryKey);
-    await page.getByLabel('Display name').fill('Recovered listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await page.getByLabel('Display name').fill('Returning listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(page.locator('.participant-hero')).toBeVisible();
-    await expect(page.locator('.list-count')).toHaveText(' · 2');
+    await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search below to add one.');
     const library = await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
-    expect(library.ownerId).toBe(r.library.ownerId); expect(library.upcoming).toHaveLength(2);
+    expect(library.ownerId).not.toBe(r.library.ownerId); expect(library.upcoming).toHaveLength(0);
+    await fresh.clearCookies({ name: 'aoty_preparation' }); await page.reload();
+    await expect(page.locator('.list-empty')).toBeVisible();
+    expect((await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(library.ownerId);
     expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeUndefined();
   } finally { await fresh.close(); await r.context.close(); }
 });
@@ -159,7 +195,7 @@ test('revocation shows one calm entry notice, and saved music survives refresh a
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     await r.page.getByLabel('Display name').fill('Back again'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
-    await expect(r.page.locator('.list-count')).toHaveText(' · 2');
+    await expect(r.page.locator('.list-count')).toHaveText('2 tracks');
     expect((await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
   } finally { await r.context.close(); }
 });
@@ -174,7 +210,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
     await r.page.getByRole('button', { name: 'Move Saved selection 2 up', exact: true }).click();
     await expect(r.page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.reload();
-    await expect(r.page.getByRole('status').filter({ hasText: 'Your unsynced list change is kept.' })).toBeVisible();
+    await expect(r.page.getByText('Recover a saved list', { exact: true })).toHaveCount(0);
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     expect(moves).toBe(1); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await r.page.unroute('**/api/participant/preparations/move');
@@ -187,7 +223,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
   } finally { await r.context.close(); }
 });
 
-test('unfinished uploads remain recoverable before joining, and rejoining does not reupload or lose edited metadata', async ({ page, isolatedApp }) => {
+test('unfinished uploads stay retained without private controls before rejoining, without reuploading or losing metadata', async ({ page, isolatedApp }) => {
   const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Upload listener' } }); expect(joined.ok()).toBe(true);
   await page.goto('/participant'); await page.locator('#list-upload').click(); await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
   let uploads = 0; page.on('request', request => { if (request.method() === 'POST' && /\/uploads\/[a-f0-9-]+$/.test(new URL(request.url()).pathname)) uploads++; });
@@ -196,11 +232,10 @@ test('unfinished uploads remain recoverable before joining, and rejoining does n
   const state = await (await page.request.get('/api/host/state')).json();
   const removed = await page.request.post('/api/host/remove', { headers: { Origin: isolatedApp.origin }, data: { id: state.current.id, revision: state.revision } }); expect(removed.ok()).toBe(true);
   await expect(page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
-  await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My edited upload');
-  await page.reload(); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My edited upload');
-  await expect(page.getByLabel('Track title', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Track title', { exact: true })).toHaveCount(0);
+  await page.reload(); await expect(page.getByLabel('Track title', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Choose another file', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Discard upload draft', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Discard upload draft', exact: true })).toHaveCount(0);
   await page.getByLabel('Display name').fill('Upload listener again'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByLabel('Track title', { exact: true })).toBeEnabled(); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My edited upload');
   expect(uploads).toBe(1); expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();

@@ -28,16 +28,16 @@ const state = async (page: Page) => (await page.request.get('/api/participant/pr
 
 test('the first save reaches an already-open tab without reload, extra writes, or private broadcast data', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { nickname: 'Two tabs' }, headers: { Origin: isolatedApp.origin } });
-  await page.goto('/participant'); await expect(page.locator('.list-save-status')).toHaveText('Private · saved when you add a song');
+  await page.goto('/participant'); await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
   const other = await page.context().newPage();
   try {
-    await other.goto(isolatedApp.origin + '/participant'); await expect(other.locator('.list-save-status')).toHaveText('Private · saved when you add a song');
+    await other.goto(isolatedApp.origin + '/participant'); await expect(other.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     const writes: string[] = []; other.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
     await other.evaluate(() => { (window as any).originalDocument = document; });
     await add(page, 'Northern');
-    await expect(other.locator('.list-count')).toHaveText(' · 1');
+    await expect(other.locator('.list-count')).toHaveText('1 track');
     await expect(titles(other)).toHaveText(['Northern Lights']);
-    await add(page, 'Summer'); await expect(other.locator('.list-count')).toHaveText(' · 2');
+    await add(page, 'Summer'); await expect(other.locator('.list-count')).toHaveText('2 tracks');
     expect(await other.evaluate(() => (window as any).originalDocument === document)).toBe(true);
     expect(writes).toEqual([]);
     const library = await state(page); const storage = await other.evaluate(() => JSON.stringify(localStorage));
@@ -46,12 +46,12 @@ test('the first save reaches an already-open tab without reload, extra writes, o
   } finally { await other.close(); }
 });
 
-test('compact private lists reorder, restore from history, survive removal/rejoining, recover on another phone, and never autoplay', async ({ browser, page: host, isolatedApp }) => {
+test('one automatic list reorders, restores entries from history, survives removal/rejoining, and never autoplays', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const second = r.second;
   try {
     for (const query of ['Northern', 'Summer', 'Night']) await add(second, query);
     await showList(second); await expect(titles(second)).toHaveText(['Northern Lights', 'Late Summer', 'Night Bus Home']);
-    await expect(second.getByRole('button', { name: 'Play first selection' })).toBeDisabled();
+    await expect(second.getByRole('button', { name: 'Play pick', exact: true })).toBeDisabled();
     await second.getByRole('button', { name: 'Edit order', exact: true }).click();
     await second.getByRole('button', { name: 'Move Night Bus Home up', exact: true }).click();
     await expect(titles(second)).toHaveText(['Northern Lights', 'Night Bus Home', 'Late Summer']);
@@ -71,33 +71,23 @@ test('compact private lists reorder, restore from history, survive removal/rejoi
     await second.reload(); await showList(second); await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     const overflow = await second.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); expect(overflow).toBe(false);
     await second.screenshot({ path: 'test-results/participant-durable-list-320.png', fullPage: true });
-    expect((await (await r.first.request.get('/api/participant/preparations/state')).json()).code).toBe('missing-library');
+    expect((await state(r.first)).upcoming).toHaveLength(0);
     const before = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/advance', { turnId: before.turnId });
-    await expect(second.getByRole('button', { name: 'Play first selection' })).toBeEnabled();
+    await expect(second.getByRole('button', { name: 'Play pick', exact: true })).toBeEnabled();
     expect((await (await second.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
-    await second.getByRole('button', { name: 'Play first selection' }).click();
+    await second.getByRole('button', { name: 'Play pick', exact: true }).click();
     await expect.poll(async () => (await state(second)).played.length).toBe(1);
     await showList(second);
     await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
     if (!await second.locator('#list-history').evaluate(node => (node.parentElement as HTMLDetailsElement).open)) await second.locator('#list-history').click();
     await expect(second.getByRole('button', { name: 'Add back', exact: true })).toBeVisible();
-    await second.locator('#list-recovery').click(); second.once('dialog', dialog => dialog.accept());
-    await second.getByRole('button', { name: 'Create recovery key' }).click();
-    const key = await second.getByRole('textbox', { name: 'Your private recovery key' }).inputValue(); expect(key.length).toBeGreaterThan(70);
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); r.contexts.push(context);
-    const phone = await context.newPage(); await phone.goto(isolatedApp.origin + '/participant');
-    await phone.locator('#list-recovery').click(); await phone.getByLabel('Recover with a private key').fill(key);
-    await phone.getByRole('button', { name: 'Recover list', exact: true }).click();
-    await expect.poll(async () => (await state(phone)).ownerId).toBe((await state(second)).ownerId);
-    await expect(titles(phone)).toHaveCount(0);
-    await expect(phone.getByRole('button', { name: 'Play first selection' })).toHaveCount(0);
-    expect(phone.url()).not.toContain(key); expect(await phone.evaluate(() => JSON.stringify(localStorage))).not.toContain(key);
+    const originalOwner = (await state(second)).ownerId;
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });
     await expect(second.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(titles(second)).toHaveCount(0);
     await second.goto(isolatedApp.origin + '/join'); await second.getByLabel('Display name').fill('Second again'); await second.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(second).toHaveURL(/\/participant$/); await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
-    expect((await state(phone)).ownerId).toBe((await state(second)).ownerId);
+    expect((await state(second)).ownerId).toBe(originalOwner);
   } finally { await r.close(); }
 });
 
@@ -136,7 +126,7 @@ test('Play first selection keeps optimistic controls responsive while its list b
     let entered!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); const routed = new Promise<void>(resolve => { entered = resolve; });
     let plays = 0;
     await page.route('**/api/participant/preparations/play', async route => { plays++; const response = await route.fetch(); entered(); await gate; await route.fulfill({ response }); });
-    await page.getByRole('button', { name: 'Play first selection' }).click(); await routed;
+    await page.getByRole('button', { name: 'Play pick', exact: true }).click(); await routed;
     await expect(page.locator('.player-pending')).toBeVisible();
     await page.getByRole('button', { name: 'Pause', exact: true }).click(); await page.getByRole('button', { name: 'Reveal details', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();

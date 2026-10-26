@@ -39,25 +39,18 @@ test('a stopped private-list load cannot overwrite a restarted load or clear its
   assert.equal(f.controller.view?.ownerId, 'new-owner'); assert.equal(f.controller.loading, false);
 });
 
-test('device revocation fences delayed reads and recovery-key replies', async t => {
+test('an ended authorization fences delayed reads without offering list recovery', async t => {
   const f = fixture(t); const stream = await f.start();
-  const refresh = f.controller.refresh(); const key = f.controller.createRecoveryKey();
-  assert.equal(f.controller.saving, true);
-  await f.controller.createRecoveryKey(); assert.equal(f.calls.length, 3, 'Only one identity write can be pending.');
+  const refresh = f.controller.refresh();
   stream.send('revoked');
-  f.calls[1]!.resolve(view('owner-a', 1)); f.calls[2]!.resolve({ view: view('owner-a', 2), recoveryKey: 'private-new-key' });
-  await Promise.all([refresh, key]);
-  assert.equal(f.controller.view, undefined); assert.equal(f.controller.recoveryKey, '');
+  f.calls[1]!.resolve(view('owner-a', 1)); await refresh;
+  assert.equal(f.controller.view, undefined); assert.doesNotMatch(f.controller.error, /recover/i);
   assert.equal(f.controller.saving, false); assert.equal(stream.closed, true);
 });
 
-test('recovery switches one owner once and ignores the previous stream and delayed requests', async t => {
-  const f = fixture(t); const stream = await f.start();
-  const refresh = f.controller.refresh(); const recovery = f.controller.recover('owner-b.key', true);
-  await f.controller.recover('owner-c.key', true); assert.equal(f.calls.length, 3);
-  assert.equal(stream.closed, true);
-  f.calls[2]!.resolve(view('owner-b')); await recovery;
-  stream.send('state', view('owner-a', 99)); f.calls[1]!.resolve(view('owner-a', 100)); await refresh;
-  assert.equal(f.controller.view?.ownerId, 'owner-b'); assert.equal(f.controller.view?.revision, 0);
-  assert.equal(f.controller.saving, false); assert.equal(Stream.all.length, 2);
+test('automatic startup and the first add share one list initialization', async t => {
+  const f = fixture(t); const first = f.controller.start(); const second = f.controller.ensureOwner();
+  assert.equal(f.calls.length, 1); assert.equal(f.calls[0]!.path, '/init');
+  f.calls[0]!.resolve(view()); await Promise.all([first, second]);
+  assert.equal(f.controller.view?.ownerId, 'owner-a'); assert.equal(f.controller.loading, false);
 });

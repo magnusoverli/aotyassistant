@@ -28,15 +28,15 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await second.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await second.getByRole('button', { name: 'Search', exact: true }).click();
     await second.getByRole('button', { name: 'View albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
     await saveChoice(second);
-    await expect(second.getByRole('button', { name: 'Play first selection', exact: true })).toBeDisabled();
+    await expect(second.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeDisabled();
     await expect(first.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
     const tv = await tvContext.newPage(); await tv.goto(display!); await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
     const privateState = await (await second.request.get('/api/participant/state')).json();
     const forged = await second.request.post(isolatedApp.origin + '/api/participant/play', { headers: { Origin: isolatedApp.origin }, data: { turnId: privateState.turnId, previousPlaybackId: null, trackId: 'forged' } });
     expect(forged.status()).toBe(403);
     await host.getByRole('button', { name: 'Skip turn' }).click();
-    await expect(second.getByRole('button', { name: 'Play first selection', exact: true })).toBeEnabled();
-    await second.getByRole('button', { name: 'Play first selection', exact: true }).click();
+    await expect(second.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeEnabled();
+    await second.getByRole('button', { name: /^(Play first selection|Play pick)$/ }).click();
     await expect(second.getByRole('heading', { name: 'Real catalogue fixture (Original recording)', exact: true })).toBeVisible();
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
     await showFind(second);

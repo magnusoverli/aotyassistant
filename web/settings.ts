@@ -255,7 +255,7 @@ export async function mountSettings(container: HTMLElement) {
       const detected = panel('detected', 'Home Assistant setup', setup.supervisor.available ? 'Detected' : 'Unavailable');
       const detectedNodes: Node[] = [detected.firstElementChild!, v.el('supervisor-message', 'p', setup.supervisor.message, 'muted small')];
       for (const origin of setup.supervisor.guestOrigins) if (origin !== addresses.view?.guestOrigin) detectedNodes.push(action(`Use ${origin} for guests`, async () => {
-        if (!confirm(`Change the guest link from ${addresses.view?.guestOrigin}/join to ${origin}/join? Keep private recovery keys before switching browser addresses.`)) return;
+        if (!confirm(`Change the guest link from ${addresses.view?.guestOrigin}/join to ${origin}/join? Browser identities do not move between addresses. People may lose access to previous selections; saved server data is kept.`)) return;
         await requestJson('/api/host/addressing/guest', { origin, revision: settings!.revision }); notice = 'Guest address saved.';
       }, true));
       children(detected, ...detectedNodes);

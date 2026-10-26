@@ -21,7 +21,7 @@ test('every route highlights the current turn, including before playback, while 
     }
     const participant = await member.newPage(); await participant.goto('/participant'); pages.push(participant);
     for (const [width, height] of [[1440, 900], [1099, 900], [390, 900], [320, 900], [844, 390], [390, 480]] as const) {
-      let appearance: unknown;
+      let appearance: string[] | undefined;
       for (const current of pages) {
         await current.setViewportSize({ width, height });
         await expect(current.locator('.rotation-seat')).toHaveCount(3);
@@ -72,7 +72,10 @@ test('every route highlights the current turn, including before playback, while 
         const style = await current.locator('.rotation-seat').first().evaluate(node => {
           const style = getComputedStyle(node); return [style.height, style.paddingTop, style.paddingBottom, style.paddingLeft, style.backgroundColor, style.borderRadius, style.fontFamily];
         });
-        if (appearance) expect(style).toEqual(appearance); else appearance = style;
+        if (width < 1100 && current === participant) {
+          expect(style.slice(0, 3)).toEqual(['40px', '2px', '2px']);
+          expect(style.slice(3)).toEqual(appearance!.slice(3));
+        } else if (appearance) expect(style).toEqual(appearance); else appearance = style;
         await expect(current.locator('.rotation-seat strong')).toHaveText(['First', 'Second', 'My seat']);
         expect(await current.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await current.getByRole('button', { name: 'Menu', exact: true }).click();
@@ -165,7 +168,7 @@ test('card names, avatars and controls stay in their slots as status labels appe
           const box = (await card.boundingBox())!;
           if (width < 1100) {
             expect(box.width).toBeLessThanOrEqual(current === page ? 132 : 112);
-            expect(box.height).toBeGreaterThanOrEqual(44);
+            expect(box.height).toBe(current === participant ? 40 : 44);
             await expect(card.locator('strong')).toHaveCSS('text-align', 'center');
             await expect(card.locator('.seat-state-compact')).toHaveCSS('text-align', 'center');
             await expect(card).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
@@ -233,7 +236,7 @@ test('mobile keeps Now and Next in the first slots across turns, scrolling and r
     await page.setViewportSize({ width: 320, height: 700 });
     await assertOrder();
   }
-  expect(writes).toEqual([]);
+  expect(writes.filter(url => !url.endsWith('/api/participant/preparations/init'))).toEqual([]);
 });
 
 test('a diffuse light travels on the actual card border without an inset trail at desktop and mobile sizes', async ({ page, isolatedApp }) => {
