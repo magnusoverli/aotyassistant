@@ -55,7 +55,8 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
         })).toBe(true);
         expect(await page.locator('.playback-transport button > span').evaluateAll(spans => spans
           .filter(span => getComputedStyle(span).display !== 'none')
-          .every(span => span.scrollWidth <= span.clientWidth))).toBe(true);
+          .filter(span => span.scrollWidth > span.clientWidth)
+          .map(span => ({ label: span.textContent, width: span.clientWidth, required: span.scrollWidth })))).toEqual([]);
       };
       const click = (id: string) => page.locator(id).evaluate(node => (node as HTMLButtonElement).click());
       await edit('add', { trackId: song.id });

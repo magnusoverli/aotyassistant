@@ -76,6 +76,6 @@
     body[data-view='participant']:has(#participant-player) .app-content > :is(.error,.connection) { display:none; }
   }
   @media(max-width:359px) {
-    #participant-player .playback-transport button { font-size:.75rem; gap:0; }
+    #participant-player .playback-transport button,#participant-player #player-play-next[hidden] { font-size:.75rem; gap:0; }
   }
 }
