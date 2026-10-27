@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.10] — 2026-10-27
+
+- Make Playwright browser tests opt-in for local development and CI, including releases.
+- Keep the header and play-order bar mounted when navigating between local pages, updating only changed content and closing old page subscriptions.
+- Use the compact participant header and play-order bar across all mobile pages, with display fullscreen available from the menu.
 ## [1.0.9] — 2026-10-26
 
 - Keep mobile playback button labels readable on narrow phones across system fonts.

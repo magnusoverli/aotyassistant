@@ -9,16 +9,14 @@ test('shared mobile header is compact across routes while desktop sizing and tou
   for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
     await page.goto(path);
     await expect(page.locator('.rotation-seat')).toHaveCount(1);
-    const participantPage = await page.locator('body').getAttribute('data-view') === 'participant';
     for (const width of [1440, 1100, 1099, 701, 700, 390, 320, 1100]) {
       await page.setViewportSize({ width, height: 844 });
       const mobile = width < 1100;
-      const compactParticipant = mobile && participantPage;
-      const barHeight = mobile ? compactParticipant ? '44px' : '56px' : '72px';
+      const barHeight = mobile ? '44px' : '72px';
       await expect(page.locator('.header-inner')).toHaveCSS('height', barHeight);
-      if (compactParticipant) await expect(page.locator('.brand-subtitle')).toBeHidden();
+      if (mobile) await expect(page.locator('.brand-subtitle')).toBeHidden();
       else await expect(page.locator('.brand-subtitle')).toBeVisible();
-      await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? compactParticipant ? '49px' : '53px' : '89px');
+      await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? '49px' : '89px');
       await expect(page.locator('.brand-mark')).toHaveCSS('width', mobile ? width <= 380 ? '28px' : '30px' : '38px');
       await expect(page.locator('.brand strong')).toHaveCSS('font-size', mobile ? '14px' : '16px');
       await expect(page.locator('.rotation-seat strong')).toHaveCSS('font-size', mobile ? '13px' : '14px');
@@ -33,8 +31,8 @@ test('shared mobile header is compact across routes while desktop sizing and tou
       await expect(page.locator('.app-header')).toHaveCSS('border-bottom-width', '1px');
       await expect(page.locator('.order-bar')).toHaveCSS('border-top-color', mobile ? 'rgba(0, 0, 0, 0)' : 'rgb(48, 61, 51)');
       const menu = (await page.locator('.header-menu-toggle').boundingBox())!;
-      expect(menu.height).toBeGreaterThanOrEqual(compactParticipant ? 40 : 44); expect(menu.width).toBeGreaterThanOrEqual(44);
-      if (compactParticipant) {
+      expect(menu.height).toBeGreaterThanOrEqual(mobile ? 40 : 44); expect(menu.width).toBeGreaterThanOrEqual(44);
+      if (mobile) {
         const extension = await page.locator('.header-menu-toggle').evaluate(node => {
           const hit = getComputedStyle(node, '::before');
           return { content: hit.content, top: parseFloat(hit.top), bottom: parseFloat(hit.bottom) };
@@ -42,11 +40,11 @@ test('shared mobile header is compact across routes while desktop sizing and tou
         expect(extension.content).toBe('""');
         expect(menu.height - extension.top - extension.bottom).toBeGreaterThanOrEqual(44);
       }
-      if (mobile) expect((await page.locator('.rotation-seat').boundingBox())!.height).toBe(compactParticipant ? 40 : 44);
+      if (mobile) expect((await page.locator('.rotation-seat').boundingBox())!.height).toBe(40);
       await noOverflow(page);
     }
     await page.setViewportSize({ width: 390, height: 844 });
-    if (participantPage) {
+    {
       const menu = (await page.locator('.header-menu-toggle').boundingBox())!;
       await page.mouse.click(menu.x + menu.width / 2, menu.y - 1);
       await expect(page.locator('#app-navigation')).toBeVisible();
@@ -162,6 +160,14 @@ test('fullscreen is a display-only header control without writes and gracefully 
     await expect(fullscreen).toHaveText('Exit full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
     await fullscreen.click(); await expect(fullscreen).toHaveText('Full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('.header-menu-toggle')).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(fullscreen).toBeHidden();
+    await openNavigation(page);
+    await expect(page.locator('#app-navigation .header-fullscreen')).toBeVisible();
+    await fullscreen.click(); await expect(fullscreen).toHaveText('Exit full screen');
+    await fullscreen.click(); await expect(fullscreen).toHaveText('Full screen');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await expect(page.locator('.header-meta .header-fullscreen')).toBeVisible();
   }
   expect(writes).toEqual([]);
   const context = await browser.newContext();

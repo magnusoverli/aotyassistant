@@ -19,6 +19,7 @@ export class BrowseHistory<T> {
     history.pushState({ aotyBrowse: this.current }, '');
   }
   back() { this.remember(); history.back(); }
+  destroy() { window.removeEventListener('popstate', this.pop); }
   private pop = (event: PopStateEvent) => {
     const key = event.state?.aotyBrowse;
     if (key === this.current) return;

@@ -10,7 +10,7 @@ import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-n
 import { SpeakerFreshness } from './speaker-freshness';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
-export async function mountSettings(container: HTMLElement) {
+export async function mountSettings(container: HTMLElement, signal: AbortSignal) {
   const main = pageFrame('workspace', 'settings-page'); container.append(main);
   const nodes = new ViewNodes();
   let settings: IntegrationView | undefined;
@@ -23,6 +23,7 @@ export async function mountSettings(container: HTMLElement) {
   let freshnessTimer: ReturnType<typeof setTimeout> | undefined;
   let queuedSnapshot: IntegrationView | undefined;
   let live: EventSource | undefined;
+  signal.addEventListener('abort', () => { live?.close(); clearTimeout(freshnessTimer); }, { once: true });
   let busy = false;
   let busyScope: 'connection' | 'speaker' = 'connection';
   let online = false;
@@ -63,6 +64,7 @@ export async function mountSettings(container: HTMLElement) {
     }
   }
   function apply(next: IntegrationView, updateDraft = false) {
+    if (signal.aborted) return;
     if (settings?.instanceId === next.instanceId && settings && (next.revision < settings.revision || next.sequence !== undefined && settings.sequence !== undefined && next.sequence < settings.sequence)) return;
     if (authPending && next.authorization?.attemptId === authAttempt && next.authorization.revision <= next.revision) {
       authPending = false; loginUrl = ''; updateDraft = true; notice = 'Music Assistant connected.';
@@ -85,6 +87,7 @@ export async function mountSettings(container: HTMLElement) {
   }
   function scheduleSpeakerExpiry() {
     clearTimeout(freshnessTimer);
+    if (signal.aborted) return;
     const remaining = speakerFreshness.remaining(settings?.output.state === 'ready' && speakerFreshness.ready);
     if (remaining === undefined) return;
     freshnessTimer = setTimeout(() => { render(); scheduleSpeakerExpiry(); void refreshSnapshot(); }, Math.ceil(remaining) + 1);
@@ -161,6 +164,7 @@ export async function mountSettings(container: HTMLElement) {
   }
   const render = scheduledRender(renderNow);
   function renderNow() {
+    if (signal.aborted) return;
     const v = nodes;
     const workspace = v.el('workspace', 'div', undefined, 'settings-workspace');
     const workspaceNodes: Node[] = [v.get('heading', () => pageHeading('Settings'))];
@@ -356,20 +360,22 @@ export async function mountSettings(container: HTMLElement) {
   render();
   try {
     apply(await request(''), true); render();
+    if (signal.aborted) return;
     await Promise.all([loadSetup().then(render), settings!.tokenConfigured ? run(discover, 'speaker') : addresses.load()]);
   }
   catch (cause) { error = cause instanceof Error ? cause.message : 'Cannot load integration settings.'; }
   render();
+  if (signal.aborted) return;
   let polls = 0;
   const poll = setInterval(() => {
     if (!main.isConnected || ++polls > 60 || setup?.status !== 'checking' && setup?.status !== 'idle') { clearInterval(poll); return; }
     if (!busy && !addresses.busy) void loadSetup().then(changed => { if (changed) render(); }).catch(() => {});
   }, 2000);
-  window.addEventListener('pagehide', () => clearInterval(poll), { once: true });
+  window.addEventListener('pagehide', () => clearInterval(poll), { once: true, signal });
   const authTimer = setInterval(() => {
     if (authPending && Date.now() >= authExpiresAt) { authPending = false; loginUrl = ''; notice = 'Sign-in expired. Try connecting again.'; render(); }
   }, 1000);
-  window.addEventListener('pagehide', () => clearInterval(authTimer), { once: true });
+  window.addEventListener('pagehide', () => clearInterval(authTimer), { once: true, signal });
   window.addEventListener('storage', event => {
     if (event.key !== 'aoty.ma-auth-result' || !authPending || !event.newValue) return;
     try {
@@ -378,9 +384,9 @@ export async function mountSettings(container: HTMLElement) {
       if (result.result === 'connected') void refreshSnapshot();
       else { authPending = false; loginUrl = ''; notice = result.result === 'cancelled' ? 'Sign-in cancelled. Your saved connection was kept.' : result.result === 'expired' ? 'Sign-in expired. Try connecting again.' : 'Sign-in could not finish. Try connecting again.'; render(); }
     } catch { /* Ignore unrelated/malformed browser storage. */ }
-  });
+  }, { signal });
   async function refreshSnapshot(discoverSpeakers = true) {
-    if (busy || refreshing) return;
+    if (signal.aborted || busy || refreshing) return;
     refreshing = true; render();
     try {
       const next = await request(discoverSpeakers && settings?.tokenConfigured ? '/destinations' : '');
@@ -389,8 +395,8 @@ export async function mountSettings(container: HTMLElement) {
     } catch { /* Keep the current form and explicit retry; a read cannot replay a mutation. */ }
     finally { refreshing = false; render(); }
   }
-  window.addEventListener('focus', () => { void refreshSnapshot(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSnapshot(); });
+  window.addEventListener('focus', () => { void refreshSnapshot(); }, { signal });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) void refreshSnapshot(); }, { signal });
   function visibleSnapshot() {
     return JSON.stringify(settings && { ...settings, sequence: undefined, instanceId: undefined, output: { ...settings.output, checkedAt: undefined },
       report: settings.report && { ...settings.report, checkedAt: undefined },
@@ -405,6 +411,7 @@ export async function mountSettings(container: HTMLElement) {
     if (!wasOnline || before !== visibleSnapshot()) render();
   }
   function connectLive() {
+    if (signal.aborted) return;
     live?.close(); live = new EventSource(appPath('/api/host/integrations/events'));
     live.addEventListener('state', event => {
       if (!main.isConnected) { live?.close(); return; }
@@ -414,8 +421,9 @@ export async function mountSettings(container: HTMLElement) {
     live.onerror = () => { online = false; if (!busy) render(); void refreshSnapshot(false); };
   }
   connectLive();
-  window.addEventListener('offline', () => { online = false; render(); });
-  window.addEventListener('online', () => { void refreshSnapshot(); });
-  window.addEventListener('pagehide', () => { live?.close(); clearTimeout(freshnessTimer); });
-  window.addEventListener('pageshow', event => { if (event.persisted) { render(); scheduleSpeakerExpiry(); connectLive(); void refreshSnapshot(); } });
+  window.addEventListener('offline', () => { online = false; render(); }, { signal });
+  window.addEventListener('online', () => { void refreshSnapshot(); }, { signal });
+  window.addEventListener('pagehide', () => { live?.close(); clearTimeout(freshnessTimer); }, { signal });
+  window.addEventListener('pageshow', event => { if (event.persisted) { render(); scheduleSpeakerExpiry(); connectLive(); void refreshSnapshot(); } }, { signal });
+  signal.addEventListener('abort', () => { live?.close(); clearTimeout(freshnessTimer); clearInterval(poll); clearInterval(authTimer); }, { once: true });
 }

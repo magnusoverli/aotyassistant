@@ -24,7 +24,7 @@ export class PlayerReturn {
       if (this.failed && this.reviewPlayer) destination.querySelector<HTMLButtonElement>('.player-details-open')?.click();
     };
     this.element.append(this.status, this.jump);
-    window.visualViewport?.addEventListener('resize', () => this.visibility());
+    window.visualViewport?.addEventListener('resize', this.resized);
   }
 
   update(view: View | undefined, starting: boolean, connected: boolean, error: string) {
@@ -53,4 +53,6 @@ export class PlayerReturn {
     const bottom = top + (viewport?.height ?? innerHeight);
     prop(this.element, 'hidden', !this.available || !rect || (rect.bottom > top && rect.top < bottom));
   }
+  private resized = () => this.visibility();
+  destroy() { this.observer.disconnect(); window.visualViewport?.removeEventListener('resize', this.resized); this.element.remove(); }
 }

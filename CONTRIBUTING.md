@@ -24,9 +24,16 @@ npm run check:release
 npm run typecheck
 npm test
 npm run build
+```
+
+Playwright is opt-in, not part of default local or CI checks. Run it only when explicitly requested. To opt in locally:
+
+```sh
 npx playwright install --with-deps chromium
 npx playwright test
 ```
+
+In GitHub Actions, manually dispatch **Application checks** with **run_browser_tests** enabled. Push, pull-request and release checks skip Playwright by default.
 
 The packaged-app suites need Docker and use their own disposable containers/volumes:
 

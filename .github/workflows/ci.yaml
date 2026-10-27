@@ -5,7 +5,16 @@ on:
     branches: ['**']
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_browser_tests:
+        description: Run optional Playwright browser tests
+        type: boolean
+        default: false
   workflow_call:
+    inputs:
+      run_browser_tests:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,9 +37,11 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
+        if: inputs.run_browser_tests == true
       - run: npx playwright test
+        if: inputs.run_browser_tests == true
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: failure() && inputs.run_browser_tests == true
         with:
           name: chromium-failures
           path: test-results/

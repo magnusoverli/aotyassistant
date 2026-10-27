@@ -28,6 +28,7 @@ test('every route highlights the current turn, including before playback, while 
         await expect(current.locator('.seat-number')).toHaveCount(0);
         await expect(current.locator('.listening-order')).toHaveCount(1);
         await expect(current.locator('main .rotation-list, .host-people, .room-turn-order')).toHaveCount(0);
+        await expect(current.locator('.header-inner')).toHaveCSS('height', width < 1100 ? '44px' : '72px');
         const bar = (await current.locator('.header-inner').boundingBox())!;
         const order = (await current.locator('.order-bar').boundingBox())!;
         expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
@@ -168,7 +169,7 @@ test('card names, avatars and controls stay in their slots as status labels appe
           const box = (await card.boundingBox())!;
           if (width < 1100) {
             expect(box.width).toBeLessThanOrEqual(current === page ? 132 : 112);
-            expect(box.height).toBe(current === participant ? 40 : 44);
+            expect(box.height).toBe(40);
             await expect(card.locator('strong')).toHaveCSS('text-align', 'center');
             await expect(card.locator('.seat-state-compact')).toHaveCSS('text-align', 'center');
             await expect(card).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');

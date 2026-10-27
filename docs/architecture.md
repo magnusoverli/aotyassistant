@@ -67,6 +67,8 @@ Role-filtered HTTP and server-sent events exclude unrevealed title/artist/artwor
 
 The browser uses independently updated regions so routine events preserve focus, input state, scroll position, and animation nodes. Public reveal/playback remains server-confirmed even when private controls show a pending state.
 
+`web/main.ts` owns a persistent header and listening-order shell. Same-origin app navigation and browser Back/Forward replace only the page runtime (`web/page-runtime.ts`); unchanged order cards and their animation nodes remain mounted. Departing pages close subscriptions, timers and listeners, and ignore late responses. Modified clicks, external links and new-tab navigation keep normal browser behavior.
+
 ## Storage and lifecycle
 
 The display name is Listening Room. Legacy installation IDs, repository/image addresses, `aoty_*` cookies, `aoty.*` browser-storage keys, and `AOTY_*` diagnostic environment variables remain unchanged for compatibility. Display wording is not a storage or API schema change.

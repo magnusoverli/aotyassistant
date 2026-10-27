@@ -18,6 +18,7 @@ export class AppHeader {
   private resize?: ResizeObserver;
   private fullscreenPending = false;
   private lastState: HeaderState = {};
+  private mobile = window.matchMedia('(max-width:1099px)');
 
   constructor(private page: Page, private failed: (message: string) => void) {
     const skip = link('Skip to content', '#main-content', 'skip-link');
@@ -51,6 +52,7 @@ export class AppHeader {
     document.addEventListener('pointerdown', this.outside);
     document.addEventListener('fullscreenchange', this.fullscreenChanged);
     document.addEventListener('aoty-address-changed', this.addressChanged);
+    this.mobile.addEventListener('change', this.fullscreenChanged);
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => {
         const style = document.documentElement.style;
@@ -75,6 +77,13 @@ export class AppHeader {
       this.updateLink(anchor, item);
     }
     this.updateLayout(); this.updateFullscreen();
+  }
+  setPage(page: Page) {
+    this.page = page;
+    attr(this.element.querySelector('.brand')!, 'aria-current', page === 'home' ? 'page' : undefined);
+    if (page !== 'display') this.fullscreen.remove();
+    this.setExpanded(false);
+    this.update(this.lastState);
   }
   private updateLink(anchor: HTMLAnchorElement, item: NavigationItem) {
     if (anchor.textContent !== item.text) anchor.textContent = item.text;
@@ -104,11 +113,15 @@ export class AppHeader {
   private fullscreenChanged = () => this.updateFullscreen();
   private addressChanged = () => this.update(this.lastState);
   private updateFullscreen() {
+    if (this.page === 'display') {
+      const parent = this.mobile.matches ? this.navigation : this.meta;
+      if (this.fullscreen.parentElement !== parent) parent.append(this.fullscreen);
+    }
     prop(this.fullscreen, 'hidden', !document.fullscreenEnabled || !document.documentElement.requestFullscreen);
     text(this.fullscreen, document.fullscreenElement ? 'Exit full screen' : 'Full screen');
     attr(this.fullscreen, 'aria-pressed', String(Boolean(document.fullscreenElement)));
     prop(this.fullscreen, 'disabled', this.fullscreenPending);
-    prop(this.meta, 'hidden', this.page !== 'display' || this.fullscreen.hidden);
+    prop(this.meta, 'hidden', this.page !== 'display' || this.mobile.matches || this.fullscreen.hidden);
   }
   private async toggleFullscreen() {
     if (this.fullscreenPending) return;
@@ -122,5 +135,6 @@ export class AppHeader {
     document.removeEventListener('keydown', this.keydown); document.removeEventListener('focusin', this.focusChanged);
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);
     document.removeEventListener('aoty-address-changed', this.addressChanged);
+    this.mobile.removeEventListener('change', this.fullscreenChanged);
   }
 }

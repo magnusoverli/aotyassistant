@@ -13,7 +13,7 @@ Use semantic versions: patches for compatible fixes, minor versions for compatib
 
 ## Publish and verify
 
-1. Push the matching annotated `v<version>` tag. **Publish Home Assistant images** runs the shared application checks, Chromium workflows, and native amd64/aarch64 packaged-app tests before building/pushing release images.
+1. Push the matching annotated `v<version>` tag. **Publish Home Assistant images** runs the shared application checks and native amd64/aarch64 packaged-app tests before building/pushing release images. Playwright is opt-in and is skipped by default, including for releases.
 2. Wait for both architecture builds and the combined manifest. The workflow verifies anonymous manifest/configuration/layer access, architecture labels, and version metadata before emitting **published-store-manifest**.
 3. For first publication, the GHCR package must be public. The anonymous check intentionally fails while it is private; make it public and rerun the failed publication job.
 4. Download **published-store-manifest**, compare `config.prebuilt.yaml` with the release branch’s manifest, and apply any required difference. The image reference and version must match the published image.

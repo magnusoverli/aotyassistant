@@ -287,7 +287,8 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 @media(max-width:1099px) {
   .app-header::after { content:''; position:absolute; inset:var(--app-bar-height,56px) 0 auto; border-top:1px solid var(--line); pointer-events:none; }
   .app-header .order-bar { border-top-color:transparent; }
-  .header-inner { min-height:56px; padding-block:6px; gap:8px; }
+  .header-inner { min-height:44px; padding-block:2px; gap:8px; }
+  body[data-view='display'] .app-header { --header-width:var(--workspace-width); --header-gutter:var(--workspace-gutter); }
   .brand { gap:10px; }
   .brand > div { gap:3px; }
   .brand strong { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -296,16 +297,14 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
   .header-meta { gap:8px; }
   .header-meta .secondary,.header-menu-toggle { padding:8px 10px; }
   .header-menu-toggle { color:#bcc9bc; border-color:#4a5b4e; }
-  body[data-view='participant'] .brand-subtitle { display:none; }
-  body[data-view='participant'] .header-inner { min-height:44px; padding-block:2px; }
-  body[data-view='participant'] .header-menu-toggle { position:relative; min-height:40px; padding-block:6px; }
+  .brand-subtitle { display:none; }
+  .header-menu-toggle { position:relative; min-height:40px; padding-block:6px; }
   /* Keep the full 44px tap area while making the visible button and bar shorter. */
-  body[data-view='participant'] .header-menu-toggle::before { content:''; position:absolute; inset:-2px 0; }
-  body[data-view='participant'] .order-bar { min-height:49px; }
-  body[data-view='participant'] .rotation-seat { min-height:40px; padding-block:2px; }
+  .header-menu-toggle::before { content:''; position:absolute; inset:-2px 0; }
+  .order-bar { min-height:49px; }
+  .rotation-seat { min-height:40px; padding-block:2px; }
 }
 @media(max-width:700px) {
-  body[data-view='display'] .app-header { --header-gutter:18px; }
   .header-meta { grid-column:2; grid-row:1; }
   .header-menu-toggle { grid-column:3; grid-row:1; }
   .header-meta .badge { font-size:8px; padding:6px 8px; }

@@ -61,11 +61,11 @@ export class ListeningOrder {
     bar.append(this.empty, this.list, this.status);
     this.help.id = 'order-drag-help'; this.help.hidden = true;
     this.element.append(bar);
-    if (management) this.element.append(this.help, this.announcement);
-    if (management) this.drag = new OrderDrag(this.list, {
-      state: () => ({ enabled: !management.disabled() && this.element.dataset.online === 'true',
+    this.element.append(this.help, this.announcement);
+    this.drag = new OrderDrag(this.list, {
+      state: () => ({ enabled: Boolean(this.management && !this.management.disabled()) && this.element.dataset.online === 'true',
         roomId: this.snapshot?.roomId ?? null, revision: this.snapshot?.revision ?? 0, people: this.presentedPeople() }),
-      commit: async move => management.reorder(this.mobile ? { ...move,
+      commit: async move => this.management?.reorder(this.mobile ? { ...move,
         ids: canonicalInsertion((this.snapshot?.rotation ?? []).map(person => person.id), move.id, move.ids),
       } : move), announce: message => this.announce(message),
     });
@@ -76,18 +76,27 @@ export class ListeningOrder {
     });
   }
 
+  setManagement(management: Management | undefined) {
+    const changed = Boolean(this.management) !== Boolean(management);
+    this.management = management;
+    this.list.classList.toggle('is-editable', Boolean(management));
+    if (changed) { this.drag?.cancel(); this.key = ''; this.render(); }
+    this.updateControls();
+  }
+
   /** Authenticated pages already have a room stream; entry/settings use the public order feed. */
   update(view: View | undefined, online: boolean) {
     if (view) {
       this.stop();
-      this.me = view.me;
+      if (view.me) this.me = view.me;
       this.accept({ roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [], playbackStatus: view.playbackStatus ?? 'unavailable' });
       this.connection(online);
     } else {
-      this.me = undefined;
       if (!navigator.onLine) { this.stop(); this.connection(false); }
       else if (!this.source) {
-        this.status.textContent = this.snapshot ? 'Reconnecting…' : 'Connecting…';
+        // A route change hands off between feeds without making the retained
+        // order flash a reconnecting row. Actual connection errors still surface.
+        if (!this.snapshot) text(this.status, 'Connecting…');
         const source = new EventSource(appPath('/api/listening-order/events')); this.source = source;
         source.addEventListener('state', event => {
           if (this.source !== source) return;
@@ -104,6 +113,7 @@ export class ListeningOrder {
 
   private accept(snapshot: ListeningOrderView) {
     if (this.snapshot?.roomId === snapshot.roomId && this.snapshot.revision > snapshot.revision) return;
+    if (!snapshot.rotation.some(person => person.id === this.me?.id)) this.me = undefined;
     this.snapshot = snapshot; this.render();
   }
 
