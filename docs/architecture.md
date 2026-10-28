@@ -23,6 +23,7 @@ Only one process may own a data directory. JSON stores serialize mutations and u
 | HA discovery, addressing, authorization | `src/setup.ts`, `src/supervisor.ts`, `src/ma-discovery.ts`, `src/ma-authorization.ts` |
 | Playback ownership and MA transport/events | `src/live-playback.ts`, `src/music-assistant.ts`, `src/music-assistant-events.ts` |
 | Private preparation and uploads | `src/preparations.ts`, `src/uploads.ts`, `src/upload-analysis.ts` |
+| Permanent users, PINs and browser sessions | `src/users.ts` |
 | HTTP, Ingress, events | `src/http.ts`, `src/integration-http.ts`, `src/ingress.ts`, `src/event-streams.ts` |
 | Durability, shutdown, diagnostics | `src/backup.ts`, `src/operation.ts`, `src/index.ts`, `src/diagnostics.ts` |
 | Browser UI and controllers | `web/` |
@@ -71,7 +72,11 @@ Settings retains its select node, options, draft fields and focus during updates
 
 ## Privacy contract
 
-Membership credentials and private-list credentials are separate HttpOnly cookies. Automatic initialization privately binds one list to the authenticated participant browser; additional tabs and restarts reuse the durable binding. Existing authorized list cookies are adopted without moving entries or uploads. Display names never identify lists. Recovery-key, list-switching and device-management APIs are absent. Host controls on the LAN listener are unauthenticated and require a trusted network.
+Permanent users own exactly one private list and can have multiple independent browser sessions. Room participants link to user IDs, so concurrent joins reuse one listening-order seat; removal requires an explicit rejoin. Public user IDs are separate from private list IDs. Display names are labels and never authorize access or merge users. Existing private bindings and authorized legacy list cookies migrate without moving entries or uploads.
+
+Session and private-list credentials use separate HttpOnly cookies. The user store accepts only active session hashes and their corresponding list credentials; PIN reset revokes both, including legacy bootstrap access. PINs remain four-character strings and use versioned, salted asynchronous scrypt (`N=16384, r=8, p=5`), with two concurrent jobs, a bounded waiting queue, and per-user cooldowns after five incorrect attempts. PIN work runs outside the playback lane. Host controls, including PIN reset in Settings, remain unauthenticated on the trusted LAN. Reset does not modify room placement or playback.
+
+Permanent user deletion first persists a revocation marker under the owner's write lock. It then removes any listening-order seat using the engine's existing stop/advance behavior, deletes owner-scoped uploads, list data and legacy bindings, and retains only opaque user/list/registration IDs to reject stale credentials and registration retries. Partial deletions stay hidden from participants and visible to the host for explicit, idempotent cleanup retries, including after restart. Other users' lists and uploads are retained.
 
 Role-filtered HTTP and server-sent events exclude unrevealed title/artist/artwork from public views and another person’s list from all other roles. Public artwork requires the exact revealed playback, checked before and after the upstream read. Upload streams use scoped capabilities; original media URLs and MA tokens remain server-side.
 
@@ -83,6 +88,8 @@ The engine can also reveal automatically at 70% of observed playback progress. I
 
 `web/main.ts` owns a persistent header and listening-order shell. Same-origin app navigation and browser Back/Forward replace only the page runtime (`web/page-runtime.ts`); unchanged order cards and their animation nodes remain mounted. Departing pages close subscriptions, timers and listeners, and ignore late responses. Modified clicks, external links and new-tab navigation keep normal browser behavior.
 
+Settings uses `web/settings-sections.ts` for four hash-linked sections (`#playback`, `#users`, `#music-assistant`, `#access`). Desktop navigation sits beside a wide content pane; smaller screens use a wrapping two-column selector. Section changes hide rather than remount controllers, preserving drafts, live subscriptions and control identity. Feedback stays near its section, with connection/speaker status always visible. User rows expose inline PIN editing and a separately styled permanent-deletion action.
+
 ## Storage and lifecycle
 
 The display name is Listening Room. Legacy installation IDs, repository/image addresses, `aoty_*` cookies, `aoty.*` browser-storage keys, and `AOTY_*` diagnostic environment variables remain unchanged for compatibility. Display wording is not a storage or API schema change.
@@ -91,6 +98,7 @@ The display name is Listening Room. Legacy installation IDs, repository/image ad
 - `/data/integrations.json`: MA token, verified identity/source binding, speaker, and guest/media addressing.
 - `/data/preparations/`: schema-2 owner-scoped lists, exact recording descriptors, history, operation receipts, authorization hashes, and deletion intents. Schema-1 records migrate without their obsolete recovery hashes.
 - `/data/preparations/bindings/`: private participant-credential-hash to owner-ID associations; no raw credentials or display names.
+- `/data/users.json`: permanent user names, private list associations, salted PIN verifiers, session hashes/expiry, registration receipts and cooldowns. Include it in backups alongside room, preparations and uploads.
 - `/data/uploads/`: published audio, metadata, and covers; originals are immutable.
 - `/data/upload-staging/`: unpublished disposable work, not saved selections.
 

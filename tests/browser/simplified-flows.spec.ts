@@ -7,8 +7,8 @@ test('compact phone workspace keeps the editable list inline and preserves brows
   const current = await browser.newContext();
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   try {
-    await current.request.post(isolatedApp.origin + '/api/participant/join', { data: { nickname: 'Sam' }, headers: { Origin: isolatedApp.origin } });
-    await post('/api/participant/join', { nickname: 'Alex' });
+    await current.request.post(isolatedApp.origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Sam' }, headers: { Origin: isolatedApp.origin } });
+    await post('/api/participant/join', { pin: '1234', nickname: 'Alex' });
     await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
     await expect(page.locator('.turn-distance')).toHaveText('You’re next');
     await expect(page.locator('.turn-chip')).toHaveCount(0);
@@ -36,7 +36,7 @@ test('compact phone workspace keeps the editable list inline and preserves brows
 });
 
 test('one player separates reveal, volume and finish while keeping search available', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await expect(page.locator('.playback-card').getByRole('button', { name: 'Pass turn' })).toBeEnabled();
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -55,7 +55,7 @@ test('browser and in-page Back restore private browsing without putting results 
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   const settings = await (await page.request.get('/api/host/integrations')).json();
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: settings.revision });
-  await post('/api/participant/join', { nickname: 'Browse' }); await page.goto('/participant');
+  await post('/api/participant/join', { pin: '1234', nickname: 'Browse' }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Fixture'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'View albums', exact: true }).click();
   await page.getByRole('button', { name: 'View tracks', exact: true }).click();
@@ -71,7 +71,7 @@ test('browser and in-page Back restore private browsing without putting results 
 });
 
 test('upload review and inline history restoration keep saved music intact without list-access controls', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { nickname: 'Keeper' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Keeper' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await page.locator('#list-upload').click(); await expect(page.getByText('Choose one audio file, then review it before adding.')).toBeVisible();
   await page.locator('#track-upload-file').setInputFiles({ name: 'draft.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
@@ -96,7 +96,7 @@ test('host invitations remain available with thirty people and consequential act
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/host');
   await expect(page.locator('.host-invitations')).toBeInViewport();
   await expect(page.getByRole('button', { name: 'Skip turn' })).toHaveCount(0);
-  await page.request.post('/api/participant/join', { data: { nickname: 'Current' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Current' }, headers: { Origin: isolatedApp.origin } });
   for (let i = 1; i < 30; i++) await isolatedApp.engine.join(`Guest ${i}`);
   await expect(page.locator('.rotation-seat')).toHaveCount(30);
   await expect(page.getByRole('button', { name: 'Remove', exact: true })).toHaveCount(0);
@@ -128,11 +128,13 @@ test('setup retries preserve drafts, healthy summaries need no save, and returni
   });
   await page.setViewportSize({ width: 320, height: 700 }); await page.goto('/host/settings');
   await expect(page.locator('.settings-destination').getByRole('alert')).toContainText('Speaker discovery failed');
+  await page.locator('.settings-navigation a[href="#music-assistant"]').click();
   await page.getByRole('button', { name: 'Change connection', exact: true }).click();
   await page.getByLabel('Music Assistant URL', { exact: true }).fill('http://draft.local:8095');
   settings.report = { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true,
     players: [{ id: 'room', name: settings.destination!.name, available: true }] };
   settings.output.state = 'ready';
+  await page.locator('.settings-navigation a[href="#playback"]').click();
   fail = false; await page.getByRole('button', { name: 'Refresh speakers' }).click();
   await expect(page.getByLabel('Music Assistant URL', { exact: true })).toHaveValue('http://draft.local:8095');
   await expect(page.locator('.settings-destination').getByRole('alert')).toHaveCount(0);
@@ -187,7 +189,7 @@ test('initial settings failure can retry and an empty speaker inventory keeps th
     if (route.request().method() === 'POST') writes.push(route.request().url());
     if (unavailable) await route.abort('failed'); else await route.fulfill({ json: settings });
   });
-  await page.goto('/host/settings'); await expect(page.getByRole('button', { name: 'Retry connection' })).toBeEnabled();
+  await page.goto('/host/settings#playback'); await expect(page.getByRole('button', { name: 'Retry connection' })).toBeEnabled();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Speaker or group', { exact: true })).toBeDisabled();
   unavailable = false; await page.getByRole('button', { name: 'Retry connection' }).click();

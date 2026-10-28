@@ -14,7 +14,7 @@ import { ManagedPlayback } from '../src/live-playback.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { PreparationFileStore, PreparationManager } from '../src/preparations.js';
 import type { PreparationView, PreparationResult } from '../src/preparations.js';
-import type { CatalogueSearch, View } from '../src/model.js';
+import type { CatalogueSearch, View, UserDirectory } from '../src/model.js';
 import { createApp } from '../src/http.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
@@ -56,7 +56,7 @@ async function fixture(t: TestContext) {
     };
   }
   async function joinMember() {
-    const joined = await request('/api/participant/join', { nickname: 'Same nickname' }); assert.equal(joined.status, 200);
+    const joined = await request('/api/participant/join', { nickname: 'Same nickname', pin: '1234' }); assert.equal(joined.status, 200);
     const membership = cookie(joined);
     const initialized = await request(prefix + '/init', {}, membership); assert.equal(initialized.status, 200);
     const privateCookie = cookie(initialized); const preparation = await initialized.json() as PreparationView;
@@ -130,6 +130,55 @@ test('one participant stream separates room and owner events and revokes removed
   await f.running.engine.join('Late'); await expectEvent('state', 'Late');
   const host = f.running.engine.view({ kind: 'host' }); await f.running.engine.remove(host.current!.id, host.revision);
   await expectEvent('revoked');
+});
+
+test('PIN HTTP boundaries share one playlist and revoke both cookies and open streams after host reset', async t => {
+  const f = await fixture(t); const added = await f.add();
+  const turn = await f.json('/api/participant/state', undefined, f.first.membership);
+  await f.json(prefix + '/play', { turnId: turn.turnId, previousPlaybackId: null, entryId: added.entryId, revision: added.view.revision }, f.first.credentials);
+  const before = await f.json('/api/participant/state', undefined, f.first.membership); const userId = before.user!.id;
+  assert.equal((await f.request('/api/participant/join', { nickname: 'No PIN' })).status, 400);
+  assert.equal((await f.request(prefix + '/join', { userId, pin: 1234 })).status, 400);
+  assert.equal((await f.request(prefix + '/join', { userId, pin: '4321' })).status, 401);
+  const login = await f.request(prefix + '/join', { userId, pin: '1234' }); assert.equal(login.status, 200);
+  assert.match(login.headers.get('set-cookie')!, /HttpOnly/); assert.match(login.headers.get('set-cookie')!, /SameSite=Strict/);
+  const member = cookie(login); const initialized = await f.request(prefix + '/init', {}, member);
+  assert.equal(initialized.status, 200); const privateCookie = cookie(initialized);
+  const shared = await initialized.json() as PreparationView;
+  assert.equal(shared.ownerId, added.view.ownerId); assert.equal(shared.played[0]!.id, added.entryId);
+  assert.equal((await f.json('/api/host/state')).active!.length, 2);
+  const directory = await f.json<UserDirectory>('/api/participant/identity');
+  assert.deepEqual(Object.keys(directory.users[0]!).sort(), ['id', 'nickname', 'pinRequired']);
+  assert.ok(!JSON.stringify(directory).includes(added.view.ownerId));
+  const events = await f.openStream(prefix + '/live', `${member}; ${privateCookie}`); await events(); await events();
+  const reset = await f.request('/api/host/users/pin', { userId, pin: '0042' }); assert.equal(reset.status, 200);
+  let revoked = ''; for (let i = 0; i < 40 && !revoked.includes('event: revoked'); i++) revoked = await events();
+  assert.match(revoked, /event: revoked/); // Drain playback samples buffered before the reset committed.
+  for (const credential of [f.first.credentials, `${member}; ${privateCookie}`]) {
+    assert.equal((await f.request('/api/participant/state', undefined, credential)).status, 401);
+    assert.equal((await f.request(prefix + '/state', undefined, credential)).status, 401);
+    assert.equal((await f.request(prefix + '/init', {}, credential)).status, 401);
+    assert.equal((await f.request(prefix + '/join', {}, credential)).status, 400);
+    assert.equal((await f.request(prefix + '/join', { nickname: 'Old cookie', pin: '9999' }, credential)).status, 401);
+  }
+  const host = await f.json('/api/host/state'); assert.equal(host.turnId, before.turnId); assert.deepEqual(host.rotation, before.rotation);
+  assert.equal(host.hostPlayback!.id, before.ownPlayback!.id); assert.equal(host.hostPlayback!.status, 'playing');
+  const restored = await f.request(prefix + '/join', { userId, pin: '0042' }); assert.equal(restored.status, 200);
+  const recovered = await f.json<PreparationView>(prefix + '/init', {}, cookie(restored));
+  assert.equal(recovered.played[0]!.id, added.entryId);
+});
+
+test('selecting another user signs the old browser session out without removing either listening-order seat', async t => {
+  const f = await fixture(t);
+  const second = await f.json('/api/participant/state', undefined, f.second.membership);
+  const switched = await f.request(prefix + '/join', { userId: second.user!.id, pin: '1234' }, f.first.credentials);
+  assert.equal(switched.status, 200);
+  assert.equal((await f.request('/api/participant/state', undefined, f.first.membership)).status, 401);
+  assert.equal((await f.request(prefix + '/state', undefined, f.first.privateCookie)).status, 401);
+  const list = await f.json<PreparationView>(prefix + '/init', {}, cookie(switched));
+  assert.equal(list.ownerId, f.second.preparation.ownerId);
+  assert.equal((await f.request('/api/participant/state', undefined, f.second.membership)).status, 200);
+  assert.equal((await f.json('/api/host/state')).active!.length, 2);
 });
 
 test('bounded thumbnail variants remain owner-authorized and independently cached', async t => {
@@ -239,9 +288,11 @@ test('a slow or failed private save cannot hold up another participant’s playe
 
 test('saved artwork revalidates authorization and source after downloads; stale access returns no private image', async t => {
   const f = await fixture(t); const first = await f.add();
-  const replacement = `${first.view.ownerId}.${'x'.repeat(43)}`;
-  await f.running.preparations.bindParticipant(first.view.ownerId, replacement);
-  const newCookie = `aoty_preparation=${replacement}`; f.remote.delayImages(150);
+  const user = (await f.json('/api/participant/state', undefined, f.first.membership)).user!;
+  const login = await f.request('/api/participant/join', { userId: user.id, pin: '1234' });
+  const membership = login.headers.get('set-cookie')!.split(';')[0]!;
+  const initialized = await f.request(prefix + '/init', {}, membership);
+  const newCookie = initialized.headers.get('set-cookie')!.split(';')[0]!; f.remote.delayImages(150);
   let pending = f.request(first.view.upcoming[0]!.artwork!, undefined, f.first.privateCookie);
   for (let i = 0; i < 100 && !f.remote.imageCalls.length; i++) await delay(2);
   const state = (await f.running.preparationStore.load(first.view.ownerId))!; state.credentials.shift(); await f.running.preparationStore.save(state);

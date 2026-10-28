@@ -6,7 +6,7 @@ Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**
 
 The speaker list updates automatically from Music Assistant. **Updating…** keeps the previous selection visible while checking again; the help text identifies last-known, expired or failed observations and the last-check time. **Ready** requires fresh inventory and selected-queue checks, not just a saved speaker name. Last-known choices remain visible if a refresh fails, but are not presented as verified. Choosing a target checks it again before saving; discovery never changes the target or starts audio automatically.
 
-The room is always ready. Participants join with a display name and enter the end of the listening order; the first person gets the first turn. Joining never starts music.
+The room is always ready. New participants enter a display name and choose a four-digit PIN; returning participants select their name/avatar and enter their PIN on a new browser. Remembered browsers continue automatically. Each user has one playlist across devices and one place in the listening order. New arrivals enter at the end; the first person gets the first turn. Joining never starts music.
 
 In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
 
@@ -53,4 +53,8 @@ If another source changes playback, its audio is left untouched and the app does
 
 There is no Create/Start/End session step. The room and join/display links persist. The host can remove people from the rotation; removal does not delete their private lists. Returning participants can rejoin and use the same list when their browser credentials are retained.
 
-Lists, settings, and order survive restart, while playback and reveal reset. Keep the same browser and guest address, and include the app in Home Assistant backups. Lists are automatic; there is no recovery-key or list-switching workflow.
+Lists, users, settings, and order survive restart, while playback and reveal reset. Include the app in Home Assistant backups. To return on another device, select yourself and enter your PIN. The host can replace forgotten PINs in Settings without deleting songs or changing playback. Lists are automatic; there is no recovery-key or list-switching workflow.
+
+Settings has four sections: **Playback** for the active speaker/group and automatic reveal; **Users** for name/avatar rows and account actions; **Music Assistant** for connection setup; and **Access & network** for guest links and uploaded-file connectivity. Initial setup opens Music Assistant; configured installations open Playback. The status summary stays visible, and switching sections keeps unfinished form edits.
+
+To permanently remove someone and their playlist, use **Host → Settings → Users → Manage → Delete user** and confirm. This deletes their history and uploads, signs out their devices and removes any listening-order seat. Removing them only from the listening order keeps their account and music. A fresh registration can reuse the deleted name and starts with an empty playlist.

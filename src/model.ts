@@ -32,7 +32,7 @@ export interface CatalogueProvider {
 }
 
 const participantSchema = z.object({
-  id: z.string().uuid(), nickname: z.string(), credentialHash: z.string(),
+  id: z.string().uuid(), nickname: z.string(), credentialHash: z.string(), userId: z.string().uuid().optional(),
 }).strict();
 const roomShape = z.object({
   id: z.string().uuid(),
@@ -48,7 +48,8 @@ const roomShape = z.object({
 }).strict();
 function validPlacement(room: z.infer<typeof roomShape>, placements: string[]) {
   const ids = room.participants.map(person => person.id);
-  return new Set(ids).size === ids.length && new Set(placements).size === placements.length && ids.length === placements.length &&
+  const users = room.participants.flatMap(person => person.userId ? [person.userId] : []);
+  return new Set(users).size === users.length && new Set(ids).size === ids.length && new Set(placements).size === placements.length && ids.length === placements.length &&
     placements.every(id => ids.includes(id)) && (!room.currentId || room.active.includes(room.currentId)) &&
     (!room.playback || Boolean(room.currentId && room.playback.turnId === room.turnId));
 }
@@ -60,6 +61,8 @@ export type Room = z.infer<typeof roomSchema>;
 export type Role = { kind: 'host' } | { kind: 'display' } | { kind: 'participant'; credential: string };
 
 export type Person = { id: string; nickname: string };
+export type UserProfile = { id: string; nickname: string; pinRequired: boolean; deletionPending?: boolean };
+export type UserDirectory = { users: UserProfile[]; current: UserProfile | null };
 export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[]; playbackStatus: NonNullable<View['playbackStatus']> };
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
@@ -75,6 +78,7 @@ export type View = {
   playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';
   revision: number; turnId: string | null; current: Person | null; next: Person | null;
   me?: Person; myTurn?: boolean; ownPlayback?: Room['playback'];
+  user?: UserProfile;
   hostPlayback?: Pick<NonNullable<Room['playback']>, 'id' | 'status' | 'revealed'> | null;
   catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };
   playbackIssue?: string;

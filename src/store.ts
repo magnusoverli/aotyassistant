@@ -34,6 +34,14 @@ export async function writePrivateJson(directory: string, filename: string, data
   try { return await stage('persistence', () => durability.run(() => commitPrivateJson(directory, filename, data, maxBytes))); }
   catch (error) { throw error instanceof PersistenceError ? error : new PersistenceError('not-committed'); }
 }
+/** Idempotent deletion with the same backup and durability guarantees as JSON commits. */
+export async function removePrivateFile(directory: string, filename: string): Promise<void> {
+  await durability.run(async () => {
+    await unlink(join(directory, filename)).catch(error => { if (error.code !== 'ENOENT') throw error; });
+    const handle = await open(directory, 'r').catch(error => { if (error.code === 'ENOENT') return undefined; throw error; });
+    if (handle) { try { await handle.sync(); } finally { await handle.close(); } }
+  });
+}
 async function commitPrivateJson(directory: string, filename: string, data: unknown, maxBytes: number): Promise<void> {
   const json = JSON.stringify(data);
   if (Buffer.byteLength(json) > maxBytes) throw new Error('Persistent record exceeds its readable size limit.');

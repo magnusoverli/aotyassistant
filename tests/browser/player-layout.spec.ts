@@ -13,12 +13,12 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     isolatedApp.demo.catalogue.push({ id: 'demo:layout', title: 'Layout song with a deliberately long title that wraps across several lines on a phone',
       artist: 'A long artist name with a portrait beside it', album: 'Layout album', duration: 180, artwork: '/demo-cover.svg', artistArtwork: '/demo-cover.svg' });
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-    await post('/api/participant/join', { nickname: 'First' });
+    await post('/api/participant/join', { pin: '1234', nickname: 'First' });
     const other = await browser.newContext();
     let release!: () => void;
     const pending = new Promise<void>(resolve => { release = resolve; });
     try {
-      await other.request.post(isolatedApp.origin + '/api/participant/join', { data: { nickname: 'A very long next listener name' }, headers: { Origin: isolatedApp.origin } });
+      await other.request.post(isolatedApp.origin + '/api/participant/join', { data: { pin: '1234', nickname: 'A very long next listener name' }, headers: { Origin: isolatedApp.origin } });
       await page.goto('/participant');
       await expect(page.locator('.playback-card')).toContainText('Choose a song');
       await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();

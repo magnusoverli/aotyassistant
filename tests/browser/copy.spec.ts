@@ -34,7 +34,7 @@ test('pages use function-first copy while joining, playback and reveal remain us
     let session = await (await host.request.get('/api/host/state')).json(); await host.goto('/host');
     await expect(host.getByRole('button', { name: 'Start listening', exact: true })).toHaveCount(0); await plainCopy(host);
     await listener.goto(session.joinUrl); await expect(listener.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible(); await plainCopy(listener);
-    await listener.getByLabel('Display name').fill('Listener'); await listener.getByRole('button', { name: 'Join room', exact: true }).click();
+    await listener.getByLabel('Display name').fill('Listener'); await listener.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await listener.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(listener.locator('.participant-hero')).toContainText('Your turn.'); await plainCopy(listener);
     session = await (await host.request.get('/api/host/state')).json();
     await expect(listener.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible(); await plainCopy(listener);
@@ -56,7 +56,7 @@ test('pages use function-first copy while joining, playback and reveal remain us
 });
 
 test('silent demo playback is explicit on every playback page and disappears after connection', async ({ page, isolatedApp }) => {
-  await page.goto('/join'); await page.getByLabel('Display name').fill('Demo listener');
+  await page.goto('/join'); await page.getByLabel('Display name').fill('Demo listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
   await page.getByRole('button', { name: 'Join room', exact: true }).click(); await expect(page).toHaveURL('/participant');
   for (const path of ['/host', '/participant', '/display']) {
     await page.goto(path); await expect(page.locator('.demo-playback-notice')).toHaveText('Demo mode — no audio');
@@ -76,7 +76,7 @@ test('silent demo playback is explicit on every playback page and disappears aft
 
 test('Move to top only changes the first selection and Play first selection starts it explicitly', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/join'); await page.getByLabel('Display name').fill('Selections listener');
+  await page.goto('/join'); await page.getByLabel('Display name').fill('Selections listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
   await page.getByRole('button', { name: 'Join room', exact: true }).click(); await expect(page).toHaveURL('/participant');
   for (const query of ['Northern', 'Night']) {
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill(query);

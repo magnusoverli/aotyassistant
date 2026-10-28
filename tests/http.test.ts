@@ -43,7 +43,7 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   const display = await request('/api/display/state'); assert.equal(display.status, 200); assert.equal(display.headers.get('set-cookie'), null);
   const displayCookie = ''; // Fresh displays need no authentication or preexisting cookie.
   const joinGuest = async (nickname: string) => {
-    const response = await request('/api/participant/join', { nickname });
+    const response = await request('/api/participant/join', { nickname, pin: '1234' });
     assert.equal(response.status, 200); const cookie = response.headers.get('set-cookie')!;
     assert.match(cookie, /HttpOnly/); assert.match(cookie, /Path=\/api\/participant/);
     const state = await response.json() as View;

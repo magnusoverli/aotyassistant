@@ -6,8 +6,8 @@ test('host suggests the opened address, verifies media automatically without a s
   const saved = await page.request.post('/api/host/integrations/save', { headers: { Origin: origin }, data: { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: 0 } });
   expect(saved.status()).toBe(200);
   const responses: string[] = []; page.on('response', response => { if (response.url().includes('/api/host/addressing')) void response.text().then(text => responses.push(text)).catch(() => {}); });
-  await page.goto('/host/settings');
-  const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
+  await page.goto('/host/settings#access');
+  const panel = page.getByRole('region', { name: 'Guest access', exact: true });
   await expect(panel.getByText('File access verified.', { exact: true })).toBeVisible();
   await expect(panel.getByLabel('Guest address', { exact: true })).toBeHidden();
   await expect(panel.getByLabel('Application address reachable from Music Assistant', { exact: true })).toBeHidden();
@@ -33,8 +33,8 @@ test('host suggests the opened address, verifies media automatically without a s
 test('an unreachable manual override is rejected without replacing the automatic address, with an explicit no-audio retry', async ({ page, isolatedApp }) => {
   const origin = isolatedApp.origin;
   await page.request.post('/api/host/integrations/save', { headers: { Origin: origin }, data: { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: 0 } });
-  await page.goto('/host/settings');
-  const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
+  await page.goto('/host/settings#access');
+  const panel = page.getByRole('region', { name: 'Guest access', exact: true });
   await expect(panel.getByText('File access verified.', { exact: true })).toBeVisible();
   const initial = await (await page.request.get('/api/host/addressing')).json();
   await panel.getByText('Advanced address override', { exact: true }).click();
@@ -50,8 +50,8 @@ test('an unreachable manual override is rejected without replacing the automatic
 test('the host can select the opened local hostname without MA and new invitation links use it', async ({ page, isolatedApp }) => {
   const port = new URL(isolatedApp.origin).port; const origin = `http://localhost:${port}`;
   // localhost is a configured loopback admin alias; save another advertised origin to exercise explicit selection.
-  await page.goto(origin + '/host/settings');
-  const panel = page.getByRole('region', { name: '3. Guest access', exact: true });
+  await page.goto(origin + '/host/settings#access');
+  const panel = page.getByRole('region', { name: 'Guest access', exact: true });
   await panel.getByText('Change guest address', { exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Use this browser address for guest links' })).toBeEnabled();
   page.once('dialog', async dialog => { expect(dialog.message()).toContain('Browser identities do not move'); await dialog.accept(); });

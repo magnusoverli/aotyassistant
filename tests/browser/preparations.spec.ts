@@ -10,7 +10,7 @@ async function room(browser: Browser, host: Page, origin: string) {
     const context = await browser.newContext({ viewport: { width: 320, height: 740 } }); contexts.push(context);
     // Exercise the same fallback needed on non-secure LAN origins (not just localhost).
     await context.addInitScript(() => Object.defineProperty(Crypto.prototype, 'randomUUID', { value: undefined, configurable: true }));
-    const response = await context.request.post(origin + '/api/participant/join', { data: { nickname }, headers: { Origin: origin } }); expect(response.ok()).toBe(true);
+    const response = await context.request.post(origin + '/api/participant/join', { data: { pin: '1234', nickname }, headers: { Origin: origin } }); expect(response.ok()).toBe(true);
     const page = await context.newPage(); await page.goto(origin + '/participant'); listeners.push(page);
     await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
   }
@@ -27,7 +27,7 @@ const titles = (page: Page) => page.locator('.saved-tracks[aria-label="Your prep
 const state = async (page: Page) => (await page.request.get('/api/participant/preparations/state')).json();
 
 test('the first save reaches an already-open tab without reload, extra writes, or private broadcast data', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { nickname: 'Two tabs' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Two tabs' }, headers: { Origin: isolatedApp.origin } });
   await page.goto('/participant'); await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
   const other = await page.context().newPage();
   try {
@@ -85,7 +85,7 @@ test('one automatic list reorders, restores entries from history, survives remov
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });
     await expect(second.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(titles(second)).toHaveCount(0);
-    await second.goto(isolatedApp.origin + '/join'); await second.getByLabel('Display name').fill('Second again'); await second.getByRole('button', { name: 'Join room', exact: true }).click();
+    await second.goto(isolatedApp.origin + '/join'); await second.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(second).toHaveURL(/\/participant$/); await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
     expect((await state(second)).ownerId).toBe(originalOwner);
   } finally { await r.close(); }

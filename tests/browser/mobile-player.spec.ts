@@ -18,9 +18,9 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
   test(`mobile player keeps its frame and control slots through all states at ${viewport.width}×${viewport.height}`, async ({ page, browser, isolatedApp }) => {
     await page.setViewportSize(viewport);
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-    await post('/api/participant/join', { nickname: 'Player' });
+    await post('/api/participant/join', { pin: '1234', nickname: 'Player' });
     const other = await browser.newContext({ baseURL: isolatedApp.origin });
-    await other.request.post('/api/participant/join', { data: { nickname: 'Next listener' }, headers: { Origin: isolatedApp.origin } });
+    await other.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Next listener' }, headers: { Origin: isolatedApp.origin } });
     const song = { id: 'demo:mobile-frame', title: 'A deliberately very long song title that cannot fit on two phone lines and must never stretch this player',
       artist: 'An artist name that also cannot fit in the available space', album: 'Full album details', duration: 600, artwork: '/demo-cover.svg', artistArtwork: '/demo-cover.svg' };
     isolatedApp.demo.catalogue.push(song);
@@ -129,7 +129,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
 }
 
 test('mobile details close on desktop and enlarged text scales the frame, not its playback states', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await expect(page.getByRole('button', { name: 'Player details', exact: true })).toBeVisible();
   await page.evaluate(() => { document.documentElement.style.fontSize = '20px'; });

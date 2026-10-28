@@ -1,0 +1,10 @@
+@layer components {
+  .user-picker { display:flex; flex-wrap:wrap; gap:8px; margin-block:16px; }
+  .user-choice { display:flex; align-items:center; gap:8px; min-width:0; max-width:100%; }
+  .user-choice span { overflow:hidden; text-overflow:ellipsis; }
+  .user-choice .avatar { width:32px; height:32px; flex-shrink:0; }
+  .user-choice[aria-pressed='true'] { border-color:var(--accent); background:#30432b; }
+  .pin-enrollment { margin-bottom:16px; }
+  .pin-enrollment form { max-width:320px; }
+  input[inputmode='numeric'][name='pin'],#first-user-pin,#reset-user-pin { letter-spacing:.35em; font-variant-numeric:tabular-nums; }
+}

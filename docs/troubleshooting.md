@@ -34,7 +34,7 @@ Open Settings and choose **Recover playback controls**. The app checks ownership
 
 ## A private list disappeared
 
-Use the same guest address and browser as before, then join the room. The app automatically reuses that browser’s selections; it does not offer list selection or recovery controls. A matching display name is not proof of ownership. Clearing all browser credentials or switching HTTP/HTTPS, hostnames, or ports can lose access. Load failures show an error and do not replace existing songs with an empty list. The host cannot inspect or claim another person’s list.
+Select your existing name/avatar and enter your four-digit PIN. Remembered browsers continue automatically, and every device uses your same playlist. A matching display name alone is not proof of ownership: creating another user with the same name creates a separate identity. If you forgot your PIN, ask the host to set a replacement under Settings → Users. Existing users upgrading from browser-only recognition can choose their first PIN on their remembered device. Load failures show an error and do not replace existing songs with an empty list. The host UI cannot inspect another person's list.
 
 ## Saving or backup fails
 

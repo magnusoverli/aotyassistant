@@ -7,14 +7,16 @@ test('active output stays synchronized across Settings, host and participant as 
   const context = await browser.newContext({ viewport: { width: 320, height: 700 } });
   try {
     const other = await context.newPage(); const host = await context.newPage(); const participant = await context.newPage();
-    await context.request.post(isolatedApp.origin + '/api/participant/join', { data: { nickname: 'Listener' }, headers: { Origin: isolatedApp.origin } });
+    await context.request.post(isolatedApp.origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Listener' }, headers: { Origin: isolatedApp.origin } });
     await page.goto('/host/settings'); await other.goto(isolatedApp.origin + '/host/settings');
     await host.goto(isolatedApp.origin + '/host'); await participant.goto(isolatedApp.origin + '/participant');
     for (const screen of [host, participant]) await expect(screen.locator('.output-label')).toHaveText('Output: Living room');
     const geometry = () => participant.locator('.playback-card').evaluate(node => ({ height: node.getBoundingClientRect().height, top: node.getBoundingClientRect().top + scrollY }));
     const before = await geometry();
+    await other.locator('.settings-navigation a[href="#music-assistant"]').click();
     await other.getByRole('button', { name: 'Change connection', exact: true }).click();
     await other.getByLabel('Music Assistant URL', { exact: true }).fill('http://keep-draft.local:8095');
+    await other.locator('.settings-navigation a[href="#playback"]').click();
     await page.getByLabel('Speaker or group', { exact: true }).selectOption('sonos:bedroom');
     await expect(other.getByText('Active speaker: Bedroom', { exact: true })).toBeVisible();
     await expect(other.getByLabel('Music Assistant URL', { exact: true })).toHaveValue('http://keep-draft.local:8095');

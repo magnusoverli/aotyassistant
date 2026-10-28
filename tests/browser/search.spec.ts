@@ -13,11 +13,11 @@ test('participant searches privately with empty/errors but cannot play until a s
     const joinUrl = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
     const displayUrl = await host.getByRole('link', { name: 'Open room display' }).getAttribute('href');
     const alice = await aliceContext.newPage(); await alice.goto(joinUrl!);
-    await alice.getByLabel('Display name').fill('Alice'); await alice.getByRole('button', { name: 'Join room' }).click();
+    await alice.getByLabel('Display name').fill('Alice'); await alice.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await alice.getByRole('button', { name: 'Join room' }).click();
     await expect(alice).toHaveURL(/\/participant$/);
     expect((await (await host.request.get('/api/host/state')).json()).playbackAvailable).toBe(false);
     const waiting = await waitingContext.newPage(); await waiting.goto(joinUrl!);
-    await waiting.getByLabel('Display name').fill('Waiting listener'); await waiting.getByRole('button', { name: 'Join room' }).click();
+    await waiting.getByLabel('Display name').fill('Waiting listener'); await waiting.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await waiting.getByRole('button', { name: 'Join room' }).click();
     const tv = await tvContext.newPage(); await tv.goto(displayUrl!);
     const responses: string[] = []; const requests: string[] = [];
     alice.on('request', request => requests.push(request.url()));

@@ -5,7 +5,7 @@ import { PreparationFileStore } from '../../src/preparations';
 
 async function join(context: BrowserContext, origin: string) {
   const headers = { Origin: origin };
-  expect((await context.request.post(origin + '/api/participant/join', { data: { nickname: 'Responsive listener' }, headers })).ok()).toBe(true);
+  expect((await context.request.post(origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Responsive listener' }, headers })).ok()).toBe(true);
   return (await context.request.post(origin + '/api/participant/preparations/init', { data: {}, headers })).json();
 }
 

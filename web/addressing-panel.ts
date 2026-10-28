@@ -71,7 +71,7 @@ export class AddressingPanel {
   render() {
     const v = this.nodes;
     const panel = v.get('panel', () => { const node = createPanel('settings-card settings-addressing'); node.setAttribute('aria-labelledby', 'settings-addressing-title'); return node; });
-    const content: Node[] = [v.get('heading', () => sectionHeading('3. Guest access', 'settings-addressing-title'))];
+    const content: Node[] = [v.get('heading', () => sectionHeading('Guest access', 'settings-addressing-title', 'h3'))];
     if (!this.view) content.push(v.el('loading', 'p', 'Loading address settings…', 'muted'));
     else {
       const view = this.view;
@@ -84,7 +84,7 @@ export class AddressingPanel {
       const guestSettings = v.el('guest-settings', 'details', undefined, 'settings-address-help'); prop(guestSettings, 'open', this.guestExpanded);
       const guestNodes: Node[] = [v.el('guest-summary', 'summary', 'Change guest address')];
       guestSettings.ontoggle = () => { if (guestSettings.isConnected) this.guestExpanded = guestSettings.open; };
-      guestNodes.push(v.el('guest-warning', 'p', 'Changing address may require people to rejoin and lose access to previous selections. Keep the guest address stable; saved server data is kept.', 'muted small'));
+      guestNodes.push(v.el('guest-warning', 'p', 'At a new address, people select their name and enter their PIN again. Their playlists are kept. Keep the guest address stable for automatic recognition.', 'muted small'));
       if (!inIngress()) guestNodes.push(this.button('Use this browser address for guest links', async () => {
         if (!this.confirmGuestChange(location.origin)) return;
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
@@ -132,6 +132,6 @@ export class AddressingPanel {
     return panel;
   }
   private confirmGuestChange(origin: string) {
-    return origin === this.view?.guestOrigin || confirm(`Change the guest link from ${this.view?.guestOrigin}/join to ${origin}/join? Browser identities do not move between addresses. People may lose access to previous selections; saved server data is kept.`);
+    return origin === this.view?.guestOrigin || confirm(`Change the guest link from ${this.view?.guestOrigin}/join to ${origin}/join? People will need to select their name and enter their PIN at the new address. Their playlists are kept.`);
   }
 }

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.0.11] — 2026-10-28
+
+- Organize Settings into Playback, Users, Music Assistant and Access sections with responsive navigation and clearer user-management actions.
+- Allow a fresh user registration after deletion, including the same name, without inheriting the deleted playlist or being blocked by old browser cookies.
+- Style Host desk as a matching navigation button alongside the other home-page actions.
+- Permanently delete users, their playlists and uploads from Host Settings, with confirmation and retryable cleanup.
+- Recognize returning users by name and four-digit PIN, with remembered devices, one shared personal playlist and host PIN reset.
 - Show play-order arrows consistently on every page, including Host desk and mobile layouts.
 - Choose Music Assistant recordings without provider dropdowns, preserve verified equivalents in saved lists, and validate the reported playback source.
 - Improve Music Assistant search deadlines, dynamic-queue takeover and position updates while reducing redundant volume polling.

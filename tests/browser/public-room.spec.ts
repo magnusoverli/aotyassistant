@@ -10,7 +10,7 @@ async function setup(browser: Browser, host: Page, origin: string, nickname = 'A
   const created = await (await host.request.get('/api/host/state')).json() as View;
   const guest = await browser.newContext({ baseURL: origin });
   const screen = await browser.newContext({ baseURL: origin, viewport: { width: 1366, height: 768 }, reducedMotion: 'no-preference' });
-  await post(guest.request, '/api/participant/join', { nickname });
+  await post(guest.request, '/api/participant/join', { pin: '1234', nickname });
   const tv = await screen.newPage(); await tv.goto(created.displayUrl!);
   await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
   const current = async (): Promise<View> => (await guest.request.get('/api/participant/state')).json();
@@ -44,7 +44,7 @@ test('the display uses the shared listening order without numbers and retains it
     expect(await tv.locator('.room-invitation').evaluate(node => getComputedStyle(node).borderTopWidth)).toBe('0px');
     for (const nickname of ['Sam', 'Jordan', 'Riley', 'A longer listener name for the TV', 'Taylor', 'Morgan', 'Casey', 'Robin']) {
       const context = await browser.newContext(); listeners.push(context);
-      const joined = await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname } }); expect(joined.ok()).toBe(true);
+      const joined = await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname } }); expect(joined.ok()).toBe(true);
     }
     await expect(list.getByRole('listitem')).toHaveCount(9);
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');

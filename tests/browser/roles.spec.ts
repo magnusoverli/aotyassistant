@@ -23,7 +23,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     for (const name of ['Alex', 'Sam', 'Jordan', 'Riley']) {
       const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); contexts.push(context);
       const page = await context.newPage(); listeners.set(name, page); await page.goto(state.joinUrl);
-      await page.getByLabel('Display name').fill(name); await page.getByRole('button', { name: 'Join room' }).click();
+      await page.getByLabel('Display name').fill(name); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room' }).click();
       await expect(page).toHaveURL(/\/participant$/);
     }
     state = await (await host.request.get('/api/host/state')).json();
@@ -107,7 +107,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     // Direct late joining preserves the current turn and the host's reordered rotation.
     const beforeArrival = await (await host.request.get('/api/host/state')).json();
     const extra = await browser.newContext(); contexts.push(extra);
-    await extra.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Another listener' } });
+    await extra.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Another listener' } });
     state = await (await host.request.get('/api/host/state')).json();
     expect(state.turnId).toBe(beforeArrival.turnId); expect(state.current.id).toBe(beforeArrival.current.id);
     expect(state.active.map((person: { nickname: string }) => person.nickname)).toEqual(['Alex', 'Jordan', 'Sam', 'Riley', 'Another listener']);
@@ -120,7 +120,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     // Keep the shared bar compact for a larger room without clipping the TV page.
     for (const name of ['A very long listener nickname for TV', 'Taylor', 'Morgan', 'Casey']) {
       const context = await browser.newContext(); contexts.push(context);
-      await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: name } });
+      await context.request.post(isolatedApp.origin + '/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: name } });
       state = await (await host.request.get('/api/host/state')).json();
     }
     await expect(tv.locator('.rotation-seat')).toHaveCount(9);

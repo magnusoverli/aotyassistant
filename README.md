@@ -12,7 +12,7 @@ People join a shared listening room from their phones, prepare private track sel
 
 ## What it does
 
-- **Take turns:** join with a display name, see who is up next, and let the host arrange the listening order.
+- **Take turns:** choose your name and four-digit PIN, see who is up next, and let the host arrange the listening order.
 - **Browse music:** search artists, albums, and tracks across the sources configured in Music Assistant.
 - **Prepare privately:** save and reorder selections, upload a track, and return to the same private list on later visits.
 - **Play and reveal:** the current participant controls playback and can reveal track details on the shared display.
@@ -56,7 +56,7 @@ Pressing Play replaces the selected speaker or group’s queue with one track an
 
 Use this app on a **trusted LAN**. Anyone who can reach its guest port can also open the host controls, change settings, and manage the listening order. Home Assistant authentication protects the Ingress interface, not the separate LAN port. Do not publish that port to the internet.
 
-Each participant browser has one automatic private track list. Use the same browser and guest address to retain access; there are no list-switching or cross-device recovery flows. The app keeps unrevealed track details off the shared display, but cannot hide them in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
+Each user has one automatic private track list across devices. Select your name/avatar and enter your four-digit PIN on a new browser; remembered browsers continue automatically. The host can reset forgotten PINs in Settings. The app keeps unrevealed track details off the shared display, but cannot hide them in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
 
 ## Guides and support
 

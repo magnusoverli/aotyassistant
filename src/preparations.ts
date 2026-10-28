@@ -4,7 +4,7 @@ import { open, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from './model.js';
-import { writePrivateJson } from './store.js';
+import { writePrivateJson, removePrivateFile } from './store.js';
 import { KeyedSerialQueue } from './serial.js';
 import { diagnostics } from './diagnostics.js';
 import { recordingDescriptorSchema, sameRecordingEvidence } from './recording-identity.js';
@@ -76,6 +76,7 @@ export interface PreparationStore {
   load(ownerId: string): Promise<PreparationState | null>;
   snapshot?(ownerId: string): Promise<PreparationState | null>;
   save(state: PreparationState): Promise<void>;
+  remove?(ownerId: string): Promise<void>;
 }
 export class PreparationFileStore implements PreparationStore {
   private directory: string;
@@ -125,6 +126,10 @@ export class PreparationFileStore implements PreparationStore {
     } catch { throw new AppError(503, 'The list save could not be confirmed. Refresh the list before retrying.'); }
     finally { this.forget(state.ownerId); }
   }
+  async remove(ownerId: string) {
+    ownerId = input(id, ownerId); this.forget(ownerId);
+    await removePrivateFile(this.directory, `${ownerId}.json`);
+  }
 }
 const fileStat = (filename: string) => stat(filename, { bigint: true });
 function freezeSnapshot(value: unknown): void {
@@ -161,6 +166,16 @@ const fingerprint = (selection: SavedSelection) => hash(JSON.stringify(selection
 
 /** Independent private persistence. Never touches Engine transactions, playback readiness, or speaker commands. */
 export class PreparationManager {
+  private credentialAllowed: (ownerId: string, hash: string) => boolean = () => true;
+  setCredentialPolicy(policy: (ownerId: string, hash: string) => boolean) { this.credentialAllowed = policy; }
+  withOwner<T>(ownerId: string, work: () => Promise<T>) { return this.serial(ownerId, work); }
+  async notifyIdentity(ownerId: string) { const state = await this.store.load(ownerId); if (state) this.events.emit(ownerId, state); }
+  async deleteOwner(ownerId: string) {
+    await this.serial(input(id, ownerId), async () => {
+      if (!this.store.remove) throw new AppError(503, 'This storage backend does not support permanent deletion.');
+      await this.store.remove(ownerId);
+    });
+  }
   private queue = new KeyedSerialQueue();
   private playing = new Set<string>();
   private events = new EventEmitter();
@@ -179,7 +194,7 @@ export class PreparationManager {
   }
   private async authorize(ownerId: string, secretHash: string, readonly = false) {
     const state = await (readonly && this.store.snapshot ? this.store.snapshot(ownerId) : this.store.load(ownerId));
-    if (!state || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
+    if (!state || !this.credentialAllowed(ownerId, secretHash) || !state.credentials.some(credential => sameHash(credential.hash, secretHash))) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
     return state;
   }
   private view(state: PreparationState): PreparationView {
@@ -219,7 +234,7 @@ export class PreparationManager {
     return this.serial(access.ownerId, async () => {
       const state = await this.store.load(access.ownerId);
       if (!state) return undefined;
-      if (!state.credentials.some(item => sameHash(item.hash, access.secretHash))) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
+      if (!this.credentialAllowed(access.ownerId, access.secretHash) || !state.credentials.some(item => sameHash(item.hash, access.secretHash))) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
       return state.ownerId;
     });
   }
@@ -229,7 +244,7 @@ export class PreparationManager {
     return this.serial(access.ownerId, async () => {
       await this.authorize(access.ownerId, access.secretHash, true);
       const send = (state: PreparationState) => {
-        try { listener(state.credentials.some(item => sameHash(item.hash, access.secretHash)) ? this.view(state) : null); }
+        try { listener(this.credentialAllowed(access.ownerId, access.secretHash) && state.credentials.some(item => sameHash(item.hash, access.secretHash)) ? this.view(state) : null); }
         catch { /* A disconnected subscriber must not turn a committed save into an error. */ }
       };
       this.events.on(access.ownerId, send); return () => { this.events.off(access.ownerId, send); };

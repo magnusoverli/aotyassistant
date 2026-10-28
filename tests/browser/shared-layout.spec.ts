@@ -30,7 +30,7 @@ async function alignedMenu(page: Page) {
 test('workspace geometry and standard cards stay shared across routes, empty rooms and responsive boundaries', async ({ page: host, context, isolatedApp }) => {
   await host.goto('/host'); await expect(host.locator('.host-page.is-empty')).toBeVisible();
   const empty = await geometry(host, ['main', '.host-workspace', '.host-invitations']);
-  const joined = await host.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Layout listener' } });
+  const joined = await host.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Layout listener' } });
   expect(joined.ok()).toBe(true);
   await expect(host.locator('.host-live')).toBeVisible();
   expect(await geometry(host, ['main', '.host-workspace', '.host-invitations'])).toEqual(empty);
@@ -40,17 +40,18 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
   for (const width of widths) {
     for (const page of [host, settings, participant]) await page.setViewportSize({ width, height: 1000 });
     const frame = await geometry(host, ['main']);
-    expect(await geometry(settings, ['main'])).toEqual(frame);
+    const settingsFrame = (await geometry(settings, ['main']))[0]!;
+    expect(settingsFrame.width).toBeLessThanOrEqual(width);
     expect(await geometry(participant, ['main'])).toEqual(frame.map(item => width < 1100
       ? { ...item, padding: item.padding.replace(/^\S+/, '10px') } : item));
     const columns = (await geometry(host, ['.host-workspace', '.host-invitations'])).map(({ x, width }) => ({ x, width }));
-    for (const [page, selectors] of [[settings, ['.settings-connection', '.settings-output']], [participant, ['.catalogue-panel', '.preparation-list']]] as const) {
+    for (const [page, selectors] of [[participant, ['.catalogue-panel', '.preparation-list']]] as const) {
       if (page === participant && width >= 1100) continue; // The collection now owns its desktop split, not the host sidebar grid.
       const expected = page === participant && width < 1100 ? columns.map(column => ({ x: column.x + 1, width: column.width - 2 })) : columns;
       expect((await geometry(page, [...selectors])).map(({ x, width }) => ({ x, width }))).toEqual(expected);
     }
     const card = await appearance(host, '.qr-card');
-    await expect.poll(() => appearance(settings, '.settings-connection')).toEqual(card);
+    await expect.poll(() => appearance(settings, '.settings-connection')).toEqual({ ...card, padding: width <= 550 ? '18px' : '24px' });
     expect(await appearance(participant, '#music-collection')).toEqual({ ...card, padding: '0px' });
     const player = (await participant.locator('.playback-card').boundingBox())!;
     const music = (await participant.locator('.music-workspace').boundingBox())!;

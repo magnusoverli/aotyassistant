@@ -7,7 +7,7 @@ import { showList } from './preparation-helpers';
 async function room(browser: Browser, host: Page, origin: string) {
   const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: origin } });
   const context = await browser.newContext({ viewport: { width: 320, height: 740 } });
-  const joined = await context.request.post(origin + '/api/participant/join', { data: { nickname: 'Upload listener' }, headers: { Origin: origin } });
+  const joined = await context.request.post(origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Upload listener' }, headers: { Origin: origin } });
   expect(joined.ok()).toBe(true);
   const page = await context.newPage(); await page.goto(origin + '/participant');
   await page.locator('#list-upload').click();
@@ -237,7 +237,7 @@ test('failed analysis and old missing uploads leave no residual errors or drafts
 
 test('host saves and reloads the file callback address without changing the music connection or starting audio', async ({ page: host, isolatedApp }) => {
   const saved = await host.request.post('/api/host/integrations/save', { data: { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: 0 }, headers: { Origin: isolatedApp.origin } });
-  expect(saved.status()).toBe(200); await host.goto('/host/settings');
+  expect(saved.status()).toBe(200); await host.goto('/host/settings#access');
   await host.getByText('Advanced address override', { exact: true }).click();
   const field = host.getByLabel('Application address reachable from Music Assistant', { exact: true }); await expect(field).toBeEnabled();
   await field.fill(isolatedApp.origin); await host.getByRole('button', { name: 'Save file playback address' }).click();

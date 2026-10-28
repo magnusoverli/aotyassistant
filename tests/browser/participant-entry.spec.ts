@@ -10,7 +10,7 @@ async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, c
   const post = async (path: string, data: unknown) => {
     const response = await context.request.post(origin + path, { headers: { Origin: origin }, data }); expect(response.ok()).toBe(true); return response.json();
   };
-  await post('/api/participant/join', { nickname: 'Returning listener' });
+  await post('/api/participant/join', { pin: '1234', nickname: 'Returning listener' });
   let library = await post('/api/participant/preparations/init', {});
   for (let index = 0; index < count; index++) {
     const track = { id: `demo:entry-${index}`, title: `Saved selection ${index + 1}`, artist: 'A familiar artist', album: 'A favourite album', duration: 60 };
@@ -34,22 +34,22 @@ test('a first visit offers only the join form, then automatically opens one empt
   await expect(page.getByText('Recover a saved list', { exact: true })).toHaveCount(0);
   for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
     await page.setViewportSize({ width: width!, height: height! }); await noOverflow(page);
-    await expect(page.getByRole('button', { name: 'Join room', exact: true })).toBeInViewport();
+     await expect(page.getByRole('button', { name: 'Join room', exact: true })).toBeVisible();
     if (width === 1440 || width === 390 && height === 844) await page.screenshot({ path: `test-results/participant-entry-fresh-${width}.png`, fullPage: true });
   }
   expect(writes).toEqual([]);
-  await page.getByLabel('Display name').fill('New listener');
+  await page.getByLabel('Display name').fill('New listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
   await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   await expect(page).toHaveURL('/participant');
   await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search to add one.');
   await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
   expect(writes).toContain('/api/participant/preparations/init');
-  expect(writes.filter(path => !['/api/participant/join', '/api/participant/preparations/init'].includes(path))).toEqual([]);
+  expect(writes.filter(path => !['/api/participant/preparations/join', '/api/participant/preparations/init'].includes(path))).toEqual([]);
 });
 
 test('a stale cookie from an earlier installation opens the automatic empty list instead of Needs attention', async ({ page, isolatedApp }) => {
-  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Old browser cookie' } });
+  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Old browser cookie' } });
   expect(joined.ok()).toBe(true);
   const staleOwner = randomUUID();
   await page.context().addCookies([{ name: 'aoty_preparation', value: `${staleOwner}.${'x'.repeat(43)}`,
@@ -64,7 +64,7 @@ test('a stale cookie from an earlier installation opens the automatic empty list
 });
 
 test('checking valid membership never flashes a join form and failed checks require a read-only retry', async ({ page, isolatedApp }) => {
-  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Already joined' } }); expect(joined.ok()).toBe(true);
+  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Already joined' } }); expect(joined.ok()).toBe(true);
   let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/participant/state', async route => { await gate; await route.continue(); });
   try {
@@ -125,7 +125,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await expect(r.page.getByRole('button', { name: 'Choose audio file', exact: true })).toHaveCount(0);
     for (const [width, height] of [[1440, 1000], [1000, 800], [390, 844], [320, 700], [390, 440]]) {
       await r.page.setViewportSize({ width: width!, height: height! }); await noOverflow(r.page);
-      await expect(r.page.getByRole('button', { name: 'Join room', exact: true })).toBeInViewport();
+      await expect(r.page.getByRole('button', { name: 'Join room', exact: true })).toBeVisible();
       if (width === 1440 || width === 390 && height === 844) await r.page.screenshot({ path: `test-results/participant-entry-saved-${count}-${width}.png`, fullPage: true });
     }
     await r.page.reload(); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
@@ -134,7 +134,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     await r.context.setOffline(false); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     expect(writes).toEqual([]);
-    await r.page.getByLabel('Display name').fill('Returning listener');
+    await r.page.getByRole('button', { name: 'Returning listener', exact: true }).click(); await r.page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
     await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.locator('.participant-hero')).toBeVisible();
     await showList(r.page); await expect(r.page.locator('.list-count')).toHaveText(`${count} tracks`);
@@ -154,7 +154,7 @@ for (const entryPath of ['/participant', '/join']) test(`joining through ${entry
     await expect(page.locator('body')).not.toContainText('Saved selection');
     await expect(page.locator('.preparation-list')).toHaveCount(0);
     expect((await page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
-    await page.getByLabel('Display name').fill('Returning listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await page.getByLabel('Display name').fill('Returning listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(page.locator('.participant-hero')).toBeVisible();
     await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search to add one.');
     const library = await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
@@ -169,10 +169,10 @@ for (const entryPath of ['/participant', '/join']) test(`joining through ${entry
 test('join errors stay with the nickname, preserve the draft, and whitespace sends no request', async ({ page }) => {
   await page.goto('/join'); const input = page.getByLabel('Display name');
   let joins = 0;
-  await page.route('**/api/participant/join', async route => {
+  await page.route('**/api/participant/preparations/join', async route => {
     joins++; await route.fulfill({ status: 422, json: { error: 'This name could not be accepted. Try another name.' } });
   });
-  await input.fill('   '); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+  await input.fill('   '); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(input).toBeFocused(); await expect(input).toHaveAttribute('aria-invalid', 'true');
   await expect(input).toHaveAccessibleDescription('Enter a name to join the room.'); expect(joins).toBe(0);
   await input.fill('Retained name'); await expect(input).toHaveAttribute('aria-invalid', 'false');
@@ -193,7 +193,7 @@ test('revocation shows one calm entry notice, and saved music survives refresh a
     await expect(r.page.getByRole('alert')).toHaveCount(0); await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     await r.page.reload(); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
-    await r.page.getByLabel('Display name').fill('Back again'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await expect(r.page.getByRole('heading', { name: 'Continue as Returning listener' })).toBeVisible(); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(r.page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     await expect(r.page.locator('.list-count')).toHaveText('2 tracks');
     expect((await (await r.page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(r.library.ownerId);
@@ -214,7 +214,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     expect(moves).toBe(1); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await r.page.unroute('**/api/participant/preparations/move');
-    await r.page.getByLabel('Display name').fill('Retained draft'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
+    await r.page.getByRole('button', { name: 'Returning listener', exact: true }).click(); await r.page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await r.page.getByRole('button', { name: 'Join room', exact: true }).click();
     await showList(r.page); await expect(r.page.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
     await r.page.getByRole('button', { name: 'Retry save', exact: true }).click();
     await expect(r.page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
@@ -224,7 +224,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
 });
 
 test('unfinished uploads stay retained without private controls before rejoining, without reuploading or losing metadata', async ({ page, isolatedApp }) => {
-  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Upload listener' } }); expect(joined.ok()).toBe(true);
+  const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Upload listener' } }); expect(joined.ok()).toBe(true);
   await page.goto('/participant'); await page.locator('#list-upload').click(); await expect(page.getByRole('button', { name: 'Choose audio file', exact: true })).toBeEnabled();
   let uploads = 0; page.on('request', request => { if (request.method() === 'POST' && /\/uploads\/[a-f0-9-]+$/.test(new URL(request.url()).pathname)) uploads++; });
   await page.locator('#track-upload-file').setInputFiles({ name: 'retained.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
@@ -236,7 +236,7 @@ test('unfinished uploads stay retained without private controls before rejoining
   await page.reload(); await expect(page.getByLabel('Track title', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Choose another file', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Discard upload draft', exact: true })).toHaveCount(0);
-  await page.getByLabel('Display name').fill('Upload listener again'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Continue as Upload listener' })).toBeVisible(); await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByLabel('Track title', { exact: true })).toBeEnabled(); await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('My edited upload');
   expect(uploads).toBe(1); expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });

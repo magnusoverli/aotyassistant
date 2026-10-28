@@ -6,7 +6,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
   test(`combined mobile music edits its always-visible list in place at ${viewport.width}×${viewport.height}`, async ({ page, isolatedApp }) => {
     await page.setViewportSize(viewport);
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-    await post('/api/participant/join', { nickname: 'Mobile music' });
+    await post('/api/participant/join', { pin: '1234', nickname: 'Mobile music' });
     await post('/api/participant/preparations/init', {});
     for (let index = 0; index < 8; index++) isolatedApp.demo.catalogue.push({ id: `demo:collection-${index}`, title: `Collection song ${index} with a deliberately long title`, artist: 'A long artist name', album: 'An album', duration: 600 });
     await page.goto('/participant');
@@ -72,7 +72,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
 
 test('the unified collection retains its desktop panes and actual row nodes after editing and resizing', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-  await post('/api/participant/join', { nickname: 'Music layout' });
+  await post('/api/participant/join', { pin: '1234', nickname: 'Music layout' });
   let library = await (await post('/api/participant/preparations/init', {})).json();
   for (const trackId of ['demo:aurora', 'demo:summer', 'demo:night']) library = (await (await post('/api/participant/preparations/add', { trackId,
     operation: { id: randomUUID(), issuedAt: Date.now(), revision: library.revision } })).json()).view;

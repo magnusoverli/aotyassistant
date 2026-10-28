@@ -13,6 +13,8 @@ export class AppHeader {
   private primary = el('ul', undefined, 'primary-links');
   private toggle = el('button', 'Menu', 'secondary header-menu-toggle');
   private fullscreen = el('button', 'Full screen', 'secondary header-fullscreen');
+  private switchUser = el('button', 'Switch user', 'secondary');
+  private switchItem = el('li');
   private links = new Map<string, HTMLAnchorElement>();
   private expanded = false;
   private resize?: ResizeObserver;
@@ -60,7 +62,9 @@ export class AppHeader {
       this.resize.observe(this.element);
     }
     this.update({});
+    this.switchUser.type = 'button'; this.switchItem.append(this.switchUser); this.switchItem.hidden = true; this.primary.append(this.switchItem);
   }
+  setSwitchUser(action?: () => void) { prop(this.switchItem, 'hidden', !action); this.switchUser.onclick = action ?? null; }
   update(state: HeaderState) {
     this.lastState = state;
     const model = headerModel(this.page, state);
@@ -77,6 +81,7 @@ export class AppHeader {
   }
   setPage(page: Page) {
     this.page = page;
+    this.setSwitchUser();
     attr(this.element.querySelector('.brand')!, 'aria-current', page === 'home' ? 'page' : undefined);
     if (page !== 'display') this.fullscreen.remove();
     this.setExpanded(false);

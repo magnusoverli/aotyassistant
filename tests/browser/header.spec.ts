@@ -5,7 +5,7 @@ import { openNavigation } from './navigation-helpers';
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
 test('shared mobile header is compact across routes while desktop sizing and touch targets stay unchanged', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { nickname: 'Header listener' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Header listener' }, headers: { Origin: isolatedApp.origin } });
   for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
     await page.goto(path);
     await expect(page.locator('.rotation-seat')).toHaveCount(1);
@@ -127,7 +127,7 @@ test('mobile header supports keyboard menus, stable focus across live updates, o
   await menu.press('Tab'); await expect(navigation.getByRole('link', { name: 'Host desk', exact: true })).toBeFocused();
   await page.keyboard.press('Tab'); const settings = navigation.getByRole('link', { name: 'Settings', exact: true }); await expect(settings).toBeFocused();
   await page.evaluate(() => { (window as any).headerRef = document.querySelector('header'); (window as any).settingsLinkRef = document.querySelector('header a[href="/host/settings"]'); });
-  await post('/api/participant/join', { nickname: 'Live listener' });
+  await post('/api/participant/join', { pin: '1234', nickname: 'Live listener' });
   await expect(page.locator('.rotation-seat')).toHaveCount(1);
   await expect(settings).toBeFocused(); await expect(menu).toHaveAttribute('aria-expanded', 'true');
   expect(await page.evaluate(() => (window as any).headerRef === document.querySelector('header') && (window as any).settingsLinkRef === document.querySelector('header a[href="/host/settings"]'))).toBe(true);
@@ -186,7 +186,7 @@ test('display header stays mounted through menus/fullscreen/reveal/removal witho
   const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   let session = await (await host.request.get('/api/host/state')).json(); const participantContext = await browser.newContext(); const displayContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   try {
-    const joined = await participantContext.request.post(isolatedApp.origin + '/api/participant/join', { data: { nickname: 'A listener <literal>' }, headers: { Origin: isolatedApp.origin } }); expect(joined.ok()).toBe(true);
+    const joined = await participantContext.request.post(isolatedApp.origin + '/api/participant/join', { data: { pin: '1234', nickname: 'A listener <literal>' }, headers: { Origin: isolatedApp.origin } }); expect(joined.ok()).toBe(true);
     session = await (await host.request.get('/api/host/state')).json();
     const playing = await participantContext.request.post(isolatedApp.origin + '/api/participant/play', { data: { turnId: session.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } }); const own = await playing.json();
     const tv = await displayContext.newPage(); await tv.goto(session.displayUrl); await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
@@ -213,8 +213,8 @@ test('skip navigation preserves a stable join URL and menu access never triggers
   expect(page.url()).toBe(session.joinUrl); await expect(page.locator('#main-content')).toBeFocused();
   await openNavigation(page); await page.keyboard.press('Escape'); await expect(page.getByLabel('Display name')).toBeVisible();
   expect(writes).toEqual([]);
-  await page.getByLabel('Display name').fill('Keyboard listener'); await page.getByRole('button', { name: 'Join room' }).click();
+  await page.getByLabel('Display name').fill('Keyboard listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room' }).click();
   await expect(page).toHaveURL('/participant'); await expect(page.getByRole('banner')).toContainText('Keyboard listener');
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
-  expect(writes).toEqual(['/api/participant/join', '/api/participant/preparations/init']);
+  expect(writes).toEqual(['/api/participant/preparations/join', '/api/participant/preparations/init']);
 });

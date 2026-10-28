@@ -10,7 +10,7 @@ import { UploadAssets, uploadTextSchema } from './uploads.js';
 import { artworkSize, body, rawCookie, setPrivateCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { maOperation } from './ma-operation.js';
-import { PreparationIdentity } from './preparation-identity.js';
+import type { UserManager } from './users.js';
 
 const prefix = '/api/participant/preparations';
 const uuid = z.string().uuid();
@@ -18,10 +18,9 @@ const cookieName = 'aoty_preparation';
 const empty = z.object({}).strict();
 
 /** Private library routes deliberately use a separate credential, revision, rate lane, and event stream. */
-export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets) {
+export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets, users: UserManager) {
   const streams = new EventStreams(200, 'Too many private-list connections. Close unused tabs.');
   const rates = new Map<string, { count: number; start: number }>();
-  const identity = new PreparationIdentity(manager, config.dataDir);
   const member = (req: Request) => rawCookie(req, 'aoty_participant');
   const credential = (req: Request) => rawCookie(req, cookieName);
   const setCookie = (res: Response, value: string) => setPrivateCookie(res, cookieName, value, prefix, config.guestUrl);
@@ -29,7 +28,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     const now = Date.now(); for (const [key, value] of rates) if (now - value.start > 60_000) rates.delete(key);
   }, 60_000); timer.unref();
   app.use(prefix, (req, _res, next) => {
-    if (req.method === 'GET' || req.path === '/play') return next();
+    if (req.method === 'GET' || ['/play', '/join', '/pin'].includes(req.path)) return next();
     const initializing = req.path === '/init';
     const key = initializing ? `identity:${createHash('sha256').update(member(req)).digest('hex')}` : `owner:${createHash('sha256').update(credential(req)).digest('hex')}`;
     const now = Date.now(); let rate = rates.get(key); if (!rate || now - rate.start > 60_000) rate = { count: 0, start: now };
@@ -44,7 +43,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.post(`${prefix}/init`, async (req, res) => {
     body(req, empty);
     const context = engine.catalogueContext(member(req));
-    const owner = await identity.ensure(member(req), credential(req));
+    const owner = await users.ensureList(member(req), credential(req));
     if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed before selections were ready.');
     setCookie(res, owner.credential); res.json(owner.view);
     void manager.cleanupDeletedUploads(owner.credential, (ownerId, assetId) => uploads.remove(ownerId, assetId)).catch(() => {});

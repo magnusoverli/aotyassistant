@@ -3,10 +3,10 @@ import { test } from './app-fixture';
 
 test('the shared playback component preserves host and participant actions, privacy and turn permissions', async ({ page: host, browser, isolatedApp }) => {
   const headers = { Origin: isolatedApp.origin };
-  const joined = await (await host.request.post('/api/participant/join', { headers, data: { nickname: 'Current listener' } })).json();
+  const joined = await (await host.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Current listener' } })).json();
   const other = await browser.newContext({ baseURL: isolatedApp.origin });
   try {
-    await other.request.post('/api/participant/join', { headers, data: { nickname: 'Next listener' } });
+    await other.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Next listener' } });
     const participant = await host.context().newPage(); const waiting = await other.newPage();
     await host.goto('/host'); await participant.goto('/participant'); await waiting.goto('/participant');
     for (const [page, role] of [[host, 'host'], [participant, 'participant'], [waiting, 'participant']] as const) {
@@ -67,10 +67,10 @@ test('the shared playback component preserves host and participant actions, priv
 
 test('host pause/resume and both players’ mute/stop controls preserve the turn and use the correct endpoints', async ({ page: host, browser, isolatedApp }) => {
   const headers = { Origin: isolatedApp.origin };
-  const joined = await (await host.request.post('/api/participant/join', { headers, data: { nickname: 'Player' } })).json();
+  const joined = await (await host.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Player' } })).json();
   const other = await browser.newContext({ baseURL: isolatedApp.origin });
   try {
-    await other.request.post('/api/participant/join', { headers, data: { nickname: 'Waiting' } });
+    await other.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Waiting' } });
     const participant = await host.context().newPage(); const waiting = await other.newPage();
     await participant.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId: null, trackId: 'demo:aurora' } });
     await host.goto('/host'); await participant.goto('/participant'); await waiting.goto('/participant');

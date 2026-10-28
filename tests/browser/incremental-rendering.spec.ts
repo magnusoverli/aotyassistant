@@ -31,7 +31,7 @@ async function retained(page: Page) {
 }
 async function join(page: Page, origin: string) {
   const headers = { Origin: origin };
-  expect((await page.request.post('/api/participant/join', { data: { nickname: 'Stable UI' }, headers })).ok()).toBe(true);
+  expect((await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Stable UI' }, headers })).ok()).toBe(true);
   expect((await page.request.post('/api/participant/preparations/init', { data: {}, headers })).ok()).toBe(true);
   await page.goto('/participant');
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
@@ -106,16 +106,18 @@ test('upload progress is local and a private-list event preserves upload input s
 test('speaker discovery, errors and live updates retain forms, picker options and refresh animation node', async ({ page, context, isolatedApp }) => {
   await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'fixture-token', 0);
   await isolatedApp.manager.selectDestination('sonos:room', isolatedApp.manager.view().revision);
-  await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'Listener' } });
+  await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Listener' } });
   const host = await context.newPage(); await host.goto('/host');
   await expect(host.locator('.output-label')).toHaveText('Output: Living room');
-  await page.goto('/host/settings');
+  await page.goto('/host/settings#access');
   await expect(page.getByRole('button', { name: 'Test file connection' })).toBeEnabled();
+  await page.locator('.settings-navigation a[href="#music-assistant"]').click();
   await page.getByRole('button', { name: 'Change connection', exact: true }).click();
   await page.getByText('Advanced: token or separate login address', { exact: true }).click();
   await page.getByLabel('Music Assistant access token').fill('draft-kept');
   const regions = ['.settings-workspace', '.settings-connection', '.settings-addressing', '#app-guest-origin', '#upload-media-origin', '#ma-url', '#ma-token', '#ma-destination', '#ma-destination option[value="sonos:room"]', '.speaker-refresh'];
   await retain(page, regions);
+  await page.locator('.settings-navigation a[href="#playback"]').click();
   let release!: () => void; let entered!: () => void;
   const held = new Promise<void>(resolve => { release = resolve; }); const started = new Promise<void>(resolve => { entered = resolve; });
   await page.route('**/api/host/integrations/destinations', async route => { entered(); await held; await route.fulfill({ status: 503, json: { error: 'Discovery temporarily unavailable' } }); });
@@ -126,10 +128,11 @@ test('speaker discovery, errors and live updates retain forms, picker options an
     await expect(page.locator('.speaker-refresh')).toBeEnabled(); await retained(page);
     await page.unroute('**/api/host/integrations/destinations');
     await page.getByRole('button', { name: 'Refresh speakers' }).click(); await expect(page.locator('.speaker-refresh')).toBeEnabled(); await retained(page);
+    await page.locator('.settings-navigation a[href="#music-assistant"]').click();
     await page.locator('#ma-token').focus(); await page.locator('#ma-token').evaluate((node: HTMLInputElement) => node.setSelectionRange(2, 5));
     await retain(host, ['.host-page', '.host-invitations', '#volume-level', '.host-live']);
     isolatedApp.setSpeakers([{ player_id: 'sonos:room', name: 'Renamed room', available: true }]);
-    await expect(page.getByText('Active speaker: Renamed room', { exact: true })).toBeVisible(); await expect(host.locator('.output-label')).toHaveText('Output: Renamed room');
+    await expect(page.locator('.active-destination')).toHaveText('Active speaker: Renamed room'); await expect(host.locator('.output-label')).toHaveText('Output: Renamed room');
     await retained(page); await retained(host);
     await expect(page.locator('#ma-token')).toBeFocused(); expect(await page.locator('#ma-token').evaluate((node: HTMLInputElement) => [node.value, node.selectionStart, node.selectionEnd])).toEqual(['draft-kept', 2, 5]);
   } finally { release(); }
@@ -162,7 +165,7 @@ test('listening-order membership updates retain existing seats', async ({ page, 
   await retain(page, [...workspace, '.rotation-seat']);
   const other = await browser.newContext();
   try {
-    expect((await other.request.post(isolatedApp.origin + '/api/participant/join', { data: { nickname: 'Second listener' }, headers: { Origin: isolatedApp.origin } })).ok()).toBe(true);
+    expect((await other.request.post(isolatedApp.origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Second listener' }, headers: { Origin: isolatedApp.origin } })).ok()).toBe(true);
     await expect(page.locator('.rotation-seat')).toHaveCount(2); await retained(page);
   } finally { await other.close(); }
 });

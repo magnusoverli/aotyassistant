@@ -15,7 +15,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
   try {
     const first = await firstContext.newPage(); const second = await secondContext.newPage();
     const join = async (page: Page, name: string) => {
-      await page.goto(state.joinUrl); await page.getByLabel('Display name').fill(name); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+      await page.goto(state.joinUrl); await page.getByLabel('Display name').fill(name); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
       await expect(page).toHaveURL(/\/participant$/);
     };
     await join(first, 'Alex'); state = await (await host.request.get('/api/host/state')).json();

@@ -13,8 +13,8 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await host.goto('/host');
     const join = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
     const display = await host.getByRole('link', { name: 'Open room display' }).getAttribute('href');
-    const first = await firstContext.newPage(); await first.goto(join!); await first.getByLabel('Display name').fill('First'); await first.getByRole('button', { name: 'Join room' }).click();
-    const second = await secondContext.newPage(); await second.goto(join!); await second.getByLabel('Display name').fill('Second'); await second.getByRole('button', { name: 'Join room' }).click();
+    const first = await firstContext.newPage(); await first.goto(join!); await first.getByLabel('Display name').fill('First'); await first.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await first.getByRole('button', { name: 'Join room' }).click();
+    const second = await secondContext.newPage(); await second.goto(join!); await second.getByLabel('Display name').fill('Second'); await second.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await second.getByRole('button', { name: 'Join room' }).click();
     await showFind(second);
     await expect(second.getByRole('button', { name: 'Artists', exact: true })).toBeEnabled();
     await expect(second.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');

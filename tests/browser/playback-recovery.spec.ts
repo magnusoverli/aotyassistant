@@ -7,7 +7,7 @@ for (const width of [1440, 390]) test(`playback problems show distinct reasons a
   await manager.save(remote.origin, 'fixture-token', 0);
   await manager.selectDestination('sonos:room', manager.view().revision);
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-  const joined = await (await post('/api/participant/join', { nickname: 'Current listener' })).json();
+  const joined = await (await post('/api/participant/join', { pin: '1234', nickname: 'Current listener' })).json();
   const found = await (await post('/api/participant/search', { turnId: joined.turnId, query: 'fixture' })).json();
   const start = () => post('/api/participant/play', { turnId: joined.turnId, previousPlaybackId: null, trackId: found.tracks[0].id });
   expect((await start()).ok()).toBe(true);

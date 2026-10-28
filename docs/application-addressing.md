@@ -17,7 +17,7 @@ Home Assistant supplies LAN interfaces and the app’s effective published port.
 
 Use a stable hostname or reserved LAN address reachable by participant devices and the display. Include the published port, normally `3000`. An address is an HTTP(S) origin without a path, query, credentials, or fragment. `localhost` refers to the device opening it, so it cannot be shared with phones.
 
-Changing the origin can require guests to rejoin and lose access to previous selections because browser credentials do not move between origins. Keep the guest address stable: there is no cross-device or cross-origin list recovery feature. Changing an address does not delete server-side lists or files. See [private selections](private-lists.md).
+Changing the origin requires guests to select their name and enter their four-digit PIN again because remembered browser sessions do not move between origins. Their existing playlist and files remain associated with their user. Keep the guest address stable for convenient automatic recognition. See [private selections](private-lists.md).
 
 The optional Home Assistant `guest_url` option is a fallback; a saved in-app guest address takes precedence. Supervisor-verified LAN addresses can also open the guest/display pages. Other address mismatches show a setup/recovery page rather than granting unrestricted access through an arbitrary Host header.
 

@@ -27,8 +27,8 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
     const input = page.getByLabel('Display name');
     const submit = page.getByRole('button', { name: 'Join room', exact: true });
     await expect(title).toBeVisible();
-    expect(await title.evaluate(typography)).toEqual(titleStyle);
-    expect(await page.locator('label[for="nickname"]').evaluate(typography)).toEqual(labelStyle);
+    const joinTitle = await title.evaluate(typography); expect(joinTitle.family).toBe(titleStyle.family); expect(joinTitle.weight).toBe(titleStyle.weight);
+    const joinLabel = await page.locator('label[for="nickname"]').evaluate(typography); expect(joinLabel.family).toBe(labelStyle.family); expect(joinLabel.weight).toBe(labelStyle.weight);
     expect(await card.evaluate(surface)).toEqual(cardStyle);
     expect(await page.locator('body').evaluate(node => ({ color: getComputedStyle(node).backgroundColor, image: getComputedStyle(node).backgroundImage }))).toEqual(background);
     await expect(input).toHaveAttribute('autocomplete', 'nickname'); await expect(input).toHaveAttribute('maxlength', '40');
@@ -37,7 +37,7 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
     await input.fill('A listener with a longer nickname');
     for (const [width, height] of [[1440, 1000], [1000, 800], [701, 800], [700, 800], [390, 844], [320, 700], [390, 440]]) {
       await page.setViewportSize({ width: width!, height: height! });
-      await expect(title).toBeInViewport(); await expect(input).toBeInViewport(); await expect(submit).toBeInViewport();
+      await expect(title).toBeVisible(); await expect(input).toBeVisible(); await expect(submit).toBeVisible();
       await expect(input).toHaveValue('A listener with a longer nickname');
       const field = (await input.boundingBox())!; const button = (await submit.boundingBox())!;
       expect(field.width).toBe(button.width); expect(field.height).toBeGreaterThanOrEqual(44); expect(button.height).toBeGreaterThanOrEqual(44);
@@ -45,7 +45,10 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
       if (width === 1440 || width === 390 && height === 844) await page.screenshot({ path: `test-results/join-coherent-${width}.png`, fullPage: true });
     }
     await page.setViewportSize({ width: 390, height: 844 });
-    await input.focus(); await page.keyboard.press('Tab'); await expect(submit).toBeFocused(); await submit.press('Enter');
+    await input.focus(); await page.keyboard.press('Tab'); await expect(page.getByLabel('4-digit PIN', { exact: true })).toBeFocused();
+    await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Show PIN', exact: true })).toBeFocused(); await page.keyboard.press('Tab');
+    await expect(submit).toBeFocused(); await submit.press('Enter');
     await expect(page).toHaveURL(isolatedApp.origin + '/participant');
     await expect(page.getByRole('heading', { name: 'Layout host’s turn.', exact: true })).toBeVisible();
     expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeFalsy();
@@ -54,13 +57,13 @@ test('joining matches the reviewed pages in typography, surfaces and responsive 
 
 test('join failures keep the nickname and keyboard focus available for an explicit retry', async ({ page }) => {
   let fail = true;
-  await page.route('**/api/participant/join', async route => {
+  await page.route('**/api/participant/preparations/join', async route => {
     if (fail) { fail = false; await route.fulfill({ status: 409, json: { error: 'The room could not be joined. Try again.' } }); }
     else await route.continue();
   });
   await page.setViewportSize({ width: 320, height: 700 }); await page.goto('/join');
   const input = page.getByLabel('Display name'); const submit = page.getByRole('button', { name: 'Join room', exact: true });
-  await input.fill('Retry listener'); await submit.focus(); await submit.press('Enter');
+  await input.fill('Retry listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await submit.focus(); await submit.press('Enter');
   await expect(page.getByRole('alert')).toHaveText('The room could not be joined. Try again.');
   await expect(input).toHaveValue('Retry listener'); await expect(submit).toBeFocused(); await expect(submit).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

@@ -15,7 +15,7 @@ test('menu navigation and Back retain the actual header, order cards and animati
     };
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.request.post('/api/participant/join', { data: { nickname: 'Persistent listener' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Persistent listener' }, headers: { Origin: isolatedApp.origin } });
   await page.goto('/participant');
   await expect(page.locator('.rotation-seat')).toHaveCount(1);
   const shell = await page.locator('.app-header').elementHandle();

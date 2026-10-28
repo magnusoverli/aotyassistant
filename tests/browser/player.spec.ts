@@ -8,7 +8,7 @@ async function setup(browser: Browser, host: Page) {
   const settings = await (await host.request.get('/api/host/integrations')).json();
   if (settings.tokenConfigured) await post('/api/host/integrations/clear', { revision: settings.revision });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const participant = await context.newPage();
-  await participant.goto(state.joinUrl); await participant.getByLabel('Display name').fill('Alex'); await participant.getByRole('button', { name: 'Join room' }).click();
+  await participant.goto(state.joinUrl); await participant.getByLabel('Display name').fill('Alex'); await participant.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await participant.getByRole('button', { name: 'Join room' }).click();
   await expect(participant).toHaveURL(/\/participant$/);
   state = await (await host.request.get('/api/host/state')).json();
   await host.goto('/host'); const tv = await context.newPage(); await tv.goto(state.displayUrl);
@@ -125,7 +125,7 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
   const nextContext = await browser.newContext();
   try {
     const origin = new URL(page.url()).origin;
-    await nextContext.request.post(origin + '/api/participant/join', { headers: { Origin: origin }, data: { nickname: 'Next listener' } });
+    await nextContext.request.post(origin + '/api/participant/join', { headers: { Origin: origin }, data: { pin: '1234', nickname: 'Next listener' } });
     const next = await nextContext.newPage(); await next.goto(origin + '/participant');
     await expect(next.getByRole('heading', { name: 'Alex’s turn.' })).toBeVisible();
     await expect(next.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(0);

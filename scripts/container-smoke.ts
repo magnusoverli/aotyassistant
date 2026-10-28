@@ -37,7 +37,7 @@ try {
   assert.ok(room.roomId); assert.equal(room.current, null);
   assert.equal((await fetch(origin + '/api/display/state')).status, 200);
   const post = (path: string, data: unknown, cookie = '') => fetch(origin + path, { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(data) });
-  const joined = await post('/api/participant/join', { nickname: 'Container listener' }); assert.equal(joined.status, 200);
+  const joined = await post('/api/participant/join', { nickname: 'Container listener', pin: '1234' }); assert.equal(joined.status, 200);
   const membership = joined.headers.get('set-cookie')!.split(';')[0]!;
   const initialized = await post('/api/participant/preparations/init', {}, membership); assert.equal(initialized.status, 200);
   const libraryCookie = initialized.headers.get('set-cookie')!.split(';')[0]!; const credentials = `${membership}; ${libraryCookie}`;

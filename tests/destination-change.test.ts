@@ -32,6 +32,7 @@ async function fixture() {
     method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `aoty_participant=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
+  assert.equal((await request('/api/host/state')).status, 200); // Complete identity migration before measuring speaker-only changes.
   return { remote, manager, adapter, engine, host, participant, context, request, alex, sam, store: file,
     display: () => engine.view({ kind: 'display' }), failStore() { failStore = true; },
     close() { http.close(); adapter.close(); remote.close(); server.closeAllConnections(); server.close(); } };

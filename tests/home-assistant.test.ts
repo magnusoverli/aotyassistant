@@ -92,7 +92,7 @@ test('first-run addresses persist once; subsequent Supervisor IP changes and exp
   }
   assert.equal(await status('/api/display/state', { Host: '192.168.1.8:3000' }), 403);
   assert.equal(await status('/api/display/state', { Host: 'other.local:4000', 'X-Forwarded-Host': '192.168.1.8:4000' }), 403);
-  assert.equal(await status('/api/participant/join', { Host: '192.168.1.8:4000', Origin: 'http://192.168.1.8:4000', 'Content-Type': 'application/json' }, { nickname: 'LAN guest' }), 200);
+  assert.equal(await status('/api/participant/join', { Host: '192.168.1.8:4000', Origin: 'http://192.168.1.8:4000', 'Content-Type': 'application/json' }, { nickname: 'LAN guest', pin: '1234' }), 200);
   assert.equal(restored.guestOrigin, savedHostname);
   assert.equal(await status('/api/participant/join', { Host: '192.168.1.8:4000', Origin: 'https://evil.example', 'Content-Type': 'application/json' }, { nickname: 'Rejected' }), 403);
 });

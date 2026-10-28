@@ -13,11 +13,12 @@ Home Assistant login protects the Ingress interface only. It does not add authen
 ## Credentials and private music
 
 - Music Assistant tokens remain server-side in a permission-restricted file under `/data`; they are **not encrypted at rest**.
-- Private selections use separate HttpOnly browser credentials and a private server-side participant binding. A display name is not proof of ownership; another browser cannot select or claim someone else’s list.
+- Permanent users have one private playlist each, accessed through independent HttpOnly browser sessions and separate private-list credentials. A display name alone is not proof of ownership; another browser needs that user's four-digit PIN.
+- PINs are a casual privacy barrier on the trusted LAN, stored as salted scrypt verifiers. Five incorrect attempts trigger an initial one-minute cooldown. Host PIN reset revokes remembered sessions without deleting data, and inherits the unauthenticated host-control model above.
 - Public display responses omit concealed titles, artists, and artwork until reveal. Other Music Assistant, Home Assistant, and speaker interfaces can independently expose playing metadata.
 - Uploaded audio uses protected playback-specific URLs; treat those URLs as secrets.
-- Backups contain tokens, private lists, and uploaded files. Protect backups and their encryption keys.
-- Cookies, tokens, protected URLs, private lists, and backup archives must not be included in public issues or logs.
+- Backups contain tokens, user/PIN records, private lists, and uploaded files. Protect backups and their encryption keys.
+- PINs, cookies, tokens, protected URLs, private lists, and backup archives must not be included in public issues or logs.
 
 ## Reporting a vulnerability
 

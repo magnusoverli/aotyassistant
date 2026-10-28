@@ -62,7 +62,7 @@ test('host progress respects reveal, unavailable positions and stable keyboard c
 });
 
 test('confirmed host stop shows pending feedback, keeps the turn and synchronizes the participant and display', async ({ page, context, isolatedApp }) => {
-  const joined = await (await page.request.post('/api/participant/join', { data: { nickname: 'Magnus' }, headers: { Origin: isolatedApp.origin } })).json();
+  const joined = await (await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Magnus' }, headers: { Origin: isolatedApp.origin } })).json();
   await isolatedApp.engine.join('Sam');
   const response = await page.request.post('/api/participant/play', { data: { turnId: joined.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });
   expect(response.ok()).toBe(true); const playing = await response.json();

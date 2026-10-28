@@ -1,5 +1,7 @@
 @import './public/assets/ui-foundation.css';
 @import './listening-order.css';
+@import './user-identity.css';
+@import './settings.css';
 @import './playback.css';
 @import './participant-player.css';
 @import './music-collection.css';
@@ -8,7 +10,6 @@
 html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,90px) + 18px); }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .saved-track [hidden] { display:none; }
-.home-host { display:block; margin-top:24px; }
 .room-qr-link { display:block; width:75%; margin-inline:auto; }
 .room-join-link { display:block; margin-top:12px; font-size:14px; overflow-wrap:anywhere; }
 .app-header { --header-width:var(--workspace-width); --header-gutter:var(--workspace-gutter); position:sticky; top:0; z-index:30; border-bottom:1px solid #2a392d; background:#101a13fa; }
@@ -246,33 +247,6 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .drag-handle { cursor:grab; }
 .join-panel > form { margin-top:24px; }
 .join-notice { margin:18px 0 0; font-size:13px; }
-.settings-workspace > .button { margin-top:24px; }
-.settings-card .saved-address { overflow-wrap:anywhere; }
-.settings-card h3 { margin-top:24px; font-size:1.1rem; }
-.settings-card .settings-state { font-size:12px; padding:7px 9px; letter-spacing:0; color:#c6d5b6; border-color:#536648; }
-.settings-connection-actions + p { margin:16px 0 0; }
-.connection-fields > p { margin:0; }
-.connection-fields > button { justify-self:start; max-width:100%; }
-.settings-connection-actions ~ .connection-fields { margin-top:20px; }
-.settings-output .settings-card > p { font-size:12px; }
-.settings-output .settings-card > button { width:100%; font-size:12px; }
-.settings-output .settings-card > button + button { margin-top:10px; }
-.speaker-refresh { position:relative; padding-inline:40px; }
-.speaker-refresh[aria-busy="true"] { opacity:.8; cursor:progress; }
-.speaker-refresh[aria-busy="true"]:before { content:''; position:absolute; left:16px; top:calc(50% - 8px); width:16px; height:16px; border:2px dotted var(--accent); border-right-color:transparent; border-radius:50%; animation:speaker-refresh-spin 1.2s linear infinite; }
-@keyframes speaker-refresh-spin { to { transform:rotate(360deg); } }
-.settings-output .settings-card > p:last-child { margin-bottom:0; }
-.settings-recovery .warning { margin:18px 0; padding:14px; }
-.settings-notice { margin-bottom:var(--workspace-gap); }
-.settings-security-note { color:#d1bb91; font-size:11px; line-height:1.6; margin:0; }
-.settings-safe-note { font-size:11px; line-height:1.6; margin:16px 0 0; color:var(--muted); }
-.auto-reveal-setting { display:flex; align-items:center; gap:12px; min-height:44px; margin:12px 0; cursor:pointer; }
-.auto-reveal-setting input { width:18px; height:18px; min-height:0; flex:0 0 18px; accent-color:var(--accent); }
-.settings-help { margin-top:24px; border-top:1px solid var(--line); }
-.settings-help > summary,.settings-advanced > summary,.settings-address-help > summary { cursor:pointer; padding:16px 0; color:var(--accent); font-size:12px; min-height:44px; }
-.settings-address-help p { font-size:12px; }
-.settings-help p { font-size:12px; }
-.settings-card .saved-destination { color:var(--accent); font-size:13px; line-height:1.6; margin:0 0 20px; overflow-wrap:anywhere; }
 
 @media(min-width:1700px) {
   .display-page { gap:44px; }

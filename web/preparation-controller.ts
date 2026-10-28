@@ -110,6 +110,10 @@ export class PreparationController {
     this.stopStream?.(); this.stopStream = undefined;
     this.loading = false; this.saving = false; this.initializing = undefined;
   }
+  clearIdentity() {
+    this.stop(); this.view = undefined; this.pending = undefined; this.error = ''; this.warning = ''; this.conflict = false;
+    this.added.clear(); this.addedEntries.clear(); this.lastSavedUploadId = undefined;
+  }
   async ensureOwner() {
     if (!this.isMember()) throw new Error('Join the room before adding tracks.');
     if (this.view) return;

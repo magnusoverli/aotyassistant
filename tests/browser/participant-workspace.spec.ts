@@ -6,7 +6,7 @@ import type { DemoAdapter } from '../../src/playback';
 async function workspace(browser: Browser, host: Page, origin: string, demo: DemoAdapter, count = 24) {
   const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: origin } });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
-  const joined = await context.request.post(origin + '/api/participant/join', { data: { nickname: 'Workspace listener' }, headers: { Origin: origin } });
+  const joined = await context.request.post(origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Workspace listener' }, headers: { Origin: origin } });
   expect(joined.ok()).toBe(true);
   const request = async (path: string, data: unknown) => context.request.post(origin + '/api/participant/preparations' + path, { data, headers: { Origin: origin } });
   let library = await (await request('/init', {})).json();
@@ -34,7 +34,7 @@ test('participant typography, surfaces and desktop alignment match the host page
   try {
     await host.setViewportSize({ width: 1440, height: 1000 }); await host.goto('/host/settings');
     await expect(host.getByRole('button', { name: 'Find Music Assistant', exact: true })).toBeEnabled();
-    const sectionStyle = await host.locator('.settings-connection h2').evaluate(typography);
+    const sectionStyle = await host.locator('.settings-connection h3').evaluate(typography);
     await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     expect((await page.locator('.participant-hero h1').evaluate(typography)).size).toBe('28px');
     expect((await page.locator('#music-find-title').evaluate(typography)).family).toEqual(sectionStyle.family);

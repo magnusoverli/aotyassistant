@@ -19,7 +19,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000
     await page.setViewportSize(viewport);
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
     await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
-    await post('/api/participant/join', { nickname: 'Browsing listener' });
+    await post('/api/participant/join', { pin: '1234', nickname: 'Browsing listener' });
     // Extend actual fixture responses so each browse level requires scrolling.
     await page.route('**/api/participant/browse', async route => {
       const response = await route.fetch(); const data = await response.json();

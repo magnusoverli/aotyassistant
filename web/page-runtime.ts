@@ -14,7 +14,7 @@ import { PlayerReturn } from './player-return';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 import { CatalogueRow } from './catalogue-row';
 import { PublicRoom } from './public-room';
-import { PreparationController } from './preparation-controller';
+import { PreparationController, operationId } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
 import type { PreparationView } from '../src/preparations';
 import { requestJson } from './request';
@@ -25,6 +25,8 @@ import { copyButton } from './copy-text';
 import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
 import { joinPanel } from './join-panel';
 import { ParticipantAccess } from './participant-access';
+import type { UserDirectory } from '../src/model';
+import { pinInput } from './user-pin';
 import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
 import { panel, pageHeading, sectionHeading, notice } from './ui-components';
 import { productName, productTagline } from '../src/product';
@@ -76,6 +78,11 @@ let stream: { close(): void } | undefined;
 let qrUrl = '';
 let qrImage = '';
 let nicknameDraft = '';
+let pinDraft = '';
+let userDirectory: UserDirectory | undefined;
+let selectedUser: string | undefined;
+let loadingUsers = false;
+let registrationOperation = operationId();
 let joinError = '';
 let accessEnded = false;
 let publicRoom: PublicRoom | undefined;
@@ -144,6 +151,9 @@ const updateHeader = () => {
   if (signal.aborted) return;
   progressConnected(realtime && Boolean(view?.connected));
   if (view) appHeader.update({ view });
+  appHeader.setSwitchUser(page === 'participant' && view?.me ? () => { void run(async () => {
+    await api('/api/participant/logout', {}); location.assign(appPath('/join'));
+  }); } : undefined);
   listeningOrder.update(view, realtime && navigator.onLine);
 };
 const participantAccess = new ParticipantAccess(
@@ -152,18 +162,20 @@ const participantAccess = new ParticipantAccess(
     if (signal.aborted) return;
     if (page === 'join') { view = next; navigate(appPath('/participant'), true); return; }
     const changed = view?.roomId !== next.roomId || view.me?.id !== next.me?.id;
+    if (view?.me && view.me.id !== next.me?.id) library.clearIdentity();
     accept(next); if (!stream || changed) subscribe('participant');
     if (changed || !library.view) void library.start();
   },
   () => {
     if (signal.aborted) return;
-    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.stop();
+    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.clearIdentity();
     participantNodes.clear(); playback?.clear(); catalogueRows.clear();
     resetCatalogueTask();
     results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
     artistNotices = []; albumNotices = []; trackNotices = [];
     browseHistory?.reset();
     searchAnnouncement.textContent = '';
+    void loadUsers();
   }, render,
 );
 let restoringFocus = false;
@@ -350,7 +362,7 @@ async function mutate(path: string, data: unknown) { accept(await api<View>(path
 function qrCard() {
   const card = panel('qr-card');
   card.append(el('h2', 'Invite people'));
-  if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Choose a guest address in Settings before sharing the room.'), link('Configure guest access', '/host/settings')); return card; }
+  if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Choose a guest address in Settings before sharing the room.'), link('Configure guest access', '/host/settings#access')); return card; }
   if (view?.joinUrl) {
     const qr = el('div', undefined, 'invitation-qr');
     if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; qr.append(img); }
@@ -569,21 +581,56 @@ function participant() {
   children(found, ...foundNodes);
   children(search, ...searchNodes, search.querySelector('.music-upload'), Boolean(searchDone || catalogueBusy || catalogueError) && found);
   const musicPanel = music.render(search, renderPlayback(view));
-  children(main, hero, musicPanel);
+  children(main, hero, view.user?.pinRequired && enrollmentPanel(), musicPanel);
   return main;
 }
 function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }) {
   if (view?.ownPlayback && view.ownPlayback.status !== 'stopped' && !confirm('Replace the current song? Playing this song will stop the current one.')) return;
   player.play(track, prepared);
 }
+async function loadUsers() {
+  if (loadingUsers || signal.aborted) return;
+  loadingUsers = true;
+  try {
+    userDirectory = await api<UserDirectory>('/api/participant/identity');
+    if (selectedUser && !userDirectory.users.some(user => user.id === selectedUser)) {
+      selectedUser = undefined; pinDraft = ''; registrationOperation = operationId();
+    }
+    if (!selectedUser && userDirectory.current) selectedUser = userDirectory.current.id;
+  } catch (cause) { if (!signal.aborted) joinError = cause instanceof Error ? cause.message : 'Could not load users.'; }
+  finally { loadingUsers = false; if (!signal.aborted) render(); }
+}
+function enrollmentPanel() {
+  const v = participantNodes;
+  const card = v.get('pin-enrollment', () => panel('pin-enrollment'));
+  const title = v.el('pin-title', 'h2', 'Choose your 4-digit PIN');
+  const hint = v.el('pin-hint', 'p', 'Use it to continue as yourself on another device. Your existing music stays with you.', 'muted');
+  const field = pinInput(v, 'first-user-pin', '4-digit PIN'); prop(field.input, 'disabled', busy);
+  const save = v.el('pin-save', 'button', 'Save PIN'); prop(save, 'type', 'submit'); prop(save, 'disabled', busy);
+  const form = v.el('pin-form', 'form', undefined, 'form-stack'); children(form, field.group, save);
+  form.onsubmit = event => { event.preventDefault(); if (!form.reportValidity()) return; const pin = field.input.value; void run(async () => {
+    await api('/api/participant/preparations/pin', { pin }); field.input.value = ''; accept(await api<View>('/api/participant/state')); await loadUsers();
+  }); };
+  children(card, title, hint, form); return card;
+}
 function joinForm() {
-  return joinPanel({ nickname: nicknameDraft, busy, disabled: !navigator.onLine, error: joinError,
+  return joinPanel({ nickname: nicknameDraft, pin: pinDraft, directory: userDirectory, selected: selectedUser, busy, disabled: !navigator.onLine, error: joinError,
     notice: participantAccess.removed ? 'You’re no longer in the listening order. Join again when you’re ready. Your saved music is kept.' : undefined,
-    changed: value => { nicknameDraft = value; joinError = ''; },
+    changed: value => { nicknameDraft = value; joinError = ''; }, pinChanged: value => { pinDraft = value; joinError = ''; },
+    retry: () => { void loadUsers(); },
+    select: id => {
+      pinDraft = ''; joinError = ''; registrationOperation = operationId(); selectedUser = id;
+      if (!id) void run(async () => { await api('/api/participant/logout', {}); await loadUsers(); });
+      else render();
+    },
     submit: nickname => { void run(async () => {
       joinError = '';
       try {
-        const next = await api<View>('/api/participant/join', { nickname });
+        const remembered = selectedUser && selectedUser === userDirectory?.current?.id;
+        if (remembered && userDirectory?.current?.pinRequired) await api('/api/participant/preparations/pin', { pin: pinDraft });
+        const next = await api<View>('/api/participant/preparations/join', remembered ? {} : selectedUser ? { userId: selectedUser, pin: pinDraft }
+          : { nickname, pin: pinDraft, operation: registrationOperation });
+        pinDraft = ''; registrationOperation = operationId();
         if (page === 'join') navigate(appPath('/participant'), true); else participantAccess.enter(next);
       } catch (cause) { joinError = cause instanceof Error ? cause.message : 'Could not join the room. Try again.'; }
     }); },
@@ -625,7 +672,7 @@ function render() {
     const reason = pageNodes.el('playback-reason', 'span', view.playbackProblem?.message ?? view.playbackIssue);
     const recovery = view.playbackProblem?.recoveryRequired ?? true;
     const action = pageNodes.get('playback-recovery-action', () => page === 'host'
-      ? link('Recover controls in Settings', '/host/settings', 'inline-link') : el('span', 'Ask the host to recover controls.'));
+      ? link('Recover controls in Settings', '/host/settings#playback', 'inline-link') : el('span', 'Ask the host to recover controls.'));
     attr(message, 'data-playback-problem', view.playbackProblem?.code);
     children(message, reason, recovery && pageNodes.get('playback-reason-space', () => document.createTextNode(' ')), recovery && action);
     content.push(message);
@@ -635,10 +682,10 @@ function render() {
   else if (page === 'participant' || page === 'join') content.push(participant());
   else {
     const main = pageFrame('compact', 'home-page');
-    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('Your music', '/participant'), link('Room display', '/display'));
+    const actions = el('div', undefined, 'actions'); actions.append(link('Join room', '/join', 'button'), link('Your music', '/participant'), link('Room display', '/display'), link('Host desk', '/host'));
     main.append(el('h1', productName, 'heading-brand'), el('p', productTagline, 'muted'),
       el('p', 'Join from your phone, prepare private selections, and take turns playing through Music Assistant. Reveal track details on the shared display when you’re ready.', 'muted'),
-      actions, link('Host desk', '/host', 'home-host')); content.push(main);
+      actions); content.push(main);
   }
   children(pageContent, ...content);
   updatePlayerReturn();
@@ -671,6 +718,7 @@ async function init() {
   } else {
     if (page === 'join') history.replaceState(null, '', '/join');
     void library.start();
+    void loadUsers();
     await participantAccess.check();
   }
 }

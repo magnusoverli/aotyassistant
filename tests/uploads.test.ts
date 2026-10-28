@@ -44,7 +44,7 @@ async function fixture(t: TestContext, analyze = fixtureUploadAnalysis) {
   }
   const displayCookie = ''; // Public display needs no credential.
   async function member(name: string) {
-    const joined = await request('/api/participant/join', { nickname: name }); assert.equal(joined.status, 200);
+    const joined = await request('/api/participant/join', { nickname: name, pin: '1234' }); assert.equal(joined.status, 200);
     const membership = cookie(joined);
     const initialized = await request(prefix + '/init', {}, membership); const library = cookie(initialized);
     return { membership, library, credentials: `${membership}; ${library}`, ownerId: (await initialized.json() as PreparationView).ownerId };
@@ -86,6 +86,69 @@ test('uploads stream privately, retry identically, reject changed/foreign IDs an
   assert.deepEqual(await readFile(join(files, 'audio')), uploadBytes);
   assert.equal((await stat(files)).mode & 0o777, 0o700); assert.equal((await stat(join(files, 'audio'))).mode & 0o777, 0o600);
   assert.equal(f.remote.calls.filter(call => /play_media|add_track/.test(call.command)).length, 0);
+});
+
+test('host user deletion stops their playback and deletes saved and draft uploads, but keeps other users and their files', async t => {
+  const f = await fixture(t); await f.connect(); const added = await f.add(); await f.play(added);
+  const draftId = randomUUID(); const keptId = randomUUID();
+  assert.equal((await f.upload(f.first.credentials, draftId)).status, 200);
+  assert.equal((await f.upload(f.second.credentials, keptId)).status, 200);
+  const stagedId = randomUUID(); const keptStageId = randomUUID();
+  for (const [assetId, ownerId] of [[stagedId, f.first.ownerId], [keptStageId, f.second.ownerId]]) {
+    const directory = join(f.directory, 'upload-staging', assetId!);
+    await writePrivateJson(directory, 'receiving.json', { id: assetId, ownerId, createdAt: Date.now() });
+    await writeFile(join(directory, 'audio'), uploadBytes);
+  }
+  const user = (await f.json('/api/participant/state', undefined, f.first.membership)).user!;
+  assert.equal((await f.request('/api/host/users/delete', { userId: user.id })).status, 400);
+  const response = await f.request('/api/host/users/delete', { userId: user.id, confirm: true });
+  assert.equal(response.status, 200, await response.clone().text());
+  for (const assetId of [added.body.uploadId, draftId]) await assert.rejects(stat(join(f.directory, 'uploads', assetId)), { code: 'ENOENT' });
+  await assert.rejects(stat(join(f.directory, 'preparations', `${f.first.ownerId}.json`)), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(join(f.directory, 'uploads', keptId, 'audio')), uploadBytes);
+  await assert.rejects(stat(join(f.directory, 'upload-staging', stagedId)), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(join(f.directory, 'upload-staging', keptStageId, 'audio')), uploadBytes);
+  assert.equal((await f.request(prefix + '/state', undefined, f.first.library)).status, 401);
+  assert.equal((await f.request(prefix + '/init', {}, f.first.credentials)).status, 401);
+  assert.equal((await f.request(prefix + '/state', undefined, f.second.library)).status, 200);
+  const host = await f.json('/api/host/state'); assert.equal(host.active!.length, 1); assert.equal(host.hostPlayback, null);
+  assert.equal((await f.request('/api/host/users/delete', { userId: user.id, confirm: true })).status, 200);
+  const registered = await f.request(prefix + '/join', { nickname: user.nickname, pin: '0042', operation: randomUUID() }, f.first.credentials);
+  assert.equal(registered.status, 200, await registered.clone().text());
+  const newUser = await registered.json() as View; assert.notEqual(newUser.user!.id, user.id);
+  const newList = await f.json<PreparationView>(prefix + '/init', {}, cookie(registered));
+  assert.notEqual(newList.ownerId, f.first.ownerId); assert.deepEqual(newList.upcoming, []);
+});
+
+test('deleting a user already removed from the listening order leaves the current listener and playback untouched', async t => {
+  const f = await fixture(t); await f.connect(); const added = await f.add(); await f.play(added);
+  const user = (await f.json('/api/participant/state', undefined, f.second.membership)).user!;
+  const room = await f.json('/api/host/state');
+  await f.json('/api/host/remove', { id: user.id, revision: room.revision });
+  const before = await f.json('/api/host/state');
+  const response = await f.request('/api/host/users/delete', { userId: user.id, confirm: true });
+  assert.equal(response.status, 200, await response.clone().text());
+  const after = await f.json('/api/host/state');
+  assert.deepEqual(after.hostPlayback, before.hostPlayback); assert.equal(after.turnId, before.turnId);
+  assert.deepEqual(after.active, before.active);
+  assert.deepEqual(await readFile(join(f.directory, 'uploads', added.body.uploadId, 'audio')), uploadBytes);
+  await assert.rejects(stat(join(f.directory, 'preparations', `${f.second.ownerId}.json`)), { code: 'ENOENT' });
+});
+
+test('deletion during an upload revokes access immediately and keeps cleanup retryable until the transfer finishes', async t => {
+  let entered!: () => void; let release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
+  t.after(() => release());
+  const f = await fixture(t, async (directory, filename) => { entered(); await gate; return fixtureUploadAnalysis(directory, filename); });
+  const user = (await f.json('/api/participant/state', undefined, f.first.membership)).user!;
+  const uploadId = randomUUID(); const upload = f.upload(f.first.credentials, uploadId); await started;
+  const deletion = { userId: user.id, confirm: true };
+  assert.equal((await f.request('/api/host/users/delete', deletion)).status, 409);
+  assert.equal((await f.request('/api/participant/state', undefined, f.first.membership)).status, 401);
+  assert.equal((await f.upload(f.first.credentials, randomUUID())).status, 401);
+  release(); assert.equal((await upload).status, 401);
+  assert.equal((await f.request('/api/host/users/delete', deletion)).status, 200);
+  await assert.rejects(stat(join(f.directory, 'uploads', uploadId)), { code: 'ENOENT' });
 });
 
 test('uploaded entries preserve privacy, metadata, automatic list persistence and idempotent saves without catalogue bindings', async t => {
@@ -249,7 +312,10 @@ test('large streamed files have no storage quota, and slow processing/authorizat
   const uploadId = randomUUID(); const uploading = f.upload(f.second.credentials, uploadId, uploadBytes, 'slow.mp3'); await entered;
   const paused = await f.json('/api/participant/control', { turnId: played.view.turnId, playbackId: played.view.ownPlayback!.id, action: 'pause' }, f.first.membership);
   assert.equal(paused.ownPlayback!.status, 'paused');
-  const replacement = `${f.second.ownerId}.${'x'.repeat(43)}`; const replacementCookie = `aoty_preparation=${replacement}`;
+  const user = (await f.json('/api/participant/state', undefined, f.second.membership)).user!;
+  const login = await f.request('/api/participant/join', { userId: user.id, pin: '1234' });
+  const initialized = await f.request(prefix + '/init', {}, cookie(login));
+  const replacementCookie = cookie(initialized); const replacement = replacementCookie.slice('aoty_preparation='.length);
   const store = new PreparationFileStore(f.directory); const state = (await store.load(f.second.ownerId))!;
   state.credentials = [{ hash: createHash('sha256').update(replacement).digest('hex'), createdAt: Date.now() }]; await store.save(state);
   release(); const finished = await uploading; assert.equal(finished.status, 401);

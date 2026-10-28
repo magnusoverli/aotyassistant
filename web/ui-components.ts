@@ -14,9 +14,9 @@ export function pageHeading(text: string, action?: HTMLElement) {
   return heading;
 }
 
-export function sectionHeading(text: string, id: string) {
+export function sectionHeading(text: string, id: string, level: 'h2' | 'h3' = 'h2') {
   const heading = el('div', undefined, 'section-heading');
-  const title = el('h2', text); title.id = id; heading.append(title);
+  const title = el(level, text); title.id = id; heading.append(title);
   return heading;
 }
 

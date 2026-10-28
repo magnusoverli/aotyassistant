@@ -4,7 +4,7 @@ import { test } from './app-fixture';
 test('mobile selections remain accessible and source choices fit narrow screens without shortcuts', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
-  await isolatedApp.engine.join('Current'); await post('/api/participant/join', { nickname: 'Waiting' });
+  await isolatedApp.engine.join('Current'); await post('/api/participant/join', { pin: '1234', nickname: 'Waiting' });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   const shortcuts = page.getByRole('navigation', { name: 'Your music shortcuts' });
   await expect(shortcuts).toBeHidden();
@@ -28,7 +28,7 @@ test('mobile selections remain accessible and source choices fit narrow screens 
 
 test('mobile removes the turn-status row without changing desktop geometry or the accessible heading', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('Current');
-  await page.request.post('/api/participant/join', { data: { nickname: 'Waiting' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Waiting' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 1100, height: 1000 }); await page.goto('/participant');
   const hero = page.locator('.participant-hero');
   const distance = page.locator('.turn-distance');
@@ -50,7 +50,7 @@ test('mobile removes the turn-status row without changing desktop geometry or th
 test('off-screen playback offers a read-only return with confirmed status and retains browsing position', async ({ page, isolatedApp }) => {
   for (let index = 1; index <= 2; index++) isolatedApp.demo.catalogue.push({ ...isolatedApp.demo.catalogue[0]!, id: `demo:shortcut-${index}`, title: `Northern extra ${index}` });
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-  await post('/api/participant/join', { nickname: 'Player' });
+  await post('/api/participant/join', { pin: '1234', nickname: 'Player' });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('searchbox').press('Enter');
   // Keep a genuine scrolled browsing viewport; click Play only once while the request is held.
@@ -88,7 +88,7 @@ test('off-screen playback offers a read-only return with confirmed status and re
 
 test('a failed start offers the visible error rather than claiming playback or retrying it', async ({ page, isolatedApp }) => {
   for (let index = 1; index <= 2; index++) isolatedApp.demo.catalogue.push({ ...isolatedApp.demo.catalogue[0]!, id: `demo:shortcut-${index}`, title: `Northern extra ${index}` });
-  await page.request.post('/api/participant/join', { data: { nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 320, height: 568 }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('searchbox').press('Enter');
   await expect(page.getByRole('button', { name: 'Play', exact: true }).first()).toBeVisible();

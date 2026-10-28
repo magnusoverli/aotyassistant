@@ -8,8 +8,10 @@ for (const width of [1440, 390]) test(`background speaker refresh retains select
   await page.setViewportSize({ width, height: 900 }); await page.goto('/host/settings');
   const panel = page.locator('.settings-destination'); const select = page.getByLabel('Speaker or group', { exact: true });
   await expect(panel.locator('.settings-state')).toHaveText('Ready');
+  await page.locator('.settings-navigation a[href="#music-assistant"]').click();
   await page.getByRole('button', { name: 'Change connection', exact: true }).click();
   const draft = page.getByLabel('Music Assistant URL', { exact: true }); await draft.fill('http://keep-this-draft.local:8095');
+  await page.locator('.settings-navigation a[href="#playback"]').click();
   await select.focus();
   await select.evaluate(node => { (window as unknown as { originalSpeakerSelect: Element }).originalSpeakerSelect = node; });
   const gate = remote.holdNextInventoryRead();

@@ -33,6 +33,8 @@ export class UploadAssets {
   private queue = new KeyedSerialQueue();
   private leases = new Set<Lease>();
   private closed = false;
+  private ownerAllowed: (ownerId: string) => boolean = () => true;
+  setOwnerPolicy(policy: (ownerId: string) => boolean) { this.ownerAllowed = policy; }
   private shutdown = new AbortController();
   constructor(private dataDirectory: string, private analyze = analyzeUpload, private now = Date.now,
     private preparations: Pick<PreparationStore, 'load'> = new PreparationFileStore(dataDirectory)) {
@@ -64,6 +66,7 @@ export class UploadAssets {
   async receive(ownerId: string, assetId: string, filename: string, input: Readable, signal?: AbortSignal): Promise<UploadPreview> {
     signal = signal ? AbortSignal.any([signal, this.shutdown.signal]) : this.shutdown.signal;
     ownerId = id.parse(ownerId); assetId = id.parse(assetId);
+    if (!this.ownerAllowed(ownerId)) throw new AppError(401, 'This user is no longer available.');
     filename = filename.split(/[\\/]/).pop()!.replace(/[\x00-\x1f\x7f]/g, '').trim();
     if (!filename || filename.length > 1000 || !uploadExtensions.some(extension => filename.toLowerCase().endsWith(`.${extension}`))) throw new AppError(422, 'Choose MP3, M4A, FLAC, WAV, AIFF, Ogg Vorbis or Opus. Standalone AAC is not supported.');
     if (this.closed || this.receiving.size >= 2 || this.receiving.has(ownerId)) throw new AppError(429, 'File uploads are busy. Try again after the current upload finishes.');
@@ -71,6 +74,7 @@ export class UploadAssets {
     try {
       return await this.serial(assetId, async () => {
         signal.throwIfAborted();
+        if (!this.ownerAllowed(ownerId)) throw new AppError(401, 'This user is no longer available.');
         let previous: Manifest | undefined;
         try { previous = await this.load(assetId); } catch (error) { if (!(error instanceof AppError && error.status === 404)) throw error; }
         if (previous && previous.ownerId !== ownerId) throw new AppError(409, 'This upload identifier is already in use. Select the file again.');
@@ -153,6 +157,40 @@ export class UploadAssets {
     finally { await file.close(); }
   }
   busy(assetId: string) { return [...this.leases].some(lease => lease.assetId === assetId); }
+  async removeOwner(ownerId: string) {
+    ownerId = id.parse(ownerId);
+    if (this.receiving.has(ownerId)) throw new AppError(409, 'An upload is finishing. The user is signed out; retry Delete user when it finishes.');
+    const names = await readdir(this.directory).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
+    for (const assetId of names.filter(name => id.safeParse(name).success)) {
+      let manifest: Manifest;
+      try { manifest = await this.load(assetId); }
+      catch (error) {
+        const missing = error instanceof AppError && error.status === 404 && !await stat(this.path(assetId)).catch(cause => { if (cause.code === 'ENOENT') return undefined; throw cause; });
+        if (missing) continue; throw error;
+      }
+      if (manifest.ownerId === ownerId) await this.remove(ownerId, assetId);
+    }
+    // Interrupted transfers can leave private staging bytes even before a saved entry exists.
+    const staged = await readdir(this.staging).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
+    for (const assetId of staged.filter(name => id.safeParse(name).success)) {
+      const directory = join(this.staging, assetId);
+      const file = await open(join(directory, 'manifest.json'), 'r').catch(error => {
+        if (error.code !== 'ENOENT') throw error;
+        return open(join(directory, 'receiving.json'), 'r').catch(cause => { if (cause.code === 'ENOENT') return undefined; throw cause; });
+      });
+      if (!file) continue; // Startup cleanup handles unidentifiable, uncommitted staging directories.
+      let owner: { id: string; ownerId: string };
+      try {
+        if ((await file.stat()).size > 32 * 1024) throw new AppError(503, 'An unfinished upload record could not be read. Check storage before retrying deletion.');
+        owner = z.object({ id, ownerId: id }).parse(JSON.parse(await file.readFile('utf8')));
+      } finally { await file.close(); }
+      if (owner.id !== assetId || owner.ownerId !== ownerId) continue;
+      await this.serial(assetId, () => durability.run(async () => {
+        await rm(directory, { recursive: true, force: true });
+        const parent = await open(this.staging, 'r'); try { await parent.sync(); } finally { await parent.close(); }
+      }));
+    }
+  }
   async remove(ownerId: string, assetId: string) {
     await this.serial(assetId, async () => {
       let value: Manifest | undefined;

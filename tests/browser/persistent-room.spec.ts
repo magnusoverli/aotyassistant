@@ -17,7 +17,7 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     const invitation = await host.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href');
     const join = async (index: number, nickname: string) => {
       const page = await contexts[index]!.newPage(); page.on('request', request => { if (request.method() === 'POST') requests.push(new URL(request.url()).pathname); });
-      await page.goto(invitation!); await page.getByLabel('Display name').fill(nickname); await page.getByRole('button', { name: 'Join room', exact: true }).click();
+      await page.goto(invitation!); await page.getByLabel('Display name').fill(nickname); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
       await expect(page).toHaveURL(/\/participant$/); return page;
     };
     const first = await join(0, 'First'); await expect(first.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();

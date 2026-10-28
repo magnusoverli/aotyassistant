@@ -20,7 +20,7 @@ export class PlaybackSettingsPanel {
     help.id = 'auto-reveal-help'; this.toggle.setAttribute('aria-describedby', help.id);
     this.status.setAttribute('role', 'status'); this.retry.type = 'button'; this.retry.hidden = true;
     this.element.setAttribute('aria-labelledby', 'playback-settings-title');
-    this.element.append(sectionHeading('Playback', 'playback-settings-title'), label, help, this.status, this.retry);
+    this.element.append(sectionHeading('Automatic reveal', 'playback-settings-title', 'h3'), label, help, this.status, this.retry);
     this.toggle.onchange = () => { void this.save(this.toggle.checked); };
     this.retry.onclick = () => { void this.load(); };
     window.addEventListener('focus', () => { if (!this.busy) void this.load(); }, { signal });

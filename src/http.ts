@@ -21,6 +21,7 @@ import { errorPage, escapeHtml } from './error-page.js';
 import { maOperation } from './ma-operation.js';
 import { mountStaticAssets } from './static-assets.js';
 import { diagnostics } from './diagnostics.js';
+import { UserManager, pinSchema } from './users.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -47,6 +48,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   engine.setGuestOrigin(config.guestUrl);
   preparations ??= new PreparationManager(new PreparationFileStore(config.dataDir), Date.now, selection => selection.source === 'demo' ? !integrations?.configured
     : selection.source === 'upload' ? Boolean(integrations?.uploadPlaybackAvailable) : selection.sourceBindingId === integrations?.sourceBindingId);
+  const users = new UserManager(config.dataDir, preparations, engine);
+  uploads.setOwnerPolicy(ownerId => users.ownerAvailable(ownerId));
   const app = express();
   app.disable('x-powered-by');
   const rates = new Map<string, { count: number; start: number }>();
@@ -106,7 +109,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     next();
   });
   app.use('/api', (req, _res, next) => {
-    if (req.path.startsWith('/participant/preparations/') && req.path !== '/participant/preparations/play') return next();
+    if (req.path.startsWith('/participant/preparations/') && !['/participant/preparations/play', '/participant/preparations/join', '/participant/preparations/pin'].includes(req.path)) return next();
     if (req.method === 'GET') return next();
     const join = req.path.endsWith('/join');
     const key = `${req.socket.remoteAddress}:${join ? 'join' : 'commands'}`;
@@ -116,7 +119,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     next(entry.count > (join ? 20 : 180) ? new AppError(429, 'Too many requests. Wait a minute and try again.') : undefined);
   });
   app.use(express.json({ limit: '16kb' }));
-  const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads);
+  app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
+  const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users);
   void uploads.cleanup();
   const uploadCleanup = setInterval(() => { void uploads.cleanup(); }, 60 * 60_000); uploadCleanup.unref();
   app.get('/api/media/uploads/:assetId/:key/:filename', async (req, res) => { await uploads.serve(req, res); });
@@ -159,11 +163,44 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       res.type(image.contentType).send(image.body);
     });
   }
-  app.post('/api/participant/join', async (req, res) => {
-    const input = body(req, z.object({ nickname: z.string().trim().min(1).max(40) }).strict());
-    const credential = await engine.join(input.nickname, participantCredential(req));
+  app.post(['/api/participant/join', '/api/participant/preparations/join'], async (req, res) => {
+    const input = body(req, z.object({ nickname: z.string().trim().min(1).max(40).optional(), pin: pinSchema.optional(),
+      userId: z.string().uuid().optional(), operation: z.string().uuid().optional() }).strict());
+    let credential = participantCredential(req); let user = users.current(credential);
+    if (input.userId) {
+      if (!input.pin) throw new AppError(400, 'Enter your four-digit PIN.');
+      const login = await users.login(input.userId, input.pin); credential = login.token; user = login.user;
+    } else if (!user) {
+      if (!input.nickname || !input.pin) throw new AppError(400, 'Enter your name and choose a four-digit PIN.');
+      const registered = await users.register(input.nickname, input.pin, input.operation, rawCookie(req, 'aoty_preparation')); credential = registered.token; user = registered.user;
+    }
+    await engine.joinUser(user.id, credential);
+    if (credential !== participantCredential(req)) await users.logout(participantCredential(req));
     setPrivateCookie(res, 'aoty_participant', credential, '/api/participant', config.guestUrl);
+    // A different identity must never inherit the previous browser user's list cookie.
+    if (credential !== participantCredential(req)) res.clearCookie('aoty_preparation', { path: '/api/participant/preparations' });
     res.json(engine.view({ kind: 'participant', credential }));
+  });
+  app.get('/api/participant/identity', (req, res) => res.json(users.directoryView(participantCredential(req))));
+  app.post('/api/participant/preparations/pin', async (req, res) => {
+    const input = body(req, z.object({ pin: pinSchema }).strict()); const token = participantCredential(req);
+    const user = users.current(token); if (!user) throw new AppError(401, 'Select your name to continue.');
+    await users.ensureList(token, rawCookie(req, 'aoty_preparation'));
+    await users.setPin(user.id, input.pin, token); res.json(users.directoryView(token));
+  });
+  app.post('/api/participant/logout', async (req, res) => {
+    body(req, z.object({}).strict()); await users.logout(participantCredential(req));
+    res.clearCookie('aoty_participant', { path: '/api/participant' });
+    res.clearCookie('aoty_preparation', { path: '/api/participant/preparations' }); res.json({ ok: true });
+  });
+  app.get('/api/host/users', (_req, res) => res.json(users.directoryView('', true)));
+  app.post('/api/host/users/pin', async (req, res) => {
+    const input = body(req, z.object({ userId: z.string().uuid(), pin: pinSchema }).strict());
+    await users.setPin(input.userId, input.pin); res.json(users.directoryView('', true));
+  });
+  app.post('/api/host/users/delete', async (req, res) => {
+    const input = body(req, z.object({ userId: z.string().uuid(), confirm: z.literal(true) }).strict());
+    await users.deleteUser(input.userId, ownerId => uploads.removeOwner(ownerId)); res.json(users.directoryView('', true));
   });
   // Deliberately unauthenticated, per the owner's explicit LAN-only exception.
   app.post('/api/host/reorder', async (req, res) => {
@@ -290,5 +327,5 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, drain: () => preparations!.drain(), close: () => { engine.off('change', invalidatePublic); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, drain: async () => { await users.drain(); await preparations!.drain(); }, close: () => { engine.off('change', invalidatePublic); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
 }

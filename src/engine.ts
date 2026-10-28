@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, roomSchema, catalogueSearchNotice, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track, type ListeningOrderView } from './model.js';
+import { AppError, roomSchema, catalogueSearchNotice, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track, type ListeningOrderView, type UserProfile } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
@@ -25,6 +25,37 @@ export class Engine extends EventEmitter {
   private invalidationEpoch = 0;
   private startingPlayback?: { id: string; previousId: string | null; turnId: string };
   private revealCheckPending = false;
+  private userForSession?: (credential: string) => UserProfile | undefined;
+
+  attachUsers(resolve: (credential: string) => UserProfile | undefined) { this.userForSession = resolve; }
+  identityParticipants() { return structuredClone(this.room().participants); }
+  async linkUsers(links: { participantId: string; userId: string }[]) {
+    if (!links.length) return;
+    await this.transaction(async state => {
+      for (const link of links) {
+        const person = state.room!.participants.find(p => p.id === link.participantId);
+        if (person) person.userId = link.userId;
+      }
+      const room = state.room!;
+      const keep = new Map<string, string>();
+      for (const person of [...room.participants].sort((a, b) => Number(b.id === room.currentId) - Number(a.id === room.currentId))) {
+        if (person.userId && !keep.has(person.userId)) keep.set(person.userId, person.id);
+      }
+      room.participants = room.participants.filter(person => !person.userId || keep.get(person.userId) === person.id);
+      room.active = room.active.filter(id => room.participants.some(person => person.id === id));
+    });
+  }
+  async joinUser(userId: string, credential: string) {
+    return this.transaction(async state => {
+      const user = this.userForSession?.(credential);
+      if (!user || user.id !== userId) throw new AppError(401, 'Select your name and enter your PIN.');
+      const room = state.room!;
+      if (room.participants.some(p => p.userId === userId)) return;
+      if (room.participants.length >= 100) throw new AppError(409, 'This room is full.');
+      room.participants.push({ id: userId, userId, nickname: user.nickname, credentialHash: '' }); room.active.push(userId);
+      if (!room.currentId) { room.currentId = userId; room.turnId = randomUUID(); }
+    });
+  }
 
   constructor(private store: Store, readonly adapter: PlaybackAdapter, private guestUrl: string, private catalogue?: CatalogueProvider) {
     super();
@@ -138,7 +169,8 @@ export class Engine extends EventEmitter {
     return state.room;
   }
   private participant(credential: string, room = this.room()) {
-    const digest = hash(credential); const participant = room.participants.find(p => p.credentialHash === digest);
+    const user = this.userForSession?.(credential);
+    const digest = hash(credential); const participant = room.participants.find(p => p.userId ? p.userId === user?.id : p.credentialHash === digest);
     if (!participant) throw new AppError(401, 'Join the listening room to continue.');
     return participant;
   }
@@ -199,6 +231,7 @@ export class Engine extends EventEmitter {
     const me = this.participant(role.credential, room); const myTurn = room.currentId === me.id;
     const seat = room.active.indexOf(me.id); const currentSeat = room.active.indexOf(room.currentId ?? '');
     return { ...base, me: { id: me.id, nickname: me.nickname }, myTurn, catalogue: this.catalogueState,
+      ...(this.userForSession ? { user: this.userForSession(role.credential) } : {}),
       position: { seat: seat + 1, total: room.active.length, turnsUntil: (seat - currentSeat + room.active.length) % room.active.length },
       ...(myTurn ? { ownPlayback: structuredClone(room.playback), progress: this.progress(room, true), volume: this.adapter.volume } : {}) };
   }
@@ -300,6 +333,11 @@ export class Engine extends EventEmitter {
         this.rotate(room); if (room.currentId === id) room.currentId = null; remove(room);
       });
     }));
+  }
+  /** User access is revoked first; fence any join already committing before removing its seat. */
+  async removeUser(userId: string) {
+    const seat = await this.inspect(room => ({ person: room.participants.find(person => person.userId === userId), revision: room.revision }));
+    if (seat.person) await this.remove(seat.person.id, seat.revision);
   }
   async search(credential: string, _turnId: string, query: string): Promise<CatalogueSearch> {
     if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');

@@ -12,7 +12,7 @@ test('every route highlights the current turn, including before playback, while 
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
   const member = await browser.newContext({ baseURL: isolatedApp.origin });
-  await member.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'My seat' } });
+  await member.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'My seat' } });
   const pages = [page];
   try {
     await page.goto('/host');
@@ -148,7 +148,7 @@ test('card names, avatars and controls stay in their slots as status labels appe
   await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const member = await browser.newContext({ baseURL: isolatedApp.origin });
   try {
-    await member.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'My seat' } });
+    await member.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'My seat' } });
     const participant = await member.newPage();
     await page.goto('/host'); await participant.goto('/participant');
     const pages = [page, participant];
@@ -203,7 +203,7 @@ test('card names, avatars and controls stay in their slots as status labels appe
 });
 
 test('mobile keeps Now and Next in the first slots across turns, scrolling and resizing without changing desktop or saving an order', async ({ page, context, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { nickname: 'First' } });
+  await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'First' } });
   for (const name of ['Second', 'Third', 'Fourth', 'Fifth']) await isolatedApp.engine.join(name);
   const saved = isolatedApp.engine.view({ kind: 'host' }).rotation!;
   await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
