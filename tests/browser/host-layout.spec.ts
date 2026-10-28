@@ -8,7 +8,7 @@ test('host desk combines playback and volume in one player with a responsive inv
   await expect(page.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Room display', exact: true })).toHaveCount(0);
   expect(await page.locator('.host-workspace').evaluate(node => Array.from(node.children).map(child => child.className))).toEqual([
-    'panel host-live',
+    'panel playback-card host-live',
   ]);
   await expect(page.getByRole('button', { name: 'Skip turn' })).toBeEnabled();
   await expect(page.locator('.host-invitations img')).toBeVisible();

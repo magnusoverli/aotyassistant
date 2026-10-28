@@ -22,6 +22,18 @@ test('the shared playback component preserves host and participant actions, priv
     await expect(participant.locator('#player-transport')).toBeEnabled();
     await expect(participant.locator('.private-now-playing h2')).toHaveText('Northern Lights');
     await expect(host.locator('.host-live')).not.toContainText('Northern Lights');
+    const record = await host.locator('#host-player .room-record').elementHandle();
+    await expect(host.locator('#host-player .room-record')).toHaveCSS('animation-play-state', 'running');
+    for (const width of [390, 1440]) {
+      await host.setViewportSize({ width, height: 1000 }); await participant.setViewportSize({ width, height: 1000 });
+      if (width === 390) {
+        await expect(host.locator('#host-player')).toHaveCSS('height', '272px');
+        await expect(participant.locator('#participant-player')).toHaveCSS('height', '272px');
+      }
+      await expect(host.locator('#host-player img, #host-player .artist-portrait')).toHaveCount(0);
+      await expect(host.locator('#host-play')).toBeDisabled();
+      await expect(host.locator('#host-reveal-status')).toBeDisabled();
+    }
     await expect(host.locator('.host-progress .track-times')).toBeEmpty();
     await expect(waiting.locator('#player-transport')).toBeDisabled();
     await expect(waiting.locator('#player-reveal')).toBeDisabled();
@@ -35,6 +47,11 @@ test('the shared playback component preserves host and participant actions, priv
     await participant.locator('#player-reveal').click();
     await expect(host.locator('.host-reveal-status')).toHaveText('Visible on room display');
     await expect(host.locator('.host-live')).not.toContainText('Northern Lights');
+    const track = isolatedApp.demo.catalogue.find(track => track.id === 'demo:aurora')!;
+    const html = await host.locator('#host-player').innerHTML();
+    for (const value of [track.title, track.artist, track.album, track.artwork, track.artistArtwork]) if (value) expect(html).not.toContain(value);
+    expect(await record!.evaluate(node => node === document.querySelector('#host-player .room-record'))).toBe(true);
+    await expect(host.locator('#host-player .room-record')).toHaveCSS('animation-play-state', 'paused');
     host.once('dialog', dialog => dialog.accept());
     await host.locator('#host-stop').click();
     await expect(host.locator('.host-playback-status')).toContainText('Stopped · Current listener keeps the turn');

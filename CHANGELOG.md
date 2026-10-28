@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+- Automatically reveal tracks at 70% playback by default, with a Settings toggle and a progress marker that disappears after reveal.
+- Combine desktop search and playlist into one workspace with a wider, scrollable playlist pane and compact inline editing.
+- Enlarge Display page artwork and track typography slightly while retaining its spacious layout and centered alignment.
+- Place the Display page QR invitation at the bottom-right and center track information vertically alongside the cover art.
+- Remove redundant participant and demo labels from the host player while retaining configured speaker status.
+- Keep the header menu button the same width when switching between Menu and Close.
+- Give desktop player transport buttons equal widths and readable labels instead of squeezing Pause into broken lines.
+- Restore fullscreen directly in the Display page header on mobile and desktop, with no fullscreen control on other pages.
+- Match the Host desk player to the participant layout with a generic animated record and no track metadata, including after reveal.
+- Unify header and play-order styling across pages without arrows, retain Host desk management, and place display-only fullscreen in the menu.
 ## [1.0.10] — 2026-10-27
 
 - Make Playwright browser tests opt-in for local development and CI, including releases.

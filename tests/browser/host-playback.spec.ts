@@ -78,7 +78,7 @@ test('confirmed host stop shows pending feedback, keeps the turn and synchronize
     expect(isolatedApp.engine.view({ kind: 'host' }).hostPlayback!.status).toBe('playing');
     release();
     await expect(page.locator('.host-playback-status')).toContainText('Stopped · Magnus keeps the turn');
-    await expect(page.locator('.host-progress')).toBeHidden(); await expect(page.locator('#host-stop')).toBeDisabled();
+    await expect(page.locator('.host-progress')).toBeVisible(); await expect(page.locator('#host-stop')).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Skip turn', exact: true })).toBeFocused();
     await expect(participant.locator('.playback-status')).toContainText('Stopped');
     await expect(display.getByRole('heading', { name: 'Nothing playing.', exact: true })).toBeVisible();

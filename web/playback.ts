@@ -1,7 +1,7 @@
 import type { PlaybackProgress, View, VolumeState } from '../src/model';
 import type { PreparedEntryView } from '../src/preparations';
-import { el, label } from './dom';
-import { avatar } from './visuals';
+import { el } from './dom';
+import { vinyl } from './visuals';
 import { ArtworkView, progressBar, updateProgress, volumeControl, updateVolume } from './media';
 import { outputLabel, updateOutputLabel } from './output';
 import { slot } from './page-layout';
@@ -43,11 +43,13 @@ export class Playback {
 
   get element() {
     return this.nodes.get('card', () => {
-      const node = this.options.role === 'host' ? panel('host-live', { tone: 'highlight' })
-        : slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player');
+      const node = slot(panel('playback-card', { tone: 'highlight', density: 'compact' }), 'player');
       node.dataset.playbackRole = this.options.role;
       if (this.options.role === 'participant') {
         node.id = 'participant-player'; node.setAttribute('aria-label', 'Your player'); node.tabIndex = -1;
+      } else {
+        node.classList.add('host-live');
+        node.id = 'host-player'; node.setAttribute('aria-label', 'Host player'); node.tabIndex = -1;
       }
       return node;
     });
@@ -56,7 +58,7 @@ export class Playback {
   private get volume() { return this.nodes.get('volume', () => volumeControl(undefined, (level, commit) => this.options.volume(level, commit), true)); }
   private get progress() {
     return this.nodes.get('progress', () => {
-      const node = progressBar(undefined, false, this.options.role === 'host' ? { hideStatus: true, positionFallback: true } : {});
+      const node = progressBar(undefined, false);
       if (this.options.role === 'host') node.classList.add('host-progress');
       return node;
     });
@@ -71,7 +73,7 @@ export class Playback {
     if (volume?.available && volume.level && volume.level > 0) this.audibleVolume = volume.level;
     this.volumeState = volume;
     updateVolume(this.volume, volume);
-    if (this.options.role === 'participant') attr(this.volume.querySelector('output')!, 'data-unavailable', volume?.level == null ? '' : undefined);
+    attr(this.volume.querySelector('output')!, 'data-unavailable', volume?.level == null ? '' : undefined);
     const mute = this.muteButton;
     const muted = volume?.level === 0;
     this.decorate(mute, muted ? 'Unmute' : 'Mute', muted ? 'muted' : 'volume');
@@ -126,7 +128,6 @@ export class Playback {
     status.classList.toggle('player-pending', !host && starting);
     updateProgress(progress, host ? songActive ? projected.progress : undefined : playback ? projected.progress : undefined);
     if (!host && starting) text(status, 'Starting track…');
-    if (host) prop(progress, 'hidden', !songActive);
     updateOutputLabel(this.output, view.output, online);
     prop(this.volume.querySelector('input')!, 'disabled', !online || !view.connected || !projected.volume?.available ||
       (!host && (!playback || playback.status === 'stopped' || starting)));
@@ -166,7 +167,8 @@ export class Playback {
         if ((document.activeElement === stop || document.activeElement === document.body) && next && !next.disabled) next.focus({ preventScroll: true });
       });
     }, true);
-    this.decorate(stop, host ? 'Stop song — keep turn' : 'Stop song', 'stop', host ? undefined : 'Stop');
+    this.decorate(stop, 'Stop song', 'stop', 'Stop');
+    if (host) attr(stop, 'aria-label', 'Stop song — keep turn');
     prop(stop, 'title', 'Stop the song without advancing the turn');
     prop(stop, 'disabled', !permitted || !playback || playback.status === 'stopped' || (host && state.busy));
     const controls = this.nodes.el('transport', 'div', undefined, 'playback-transport');
@@ -180,7 +182,12 @@ export class Playback {
       prop(play, 'hidden', !next); prop(play, 'disabled', !ready || starting); attr(play, 'data-player-ready', String(ready));
       prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here'); this.decorate(play, 'Play first selection', 'play', 'Play pick');
     }
-    children(controls, play, transport, stop);
+    const hostPlay = host ? this.button('host-play', 'Play pick', () => {}) : undefined;
+    if (hostPlay) {
+      this.decorate(hostPlay, 'Play pick', 'play');
+      prop(hostPlay, 'disabled', true); prop(hostPlay, 'title', 'The current participant chooses and starts their song.');
+    }
+    children(controls, play ?? hostPlay, transport, stop);
     return controls;
   }
 
@@ -193,7 +200,7 @@ export class Playback {
 
   private renderHost(state: PlaybackState, options: HostOptions, songActive: boolean) {
     const v = this.nodes; const { view, online, busy } = state;
-    const livePerson = v.el('person', 'div', undefined, 'host-live-person');
+    const livePerson = v.el('person', 'div', undefined, 'private-now-playing');
     const ui = v.get('host-ui', () => ({ identity: '', pending: '' }));
     const playback = state.projected.hostPlayback;
     const identity = JSON.stringify([view.roomId, view.turnId, playback?.id]);
@@ -204,15 +211,27 @@ export class Playback {
     const status = !online || view.playbackStatus === 'unavailable' ? 'Unavailable' : stopping ? 'Stopping…'
       : playback?.status === 'stopped' ? `Stopped · ${view.current?.nickname ?? 'The participant'} keeps the turn`
       : playback?.status === 'playing' ? 'Playing' : playback?.status === 'paused' ? 'Paused' : 'Choosing a song';
-    const revealStatus = v.el('reveal-status', 'p', playback?.revealed ? 'Visible on room display' : 'Hidden on room display', 'host-reveal-status');
-    prop(revealStatus, 'hidden', !songActive);
-    const statusLine = v.el('status', 'p', `${status}${(view.active?.length ?? 0) > 1 && view.next ? ` · Next: ${view.next.nickname}` : ''}`, 'muted host-playback-status');
-    attr(statusLine, 'role', 'status');
-    children(personInfo, v.get('current-caption', () => label('CURRENT PARTICIPANT')), v.el('current-name', 'h2', view.current?.nickname ?? 'Waiting for participants'),
-      statusLine, this.output, revealStatus);
-    const image = v.get('avatar', () => ({ key: '', node: avatar(undefined, 'avatar-large') }));
-    const key = JSON.stringify(view.current); if (image.key !== key) { image.key = key; image.node = avatar(view.current, 'avatar-large'); }
-    children(livePerson, image.node, personInfo);
+    // Never read ownPlayback, nowPlaying or any recording metadata in this variant.
+    children(personInfo, v.el('current-name', 'h2', view.current?.nickname ?? 'Waiting for participants'), view.output && this.output);
+    const record = v.get('record', () => { const node = vinyl(); node.classList.add('room-record'); return node; });
+    const cover = v.el('cover', 'div', undefined, 'mini-record host-record'); children(cover, record);
+    children(livePerson, cover, personInfo);
+    const card = this.element;
+    attr(card, 'data-playback', online && view.connected ? playback?.status ?? 'idle' : 'unavailable');
+    card.classList.toggle('has-active-song', songActive);
+    const notice = state.error ? 'Action failed · check status' : !online ? 'Connection lost' : !view.connected ? 'Player unavailable' : stopping ? 'Stopping…' : !songActive ? status : '';
+    card.classList.toggle('has-player-notice', Boolean(notice));
+    card.classList.toggle('has-player-error', Boolean(state.error));
+    const privacy = songActive ? playback?.revealed ? 'Visible on room display' : 'Hidden on room display' : 'Host player';
+    const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
+    const mobileNotice = v.el('mobile-notice', 'span', notice, 'player-mobile-only player-mobile-notice');
+    attr(mobileNotice, 'role', state.error ? 'alert' : 'status');
+    const statusText = this.progress.querySelector<HTMLElement>('.playback-status')!;
+    statusText.classList.add('host-playback-status'); text(statusText, status);
+    children(statusLine, statusText, mobileNotice,
+      v.el('privacy', 'span', privacy, 'privacy-tag host-reveal-status'),
+      v.el('mobile-privacy', 'span', songActive ? playback?.revealed ? 'Revealed' : 'Hidden' : '', 'player-mobile-only player-mobile-privacy'));
+    if (statusLine.parentElement !== this.progress) this.progress.prepend(statusLine);
     const controls = v.el('controls', 'div', undefined, 'player-ending');
     const advance = this.button('host-skip-turn', 'Skip turn', () => { void options.run(() => {
       const current = this.state?.view;
@@ -224,7 +243,10 @@ export class Playback {
     const transport = this.transport(state);
     const stop = transport.querySelector<HTMLButtonElement>('#host-stop')!;
     if ((changedPlayback || !songActive) && document.activeElement === stop && !advance.disabled) advance.focus({ preventScroll: true });
-    children(controls, advance);
+    const reveal = this.button('host-reveal-status', 'Hidden', () => {}, true);
+    this.decorate(reveal, playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal', playback?.revealed ? 'Revealed' : 'Reveal');
+    prop(reveal, 'disabled', true); prop(reveal, 'title', 'Only the current participant can reveal their song on the room display.');
+    children(controls, reveal, advance);
     children(this.element, livePerson, transport, this.progress, this.footer(controls));
   }
 

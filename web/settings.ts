@@ -8,11 +8,14 @@ import { pageFrame, workspaceGrid, slot } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-nodes';
 import { SpeakerFreshness } from './speaker-freshness';
+import { PlaybackSettingsPanel } from './playback-settings';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement, signal: AbortSignal) {
   const main = pageFrame('workspace', 'settings-page'); container.append(main);
   const nodes = new ViewNodes();
+  const playbackSettings = new PlaybackSettingsPanel(signal);
+  void playbackSettings.load();
   let settings: IntegrationView | undefined;
   let urlDraft = '';
   let tokenDraft = '';
@@ -354,6 +357,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', explanation, 'warning'), requiresRecovery && recovery, requiresRecovery && details);
       outputNodes.push(playback);
     }
+    outputNodes.push(playbackSettings.element);
     children(output, ...outputNodes); children(grid, slot(connection, 'primary'), output); workspaceNodes.push(grid);
     children(workspace, ...workspaceNodes); children(main, workspace);
   }

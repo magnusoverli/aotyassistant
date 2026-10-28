@@ -52,6 +52,17 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
   if (fallback) prop(fallback, 'hidden', !unavailable);
   if (progress?.fraction != null) prop(bar, 'value', progress.fraction); else attr(bar, 'value', undefined);
   prop(bar, 'hidden', !progress || Boolean(fallback && unavailable));
+  const marker = frame.querySelector<HTMLElement>('.auto-reveal-marker');
+  if (marker) {
+    const at = progress?.autoRevealAt;
+    const visible = at !== undefined && Number.isFinite(at) && at > 0 && at < 1 && !bar.hidden && !unavailable && progress?.status !== 'stopped';
+    prop(marker, 'hidden', !visible);
+    if (visible) {
+      const label = `Automatic reveal at ${Math.round(at * 100)}%`;
+      attr(marker, 'aria-label', label); prop(marker, 'title', label);
+      const left = `${at * 100}%`; if (marker.style.left !== left) marker.style.left = left;
+    }
+  }
   const times = frame.querySelector<HTMLElement>('.track-times')!;
   prop(times, 'hidden', Boolean(fallback && unavailable));
   if (progress?.duration !== undefined) {
@@ -68,7 +79,10 @@ export function progressBar(progress?: PlaybackProgress, publicDisplay = false, 
   const status = el('span', undefined, 'playback-status'); status.setAttribute('role', 'status');
   status.hidden = Boolean(options.hideStatus);
   const bar = el('progress'); bar.max = 1; bar.setAttribute('aria-label', 'Track progress');
-  frame.append(status, bar, el('div', undefined, 'track-times'));
+  const rail = el('div', undefined, 'progress-rail');
+  const marker = el('span', undefined, 'auto-reveal-marker'); marker.hidden = true; marker.setAttribute('role', 'img');
+  rail.append(bar, marker);
+  frame.append(status, rail, el('div', undefined, 'track-times'));
   if (options.positionFallback) frame.append(el('p', 'Position unavailable', 'progress-unavailable muted small'));
   updateProgress(frame, progress); return frame;
 }

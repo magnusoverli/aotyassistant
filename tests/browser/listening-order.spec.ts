@@ -36,7 +36,8 @@ test('every route highlights the current turn, including before playback, while 
         await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
         await expect(current.locator('.rotation-list')).toBeVisible();
         await expect(current.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(3);
-        expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(current === page ? ['none', 'none', 'none'] : ['""', '""', 'none']);
+        expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(['none', 'none', 'none']);
+        await expect(current.locator('.rotation-list')).toHaveCSS('column-gap', '12px');
         await expect(current.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
         await expect(current.locator('.order-remove')).toHaveCount(current === page ? 3 : 0);
         await expect(current.locator('.rotation-seat[tabindex="0"]')).toHaveCount(current === page ? 3 : 0);
@@ -168,7 +169,7 @@ test('card names, avatars and controls stay in their slots as status labels appe
         for (const card of await current.locator('.rotation-seat').all()) {
           const box = (await card.boundingBox())!;
           if (width < 1100) {
-            expect(box.width).toBeLessThanOrEqual(current === page ? 132 : 112);
+            expect(box.width).toBeLessThanOrEqual(112);
             expect(box.height).toBe(40);
             await expect(card.locator('strong')).toHaveCSS('text-align', 'center');
             await expect(card.locator('.seat-state-compact')).toHaveCSS('text-align', 'center');

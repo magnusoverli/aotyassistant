@@ -67,6 +67,10 @@ Role-filtered HTTP and server-sent events exclude unrevealed title/artist/artwor
 
 The browser uses independently updated regions so routine events preserve focus, input state, scroll position, and animation nodes. Public reveal/playback remains server-confirmed even when private controls show a pending state.
 
+Host and participant players share their card layout and responsive control slots. The host variant reads only participant identity and host playback status, never recording metadata, even after reveal. Its generic vinyl graphic spins during confirmed playback and pauses with playback or connection loss. Starting a selection and revealing remain participant-only actions; the corresponding host slots are disabled.
+
+The engine can also reveal automatically at 70% of observed playback progress. Its persisted room setting defaults to enabled for existing and new rooms. Reveal checks revalidate playback identity, setting and connectivity inside the room write queue, and publish revealed metadata only after a successful save. Browser progress interpolation only paints the line and marker; it never triggers reveal. Unknown duration or missing progress cannot trigger automatic reveal.
+
 `web/main.ts` owns a persistent header and listening-order shell. Same-origin app navigation and browser Back/Forward replace only the page runtime (`web/page-runtime.ts`); unchanged order cards and their animation nodes remain mounted. Departing pages close subscriptions, timers and listeners, and ignore late responses. Modified clicks, external links and new-tab navigation keep normal browser behavior.
 
 ## Storage and lifecycle

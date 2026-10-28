@@ -70,7 +70,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
   });
 }
 
-test('the inline collection retains desktop geometry and actual row nodes after editing and resizing', async ({ page, isolatedApp }) => {
+test('the unified collection retains its desktop panes and actual row nodes after editing and resizing', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/participant/join', { nickname: 'Music layout' });
   let library = await (await post('/api/participant/preparations/init', {})).json();
@@ -84,7 +84,11 @@ test('the inline collection retains desktop geometry and actual row nodes after 
     const rect = document.querySelector(selector)!.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }));
   const before = await desktop(); const row = await page.locator('.saved-track').first().elementHandle();
-  expect(await page.locator('#music-collection').evaluate(node => getComputedStyle(node).display)).toBe('contents');
+  await expect(page.locator('#music-collection')).toHaveCSS('display', 'grid');
+  await expect(page.locator('#music-collection')).toHaveCSS('border-top-width', '1px');
+  await expect(page.locator('.catalogue-panel')).toHaveCSS('border-top-width', '0px');
+  await expect(page.locator('.preparation-list')).toHaveCSS('border-top-width', '0px');
+  await expect(page.locator('.preparation-list')).toHaveCSS('border-left-width', '1px');
   expect(before[2]!.x).toBeGreaterThanOrEqual(before[1]!.x + before[1]!.width);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Edit order', exact: true }).click();

@@ -125,6 +125,11 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const participantCredential = (req: Request) => cookie(req, 'aoty_participant');
 
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
+  app.get('/api/host/playback-settings', (_req, res) => res.json(engine.playbackSettings()));
+  app.post('/api/host/playback-settings', async (req, res) => {
+    const input = body(req, z.object({ enabled: z.boolean(), revision }).strict());
+    res.json(await engine.setAutoReveal(input.enabled, input.revision));
+  });
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
   let closeAuthorization = () => {};
   let closeIntegrations = () => {};

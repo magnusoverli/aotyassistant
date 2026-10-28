@@ -14,8 +14,7 @@ test('shared mobile header is compact across routes while desktop sizing and tou
       const mobile = width < 1100;
       const barHeight = mobile ? '44px' : '72px';
       await expect(page.locator('.header-inner')).toHaveCSS('height', barHeight);
-      if (mobile) await expect(page.locator('.brand-subtitle')).toBeHidden();
-      else await expect(page.locator('.brand-subtitle')).toBeVisible();
+      await expect(page.locator('.brand-subtitle')).toBeHidden();
       await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? '49px' : '89px');
       await expect(page.locator('.brand-mark')).toHaveCSS('width', mobile ? width <= 380 ? '28px' : '30px' : '38px');
       await expect(page.locator('.brand strong')).toHaveCSS('font-size', mobile ? '14px' : '16px');
@@ -91,7 +90,7 @@ test('every page uses the shared header with centralized navigation, current-pag
     else await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
     const brand = page.locator('a.brand');
     await expect(brand).toHaveAttribute('href', '/');
-    await expect(brand).toHaveAccessibleName(`Listening Room ${await brand.locator('.brand-subtitle').textContent()}`);
+    await expect(brand).toHaveAccessibleName('Listening Room');
     await expect(page.locator('.host-sidebar, .host-nav, .session-navigation, main .back-link, main .display-link')).toHaveCount(0);
     const html = await page.getByRole('banner').innerHTML(); expect(html).not.toContain('#access='); expect(html).not.toContain('#invite=');
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);
@@ -156,14 +155,15 @@ test('fullscreen is a display-only header control without writes and gracefully 
     await page.goto(path);
     const fullscreen = page.locator('.header-fullscreen');
     if (path !== '/display') { await expect(fullscreen).toHaveCount(0); continue; }
+    await expect(page.locator('.header-meta .header-fullscreen')).toBeVisible();
+    await expect(page.locator('#app-navigation .header-fullscreen')).toHaveCount(0);
     await expect(fullscreen).toHaveText('Full screen'); await fullscreen.click();
     await expect(fullscreen).toHaveText('Exit full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'true');
     await fullscreen.click(); await expect(fullscreen).toHaveText('Full screen'); await expect(fullscreen).toHaveAttribute('aria-pressed', 'false');
     await expect(page.locator('.header-menu-toggle')).toBeVisible();
+    await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(fullscreen).toBeHidden();
-    await openNavigation(page);
-    await expect(page.locator('#app-navigation .header-fullscreen')).toBeVisible();
+    await expect(page.locator('.header-meta .header-fullscreen')).toBeVisible();
     await fullscreen.click(); await expect(fullscreen).toHaveText('Exit full screen');
     await fullscreen.click(); await expect(fullscreen).toHaveText('Full screen');
     await page.setViewportSize({ width: 1440, height: 1000 });

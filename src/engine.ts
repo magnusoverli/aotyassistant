@@ -7,6 +7,7 @@ import type { SavedSelection } from './preparations.js';
 import { SerialQueue } from './serial.js';
 import { maBackground, maOperation, maRemaining, maStage } from './ma-operation.js';
 import { playbackResolution } from './operation.js';
+import { AUTO_REVEAL_FRACTION, type PlaybackSettings } from './model.js';
 
 const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -23,12 +24,13 @@ export class Engine extends EventEmitter {
   private controlEpoch = 0;
   private invalidationEpoch = 0;
   private startingPlayback?: { id: string; previousId: string | null; turnId: string };
+  private revealCheckPending = false;
 
   constructor(private store: Store, readonly adapter: PlaybackAdapter, private guestUrl: string, private catalogue?: CatalogueProvider) {
     super();
     this.setMaxListeners(0); // Multiple phones/displays subscribe; HTTP caps the actual stream count.
     adapter.onComplete = id => { void this.complete(id).catch(() => { this.emit('change'); }); };
-    adapter.onProgress = () => this.emit('change', 'playback');
+    adapter.onProgress = () => { this.emit('change', 'playback'); this.scheduleAutoReveal(); };
     adapter.onInvalidated = id => {
       if (id !== this.startingPlayback?.id && id !== this.state.room?.playback?.id) return;
       this.invalidationEpoch++;
@@ -61,6 +63,36 @@ export class Engine extends EventEmitter {
   beginShutdown() { this.stopping = true; }
   async drain() { await this.audioQueue.drain(); await this.queue.drain(); }
   setGuestOrigin(origin: string) { this.guestUrl = origin; this.emit('change'); }
+  playbackSettings(): PlaybackSettings { return { ...(this.room().autoReveal ?? { enabled: true, revision: 0 }) }; }
+  async setAutoReveal(enabled: boolean, revision: number): Promise<PlaybackSettings> {
+    await this.transaction(async state => {
+      const room = this.room(state); const current = room.autoReveal ?? { enabled: true, revision: 0 };
+      if (current.revision !== revision) throw new AppError(409, 'Playback settings changed. Refresh them before trying again.');
+      room.autoReveal = { enabled, revision: current.revision + 1 };
+    });
+    this.scheduleAutoReveal();
+    return this.playbackSettings();
+  }
+  private autoRevealEligible(id?: string) {
+    const room = this.state.room; const playback = room?.playback;
+    if (!this.live || !this.playbackAvailable || this.concealPlayback || this.startingPlayback || !room || room.autoReveal?.enabled === false || !playback || playback.revealed || playback.status === 'stopped' || playback.turnId !== room.turnId || (id !== undefined && playback.id !== id)) return false;
+    const sample = this.adapter.progress?.(playback.id);
+    const duration = sample?.duration || playback.track.duration;
+    return Boolean(sample && Number.isFinite(sample.elapsed) && Number.isFinite(duration) && duration > 0 && sample.elapsed / duration >= AUTO_REVEAL_FRACTION);
+  }
+  private scheduleAutoReveal() {
+    if (this.revealCheckPending || !this.autoRevealEligible()) return;
+    const id = this.state.room!.playback!.id;
+    this.revealCheckPending = true;
+    void maBackground(() => this.serial(async () => {
+      // Recheck identity, setting, ownership and progress after any queued work.
+      if (!this.autoRevealEligible(id)) return;
+      const next = structuredClone(this.state); next.room!.playback!.revealed = true; next.room!.revision++;
+      try { await this.store.save(next); this.state = next; }
+      catch { this.storageHealthy = false; }
+      this.emit('change');
+    })).catch(() => {}).finally(() => { this.revealCheckPending = false; });
+  }
   private get catalogueState() {
     return this.catalogue?.configured ? { source: 'music-assistant' as const, playbackAvailable: this.catalogue.playbackAvailable ?? false, revision: this.catalogue.catalogueRevision ?? this.catalogue.configurationRevision ?? 0 }
       : { source: 'demo' as const, playbackAvailable: true };
@@ -178,6 +210,7 @@ export class Engine extends EventEmitter {
     const sample = this.adapter.progress?.(playback.id); const duration = sample?.duration || playback.track.duration;
     const fraction = sample && duration > 0 ? Math.round(Math.max(0, Math.min(1, sample.elapsed / duration)) * 1000) / 1000 : null;
     return { id: playback.id, status: playback.status, fraction,
+      ...(room.autoReveal?.enabled !== false && !playback.revealed && playback.status !== 'stopped' && Number.isFinite(duration) && duration > 0 && sample && Number.isFinite(sample.elapsed) ? { autoRevealAt: AUTO_REVEAL_FRACTION } : {}),
       ...(times ? { ...(sample ? { elapsed: Math.min(duration || Infinity, Math.max(0, sample.elapsed)) } : {}), duration } : {}) };
   }
   catalogueContext(credential: string): string {

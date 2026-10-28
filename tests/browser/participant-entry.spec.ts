@@ -42,7 +42,7 @@ test('a first visit offers only the join form, then automatically opens one empt
   await page.getByRole('button', { name: 'Join room', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   await expect(page).toHaveURL('/participant');
-  await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search below to add one.');
+  await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search to add one.');
   await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
   expect(writes).toContain('/api/participant/preparations/init');
   expect(writes.filter(path => !['/api/participant/join', '/api/participant/preparations/init'].includes(path))).toEqual([]);
@@ -156,7 +156,7 @@ for (const entryPath of ['/participant', '/join']) test(`joining through ${entry
     expect((await page.request.get(isolatedApp.origin + '/api/participant/state')).status()).toBe(401);
     await page.getByLabel('Display name').fill('Returning listener'); await page.getByRole('button', { name: 'Join room', exact: true }).click();
     await expect(page.locator('.participant-hero')).toBeVisible();
-    await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search below to add one.');
+    await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search to add one.');
     const library = await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
     expect(library.ownerId).not.toBe(r.library.ownerId); expect(library.upcoming).toHaveLength(0);
     await fresh.clearCookies({ name: 'aoty_preparation' }); await page.reload();

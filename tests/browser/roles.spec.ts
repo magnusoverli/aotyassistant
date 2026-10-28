@@ -64,7 +64,9 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await noHorizontalOverflow(host);
     const tv = await tvContext.newPage(); await tv.goto(state.displayUrl);
     await expect(tv.getByAltText('Scan to join the room')).toBeVisible(); await tvFits(tv);
+    await tv.getByRole('button', { name: 'Menu', exact: true }).click();
     await expect(tv.getByRole('button', { name: 'Full screen', exact: true })).toBeEnabled();
+    await tv.keyboard.press('Escape');
     const palette = (page: Page) => page.evaluate(() => {
       const style = getComputedStyle(document.body);
       return { colors: ['--bg', '--panel', '--line', '--text', '--muted', '--accent'].map(key => style.getPropertyValue(key).trim()), scheme: style.colorScheme, background: style.backgroundImage };

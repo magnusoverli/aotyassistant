@@ -1,7 +1,44 @@
 @layer features {
-  /* Keep the existing desktop grid and its actual list/search nodes. */
+  /* One collection, retaining the actual list/search nodes across viewports. */
   .music-collection { display:contents; }
   .music-collection > * { min-width:0; }
+
+  @media(min-width:1100px) {
+    .music-workspace.workspace-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'player' 'collection'; }
+    #music-collection { grid-area:collection; display:grid; grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr); align-items:start; border:1px solid var(--line); border-radius:var(--radius-panel); background:var(--panel); }
+    #music-collection > .catalogue-panel { grid-column:1; grid-row:1; border:0; border-radius:var(--radius-panel) 0 0 var(--radius-panel); background:transparent; padding:24px; }
+    #music-collection > .preparation-list { grid-column:2; grid-row:1; position:sticky; top:calc(var(--app-header-height,72px) + 12px); align-self:start; padding:24px; border:0; border-left:1px solid var(--line); border-radius:0 var(--radius-panel) var(--radius-panel) 0; background:transparent; box-shadow:none; max-height:calc(100dvh - var(--app-header-height,72px) - 24px); overflow-y:auto; overscroll-behavior:contain; }
+    #music-collection .list-heading { min-height:44px; padding-right:100px; }
+    #music-collection .list-heading h2 { font-size:1.125rem; }
+    #music-collection .list-meta { margin-top:4px; }
+    #music-collection .list-preview { display:none; }
+    #music-collection .needs-attention .list-preview { display:block; color:var(--accent); }
+    #music-collection .list-save-status { margin:12px 0; font-size:.8125rem; }
+    #music-collection .list-body { flex:1 1 auto; height:clamp(240px,45dvh,520px); min-height:120px; max-height:none; margin:0; padding:0 6px 0 0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+    #music-collection .list-actions { position:absolute; top:24px; right:24px; margin:0; }
+    #music-collection .list-actions button { font-size:.8125rem; padding:8px 10px; }
+    #music-collection .list-empty { display:flex; align-items:center; justify-content:center; text-align:center; min-height:160px; height:100%; margin:0; font-size:.9375rem; }
+    #music-collection .saved-tracks { margin:0; padding:0; }
+    #music-collection .list-body .saved-track { display:grid; grid-template-columns:22px minmax(0,1fr) auto; align-items:center; gap:10px; min-height:68px; padding:10px 0; border-top:1px solid var(--line); }
+    #music-collection .saved-track.is-next { border-top-color:#61704c; }
+    #music-collection .saved-track.is-unavailable { border-top-color:var(--accent); }
+    #music-collection .saved-number { width:auto; font-size:12px; }
+    #music-collection .saved-track .result-identity { min-width:0; gap:10px; }
+    #music-collection .saved-track .result-artwork { width:40px; height:40px; flex-basis:40px; }
+    #music-collection .saved-track .result-identity > div:last-child { min-width:0; }
+    #music-collection .saved-track strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9375rem; line-height:22px; }
+    #music-collection .saved-track p { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8125rem; line-height:20px; }
+    #music-collection .saved-next-label,#music-collection .saved-source { display:none; }
+    #music-collection .saved-actions { grid-column:3; justify-content:flex-end; gap:4px; margin:0; }
+    #music-collection .is-editing .saved-actions,#music-collection .saved-track:has(.saved-menu[open]) .saved-actions { grid-column:2 / -1; justify-content:flex-start; }
+    #music-collection .saved-menu[open] { width:100%; }
+    #music-collection .saved-menu[open] > summary { float:left; }
+    #music-collection .saved-menu button { margin:0 4px 4px 0; }
+    #music-collection .saved-unavailable { display:block; font-size:.8125rem; white-space:normal; }
+    #music-collection .list-tools > .list-disclosure { margin:12px 0 0; }
+    #music-collection .catalogue-title h2 { font-size:1.125rem; }
+    #music-collection .catalogue-results { margin-top:16px; }
+  }
 
   @media(max-width:1099px) {
     #music-collection { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:var(--radius-panel); background:var(--panel); }

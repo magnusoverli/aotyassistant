@@ -165,7 +165,7 @@ export class PreparationPanel {
       const review = v.el('review', 'div', undefined, 'list-notice'); children(review, v.el('review-message', 'p', 'A previous play attempt needs review. The track is still saved; check the player before trying again.'),
         this.control('review', 'Keep in list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
     }
-    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', 'No songs yet. Search below to add one.', 'muted list-empty'));
+    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', 'No songs yet. Search to add one.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
     const upcomingRows: HTMLElement[] = [];
     snapshot?.upcoming.forEach((entry, index) => {

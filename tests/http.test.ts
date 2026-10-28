@@ -32,6 +32,12 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   };
   assert.equal((await request('/api/host/create', {}, '', 'https://evil.example')).status, 403);
   assert.equal((await request('/api/participant/join', { unexpected: 'field' })).status, 400);
+  assert.deepEqual(await (await request('/api/host/playback-settings')).json(), { enabled: true, revision: 0 });
+  assert.equal((await request('/api/host/playback-settings', { enabled: false, revision: 0 }, '', 'https://evil.example')).status, 403);
+  assert.equal((await request('/api/host/playback-settings', { enabled: 'false', revision: 0 })).status, 400);
+  assert.deepEqual(await (await request('/api/host/playback-settings', { enabled: false, revision: 0 })).json(), { enabled: false, revision: 1 });
+  assert.equal((await request('/api/host/playback-settings', { enabled: true, revision: 0 })).status, 409);
+  assert.equal((await request('/api/host/playback-settings', { enabled: true, revision: 1 })).status, 200);
   const host = await json('/api/host/state');
   assert.equal(host.displayUrl, base + '/display'); assert.equal(host.joinUrl, base + '/join');
   const display = await request('/api/display/state'); assert.equal(display.status, 200); assert.equal(display.headers.get('set-cookie'), null);

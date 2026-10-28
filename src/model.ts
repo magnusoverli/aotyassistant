@@ -40,6 +40,7 @@ const roomShape = z.object({
   participants: z.array(participantSchema).max(100),
   active: z.array(z.string().uuid()).max(100),
   currentId: z.string().uuid().nullable(),
+  autoReveal: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
   playback: z.object({
     id: z.string().uuid(), turnId: z.string().uuid(), track: trackSchema,
     status: z.enum(['playing', 'paused', 'stopped']), revealed: z.boolean(),
@@ -64,7 +65,9 @@ export type RotationPosition = { seat: number; total: number; turnsUntil: number
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
 /** Public output identity/health only; never a queue payload or current recording. */
 export type OutputState = { name: string | null; state: 'none' | 'checking' | 'ready' | 'unavailable' | 'unconfirmed' | 'recovery' | 'incompatible'; checkedAt: number | null; reason?: 'unsupported-schema' };
-export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number };
+export type PlaybackSettings = { enabled: boolean; revision: number };
+export const AUTO_REVEAL_FRACTION = 0.7;
+export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;

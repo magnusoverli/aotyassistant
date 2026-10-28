@@ -45,13 +45,13 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
       ? { ...item, padding: item.padding.replace(/^\S+/, '10px') } : item));
     const columns = (await geometry(host, ['.host-workspace', '.host-invitations'])).map(({ x, width }) => ({ x, width }));
     for (const [page, selectors] of [[settings, ['.settings-connection', '.settings-output']], [participant, ['.catalogue-panel', '.preparation-list']]] as const) {
+      if (page === participant && width >= 1100) continue; // The collection now owns its desktop split, not the host sidebar grid.
       const expected = page === participant && width < 1100 ? columns.map(column => ({ x: column.x + 1, width: column.width - 2 })) : columns;
       expect((await geometry(page, [...selectors])).map(({ x, width }) => ({ x, width }))).toEqual(expected);
     }
     const card = await appearance(host, '.qr-card');
     await expect.poll(() => appearance(settings, '.settings-connection')).toEqual(card);
-    if (width < 1100) expect(await appearance(participant, '#music-collection')).toEqual({ ...card, padding: '0px' });
-    else expect(await appearance(participant, '.catalogue-panel')).toEqual(card);
+    expect(await appearance(participant, '#music-collection')).toEqual({ ...card, padding: '0px' });
     const player = (await participant.locator('.playback-card').boundingBox())!;
     const music = (await participant.locator('.music-workspace').boundingBox())!;
     const search = (await participant.locator('.catalogue-panel').boundingBox())!;
@@ -62,6 +62,8 @@ test('workspace geometry and standard cards stay shared across routes, empty roo
       expect(search.y).toBeGreaterThanOrEqual(player.y + player.height);
       expect(list.y).toBeGreaterThanOrEqual(player.y + player.height);
       expect(search.y).toBeCloseTo(list.y, 2);
+      expect(search.x + search.width).toBeCloseTo(list.x, 2);
+      expect(search.width + list.width).toBeCloseTo(music.width - 2, 2);
     }
     else {
       expect(list.y).toBeGreaterThanOrEqual(player.y + player.height);
