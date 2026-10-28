@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.0.13] — 2026-10-28
+
+- Remove the duplicate Music Assistant and Speaker navigation buttons above Settings; use the section navigation instead.
+
 ## [1.0.12] — 2026-10-28
 
 - Add Log out to the shared header menu for signed-in users on every page, keeping their playlist, play-order place and other devices signed in.

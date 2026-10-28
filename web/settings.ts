@@ -377,17 +377,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     sections.update('playback', ...(feedbackSection === 'playback' ? feedback : []), ...playbackNodes);
     sections.update('access', ...(feedbackSection === 'access' ? feedback : []), ...accessNodes);
     sections.update('users', userPins.element);
-    const overview = v.el('overview', 'div', undefined, 'settings-overview'); attr(overview, 'aria-label', 'Room setup status');
-    const statusCard = (id: SettingsSection, label: string, value: string, tone: string) => {
-      const button = v.el(`overview-${id}`, 'button', undefined, 'settings-status secondary'); prop(button, 'type', 'button');
-      attr(button, 'data-tone', tone); button.onclick = () => sections.show(id);
-      children(button, v.el(`overview-label-${id}`, 'span', label, 'settings-status-label'), v.el(`overview-value-${id}`, 'strong', value)); return button;
-    };
-    children(overview, statusCard('music-assistant', 'Music Assistant', !settings && error ? 'Setup unavailable' : !online && settings ? 'Connection lost' : state,
-      !online || settings?.status === 'error' ? 'attention' : settings?.status === 'checked' ? 'ready' : 'neutral'),
-      statusCard('playback', 'Speaker', settings?.playbackIssue ? 'Playback needs attention' : activeOutput?.state === 'ready' ? activeOutput.name ?? speakerState : speakerState,
-        settings?.playbackIssue || ['recovery', 'unavailable', 'incompatible'].includes(activeOutput?.state ?? '') ? 'attention' : activeOutput?.state === 'ready' ? 'ready' : 'neutral'));
-    workspaceNodes.push(overview, sections.element);
+    workspaceNodes.push(sections.element);
     children(workspace, ...workspaceNodes); children(main, workspace);
   }
   render();

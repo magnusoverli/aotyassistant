@@ -4,12 +4,6 @@
   .settings-page .workspace-heading { margin-bottom:20px; }
   .settings-page .workspace-heading h1 { font-size:clamp(1.7rem,3vw,2.1rem); }
   .settings-page .workspace-heading .button { min-height:44px; padding:9px 14px; }
-  .settings-overview { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-bottom:28px; }
-  .settings-status { display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:6px; padding:16px 18px; min-width:0; text-align:left; background:var(--panel); border-color:var(--line); }
-  .settings-status strong { font-size:15px; font-weight:600; overflow-wrap:anywhere; }
-  .settings-status-label { font-size:12px; color:var(--muted); }
-  .settings-status[data-tone='ready'] strong { color:var(--green); }
-  .settings-status[data-tone='attention'] strong { color:#e8cb9e; }
   .settings-layout { display:grid; grid-template-columns:210px minmax(0,1fr); gap:32px; align-items:start; }
   .settings-navigation { display:grid; gap:6px; position:sticky; top:calc(var(--app-header-height,90px) + 20px); }
   .settings-section-link { display:flex; flex-direction:column; gap:6px; padding:14px; min-height:48px; border:1px solid transparent; border-radius:10px; color:var(--muted); text-decoration:none; }
@@ -77,12 +71,9 @@
     .settings-navigation { position:static; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
     .settings-section-link { padding:12px; justify-content:center; border-color:var(--line); }
     .settings-section-link > small { display:none; }
-    .settings-overview { margin-bottom:18px; }
   }
   @media(max-width:550px) {
     .settings-page .settings-card { padding:18px; }
-    .settings-status { padding:12px; }
-    .settings-status strong { font-size:14px; }
     .settings-page .workspace-heading { align-items:center; gap:10px; flex-wrap:wrap; }
     .settings-user-details { padding:14px; }
   }

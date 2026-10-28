@@ -88,7 +88,7 @@ The engine can also reveal automatically at 70% of observed playback progress. I
 
 `web/main.ts` owns a persistent header and listening-order shell. Same-origin app navigation and browser Back/Forward replace only the page runtime (`web/page-runtime.ts`); unchanged order cards and their animation nodes remain mounted. Departing pages close subscriptions, timers and listeners, and ignore late responses. Modified clicks, external links and new-tab navigation keep normal browser behavior.
 
-Settings uses `web/settings-sections.ts` for four hash-linked sections (`#playback`, `#users`, `#music-assistant`, `#access`). Desktop navigation sits beside a wide content pane; smaller screens use a wrapping two-column selector. Section changes hide rather than remount controllers, preserving drafts, live subscriptions and control identity. Feedback stays near its section, with connection/speaker status always visible. User rows expose inline PIN editing and a separately styled permanent-deletion action.
+Settings uses `web/settings-sections.ts` for four hash-linked sections (`#playback`, `#users`, `#music-assistant`, `#access`). Desktop navigation sits beside a wide content pane; smaller screens use a wrapping two-column selector. Section changes hide rather than remount controllers, preserving drafts, live subscriptions and control identity. Feedback and connection/speaker status stay in their respective sections. User rows expose inline PIN editing and a separately styled permanent-deletion action.
 
 ## Storage and lifecycle
 
