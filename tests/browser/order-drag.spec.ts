@@ -25,7 +25,7 @@ test('host cards are immediately draggable and save a single insertion while pre
   const writes: unknown[] = []; page.on('request', request => { if (request.url().endsWith('/api/host/reorder')) writes.push(request.postDataJSON()); });
   await page.setViewportSize({ width: 1440, height: 900 }); await page.goto('/host');
   await expect(page.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
-  await expect(page.locator('.order-remove')).toHaveCount(4); await expect(seat(page, 'Second').getByRole('button')).toBeEnabled();
+  await expect(page.locator('.rotation-seat button')).toHaveCount(0); await expect(seat(page, 'Second')).toHaveAttribute('aria-disabled', 'false');
   expect((await seat(page, 'First').boundingBox())!.height).toBeLessThanOrEqual(64);
   await expect(page.getByRole('button', { name: /^Move .+ (up|down)$/ })).toHaveCount(0);
   const secondBox = (await seat(page, 'Second').boundingBox())!; const fourthBox = (await seat(page, 'Fourth').boundingBox())!;
@@ -131,24 +131,6 @@ test('cancelled, unchanged, stale and disconnected drags never write an order', 
   expect(writes).toEqual([]);
 });
 
-test('pointer gestures over trash icons cannot remove a participant, while deliberate mouse and keyboard removal still work', async ({ page, isolatedApp }) => {
-  for (const name of ['First', 'Second', 'Third']) await isolatedApp.engine.join(name);
-  const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
-  await page.goto('/host');
-  const remove = seat(page, 'Third').getByRole('button', { name: 'Remove Third', exact: true });
-  const box = (await remove.boundingBox())!; const x = box.x + box.width / 2; const y = box.y + box.height / 2;
-  await page.mouse.move(x, y); await page.mouse.down();
-  await page.mouse.move(x + 70, y, { steps: 3 }); await page.mouse.move(x, y, { steps: 3 }); await page.mouse.up();
-  await expect(names(page)).toHaveText(['First', 'Second', 'Third']); expect(writes).toEqual([]);
-  await pickUp(page, seat(page, 'First')); await movePast(page, seat(page, 'Third')); await page.keyboard.press('Escape');
-  await expect.poll(() => seat(page, 'Third').evaluate(node => node.getAnimations().length)).toBe(0);
-  await page.mouse.move(x, y); await page.mouse.up();
-  await expect(names(page)).toHaveText(['First', 'Second', 'Third']); expect(writes).toEqual([]);
-  await remove.click(); await expect(names(page)).toHaveText(['First', 'Second']);
-  const second = seat(page, 'Second').getByRole('button', { name: 'Remove Second', exact: true });
-  await second.focus(); await page.keyboard.press('Enter'); await expect(names(page)).toHaveText(['First']); expect(writes).toHaveLength(2);
-});
-
 test('pending and failed drops keep the authoritative order, block repeats and reconcile without retrying', async ({ page, isolatedApp }) => {
   for (const name of ['First', 'Second', 'Third']) await isolatedApp.engine.join(name);
   await page.goto('/host');
@@ -195,13 +177,13 @@ test('mobile host reordering translates a turn-first view back to the saved orde
   expect(writes).toHaveLength(1);
 });
 
-test('touch dragging scrolls a long mobile order at its edge and Remove stays a separate action', async ({ browser, isolatedApp }) => {
+test('touch dragging scrolls a long mobile order at its edge', async ({ browser, isolatedApp }) => {
   for (let index = 1; index <= 8; index++) await isolatedApp.engine.join(`Person ${index}`);
   const context = await browser.newContext({ baseURL: isolatedApp.origin, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   const page = await context.newPage(); const touch = await context.newCDPSession(page);
   let writes = 0; page.on('request', request => { if (request.url().endsWith('/api/host/reorder')) writes++; });
   try {
-    await page.goto('/host'); await expect(seat(page, 'Person 1').getByRole('button')).toBeEnabled();
+    await page.goto('/host'); await expect(seat(page, 'Person 1')).toHaveAttribute('aria-disabled', 'false');
     const list = page.locator('.rotation-list'); const box = (await list.boundingBox())!; const source = (await seat(page, 'Person 1').boundingBox())!;
     const x = source.x + source.width / 2; const y = source.y + 18;
     await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
@@ -216,8 +198,7 @@ test('touch dragging scrolls a long mobile order at its edge and Remove stays a 
     expect(isolatedApp.engine.view({ kind: 'host' }).rotation!.map(person => person.nickname)).toEqual(['Person 2', 'Person 3', 'Person 4', 'Person 5', 'Person 6', 'Person 7', 'Person 8', 'Person 1']);
     expect(writes).toBe(1); await expect(page.locator('.order-drag-preview, .rotation-seat.is-dragging')).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    await seat(page, 'Person 8').getByRole('button', { name: 'Remove Person 8', exact: true }).tap();
-    await expect(names(page)).toHaveCount(7); expect(writes).toBe(1);
+    await expect(page.locator('.rotation-seat button')).toHaveCount(0);
     await page.setViewportSize({ width: 320, height: 700 });
     await page.screenshot({ path: 'test-results/order-manage-320.png', fullPage: true });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

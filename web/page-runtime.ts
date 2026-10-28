@@ -136,11 +136,6 @@ listeningOrder.setManagement(page === 'host' ? {
       await mutate('/api/host/reorder', { ids, revision }); listeningOrder.announce(`Moved ${name} to position ${ids.indexOf(id) + 1}.`);
     } catch (cause) { listeningOrder.announce('Order could not be confirmed. Review the current order and try again.'); throw cause; }
   }),
-  remove: id => { void run(async () => {
-    const person = view?.rotation?.find(person => person.id === id); if (!view || !person) return;
-    if (id === view.current?.id && !confirm(`Remove ${person.nickname} from the room? This ends their turn and stops any app-owned song.`)) return;
-    await mutate('/api/host/remove', { id, revision: view.revision }); listeningOrder.announce(`Removed ${person.nickname}. Their saved music is kept.`);
-  }); },
 } : undefined);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(pageContent);
@@ -151,9 +146,6 @@ const updateHeader = () => {
   if (signal.aborted) return;
   progressConnected(realtime && Boolean(view?.connected));
   if (view) appHeader.update({ view });
-  appHeader.setSwitchUser(page === 'participant' && view?.me ? () => { void run(async () => {
-    await api('/api/participant/logout', {}); location.assign(appPath('/join'));
-  }); } : undefined);
   listeningOrder.update(view, realtime && navigator.onLine);
 };
 const participantAccess = new ParticipantAccess(

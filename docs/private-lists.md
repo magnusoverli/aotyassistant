@@ -18,9 +18,9 @@ Lists allow 200 upcoming choices and 1,000 retained entries including history. C
 
 ## Continue as yourself
 
-New users enter a display name and choose a four-digit PIN (including leading zeroes). On another device, select your name/avatar and enter that PIN. Remembered browsers continue automatically. Multiple devices share the same playlist and one place in the listening order. Use **Switch user** in the participant navigation to sign out of that browser.
+New users enter a display name and choose a four-digit PIN (including leading zeroes). On another device, select your name/avatar and enter that PIN. Remembered browsers continue automatically. Multiple devices share the same playlist and one place in the listening order. Use **Menu → Log out** on any page to sign out of that browser and return to the user picker. Your playlist, listening-order place and other signed-in devices are kept.
 
-Removing someone from the listening order does not delete their user, songs, uploads or history. They remain in the user picker and can explicitly join again. Opening or refreshing a removed user's page never rejoins automatically.
+User deletion is managed in **Host → Settings → Users** and also removes their place in the listening order.
 
 - A matching display name never grants access to another participant’s songs.
 - Clearing browser credentials or changing the guest address requires selecting yourself and entering your PIN again.
@@ -37,7 +37,7 @@ PINs provide casual privacy on the trusted LAN. Host controls, including PIN res
 
 In **Host → Settings → Users**, choose **Manage** beside the person's name/avatar, then **Delete user**. Confirm the named user to permanently remove their account, playlist, history and uploaded files. All their devices are signed out. Any remaining listening-order seat is removed; deleting the current listener stops their playback and advances the turn.
 
-This is separate from removing someone from the listening order, which keeps their account and music. Deletion cannot be undone in the app. Existing backups remain separate copies.
+Deletion cannot be undone in the app. Existing backups remain separate copies.
 
 A new user can reuse a deleted user's name, including in the same browser. This creates a new identity with an empty playlist; the old browser cookies do not restore or attach the deleted music. Retrying the original deleted registration is still rejected.
 

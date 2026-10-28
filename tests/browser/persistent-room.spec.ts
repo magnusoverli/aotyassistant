@@ -1,7 +1,7 @@
 import { expect } from '@playwright/test';
 import { test } from './app-fixture';
 
-test('a permanent public room opens on fresh browsers and joins need no lifecycle, while reorder/remove stay available', async ({ browser, page: host, isolatedApp }) => {
+test('a permanent public room supports host reordering and account deletion through Settings', async ({ browser, page: host, isolatedApp }) => {
   const contexts = await Promise.all(Array.from({ length: 3 }, () => browser.newContext({ viewport: { width: 390, height: 844 } })));
   const requests: string[] = []; host.on('request', request => { if (request.method() === 'POST') requests.push(new URL(request.url()).pathname); });
   try {
@@ -31,19 +31,27 @@ test('a permanent public room opens on fresh browsers and joins need no lifecycl
     const before = await (await first.request.get('/api/participant/state')).json();
     const late = await join(2, 'Late'); await expect(late.locator('.turn-distance')).toHaveText('2 turns away');
     const after = await (await first.request.get('/api/participant/state')).json(); expect(after.turnId).toBe(before.turnId); expect(after.ownPlayback.id).toBe(before.ownPlayback.id); expect(after.ownPlayback.status).toBe('playing');
-    await host.getByRole('button', { name: 'Remove Second', exact: true }).click();
-    await expect(second.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible();
+    await expect(host.locator('.rotation-seat button')).toHaveCount(0);
+    const deleteUser = async (name: string) => {
+      await host.goto('/host/settings#users');
+      await host.getByRole('button', { name: `Manage ${name}`, exact: true }).click();
+      host.once('dialog', dialog => dialog.accept());
+      await host.getByRole('button', { name: 'Delete user', exact: true }).click();
+      await expect(host.getByRole('status').filter({ hasText: `${name} and their music were deleted.` })).toBeVisible();
+      await host.goto('/host');
+    };
+    await deleteUser('Second');
+    await expect(second.getByLabel('Display name')).toBeVisible();
     await expect(first.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
     const lateSeat = host.locator('.rotation-seat').filter({ has: host.locator('strong', { hasText: /^Late$/ }) });
     await lateSeat.focus(); await host.keyboard.press('Space'); await host.keyboard.press('ArrowLeft'); await host.keyboard.press('Enter');
     await expect(host.locator('.rotation-seat strong').first()).toHaveText('Late');
     await expect(late.locator('.turn-distance')).toHaveText('You’re next');
     await expect(host.getByRole('heading', { name: 'First', exact: true })).toBeVisible();
-    host.once('dialog', dialog => dialog.accept());
-    await host.getByRole('button', { name: 'Remove First', exact: true }).click();
+    await deleteUser('First');
     await expect(late.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
     expect((await (await late.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
-    for (const path of ['/api/host/admit', '/api/host/start', '/api/host/create', '/api/host/end', '/api/host/invitation', '/api/display/auth']) expect(requests).not.toContain(path);
+    for (const path of ['/api/host/remove', '/api/host/admit', '/api/host/start', '/api/host/create', '/api/host/end', '/api/host/invitation', '/api/display/auth']) expect(requests).not.toContain(path);
     await host.setViewportSize({ width: 320, height: 844 });
     await host.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur(); window.scrollTo({ top: 0, behavior: 'instant' }); });
     expect(await host.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);

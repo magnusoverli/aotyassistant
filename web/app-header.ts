@@ -1,8 +1,10 @@
 import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
-import { navigationHref, inIngress } from './paths';
+import { appPath, navigationHref, inIngress } from './paths';
 import { attr, prop, text } from './view-nodes';
 import { demoPlaybackNotice, productName } from '../src/product';
+import { requestJson } from './request';
+import type { UserDirectory } from '../src/model';
 
 /** One persistent, compact header for every route and viewport. */
 export class AppHeader {
@@ -13,8 +15,12 @@ export class AppHeader {
   private primary = el('ul', undefined, 'primary-links');
   private toggle = el('button', 'Menu', 'secondary header-menu-toggle');
   private fullscreen = el('button', 'Full screen', 'secondary header-fullscreen');
-  private switchUser = el('button', 'Switch user', 'secondary');
-  private switchItem = el('li');
+  private logout = el('button', 'Log out', 'header-nav-link header-logout');
+  private logoutItem = el('li');
+  private logoutError = el('p', undefined, 'error');
+  private logoutPending = false;
+  private identityRequest?: AbortController;
+  private lifetime = new AbortController();
   private links = new Map<string, HTMLAnchorElement>();
   private expanded = false;
   private resize?: ResizeObserver;
@@ -62,9 +68,36 @@ export class AppHeader {
       this.resize.observe(this.element);
     }
     this.update({});
-    this.switchUser.type = 'button'; this.switchItem.append(this.switchUser); this.switchItem.hidden = true; this.primary.append(this.switchItem);
+    this.logout.type = 'button'; this.logout.onclick = () => { void this.logOut(); };
+    this.logoutError.setAttribute('role', 'alert'); this.logoutError.hidden = true;
+    this.logoutItem.append(this.logout, this.logoutError); this.logoutItem.hidden = true; this.primary.append(this.logoutItem);
   }
-  setSwitchUser(action?: () => void) { prop(this.switchItem, 'hidden', !action); this.switchUser.onclick = action ?? null; }
+  private async refreshIdentity() {
+    if (this.logoutPending) return;
+    this.identityRequest?.abort();
+    const request = new AbortController(); this.identityRequest = request;
+    try {
+      const directory = await requestJson<UserDirectory>('/api/participant/identity', undefined, 15_000,
+        AbortSignal.any([request.signal, this.lifetime.signal]));
+      if (!request.signal.aborted && !this.lifetime.signal.aborted) prop(this.logoutItem, 'hidden', !directory.current);
+    } catch { /* A failed read must not discard a previously confirmed sign-in. */ }
+  }
+  private async logOut() {
+    if (this.logoutPending) return;
+    this.identityRequest?.abort(); this.logoutPending = true;
+    prop(this.logout, 'disabled', true); text(this.logout, 'Logging out…'); prop(this.logoutError, 'hidden', true);
+    try {
+      await requestJson('/api/participant/logout', {}, 15_000, this.lifetime.signal);
+      // A full navigation clears private page state as well as the server-side session.
+      location.assign(appPath('/join'));
+    } catch (error) {
+      if (this.lifetime.signal.aborted) return;
+      text(this.logoutError, `Log out was not confirmed. ${error instanceof Error ? error.message : 'Please try again.'}`);
+      prop(this.logoutError, 'hidden', false);
+    } finally {
+      this.logoutPending = false; prop(this.logout, 'disabled', false); text(this.logout, 'Log out');
+    }
+  }
   update(state: HeaderState) {
     this.lastState = state;
     const model = headerModel(this.page, state);
@@ -81,7 +114,6 @@ export class AppHeader {
   }
   setPage(page: Page) {
     this.page = page;
-    this.setSwitchUser();
     attr(this.element.querySelector('.brand')!, 'aria-current', page === 'home' ? 'page' : undefined);
     if (page !== 'display') this.fullscreen.remove();
     this.setExpanded(false);
@@ -95,6 +127,7 @@ export class AppHeader {
   }
   private setExpanded(value: boolean, restoreFocus = false) {
     this.expanded = value; this.updateLayout();
+    if (value) void this.refreshIdentity();
     if (restoreFocus) this.toggle.focus({ preventScroll: true });
   }
   private updateLayout() {
@@ -133,6 +166,7 @@ export class AppHeader {
     finally { this.fullscreenPending = false; this.updateFullscreen(); }
   }
   destroy() {
+    this.lifetime.abort(); this.identityRequest?.abort();
     this.resize?.disconnect();
     document.removeEventListener('keydown', this.keydown); document.removeEventListener('focusin', this.focusChanged);
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);

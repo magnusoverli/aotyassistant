@@ -32,12 +32,6 @@
     .order-trace-light { stroke-width:1px; opacity:.55; filter:none; }
     .order-trace-halo { display:none; }
   }
-  .rotation-seat.is-manageable { padding-right:36px; }
-  .order-actions { position:absolute; top:2px; right:2px; }
-  .order-actions .order-remove { width:32px; height:32px; min-width:32px; min-height:32px; padding:0; border-color:transparent; border-radius:6px; background:transparent; color:var(--muted); }
-  .order-remove::before { content:''; width:16px; height:16px; background:currentColor; mask:url('./trash.svg') center / contain no-repeat; }
-  .order-actions .order-remove:hover:not(:disabled) { color:#f2b4a6; background:#c36b5b1a; }
-  .order-actions .order-remove:focus-visible { outline-offset:-3px; }
   .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
   .rotation-list.is-editable .rotation-seat:focus-visible { outline-offset:-3px; }
   .rotation-list.is-dragging,.rotation-list.is-dragging .rotation-seat { cursor:grabbing; }
@@ -45,7 +39,7 @@
   .rotation-seat.is-dragging > * { visibility:hidden; }
   .rotation-seat.is-keyboard-dragging { outline:2px solid var(--accent); outline-offset:-3px; }
   .order-drag-preview { position:fixed; top:0; left:0; z-index:60; margin:0; pointer-events:none; opacity:.95; border-color:var(--accent); box-shadow:0 12px 30px #0008; cursor:grabbing; }
-  .order-drag-preview .order-actions,.order-drag-preview .order-trace { visibility:hidden; }
+  .order-drag-preview .order-trace { visibility:hidden; }
   .order-drag-preview.is-invalid-drop { opacity:.5; }
   .rotation-seat.order-drag-preview { background:#18251b; }
   .seat-state-compact { display:none; }

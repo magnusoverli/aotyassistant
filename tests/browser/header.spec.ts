@@ -4,6 +4,42 @@ import { openNavigation } from './navigation-helpers';
 
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
 
+test('header logout works across routes, retries explicitly and signs out only this browser', async ({ page, browser, isolatedApp }) => {
+  const headers = { Origin: isolatedApp.origin };
+  const joinPath = '/api/participant/preparations/join';
+  const joined = await page.request.post(joinPath, { headers, data: { nickname: 'Logout listener', pin: '0042' } });
+  expect(joined.ok()).toBe(true); const user = (await joined.json()).user;
+  const originalList = await (await page.request.post('/api/participant/preparations/init', { headers, data: {} })).json();
+  const other = await browser.newContext({ baseURL: isolatedApp.origin });
+  try {
+    expect((await other.request.post(joinPath, { headers, data: { userId: user.id, pin: '0042' } })).ok()).toBe(true);
+    const before = await (await page.request.get('/api/host/state')).json();
+    const menu = page.getByRole('navigation', { name: 'Primary navigation' });
+    const logout = menu.getByRole('button', { name: 'Log out', exact: true });
+    for (const path of ['/participant', '/', '/display', '/host/settings', '/host']) {
+      await page.goto(path); await openNavigation(page); await expect(logout).toBeVisible();
+      await noOverflow(page);
+    }
+    let writes = 0;
+    await page.route('**/api/participant/logout', async route => {
+      writes++;
+      if (writes === 1) await route.fulfill({ status: 503, json: { error: 'Temporary storage failure.' } });
+      else await route.continue();
+    });
+    await logout.click(); await expect(menu.getByRole('alert')).toContainText('Log out was not confirmed');
+    await expect(page).toHaveURL('/host'); await expect(logout).toBeEnabled(); expect(writes).toBe(1);
+    await logout.click(); await expect(page).toHaveURL('/join'); expect(writes).toBe(2);
+    await openNavigation(page); await expect(logout).toBeHidden();
+    expect((await (await page.request.get('/api/participant/identity')).json()).current).toBeNull();
+    expect((await (await other.request.get('/api/participant/identity')).json()).current.id).toBe(user.id);
+    const after = await (await page.request.get('/api/host/state')).json();
+    expect(after.rotation).toEqual(before.rotation); expect(after.turnId).toBe(before.turnId);
+    expect((await page.request.post(joinPath, { headers, data: { userId: user.id, pin: '0042' } })).ok()).toBe(true);
+    const restored = await (await page.request.post('/api/participant/preparations/init', { headers, data: {} })).json();
+    expect(restored.ownerId).toBe(originalList.ownerId);
+  } finally { await other.close(); }
+});
+
 test('shared mobile header is compact across routes while desktop sizing and touch targets stay unchanged', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Header listener' }, headers: { Origin: isolatedApp.origin } });
   for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
@@ -81,7 +117,7 @@ test('every page uses the shared header with centralized navigation, current-pag
     await openNavigation(page);
     const navigation = page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' });
     await expect(navigation).toBeVisible(); await expect(navigation.locator('.primary-links > li > a')).toHaveCount(4);
-    await expect(navigation.locator('button, .mode-badge')).toHaveCount(0);
+    await expect(navigation.locator('button:visible, .mode-badge')).toHaveCount(0);
     expect(await navigation.locator('a').evaluateAll(links => links.map(link => ({ text: link.textContent, href: link.getAttribute('href') })))).toEqual([
       { text: 'Host desk', href: '/host' }, { text: 'Settings', href: '/host/settings' },
       { text: 'Your music', href: '/participant' }, { text: 'Room display', href: '/display' },

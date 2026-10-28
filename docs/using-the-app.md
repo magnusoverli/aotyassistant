@@ -12,7 +12,7 @@ In the listening order, a soft light travels along the current participant’s c
 
 On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. This presentation does not change the saved turn order or desktop layout.
 
-On **Host desk**, drag any participant card into a new position or select its top-right trash icon to remove it. These controls are always available in the listening order. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. Names and turn order are public; private song lists are not.
+On **Host desk**, drag any participant card into a new position. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. To delete a user, open **Settings → Users → Manage → Delete user**; this also removes their place in the order. Names and turn order are public; private song lists are not.
 
 ## Prepare selections
 
@@ -51,10 +51,10 @@ If another source changes playback, its audio is left untouched and the app does
 
 ## Returning to the room
 
-There is no Create/Start/End session step. The room and join/display links persist. The host can remove people from the rotation; removal does not delete their private lists. Returning participants can rejoin and use the same list when their browser credentials are retained.
+There is no Create/Start/End session step. The room and join/display links persist. Returning participants use their name and PIN to access the same playlist, with remembered browsers continuing automatically.
 
 Lists, users, settings, and order survive restart, while playback and reveal reset. Include the app in Home Assistant backups. To return on another device, select yourself and enter your PIN. The host can replace forgotten PINs in Settings without deleting songs or changing playback. Lists are automatic; there is no recovery-key or list-switching workflow.
 
 Settings has four sections: **Playback** for the active speaker/group and automatic reveal; **Users** for name/avatar rows and account actions; **Music Assistant** for connection setup; and **Access & network** for guest links and uploaded-file connectivity. Initial setup opens Music Assistant; configured installations open Playback. The status summary stays visible, and switching sections keeps unfinished form edits.
 
-To permanently remove someone and their playlist, use **Host → Settings → Users → Manage → Delete user** and confirm. This deletes their history and uploads, signs out their devices and removes any listening-order seat. Removing them only from the listening order keeps their account and music. A fresh registration can reuse the deleted name and starts with an empty playlist.
+To permanently remove someone and their playlist, use **Host → Settings → Users → Manage → Delete user** and confirm. This deletes their history and uploads, signs out their devices and removes any listening-order seat. A fresh registration can reuse the deleted name and starts with an empty playlist.

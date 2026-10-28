@@ -7,7 +7,7 @@ import { OrderDrag, type OrderMove } from './order-drag';
 import { stackedLayout } from './page-layout';
 import { turnFirst, canonicalInsertion } from './order-presentation';
 
-type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void>; remove(id: string): void };
+type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void> };
 
 let turnBorderSequence = 0;
 
@@ -125,7 +125,6 @@ export class ListeningOrder {
 
   private updateControls() {
     const disabled = !this.management || this.management.disabled() || this.element.dataset.online !== 'true';
-    for (const button of this.list.querySelectorAll('button')) prop(button, 'disabled', disabled);
     for (const row of this.list.querySelectorAll<HTMLElement>('.rotation-seat')) attr(row, 'aria-disabled', this.management ? String(disabled) : undefined);
     this.drag?.update();
   }
@@ -151,7 +150,7 @@ export class ListeningOrder {
         let nodes = this.rows.get(person.id); if (!nodes) { nodes = new ViewNodes(); this.rows.set(person.id, nodes); } const v = nodes;
         const current = person.id === view?.current?.id; const me = person.id === this.me?.id;
         const next = !current && person.id === view?.next?.id;
-        const row = v.el('row', 'li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}${this.management ? ' is-manageable' : ''}`);
+        const row = v.el('row', 'li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}`);
         attr(row, 'data-person-id', person.id); attr(row, 'aria-current', current ? 'step' : undefined);
         attr(row, 'data-focus-key', `person-${person.id}`); attr(row, 'tabindex', this.management ? '0' : undefined);
         attr(row, 'aria-roledescription', this.management ? 'draggable participant' : undefined);
@@ -163,13 +162,6 @@ export class ListeningOrder {
           v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : '', 'seat-state'),
           v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : '', 'seat-state seat-state-compact'),
           v.get('turn-border', turnBorder)];
-        if (this.management) {
-          const actions = v.el('actions', 'div', undefined, 'order-actions');
-          const button = v.el('remove', 'button', '', 'secondary order-remove'); prop(button, 'type', 'button');
-          attr(button, 'data-focus-key', `remove-${person.id}`); attr(button, 'aria-label', `Remove ${person.nickname}`); prop(button, 'title', `Remove ${person.nickname}`);
-          button.onclick = () => this.management!.remove(person.id);
-          children(actions, button); content.push(actions);
-        }
         children(row, ...content);
         return row;
       }));

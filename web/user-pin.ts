@@ -49,7 +49,7 @@ export class UserSettingsPanel {
     const heading = v.get('heading', () => sectionHeading('Saved users', 'settings-users-title', 'h3'));
     const count = this.directory?.users.length;
     children(heading, heading.firstElementChild!, v.el('count', 'span', count === undefined ? 'Loading…' : `${count} ${count === 1 ? 'user' : 'users'}`, 'badge'));
-    const hint = v.el('hint', 'p', 'Each person has one playlist across devices. Removing them from the listening order keeps their account and music.', 'muted');
+    const hint = v.el('hint', 'p', 'Each person has one playlist across devices. Manage their PIN or permanently delete their account, music and place in the listening order.', 'muted');
     const disabled = this.busy || !navigator.onLine;
     const pin = pinInput(v, 'reset-user-pin', 'New 4-digit PIN'); prop(pin.input, 'disabled', disabled);
     const list = v.el('list', 'ul', undefined, 'settings-user-list'); attr(list, 'aria-label', 'Saved users');

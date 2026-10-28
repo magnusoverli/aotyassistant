@@ -39,7 +39,7 @@ test('every route highlights the current turn, including before playback, while 
         expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(['""', '""', 'none']);
         await expect(current.locator('.rotation-list')).toHaveCSS('column-gap', width < 1100 ? '18px' : '26px');
         await expect(current.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
-        await expect(current.locator('.order-remove')).toHaveCount(current === page ? 3 : 0);
+        await expect(current.locator('.rotation-seat button')).toHaveCount(0);
         await expect(current.locator('.rotation-seat[tabindex="0"]')).toHaveCount(current === page ? 3 : 0);
         await expect(current.locator('.listening-order').getByText('Listening', { exact: true })).toHaveCount(0);
         await expect(current.locator('.rotation-seat.is-current')).toHaveCSS('opacity', '1');
@@ -160,7 +160,7 @@ test('card names, avatars and controls stay in their slots as status labels appe
         return { x: rect.x - card.x, y: rect.y - card.y, width: rect.width, height: rect.height };
       };
       return { id: row.getAttribute('data-person-id'), width: card.width, height: card.height,
-        name: box('strong'), avatar: box('.avatar'), remove: box('.order-remove') };
+        name: box('strong'), avatar: box('.avatar') };
     }));
     for (const width of [1440, 390, 320]) {
       for (const current of pages) {
@@ -358,13 +358,7 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
   await expect(controls).toBeInViewport({ ratio: 1 });
   const seatBox = (await controls.boundingBox())!;
   expect(seatBox.height).toBeLessThanOrEqual(44);
-  for (const action of await controls.getByRole('button').all()) {
-    const box = (await action.boundingBox())!;
-    expect(box.width).toBeGreaterThanOrEqual(32); expect(box.height).toBeGreaterThanOrEqual(32);
-    expect(box.y - seatBox.y).toBeLessThan(5); expect(seatBox.x + seatBox.width - box.x - box.width).toBeLessThan(5);
-    expect(box.y + box.height).toBeLessThanOrEqual(seatBox.y + seatBox.height);
-    await expect(action).toHaveText(''); await expect(action).toHaveAccessibleName('Remove Listener 1');
-  }
+  await expect(controls.getByRole('button')).toHaveCount(0);
   const workspace = await page.locator('.host-page').boundingBox();
   const header = await page.locator('.app-header').boundingBox();
   await controls.focus(); await expect(page.locator('.order-help')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
@@ -374,13 +368,12 @@ test('the visible bar preserves focus and horizontal scroll through updates and 
   await expect(moved).toBeFocused();
   await expect(page.locator('.rotation-seat strong').first()).toHaveText('Listener 0');
   expect(isolatedApp.engine.view({ kind: 'host' }).rotation![0]!.nickname).toBe('Listener 1');
-  await page.getByRole('button', { name: 'Remove Listener 1', exact: true }).click();
-  await expect(page.locator('.rotation-seat')).toHaveCount(19);
+  await expect(page.locator('.rotation-seat')).toHaveCount(20);
   await expect(list).toBeVisible();
-  await expect(page.locator('.order-announcement')).toContainText('Their saved music is kept.');
+  await expect(page.locator('.order-announcement')).toContainText('Moved Listener 1');
   await expect(page.locator('.order-announcement')).toHaveCSS('clip', 'rect(0px, 0px, 0px, 0px)');
   expect(await page.locator('.app-header').boundingBox()).toEqual(header);
-  await expect(page.locator('.order-actions')).toHaveCount(19);
+  await expect(page.locator('.rotation-seat button')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
   expect((await page.locator('.order-bar').boundingBox())!.height).toBeLessThanOrEqual(56);
 });

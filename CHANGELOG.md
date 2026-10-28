@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.0.12] — 2026-10-28
+
+- Add Log out to the shared header menu for signed-in users on every page, keeping their playlist, play-order place and other devices signed in.
+- Remove the separate play-order removal control; manage user deletion and their place in the order together in Settings → Users.
+
 ## [1.0.11] — 2026-10-28
 
 - Organize Settings into Playback, Users, Music Assistant and Access sections with responsive navigation and clearer user-management actions.
