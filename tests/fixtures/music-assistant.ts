@@ -32,7 +32,7 @@ export async function startMusicAssistantFixture(port = 0) {
   let metadataArtistName = 'Metallica';
   let itemNumber = 0;
   const queue = { queue_id: 'fixture-queue', available: true, active: true, items: 0, state: 'idle', ended: false,
-    repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: typeof track }, next_item: null as unknown };
+    repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, is_dynamic: false, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: typeof track; streamdetails?: { provider: string; item_id: string } }, next_item: null as unknown };
   const player = { player_id: 'sonos:room', available: true, type: 'player', supported_features: ['volume_set'], volume_control: 'native', volume_level: 30, group_volume: 40, group_members: [] as string[],
     playback_state: 'idle', active_source: null as string | null, active_group: null as string | null, synced_to: null as string | null };
   let speakers = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
@@ -163,12 +163,23 @@ export async function startMusicAssistantFixture(port = 0) {
     else if (command === 'player_queues/get_active_queue') result = queue;
     else if (command === 'player_queues/items') result = queue.current_item ? [queue.current_item] : [];
     else if (command === 'player_queues/autoplay') queue.autoplay_enabled = args.autoplay_enabled;
-    else if (command === 'player_queues/repeat') queue.repeat_mode = args.repeat_mode;
-    else if (command === 'player_queues/shuffle') queue.shuffle_enabled = args.shuffle_enabled;
+    else if (command === 'player_queues/clear') {
+      if (queue.state !== 'idle' || args.skip_stop !== true) { res.statusCode = 400; res.end('Stop before clearing'); return; }
+      queue.items = 0; queue.current_item = null; queue.next_item = null; queue.is_dynamic = false; queue.shuffle_enabled = false;
+    }
+    else if (command === 'player_queues/repeat') {
+      if (queue.is_dynamic) { res.statusCode = 500; res.end('Dynamic repeat locked'); return; }
+      queue.repeat_mode = args.repeat_mode;
+    }
+    else if (command === 'player_queues/shuffle') {
+      if (queue.is_dynamic) { res.statusCode = 500; res.end('Dynamic shuffle locked'); return; }
+      queue.shuffle_enabled = args.shuffle_enabled;
+    }
     else if (command === 'player_queues/play_media') {
       const selected = args.media?.[0] === track.uri ? track : multiTracks.find(t => t.uri === args.media?.[0]) ?? uploads.get(args.media?.[0]);
       if (!selected || args.option !== 'replace' || args.media.length !== 1) { res.statusCode = 400; res.end('Wrong recording or queue option'); return; }
-      queue.items = 1; queue.current_item = { queue_item_id: `fixture-item-${++itemNumber}`, media_item: { ...selected } };
+      queue.items = 1; queue.current_item = { queue_item_id: `fixture-item-${++itemNumber}`, media_item: { ...selected },
+        streamdetails: { provider: selected.provider, item_id: selected.item_id } };
       queue.state = 'playing'; queue.active = true; queue.ended = false; queue.next_item = null;
       player.playback_state = 'playing'; player.active_source = queue.queue_id;
       queue.elapsed_time = 0;
@@ -201,7 +212,7 @@ export async function startMusicAssistantFixture(port = 0) {
     requests, get connections() { return connections; },
     websocketCommands, get eventClients() { return authenticated.size; },
     notify, disconnectEvents() { for (const client of events.clients) client.terminate(); },
-    failReads(command: 'player_queues/get_active_queue' | 'player_queues/items' | 'players/get', count = 1, status = 503) {
+    failReads(command: 'player_queues/get_active_queue' | 'player_queues/items' | 'players/get' | 'player_queues/clear', count = 1, status = 503) {
       readFailures.set(command, { remaining: count, status });
     },
     loseAcknowledgement(command: 'player_queues/play_media' | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/stop', apply = true) {

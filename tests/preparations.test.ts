@@ -59,6 +59,17 @@ test('add appends, exact duplicates do not multiply, retry identities cannot be 
   await assert.rejects(f.manager.move(f.owner.credential, operation, second.entryId, first.entryId), status(409));
 });
 
+test('equivalent-source descriptors deduplicate across provider additions and still read legacy saved choices', async () => {
+  const f = await fixture(); const original = selected();
+  if (original.source !== 'music-assistant') throw Error();
+  const first = await f.manager.add(f.owner.credential, await f.op(), original);
+  const replacement = structuredClone(original);
+  replacement.recording = { provider: 'second-provider', itemId: 'same-song', uri: 'tidal://track/same-song', version: 'Original', equivalents: [original.recording] };
+  const duplicate = await f.manager.add(f.owner.credential, await f.op(), replacement);
+  assert.equal(duplicate.entryId, first.entryId); assert.equal(duplicate.view.upcoming.length, 1);
+  assert.deepEqual(await f.manager.selection(f.owner.credential, first.entryId), original);
+});
+
 test('concurrent edits use independent list revisions and cannot overwrite additions or newer order', async () => {
   const f = await fixture(); const operation = await f.op();
   const outcomes = await Promise.allSettled([f.manager.add(f.owner.credential, operation, selected()),

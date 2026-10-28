@@ -4,7 +4,7 @@
 
 ## Save and arrange
 
-- **Add to list** saves the selected recording/source. The next choice is at the top.
+- **Add to list** saves the selected recording and its verified equivalent sources. The next choice is at the top.
 - **Edit order** provides drag handles and up/down controls. **Move to top** moves a choice to the front without playing it.
 - **Remove** moves a choice to **History → Removed**. Choose **Add back** to restore it.
 - **Play first selection** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.

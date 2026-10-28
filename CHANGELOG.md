@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Show play-order arrows consistently on every page, including Host desk and mobile layouts.
+- Choose Music Assistant recordings without provider dropdowns, preserve verified equivalents in saved lists, and validate the reported playback source.
+- Improve Music Assistant search deadlines, dynamic-queue takeover and position updates while reducing redundant volume polling.
 - Automatically reveal tracks at 70% playback by default, with a Settings toggle and a progress marker that disappears after reveal.
 - Combine desktop search and playlist into one workspace with a wider, scrollable playlist pane and compact inline editing.
 - Enlarge Display page artwork and track typography slightly while retaining its spacious layout and centered alignment.
@@ -11,7 +14,7 @@
 - Give desktop player transport buttons equal widths and readable labels instead of squeezing Pause into broken lines.
 - Restore fullscreen directly in the Display page header on mobile and desktop, with no fullscreen control on other pages.
 - Match the Host desk player to the participant layout with a generic animated record and no track metadata, including after reveal.
-- Unify header and play-order styling across pages without arrows, retain Host desk management, and place display-only fullscreen in the menu.
+- Unify header and play-order styling across pages, retain Host desk management, and place display-only fullscreen in the menu.
 ## [1.0.10] — 2026-10-27
 
 - Make Playwright browser tests opt-in for local development and CI, including releases.

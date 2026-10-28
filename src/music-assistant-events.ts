@@ -6,7 +6,7 @@ import { supportsPlaybackSchema } from './music-assistant-policy.js';
 
 export type PlaybackEvent = { connected: boolean; objectId?: string; kind?: string; available?: boolean; name?: string };
 const info = z.object({ schema_version: z.number().int().refine(supportsPlaybackSchema) });
-const event = z.object({ event: z.enum(['queue_updated', 'queue_items_updated', 'player_added', 'player_updated', 'player_removed', 'queue_added']), object_id: z.string().min(1).max(500),
+const event = z.object({ event: z.enum(['queue_updated', 'queue_items_updated', 'queue_time_updated', 'player_added', 'player_updated', 'player_removed', 'queue_added']), object_id: z.string().min(1).max(500),
   data: z.object({ available: z.boolean().optional(), name: z.string().max(200).optional() }).nullish().catch(undefined) });
 
 /** Authenticated event hints only. State is reconciled over HTTP; audio writes are never replayed. */

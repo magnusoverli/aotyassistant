@@ -34,7 +34,7 @@ Room changes and audio commands have distinct serialization boundaries. Network 
 
 ## Playback contract
 
-- Play is explicit, current-turn-authorized, exact-source, and single-track. No whole-list queueing or automatic source replacement.
+- Play is explicit, current-turn-authorized, recording-specific, and single-track. Equivalent providers may be resolved before Play; an uncertain Play is never retried through another source.
 - Queue/item identity establishes ownership. Events prompt authoritative checks; they do not independently establish completion or ownership.
 - Natural completion requires the same safe owned item, previously playing, and MA’s explicit `ended` state. Presentation clocks never advance turns.
 - External takeover invalidates app ownership without stopping foreign audio. Uncertainty requires explicit recovery.
@@ -46,6 +46,16 @@ Room changes and audio commands have distinct serialization boundaries. Network 
 `src/playback-read.ts` is the read-only reconciliation boundary. It permits at most three attempts for classified temporary connection, timeout or destination-availability failures, with 150/350 ms backoff inside the existing eight-second read budget. It does not shorten the first request's timeout or extend the caller's deadline; retries run only while time remains. Authorization, unsupported responses, blocked addresses, cancellation and closed clients are not retried. Background snapshots remain outside the command serializer and are discarded if the command generation, connection revision or owned playback changes.
 
 Audio and queue-policy writes are never retried. A lost Play/Pause/Resume/Stop acknowledgement may be reconciled through authoritative reads; success requires the exact safe queue/item and requested transport state. Play additionally requires a new queue-item identity, not an older instance of the same recording. Failed read-only control preflight sends no command and does not itself discard confirmed ownership. Once command confirmation is genuinely uncertain or monitoring retries are exhausted, existing fail-closed ownership, upload leases and explicit host recovery safeguards remain in effect.
+
+### Music Assistant audit changes
+
+1. **Canonical library responses:** resolution accepts explicit provider mappings while retaining recording/version checks, including older saved choices.
+2. **Stream identity:** playback reads retain `streamdetails.provider` and `item_id`, checked against sources resolved before Play. A playing catalogue item requires stream identity; parked pauses can release it. This verifies MA's reported source, not physical audio.
+3. **Search deadlines:** search gets 12 seconds, beyond MA's eight-second provider cutoff; catalogue HTTP operations have 16 seconds and browsers wait 18 seconds. Optional matching shares a three-second budget, eight reads and at most two simultaneous requests.
+4. **Dynamic queues:** explicit takeover stops and clears the queue before changing locked policies, with queue read-back before Play.
+5. **Position corrections:** `queue_time_updated` prompts authoritative refresh; periodic polling still covers progress and missed events.
+6. **Monitoring cost:** background volume reads are limited to once per 15 seconds, with player events and explicit operations refreshing sooner. Ownership and readiness reads remain authoritative.
+7. **Provider transparency:** `catalogue-matcher.ts` uses MA identities first and bounded release/tracklist corroboration for ambiguous artists/albums. Recording substitution requires IDs or mappings, not matching names. `recording-identity.ts` persists private evidence and bounded equivalents without library mutations; public references remain participant-bound and opaque. Existing saved choices continue to load.
 
 Explicit recovery performs a fresh connection/speaker inspection after releasing the command lock, rather than acknowledging readiness from a cached failed inspection. Observation and configuration revisions prevent older inspections from undoing the recovered status.
 

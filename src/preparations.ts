@@ -7,6 +7,7 @@ import { AppError } from './model.js';
 import { writePrivateJson } from './store.js';
 import { KeyedSerialQueue } from './serial.js';
 import { diagnostics } from './diagnostics.js';
+import { recordingDescriptorSchema, sameRecordingEvidence } from './recording-identity.js';
 
 export const preparationLimits = {
   upcoming: 200, entries: 1000, receipts: 5000,
@@ -27,8 +28,7 @@ const metadata = z.object({
 export const savedSelectionSchema = z.discriminatedUnion('source', [
   z.object({ source: z.literal('demo'), trackId: z.string().regex(/^demo:[a-z0-9-]+$/).max(200), metadata }).strict(),
   z.object({ source: z.literal('music-assistant'), sourceBindingId: id,
-    recording: z.object({ provider: z.string().min(1).max(200), itemId: z.string().min(1).max(2048),
-      uri: z.string().min(1).max(4096).regex(/^[^\x00-\x1f\x7f]+$/), version: z.string().max(500) }).strict(), metadata,
+    recording: recordingDescriptorSchema, metadata,
   }).strict(),
   // Only owner-authorized server assets, never browser file paths or media URLs.
   z.object({ source: z.literal('upload'), assetId: id, artworkAssetId: id.optional(), sha256: digest.optional(), metadata }).strict(),
@@ -301,7 +301,17 @@ export class PreparationManager {
   private appendSelection(state: PreparationState, selection: SavedSelection) {
     if (selection.source === 'upload' && state.deletedUploads?.includes(selection.assetId)) throw new AppError(410, 'This uploaded file was permanently deleted. Select the file again.');
     const key = fingerprint(selection);
-    const existing = state.entries.find(item => item.state === 'upcoming' && fingerprint(item.selection) === key);
+    const existing = state.entries.find(item => {
+      if (item.state !== 'upcoming') return false;
+      if (fingerprint(item.selection) === key) return true;
+      const saved = item.selection;
+      if (saved.source !== 'music-assistant' || selection.source !== 'music-assistant' || saved.sourceBindingId !== selection.sourceBindingId) return false;
+      const a = saved.recording; const b = selection.recording;
+      if (a.identity && b.identity && !sameRecordingEvidence(a.identity, b.identity)) return false;
+      return [a, ...(a.equivalents ?? [])].some(left => [b, ...(b.equivalents ?? [])].some(right =>
+        left.provider === right.provider && left.itemId === right.itemId && left.uri === right.uri && left.version === right.version)) ||
+        Boolean(a.identity && b.identity && sameRecordingEvidence(a.identity, b.identity));
+    });
     if (existing) return existing.id;
     if (state.order.length >= preparationLimits.upcoming || state.entries.length >= preparationLimits.entries) throw new AppError(409, 'The saved list is full. No saved entries or history were removed.');
     const entryId = randomUUID();

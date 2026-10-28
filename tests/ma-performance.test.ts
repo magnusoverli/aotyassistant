@@ -10,6 +10,21 @@ import { maOperation } from '../src/ma-operation.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 import { MusicAssistantEvents } from '../src/music-assistant-events.js';
 
+test('search has headroom beyond MA eight-second partial-result cutoff while normal reads keep their deadline', async t => {
+  const server = createServer(async (req, res) => {
+    let raw = ''; for await (const chunk of req) raw += chunk;
+    const search = raw && JSON.parse(raw).command === 'music/search';
+    await delay(search ? 8100 : 100);
+    if (!res.destroyed) res.end(search ? '{"tracks":[]}' : '{}');
+  });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const transport = new MusicAssistantTransport(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, 'SECRET', 50);
+  t.after(() => transport.close());
+  await assert.rejects(transport.read('/info'), /respond in time/);
+  assert.deepEqual(await transport.read('/api', 'music/search', { search_query: 'fixture' }), { tracks: [] });
+});
+
 test('HTTP connections are reused per lane, with independent capacity for controls and explicit disposal', async t => {
   const remote = await startMusicAssistantFixture(); t.after(remote.close);
   const transport = new MusicAssistantTransport(remote.origin, 'fixture-token'); t.after(() => transport.close());

@@ -34,7 +34,7 @@ async function catalogueRead(res: Response, action: string, work: () => Promise<
   const controller = new AbortController();
   const close = () => { if (!res.writableFinished) controller.abort(); };
   res.once('close', close);
-  try { await maOperation(action, work, 12_000, controller.signal); }
+  try { await maOperation(action, work, 16_000, controller.signal); }
   finally { res.off('close', close); }
 }
 

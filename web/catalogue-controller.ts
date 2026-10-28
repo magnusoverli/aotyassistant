@@ -17,7 +17,7 @@ export class CatalogueController {
     this.cancel(); const pending = new AbortController(); this.pending = pending;
     const epoch = this.epoch; const identity = catalogueIdentity(this.getView());
     const current = () => epoch === this.epoch && identity === catalogueIdentity(this.getView());
-    try { const result = await this.request<T>(path, data, 15_000, pending.signal); return current() ? result : undefined; }
+    try { const result = await this.request<T>(path, data, 18_000, pending.signal); return current() ? result : undefined; }
     catch (error) { if (current()) throw error; return undefined; }
     finally { if (this.pending === pending) this.pending = undefined; }
   }

@@ -174,6 +174,7 @@ test('slow optional volume reads do not stall queue progress or overwrite a newe
   const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   f.remote.delayNextVolumeRead(180);
+  void f.adapter.refresh(); // Explicit refresh/event, rather than polling volume on every queue sample.
   for (let i = 0; i < 100 && !f.remote.volumeReadPending; i++) await delay(2);
   assert.equal(f.remote.volumeReadPending, true);
   const before = f.remote.calls.filter(call => call.command === 'player_queues/get_active_queue').length;

@@ -1,12 +1,15 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, catalogueSearchNotice, type CatalogueTrack, type CatalogueArtist, type CatalogueAlbum, type CataloguePage, type Track, type VolumeState } from './model.js';
-import { presentCatalogueItems } from './catalogue-grouping.js';
+import type { IdentityMedia } from './catalogue-grouping.js';
+import { matchCatalogue } from './catalogue-matcher.js';
+import { matchesReference, recordingEvidenceSchema, sameRecordingEvidence, type RecordingDescriptor, type RecordingReference } from './recording-identity.js';
 import type { SavedSelection } from './preparations.js';
 import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 import { UpstreamError } from './upstream-error.js';
+import { maBudget } from './ma-operation.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
 export type Destination = { id: string; name: string; available: boolean };
@@ -45,16 +48,20 @@ const searchTrackSchema = z.object({
 const mediaSchema = z.object({ item_id: z.string().min(1).max(2048), provider: z.string().min(1).max(200),
   name: z.string().min(1).max(1000), uri: z.string().max(4096).nullable().optional(), version: z.string().max(500).default(''), artist_type: z.string().max(100).optional(), ...imageFields, ...identityFields });
 const albumSchema = mediaSchema.extend({ year: z.number().int().nullable().optional(), artists: searchTrackSchema.shape.artists, album_type: z.string().max(100).optional() });
-type MediaRef = { kind: 'artist' | 'album' | 'track'; itemId: string; provider: string; sourceLabel: string; uri: string; version: string; expires: number; artwork?: string; artistArtwork?: string };
+type MediaRef = { kind: 'artist' | 'album' | 'track'; itemId: string; provider: string; sourceLabel: string; uri: string; version: string; expires: number; artwork?: string; artistArtwork?: string; available?: boolean; identity?: z.infer<typeof recordingEvidenceSchema> };
 type BrowseGroup = { kind: MediaRef['kind']; sources: string[]; expires: number };
 type Media = z.infer<typeof mediaSchema>;
 const maxVariants = 1000;
 const maxBrowseSources = 8;
+const queueItemSchema = z.object({ queue_item_id: z.string(), media_item: z.union([searchTrackSchema,
+  z.object({ media_type: z.enum(['radio', 'podcast_episode', 'audiobook', 'audio_source', 'sound_effect']) }).transform(() => null)]).nullable().optional(),
+  streamdetails: z.object({ provider: z.string(), item_id: z.string() }).nullish() });
 export const queueSchema = z.object({
   queue_id: z.string(), available: z.boolean(), items: z.number().int(), active: z.boolean(),
   state: z.enum(['playing', 'paused', 'idle', 'unknown']), ended: z.boolean(),
   repeat_mode: z.string(), autoplay_enabled: z.boolean(), shuffle_enabled: z.boolean(),
-  current_item: z.object({ queue_item_id: z.string(), media_item: searchTrackSchema.nullable().optional() }).nullable(),
+  is_dynamic: z.boolean().optional(),
+  current_item: queueItemSchema.nullable(),
   next_item: z.unknown().nullable(),
   elapsed_time: z.number().finite().nonnegative().optional(), elapsed_time_last_updated: z.number().finite().optional(),
 });
@@ -62,7 +69,7 @@ export type QueueSnapshot = z.infer<typeof queueSchema>;
 type Command = 'players/all' | 'player_queues/get_active_queue' | 'music/search' | 'music/artists/artist_albums'
   | 'music/albums/album_tracks' | 'music/item_by_uri' | 'player_queues/items' | 'player_queues/autoplay'
   | 'player_queues/repeat' | 'player_queues/shuffle' | 'player_queues/play_media' | 'player_queues/stop'
-  | 'player_queues/pause' | 'player_queues/resume' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
+  | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/clear' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
 const volumePlayerSchema = z.object({ player_id: z.string(), available: z.boolean(), type: z.string().default('player'),
   supported_features: z.array(z.string()).default([]), volume_control: z.string().default('none'),
   volume_level: z.number().int().min(0).max(100).nullable().default(null), group_volume: z.number().int().min(0).max(100).nullable().default(null),
@@ -76,6 +83,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   private groupedReferences = 0;
   private imageCache = new Map<string, { data: ArtworkData; expires: number }>();
   private imageRequests = new Map<string, Promise<ArtworkData>>();
+  private browseCache = new Map<string, { items: IdentityMedia[]; expires: number }>();
   constructor(origin: string, private token: string, timeoutMs = 8000,
     private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs)) {
     this.events = new MusicAssistantEvents(origin, token);
@@ -117,7 +125,8 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const id = `ma:${createHash('sha256').update(JSON.stringify([kind, media.provider, media.item_id, uri, media.version])).digest('hex')}`;
     const previous = this.references.get(id); this.references.delete(id);
     this.references.set(id, { kind, itemId: media.item_id, provider: media.provider, sourceLabel: this.sourceName(media), uri, version: media.version, expires: Date.now() + 12 * 60 * 60_000,
-      artwork: this.image(media) ?? previous?.artwork, artistArtwork: artistArtwork ?? previous?.artistArtwork });
+      artwork: this.image(media) ?? previous?.artwork, artistArtwork: artistArtwork ?? previous?.artistArtwork,
+      ...(kind === 'track' ? { identity: recordingEvidenceSchema.parse(media) } : {}) });
     while (this.references.size > 5000) this.references.delete(this.references.keys().next().value!);
     return id;
   }
@@ -129,7 +138,6 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   private rememberGroup(kind: MediaRef['kind'], sourceIds: string[]): string {
     const id = `group:${createHash('sha256').update(JSON.stringify([kind, [...sourceIds].sort()])).digest('hex')}`;
-    if (kind === 'track') return id; // Display-only: no playback reference or catalogue fanout is retained.
     this.groupedReferences -= this.groups.get(id)?.sources.length ?? 0;
     this.groups.delete(id); this.groups.set(id, { kind, sources: sourceIds, expires: Date.now() + 12 * 60 * 60_000 });
     this.groupedReferences += sourceIds.length;
@@ -158,7 +166,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const own = media.provider_mappings.find(p => p.item_id === media.item_id &&
       (p.provider_instance === media.provider || p.provider_domain === media.provider));
     const others = media.provider_mappings.filter(p => p !== own && p.item_id && (p.provider_instance || p.provider_domain));
-    // A library row can choose any mapping upstream. Only exact mapped sources are selectable.
+    // Retain concrete mappings for transparent resolution, including saved selections.
     const result = media.provider === 'library' && others.length ? [] : [media];
     for (const mapping of others) {
       const provider = mapping.provider_instance ?? mapping.provider_domain!;
@@ -166,9 +174,14 @@ export class MusicAssistantClient implements MusicAssistantReader {
     }
     return result;
   }
-  private grouped<T extends Media, R extends { id: string; provider: string }>(kind: MediaRef['kind'], items: T[], convert: (item: T) => R): R[] {
+  private async grouped<T extends Media, R extends { id: string; provider: string }>(kind: MediaRef['kind'], items: T[], convert: (item: T) => R): Promise<R[]> {
     let count = 0;
-    return presentCatalogueItems(kind, items).map(({ items: group, matchKind }) => {
+    const deadline = Date.now() + 3000;
+    const groups = await matchCatalogue(kind, items, (kind, item) => {
+      if (Date.now() >= deadline) return Promise.resolve([]);
+      return maBudget(deadline - Date.now(), () => this.matchingItems(kind, item));
+    });
+    return groups.map(group => {
       const variants = new Map<string, R>();
       // Prefer real provider rows to metadata inherited from a library mapping.
       const real = new Map<string, T>();
@@ -187,18 +200,29 @@ export class MusicAssistantClient implements MusicAssistantReader {
       for (const item of raw) {
         const source = convert(item);
         if (!variants.has(source.id)) {
-          if (++count > maxVariants) throw new AppError(502, 'Music Assistant returned too many source choices. Narrow your search or browse a single source.');
+          if (++count > maxVariants) throw new AppError(502, 'Music Assistant returned too many source choices. Narrow your search.');
           variants.set(source.id, source);
         }
       }
       const sources = [...variants.values()].sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id));
       const first = sources[0]!;
       const sourceIds = sources.map(x => x.id);
-      return sources.length === 1 ? first : { ...first, id: matchKind === 'metadata'
-        ? `display:${createHash('sha256').update(JSON.stringify([kind, [...sourceIds].sort()])).digest('hex')}` : this.rememberGroup(kind, sourceIds),
-        provider: [...new Set(sources.map(x => x.provider))].join(' + '), sources, matchKind,
+      return sources.length === 1 ? first : { ...first, id: this.rememberGroup(kind, sourceIds),
+        provider: [...new Set(sources.map(x => x.provider))].join(' + '), sources, matchKind: 'identity' as const,
         ...('available' in first ? { available: sources.some(source => 'available' in source && source.available === true) } : {}) };
     });
+  }
+  private async matchingItems(kind: 'artist' | 'album', item: IdentityMedia): Promise<IdentityMedia[]> {
+    const key = JSON.stringify([kind, item.provider, item.item_id]);
+    const cached = this.browseCache.get(key);
+    if (cached && cached.expires > Date.now()) return cached.items;
+    const command = kind === 'artist' ? 'music/artists/artist_albums' : 'music/albums/album_tracks';
+    const raw = await this.read('/api', command, { item_id: item.item_id, provider_instance_id_or_domain: item.provider,
+      ...(kind === 'album' ? { in_library_only: false } : {}) });
+    const items = kind === 'artist' ? z.array(albumSchema).max(500).parse(raw) : z.array(searchTrackSchema).max(500).parse(raw);
+    this.browseCache.delete(key); this.browseCache.set(key, { items, expires: Date.now() + 60_000 });
+    while (this.browseCache.size > 32) this.browseCache.delete(this.browseCache.keys().next().value!);
+    return items;
   }
   private async browseMany<T>(id: string, kind: 'artist' | 'album', load: (ref: MediaRef) => Promise<T[]>): Promise<CataloguePage<T>> {
     const sources = this.browseSources(id, kind); const selected = sources.slice(0, maxBrowseSources);
@@ -219,10 +243,10 @@ export class MusicAssistantClient implements MusicAssistantReader {
       else failures.push(selected[i]!.sourceLabel);
     }
     if (!succeeded) throw new AppError(502, `None of the selected music sources could be loaded. ${sources.length > selected.length
-      ? `Only the first ${maxBrowseSources} sources were attempted; remaining sources were not checked. ` : ''}Try a source separately or check Music Assistant.`);
+      ? `Only the first ${maxBrowseSources} sources were attempted; remaining sources were not checked. ` : ''}Try again or check Music Assistant.`);
     const notices: string[] = [];
-    if (failures.length) notices.push(`Could not load ${[...new Set(failures)].join(', ')} (${failures.length} source${failures.length === 1 ? '' : 's'}). Results are incomplete; try each source separately.`);
-    if (sources.length > selected.length) notices.push(`Only the first ${maxBrowseSources} sources were loaded. Choose a source separately to browse the remaining catalogues.`);
+    if (failures.length) notices.push(`Could not load ${[...new Set(failures)].join(', ')} (${failures.length} source${failures.length === 1 ? '' : 's'}). Results are incomplete; try again later.`);
+    if (sources.length > selected.length) notices.push(`Only the first ${maxBrowseSources} sources were loaded. Try a more specific track search for missing music.`);
     return { items, ...(notices.length ? { notices } : {}) };
   }
   private track(media: z.infer<typeof searchTrackSchema>): CatalogueTrack {
@@ -230,11 +254,12 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const id = this.remember('track', media, artistArtwork); const ref = this.references.get(id)!;
     ref.artwork = this.image(media) ?? this.image(media.album) ?? ref.artwork;
     const ownMapping = media.provider_mappings.filter(p => p.item_id === media.item_id && (p.provider_instance === media.provider || p.provider_domain === media.provider));
+    ref.available = media.is_playable && (ownMapping.length ? ownMapping : media.provider_mappings).some(p => p.available);
     return { id, title: this.redact(media.name),
       artist: this.redact(media.artists.map(a => a.name).filter(Boolean).join(', ') || 'Unknown artist'),
       album: this.redact(media.album?.name ?? ''), version: this.redact(media.version), provider: this.sourceName(media),
       duration: media.duration && media.duration > 0 ? media.duration : null,
-      available: media.is_playable && (ownMapping.length ? ownMapping : media.provider_mappings).some(p => p.available), artwork: ref.artwork, artistArtwork: ref.artistArtwork };
+      available: ref.available, artwork: ref.artwork, artistArtwork: ref.artistArtwork };
   }
   async inspect(options: { documentation?: boolean } = {}): Promise<ConnectionReport> {
     try {
@@ -277,7 +302,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
       const result = z.object({ tracks: z.array(searchTrackSchema).max(500) }).parse(await this.read('/api', 'music/search', {
         search_query: query, media_types: ['track'], limit: 20,
       }));
-      return this.grouped('track', result.tracks, track => this.track(track));
+      return await this.grouped('track', result.tracks, track => this.track(track));
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(502, 'Music Assistant returned an incompatible search response. Check its music sources and version compatibility.');
@@ -288,9 +313,11 @@ export class MusicAssistantClient implements MusicAssistantReader {
       const result = z.object({ artists: z.array(mediaSchema).max(500) }).parse(await this.read('/api', 'music/search', {
         search_query: query, media_types: ['artist'], limit: 20,
       }));
-      return { notices: [catalogueSearchNotice], items: this.grouped('artist', result.artists, a => {
+      return { notices: [catalogueSearchNotice], items: await this.grouped('artist', result.artists, a => {
         const artwork = this.image(a);
-        return { id: this.remember('artist', a), name: this.redact(a.name), provider: this.sourceName(a), artwork };
+        const albums = this.browseCache.get(JSON.stringify(['artist', a.provider, a.item_id]))?.items;
+        return { id: this.remember('artist', a), name: this.redact(a.name), provider: this.sourceName(a), artwork,
+          ...(albums?.length ? { description: this.redact(albums.slice(0, 2).map(album => album.name).join(' · ')) } : {}) };
       }) };
     } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible artist response.'); }
   }
@@ -303,9 +330,9 @@ export class MusicAssistantClient implements MusicAssistantReader {
         }));
         possiblyLimited ||= items.length === 500; return items;
       });
-      if (page.items.length > 2000) throw new AppError(502, 'Too many albums returned. Browse one source separately.');
+      if (page.items.length > 2000) throw new AppError(502, 'Too many albums returned. Try a more specific search.');
       if (possiblyLimited) (page.notices ??= []).push('Large catalogue: this listing may be limited by Music Assistant. Try track search for releases not shown.');
-      return { ...page, items: this.grouped('album', page.items, a => ({ id: this.remember('album', a, this.image(a.artists[0])), name: this.redact(a.name),
+      return { ...page, items: await this.grouped('album', page.items, a => ({ id: this.remember('album', a, this.image(a.artists[0])), name: this.redact(a.name),
         artist: this.redact(a.artists.map(x => x.name).join(', ')), provider: this.sourceName(a), version: this.redact(a.version), year: a.year ?? null,
         artwork: this.image(a), artistArtwork: this.image(a.artists[0]) })) };
     } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible album response.'); }
@@ -322,36 +349,75 @@ export class MusicAssistantClient implements MusicAssistantReader {
           return t;
         });
       });
-      if (page.items.length > 2000) throw new AppError(502, 'Too many tracks returned. Browse one source separately.');
-      return { ...page, items: this.grouped('track', page.items, t => this.track(t)) }; // First source order, including discs; unmatched tracks follow.
+      if (page.items.length > 2000) throw new AppError(502, 'Too many tracks returned. Try a more specific search.');
+      return { ...page, items: await this.grouped('track', page.items, t => this.track(t)) }; // First source order, including discs; unmatched tracks follow.
     } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible album-track response.'); }
   }
   async resolveTrack(id: string) {
-    const ref = this.reference(id, 'track');
+    const ref = this.recording(id);
     return this.resolveRecording(ref);
   }
-  private async exactRecording(ref: { itemId: string; provider: string; uri: string; version: string; artwork?: string; artistArtwork?: string }, requireAvailable: boolean) {
-    if (ref.provider === 'library') throw new AppError(422, 'This library result has no exact source selection. Choose a connected source instead. Your saved entry, if any, was kept.');
-    const raw = searchTrackSchema.safeParse(await this.read('/api', 'music/item_by_uri', { uri: ref.uri, allow_update_metadata: false }));
-    if (!raw.success || raw.data.item_id !== ref.itemId || raw.data.provider !== ref.provider || raw.data.version !== ref.version || (raw.data.uri && raw.data.uri !== ref.uri)) {
-      throw new AppError(422, 'The selected recording could not be resolved exactly. No alternative recording was substituted.');
+  private recording(id: string): RecordingDescriptor & { artwork?: string; artistArtwork?: string } {
+    if (!id.startsWith('group:')) return this.reference(id, 'track');
+    const group = this.groups.get(id);
+    if (!group || group.kind !== 'track' || group.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search again.');
+    const refs = group.sources.map(id => this.reference(id, 'track')).sort((a, b) => Number(b.available) - Number(a.available));
+    const first = refs[0]!;
+    return { ...first, equivalents: refs.slice(1, 9).map(({ itemId, provider, uri, version }) => ({ itemId, provider, uri, version })) };
+  }
+  private async exactRecording(ref: RecordingDescriptor & { artwork?: string; artistArtwork?: string }, requireAvailable: boolean) {
+    if (ref.provider === 'library' && !ref.identity) throw new AppError(422, 'This library result has no exact source selection. Search for the recording again.');
+    let last: unknown;
+    for (const candidate of [ref, ...(ref.equivalents ?? [])]) {
+      let value: unknown;
+      try { value = await this.read('/api', 'music/item_by_uri', { uri: candidate.uri, allow_update_metadata: false }); }
+      catch (error) {
+        if (error instanceof UpstreamError && ['authorization', 'closed', 'unsupported-response'].includes(error.kind) || error instanceof AppError && error.status === 499) throw error;
+        last = error; continue; // Read-only source resolution; never retry a Play command.
+      }
+      const raw = searchTrackSchema.safeParse(value);
+      if (!raw.success || !matchesReference(raw.data, candidate) || (ref.identity && !sameRecordingEvidence(ref.identity, raw.data))) {
+        last = new AppError(422, 'The selected recording could not be resolved exactly. No alternative recording was substituted.'); continue;
+      }
+      const item = this.track(raw.data);
+      item.artwork ??= ref.artwork; item.artistArtwork ??= ref.artistArtwork;
+      if (requireAvailable && !item.available) { last = new AppError(422, 'This recording is unavailable through the connected music sources.'); continue; }
+      // Canonical library mappings are MA's identity evidence; retain their concrete
+      // stream identities before Play so newly substituted mappings are not trusted.
+      const allowedSources: RecordingReference[] = [candidate];
+      for (const mapping of raw.data.provider_mappings) if (mapping.item_id) {
+        for (const provider of [mapping.provider_instance, mapping.provider_domain]) if (provider) allowedSources.push({
+          provider, itemId: mapping.item_id, uri: `${provider}://track/${mapping.item_id}`, version: raw.data.version,
+        });
+      }
+      return { item, media: raw.data, allowedSources, candidate };
     }
-    const item = this.track(raw.data);
-    item.artwork ??= ref.artwork; item.artistArtwork ??= ref.artistArtwork;
-    if (requireAvailable && !item.available) throw new AppError(422, 'This recording is unavailable through its connected source.');
-    return item;
+    throw last ?? new AppError(422, 'The selected recording is unavailable.');
   }
   async captureTrack(id: string): Promise<Omit<Extract<SavedSelection, { source: 'music-assistant' }>, 'source' | 'sourceBindingId'>> {
-    const ref = this.reference(id, 'track'); const item = await this.exactRecording(ref, false);
-    if ([ref.uri, ref.itemId, ref.provider, ref.version].some(value => value.includes(this.token))) throw new AppError(502, 'The source returned an invalid recording identity.');
-    return { recording: { itemId: ref.itemId, provider: ref.provider, uri: ref.uri, version: ref.version },
+    const ref = this.recording(id); const { item, media } = await this.exactRecording(ref, false);
+    if (JSON.stringify([ref, recordingEvidenceSchema.parse(media)]).includes(this.token)) throw new AppError(502, 'The source returned an invalid recording identity.');
+    const equivalents = new Map<string, RecordingReference>();
+    for (const candidate of [...(ref.equivalents ?? []), ...media.provider_mappings.flatMap(mapping => {
+      if (mapping.item_id === ref.itemId && (mapping.provider_instance === ref.provider || mapping.provider_domain === ref.provider)) return [];
+      const provider = mapping.provider_instance ?? mapping.provider_domain;
+      return provider && mapping.item_id ? [{ provider, itemId: mapping.item_id,
+        uri: `${provider}://track/${mapping.item_id}`, version: media.version }] : [];
+    })]) {
+      if (candidate.provider === ref.provider && candidate.itemId === ref.itemId) continue;
+      equivalents.set(JSON.stringify([candidate.provider, candidate.itemId]), candidate);
+    }
+    return { recording: { itemId: ref.itemId, provider: ref.provider, uri: ref.uri, version: ref.version,
+        identity: recordingEvidenceSchema.parse(media), ...(equivalents.size ? { equivalents: [...equivalents.values()].slice(0, 8) } : {}) },
       metadata: { title: item.title, artist: item.artist, album: item.album, version: item.version, provider: item.provider, duration: item.duration,
         artworkId: item.artwork, artistArtworkId: item.artistArtwork } };
   }
-  async resolveRecording(ref: { itemId: string; provider: string; uri: string; version: string; artwork?: string; artistArtwork?: string }): Promise<{ track: Track; uri: string; itemId: string; provider: string; version: string }> {
-    const item = await this.exactRecording(ref, true);
+  async resolveRecording(ref: RecordingDescriptor & { artwork?: string; artistArtwork?: string }): Promise<{ track: Track; uri: string; itemId: string; provider: string; version: string; allowedSources?: RecordingReference[]; identity?: IdentityMedia }> {
+    const { item, media, candidate, allowedSources } = await this.exactRecording(ref, true);
     return { track: { id: item.id, title: item.version ? `${item.title} (${item.version})` : item.title,
-       artist: item.artist, album: item.album, duration: item.duration ?? 0, artwork: item.artwork, artistArtwork: item.artistArtwork }, uri: ref.uri, itemId: ref.itemId, provider: ref.provider, version: ref.version };
+       artist: item.artist, album: item.album, duration: item.duration ?? 0, artwork: item.artwork, artistArtwork: item.artistArtwork },
+       uri: candidate.uri, itemId: candidate.itemId, provider: candidate.provider, version: candidate.version,
+       allowedSources, identity: recordingEvidenceSchema.parse(media) };
   }
   /** Backend-generated URL only. Never feed upstream URL-derived names/artwork into a private/public track view. */
   async resolveUploaded(url: string, duration: number) {
@@ -375,17 +441,26 @@ export class MusicAssistantClient implements MusicAssistantReader {
     if (result.data.state === 'unknown') throw new UpstreamError('state-unconfirmed', 502, 'Music Assistant could not confirm the speaker’s playback state.');
     return result.data;
   }
-  async queueItems(queueId: string): Promise<{ queue_item_id: string; media_item?: z.infer<typeof searchTrackSchema> | null }[]> {
-    const result = z.array(z.object({ queue_item_id: z.string(), media_item: searchTrackSchema.nullable().optional() })).max(2)
+  async queueItems(queueId: string): Promise<z.infer<typeof queueItemSchema>[]> {
+    const result = z.array(queueItemSchema).max(2)
       .safeParse(await this.read('/api', 'player_queues/items', { queue_id: queueId, limit: 2, offset: 0 }));
     if (!result.success) throw new UpstreamError('unsupported-response', 502, 'The destination queue could not be verified.'); return result.data;
   }
   async configureSingle(queue: QueueSnapshot): Promise<boolean> {
     const queue_id = queue.queue_id;
+    const dynamic = queue.is_dynamic === true;
+    if (dynamic) {
+      // Explicit Play already authorizes replacing this queue. Dynamic queues lock
+      // repeat/shuffle: stop first, then clear without scheduling a late stop.
+      await this.controlQueue(queue_id, 'stop');
+      await this.read('/api', 'player_queues/clear', { queue_id, skip_stop: true });
+      queue = await this.queue(queue_id);
+      if (queue.queue_id !== queue_id || queue.is_dynamic || queue.items !== 0) throw new AppError(409, 'The speaker queue changed during setup. Try Play again.');
+    }
     if (queue.autoplay_enabled) await this.read('/api', 'player_queues/autoplay', { queue_id, autoplay_enabled: false });
     if (queue.repeat_mode !== 'off') await this.read('/api', 'player_queues/repeat', { queue_id, repeat_mode: 'off' });
     if (queue.shuffle_enabled) await this.read('/api', 'player_queues/shuffle', { queue_id, shuffle_enabled: false });
-    return queue.autoplay_enabled || queue.repeat_mode !== 'off' || queue.shuffle_enabled;
+    return dynamic || queue.autoplay_enabled || queue.repeat_mode !== 'off' || queue.shuffle_enabled;
   }
   async playSingle(queueId: string, uri: string): Promise<void> {
     await this.read('/api', 'player_queues/play_media', { queue_id: queueId, media: [uri], option: 'replace', radio_mode: false, shuffle: false });

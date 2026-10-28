@@ -17,7 +17,7 @@ export type CatalogueTrack = {
 };
 export { catalogueSearchNotice } from './catalogue-messages.js';
 export type CatalogueSearch = { source: CatalogueSource; playbackAvailable: boolean; tracks: CatalogueTrack[]; notices?: string[] };
-export type CatalogueArtist = { id: string; name: string; provider: string; artwork?: string; sources?: CatalogueArtist[]; matchKind?: CatalogueMatchKind };
+export type CatalogueArtist = { id: string; name: string; provider: string; description?: string; artwork?: string; sources?: CatalogueArtist[]; matchKind?: CatalogueMatchKind };
 export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[]; matchKind?: CatalogueMatchKind };
 export type CataloguePage<T> = { items: T[]; notices?: string[] };
 export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueAlbum[]; tracks?: CatalogueTrack[]; notices?: string[]; playbackAvailable: boolean };

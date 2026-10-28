@@ -4,7 +4,7 @@ Listening Room uses Music Assistant for catalogue search, artwork, speaker disco
 
 ## Supported API
 
-**Playback supports Music Assistant API schema 65**, used by MA 2.10.6 and 2.10.7. Core, Supervisor, Music Assistant, and this app have independent version numbers. A higher MA version number alone is not proof of playback compatibility.
+**Playback supports Music Assistant API schema 65**, used by MA 2.10.6–2.10.8. Core, Supervisor, Music Assistant, and this app have independent version numbers. A higher MA version number alone is not proof of playback compatibility.
 
 Settings reports the installed MA version/schema and distinguishes an unsupported playback API from an offline speaker. Read-only browsing may remain available on other compatible schemas; unsupported playback is blocked before queue changes. Check for an app update when Settings reports incompatibility.
 
@@ -14,7 +14,9 @@ The app selects speakers and groups exposed by Music Assistant. Search coverage,
 
 Search includes available sources configured in Music Assistant, such as Spotify, Tidal, and local files. Some providers expose only indexed library albums or lack artist-album browsing. Try track search when artist browsing returns no results.
 
-Matching results can be grouped for display, but selecting a track always retains its exact recording and source. The app does not substitute another service or a similarly named recording if resolution fails. It does not import playlists, cast live phone audio, or accept streaming-service links.
+Choose artists, releases and recordings directly, without a provider dropdown. Equivalent results are combined using Music Assistant mappings or recording identifiers, with artist, edition, explicitness and duration checks. Small duration differences (up to three seconds) are tolerated only alongside identity evidence. Same-name results without enough evidence remain separately selectable. Artist and album matching can make bounded read-only requests for corroborating releases and ordered tracklists; it never adds private choices to the shared MA library.
+
+Saved choices retain recording evidence and up to eight alternative source references. Old saved choices remain readable. Before Play, the app may resolve an available equivalent from another provider; live, remastered and other distinct versions are not interchangeable. Once Play is sent, the app never retries it through another source. The app does not import playlists, cast live phone audio, or accept streaming-service links.
 
 ## Connection maintenance
 
@@ -28,11 +30,11 @@ Connection settings are guarded while the app owns playing, paused, or uncertain
 
 ## Playback and recovery
 
-An explicit Play replaces the selected destination’s queue with one exact track and disables autoplay, repeat, and shuffle. It can interrupt other audio. The app verifies the resulting queue/item and playback state before reporting success.
+An explicit Play replaces the selected destination’s queue with one recording and disables autoplay, repeat, and shuffle. It can interrupt other audio. A dynamic queue is stopped and cleared before changing its locked policies. The app verifies the resulting queue/item, playback state and reported stream provider/item before reporting success. Missing stream identity prevents confirmation; an unexpected stream source invalidates ownership rather than triggering another Play.
 
 Natural turn advancement requires an authoritative completion flag for the exact app-owned item, previously observed playing. Elapsed-time estimates, an idle queue alone, pauses, and failed commands cannot advance the turn.
 
-External queue/source changes invalidate app playback and conceal its details. When ownership is uncertain, use **Recover playback controls** in Settings. Recovery stops only the exact item if it is still owned, clears uncertainty, and neither restarts music nor advances the turn. Avoid repeated Play requests while resolving an uncertain result.
+External queue changes or unverified source changes invalidate app playback and conceal its details. When ownership is uncertain, use **Recover playback controls** in Settings. Recovery stops only the exact item if it is still owned, clears uncertainty, and neither restarts music nor advances the turn. Avoid repeated Play requests while resolving an uncertain result.
 
 Restart drops playback ownership and reveal. It never reclaims or resumes a Music Assistant queue automatically. Finish app-owned playback before updates.
 

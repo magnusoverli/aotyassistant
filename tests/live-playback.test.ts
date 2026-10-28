@@ -32,6 +32,82 @@ async function eventually(check: () => boolean) {
 }
 const writes = (f: Awaited<ReturnType<typeof fixture>>) => f.remote.calls.filter(c => /player_queues\/(play_media|stop|pause|resume|autoplay|repeat|shuffle)$/.test(c.command));
 
+test('Play takes over a dynamic queue by stopping and clearing before changing locked policies', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  f.remote.queue.is_dynamic = true;
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  f.remote.calls.length = 0;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const mutations = f.remote.calls.filter(c => /player_queues\/(stop|clear|autoplay|repeat|shuffle|play_media)$/.test(c.command));
+  assert.deepEqual(mutations.map(c => c.command), ['player_queues/stop', 'player_queues/clear', 'player_queues/autoplay', 'player_queues/repeat', 'player_queues/play_media']);
+  assert.deepEqual(mutations[1]!.args, { queue_id: 'fixture-queue', skip_stop: true });
+  assert.equal(f.remote.queue.is_dynamic, false); assert.equal(f.remote.queue.items, 1);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.remote.queue.shuffle_enabled, false);
+});
+
+test('a failed dynamic takeover sends no Play and never retries a policy mutation', async t => {
+  const f = await fixture(60_000); t.after(f.close); f.remote.queue.is_dynamic = true;
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  f.remote.failReads('player_queues/clear', 1); f.remote.calls.length = 0;
+  await assert.rejects(f.engine.play(f.alex, f.host().turnId!, null, track.id));
+  assert.equal(f.remote.calls.filter(c => c.command === 'player_queues/clear').length, 1);
+  assert.equal(f.remote.calls.some(c => c.command === 'player_queues/play_media'), false);
+});
+
+test('queue time corrections reconcile promptly while normal progress no longer polls volume every time', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  await eventually(() => f.remote.eventClients > 0);
+  await f.adapter.refresh();
+  const before = f.remote.calls.filter(c => c.command === 'players/get').length;
+  for (let i = 0; i < 4; i++) await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.remote.calls.filter(c => c.command === 'players/get').length, before);
+  f.remote.queue.elapsed_time = 150; f.remote.queue.elapsed_time_last_updated = Date.now() / 1000;
+  f.remote.notify('queue_time_updated', f.remote.queue.queue_id, 150);
+  await eventually(() => f.display().nowPlaying?.revealed === true);
+  assert.equal(f.remote.calls.filter(c => c.command === 'players/get').length, before);
+});
+
+test('stream confirmation permits known equivalent mappings and rejects an unverified source without replaying audio', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  f.remote.track.provider_mappings.push({ item_id: 'equivalent-track', provider_domain: 'tidal', available: true });
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  f.remote.queue.current_item!.streamdetails = { provider: 'tidal', item_id: 'equivalent-track' };
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.ownsPlayback, true);
+  const before = writes(f).length;
+  f.remote.queue.current_item!.streamdetails = { provider: 'tidal', item_id: 'different-recording' };
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.ownsPlayback, false); assert.equal(f.adapter.problem?.code, 'external-playback');
+  assert.equal(writes(f).length, before);
+});
+
+test('missing stream evidence retains uncertain ownership and never publishes progress or replays audio', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const before = writes(f).length;
+  delete f.remote.queue.current_item!.streamdetails;
+  f.remote.queue.elapsed_time = 160;
+  await (f.adapter as unknown as { poll(): Promise<void> }).poll();
+  assert.equal(f.adapter.ownsPlayback, true);
+  assert.equal(f.adapter.problem?.code, 'state-unconfirmed');
+  assert.deepEqual(f.display().nowPlaying, { revealed: false });
+  assert.equal(writes(f).length, before);
+});
+
+test('transparent group Play resolves the available equivalent once even after losing its acknowledgement', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'multi-provider')).tracks[0]!;
+  f.remote.loseAcknowledgement('player_queues/play_media');
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  assert.deepEqual(f.remote.calls.filter(c => c.command === 'player_queues/play_media').map(c => c.args.media), [['tidal://track/private-multi-track']]);
+  assert.equal(f.adapter.ownsPlayback, true);
+  assert.equal(f.remote.queue.current_item!.streamdetails?.provider, 'tidal');
+});
+
 test('configured Play uses six requests and still freshly validates schema, exact recording and queue contents', async t => {
   const f = await fixture(60_000); t.after(f.close);
   Object.assign(f.remote.queue, { autoplay_enabled: false, repeat_mode: 'off', shuffle_enabled: false });

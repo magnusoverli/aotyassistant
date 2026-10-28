@@ -8,6 +8,7 @@ import { diagnostics } from './diagnostics.js';
 import { playbackRead } from './playback-read.js';
 import { playbackProblem, playbackFailure, type PlaybackProblem, type PlaybackProblemCode } from './playback-problem.js';
 import { retryableRead } from './upstream-error.js';
+import { matchesReference, sameRecordingEvidence } from './recording-identity.js';
 
 type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?: () => void; suspend?: () => void; uploaded?: boolean };
 type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configurationRevision' | 'routeConfigured' | 'playbackAvailable' |
@@ -49,6 +50,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   private volumeTimer?: NodeJS.Timeout;
   private volumeRead?: { revision: string; promise: Promise<void> };
   private volumeEpoch = 0;
+  private volumeObservedAt = 0;
   private volumeGeneration = 0;
   private volumeConfirmation?: NodeJS.Timeout;
   private volumeTarget?: { level: number; requestedAt: number; mismatches: number };
@@ -85,6 +87,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       if (this.closed || revision !== this.integrations.configurationRevision) return;
       this.eventsConnected = event.connected;
       if (event.objectId && event.objectId !== destination && event.objectId !== this.own?.queueId) return;
+      if (!event.kind || event.kind.startsWith('player_')) this.volumeObservedAt = 0;
       this.eventGeneration++; for (const wake of this.eventWaiters) wake();
       if (this.commanding || this.failed) return;
       if (this.own) {
@@ -108,8 +111,9 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     if (!this.available || revision !== this.integrations.configurationRevision) throw new AppError(409, 'The playback destination changed. Refresh before trying again.');
     this.capabilityRevision = revision;
   }
-  private refreshVolume(api: PlaybackApi, destination: string): Promise<void> {
+  private refreshVolume(api: PlaybackApi, destination: string, force = true): Promise<void> {
     if (!this.available || this.failed) return Promise.resolve();
+    if (!force && Date.now() - this.volumeObservedAt < 15_000) return Promise.resolve();
     const revision = this.integrations.configurationRevision; const epoch = this.volumeEpoch;
     if (this.volumeRead?.revision === revision) return this.volumeRead.promise;
     const promise: Promise<void> = (async () => {
@@ -121,6 +125,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         if (target && state.available && state.level !== target.level && (target.mismatches++ === 0 || Date.now() - target.requestedAt < 1200)) {
           this.scheduleVolumeConfirmation(api, destination); return; // Allow propagation, without retrying the write.
         }
+        this.volumeObservedAt = Date.now();
         this.volumeTarget = undefined; this.volumeState = state; this.volumeGeneration++; this.onProgress();
       }
     })().finally(() => { if (this.volumeRead?.promise === promise) this.volumeRead = undefined; });
@@ -190,10 +195,11 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.demoSelections = new WeakMap();
     this.pending?.release?.(); this.pending = undefined; this.failed = false; this.issue = ''; this.problem = undefined; this.capabilityRevision = undefined;
     this.volumeEpoch++; this.volumeGeneration++; this.volumeTarget = undefined; clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
+    this.volumeObservedAt = 0;
     this.volumeState = { available: false, level: null };
     if (this.available && !this.draining) {
       maBackground(() => { void this.refresh(); });
-      this.volumeTimer = setInterval(() => { maBackground(() => { if (!this.own) void this.refresh(); }); }, 5000); this.volumeTimer.unref();
+      this.volumeTimer = setInterval(() => { maBackground(() => { if (!this.own) void this.refresh(); }); }, 15_000); this.volumeTimer.unref();
     }
     this.onProgress();
   }
@@ -234,7 +240,12 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   private sameQueueItem(q: QueueSnapshot, own: Ownership): boolean {
     return q.queue_id === own.queueId && Boolean(q.current_item) &&
       (own.queueItemId === null ? q.current_item!.queue_item_id !== own.previousQueueItemId : q.current_item!.queue_item_id === own.queueItemId) &&
-      this.sameRecording(q.current_item?.media_item, own);
+      this.sameRecording(q.current_item?.media_item, own) && this.sameStream(q.current_item, own, q.state === 'playing');
+  }
+  private sameStream(item: QueueSnapshot['current_item'], own: Selection, required = false): boolean {
+    if (!own.allowedSources) return true;
+    if (!item?.streamdetails) return !required;
+    return own.allowedSources.some(source => source.itemId === item.streamdetails!.item_id && source.provider === item.streamdetails!.provider);
   }
   private async isParkedPause(q: QueueSnapshot, own: Ownership): Promise<boolean> {
     if (own.status !== 'paused' || q.ended || !['paused', 'idle'].includes(q.state) || !this.sameQueueItem(q, own) || !this.safeQueue(q)) return false;
@@ -243,7 +254,9 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   private sameRecording(media: NonNullable<QueueSnapshot['current_item']>['media_item'], own: Selection): boolean {
     if (!media || media.version !== own.version) return false;
+    if (own.identity && !sameRecordingEvidence(own.identity, media)) return false;
     if (own.uploaded) return media.provider === own.provider && media.item_id === own.itemId && media.uri === own.uri;
+    if (own.allowedSources) return own.allowedSources.some(ref => matchesReference(media, ref));
     return Boolean(((media.item_id === own.itemId && media.provider === own.provider && (!media.uri || media.uri === own.uri)) ||
       media.provider_mappings.some(p => p.item_id === own.itemId && (p.provider_domain === own.provider || p.provider_instance === own.provider))));
   }
@@ -330,7 +343,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
             if (this.isOwned(q, this.own) && this.safeQueue(q) && q.state === 'playing' && !q.ended) {
               const items = await playbackRead(() => api.queueItems(q.queue_id));
               if (!this.closed && this.own && items.length === 1 && items[0]!.queue_item_id === q.current_item!.queue_item_id &&
-                this.sameRecording(items[0]!.media_item, pending)) {
+                this.sameRecording(items[0]!.media_item, pending) && this.sameStream(items[0]!, pending)) {
                 this.own.queueItemId = q.current_item!.queue_item_id; this.own.seenPlaying = true; this.observe(this.own, q); return;
               }
             }
@@ -364,12 +377,13 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       let dispatched = false;
       try {
         if (this.closed) throw new Error();
+        if (q.state === 'playing' && own.allowedSources && !q.current_item?.streamdetails) throw new Error('Stream identity unavailable.');
         const activeOwned = this.isOwned(q, own) && !(own.status === 'paused' && q.state === 'idle');
         if (!activeOwned && !parked) { this.invalidate('external-playback'); throw new AppError(409, this.issue); }
         if (action !== 'stop' && (!this.safeQueue(q) || q.ended || (!q.active && !parked))) throw new Error();
         if (action === 'resume' && parked) {
           const items = await playbackRead(() => own.api.queueItems(own.queueId));
-          if (this.closed || items.length !== 1 || items[0]!.queue_item_id !== own.queueItemId || !this.sameRecording(items[0]!.media_item, own)) throw new Error();
+          if (this.closed || items.length !== 1 || items[0]!.queue_item_id !== own.queueItemId || !this.sameRecording(items[0]!.media_item, own) || !this.sameStream(items[0]!, own)) throw new Error();
           dispatched = true; this.observe(own, await this.dispatchControl(own, 'resume'));
         } else {
           if (q.active && (action !== 'stop' || q.state !== 'idle') && !(action === 'pause' && parked)) {
@@ -413,9 +427,12 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
       }
       await this.integrations.withPlayback(async () => {
         if (!current()) return;
+        if (q.state === 'playing' && own.allowedSources && !q.current_item?.streamdetails) {
+          this.invalidate('state-unconfirmed'); return;
+        }
         if (parked) {
           // MA releases paused streams after ~30s. Retain the exact selection and frozen position, with no pause expiry and no auto-resume.
-          maBackground(() => { void this.refreshVolume(own.api, own.destination); }); this.onProgress(); return;
+           maBackground(() => { void this.refreshVolume(own.api, own.destination, false); }); this.onProgress(); return;
         }
         if (q.state === 'idle' && !q.ended && own.status === 'playing' && own.seenPlaying && this.sameQueueItem(q, own) && this.safeQueue(q)) {
           // Idle is published before MA's delayed ended flag, sometimes after releasing the
@@ -445,7 +462,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         if (q.state === 'idle' || q.state === 'unknown') { this.invalidate('external-stop'); return; }
         if (q.state !== own.status) { own.status = q.state; this.onStatus(own.appId, own.status); }
         this.observe(own, q);
-        maBackground(() => { void this.refreshVolume(own.api, own.destination); });
+        maBackground(() => { void this.refreshVolume(own.api, own.destination, false); });
         this.onProgress();
       });
     } catch (error) { if (!this.closed && this.own && this.own === observed && generation === this.commandGeneration && !this.failed) this.invalidate(playbackFailure(error, 'connection-lost')); }

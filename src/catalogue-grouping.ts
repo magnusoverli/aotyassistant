@@ -44,7 +44,7 @@ function compatibleMetadata(kind: Kind, a: IdentityMedia, b: IdentityMedia): boo
       if (left.size && right.size && !overlap(left, right)) return false;
     }
     if (kind === 'track') {
-      if (a.duration && b.duration && a.duration !== b.duration) return false;
+      if (a.duration && b.duration && Math.abs(a.duration - b.duration) > 3) return false;
       if (a.disc_number && b.disc_number && a.disc_number !== b.disc_number) return false;
       if (a.track_number && b.track_number && a.track_number !== b.track_number) return false;
       if (Boolean(a.album) !== Boolean(b.album)) return false;
@@ -95,7 +95,7 @@ export function sameMetadataPresentation(kind: Kind, a: IdentityMedia, b: Identi
 
 function metadataKey(kind: Kind, item: IdentityMedia): string {
   return JSON.stringify([text(item.name), text(item.version), kind === 'artist' ? [] : item.artists?.map(a => text(a.name)),
-    kind === 'track' ? [item.album && text(item.album.name), text(item.album?.version ?? ''), item.duration] : []]);
+    kind === 'track' ? [item.album && text(item.album.name), text(item.album?.version ?? '')] : []]);
 }
 function evidenceProfile(item: IdentityMedia): string {
   const external = (media: { external_ids?: [string, string][] }) => ['musicbrainz_artistid', 'musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode', 'musicbrainz_recordingid', 'musicbrainz_trackid', 'isrc', 'acoustid']
