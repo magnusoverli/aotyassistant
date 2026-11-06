@@ -1,6 +1,8 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
+import { publicContext } from './public-listener.js';
+import type { OnlineAccess } from './online-access.js';
 import { z } from 'zod';
 import { AppError, type Role, type ListeningOrderView } from './model.js';
 import type { Engine, EngineChange } from './engine.js';
@@ -40,7 +42,7 @@ async function catalogueRead(res: Response, action: string, work: () => Promise<
 }
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
-  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager) {
+  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager, onlineAccess?: OnlineAccess) {
   integrations?.configureGuestAccess(config.guestUrl, config.addon, config.guestOverride);
   integrations?.attachUploads(uploads, config.guestUrl);
   const checks = new MediaChecks(); integrations?.attachMediaChecks(checks);
@@ -61,6 +63,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
 
   app.use((req, res, next) => {
     const ingress = ingressContext(req);
+    const remote = publicContext(req);
     res.set({
       'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': ingress ? 'SAMEORIGIN' : 'DENY',
@@ -84,7 +87,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const mediaRead = ['GET', 'HEAD'].includes(req.method) && /^\/api\/media\/uploads\/[^/]+\/[^/]+\/track\.[a-z0-9]+$/.test(req.path);
     const host = req.headers.host ?? '';
     const setup = integrations && setupHostAllowed(host, req.socket.remoteAddress ?? '');
-    const known = Boolean(ingress) || [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host) ||
+    const known = Boolean(ingress || remote) || [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host) ||
       Boolean(setup && setupManager?.allowsGuestHost(host));
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
@@ -101,7 +104,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const origin = req.headers.origin;
       const localOrigin = `http://${req.headers.host}`;
       const setupOrigin = setup && setupRoute && origin && [localOrigin, `https://${host}`].includes(origin);
-      if (!origin || (ingress ? origin !== ingress.origin : origin !== config.guestUrl && origin !== localOrigin && !setupOrigin)) return next(new AppError(403, 'Cross-origin controls are not allowed.'));
+      if (!origin || (remote ? origin !== remote.origin : ingress ? origin !== ingress.origin : origin !== config.guestUrl && origin !== localOrigin && !setupOrigin)) return next(new AppError(403, 'Cross-origin controls are not allowed.'));
       if (req.headers['sec-fetch-site'] === 'cross-site') return next(new AppError(403, 'Cross-site controls are not allowed.'));
       const fileUpload = req.method === 'POST' && /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(req.path) && req.is('application/octet-stream');
       if (!req.is('application/json') && !fileUpload) return next(new AppError(415, 'Send an application/json request, or one audio file to the upload endpoint.'));
@@ -112,7 +115,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     if (req.path.startsWith('/participant/preparations/') && !['/participant/preparations/play', '/participant/preparations/join', '/participant/preparations/pin'].includes(req.path)) return next();
     if (req.method === 'GET') return next();
     const join = req.path.endsWith('/join');
-    const key = `${req.socket.remoteAddress}:${join ? 'join' : 'commands'}`;
+    const key = `${publicContext(req)?.session ?? req.socket.remoteAddress}:${join ? 'join' : 'commands'}`;
     const entry = rates.get(key) ?? { count: 0, start: Date.now() };
     if (Date.now() - entry.start > 60_000) { entry.start = Date.now(); entry.count = 0; }
     entry.count++; rates.set(key, entry);
@@ -129,6 +132,13 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const participantCredential = (req: Request) => cookie(req, 'aoty_participant');
 
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
+  // Connector account approval and invitations are administered only through HA authentication.
+  app.use('/api/host/online', (req, _res, next) => next(ingressContext(req) && onlineAccess ? undefined : new AppError(403, 'Open Settings through Home Assistant to manage online invitations.')));
+  app.get('/api/host/online', (_req, res) => res.json(onlineAccess!.view()));
+  app.post('/api/host/online', async (req, res) => {
+    const input = body(req, z.object({ action: z.enum(['enable', 'disable', 'rotate']), revision: z.number().int().nonnegative() }).strict());
+    res.json(await onlineAccess!.change(input.action, input.revision));
+  });
   app.get('/api/host/playback-settings', (_req, res) => res.json(engine.playbackSettings()));
   app.post('/api/host/playback-settings', async (req, res) => {
     const input = body(req, z.object({ enabled: z.boolean(), revision }).strict());
@@ -303,7 +313,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const base = requestBase(req);
       const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
       let html = await readFile(resolve(webDirectory, 'index.html'), 'utf8');
-      html = html.replace('</head>', `<meta name="aoty-base" content="${escape(base)}"><meta name="aoty-guest" content="${escape(config.guestUrl)}"></head>`);
+      html = html.replace('</head>', `<meta name="aoty-base" content="${escape(base)}"><meta name="aoty-guest" content="${escape(publicContext(req)?.origin ?? config.guestUrl)}"><meta name="aoty-public" content="${publicContext(req) ? '1' : '0'}"></head>`);
       html = html.replace(/(src|href)="(?:\.\/|\/)(?!\/)/g, `$1="${base}/`);
       res.type('html').send(html);
     });

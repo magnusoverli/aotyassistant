@@ -73,7 +73,7 @@ export type OutputState = { name: string | null; state: 'none' | 'checking' | 'r
 export type PlaybackSettings = { enabled: boolean; revision: number };
 export const AUTO_REVEAL_FRACTION = 0.7;
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
-export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambiguous'; source: 'automatic' | 'manual' | 'legacy' | 'configured'; message: string };
+export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambiguous'; source: 'automatic' | 'manual' | 'legacy' | 'configured' | 'online'; message: string };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;

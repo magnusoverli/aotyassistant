@@ -16,6 +16,9 @@ import { UploadAssets } from './uploads.js';
 import { drainOperations } from './operation.js';
 import { diagnostics } from './diagnostics.js';
 import { productName } from './product.js';
+import { OnlineAccess } from './online-access.js';
+import { TailscaleConnector, onlinePort } from './tailscale.js';
+import { publicListener } from './public-listener.js';
 
 let cleanup = () => {};
 try {
@@ -32,11 +35,15 @@ try {
   const preparations = new PreparationManager(preparationStore, Date.now, selection => selection.source === 'demo' ? !integrations.configured
     : selection.source === 'upload' ? integrations.uploadPlaybackAvailable : selection.sourceBindingId === integrations.sourceBindingId);
   const uploads = new UploadAssets(config.dataDir, undefined, undefined, preparationStore);
-  const { app, close } = createApp(engine, config, undefined, integrations, preparations, uploads, setup);
+  const connector = config.addon && process.env.TAILSCALE_BUNDLED === '1' ? new TailscaleConnector(config.dataDir) : undefined;
+  const online = new OnlineAccess(config.dataDir, connector); await online.init();
+  engine.setOnlineSharing(() => online.sharing()); online.on('change', () => engine.emit('change'));
+  const { app, close } = createApp(engine, config, undefined, integrations, preparations, uploads, setup, online);
+  const publicApp = publicListener(app, online);
   let closeBackup = () => {};
   const closeDiagnostics = diagnostics.start();
   const servers: ReturnType<typeof createServer>[] = [];
-  cleanup = () => { closeDiagnostics(); setup.close(); closeBackup(); adapter.close(); integrations.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
+  cleanup = () => { void online.close(); publicApp.close(); closeDiagnostics(); setup.close(); closeBackup(); adapter.close(); integrations.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
   const server = createServer(app); server.listen(config.port, config.listenHost);
   servers.push(server);
   await once(server, 'listening'); // Also rejects asynchronous bind/DNS failures.
@@ -44,9 +51,14 @@ try {
     const ingress = createServer(ingressListener(app)); servers.push(ingress);
     ingress.listen(config.ingressPort, config.listenHost); await once(ingress, 'listening');
   }
-  if (config.addon) closeBackup = await startBackupControl();
+  if (connector) {
+    const guests = createServer(publicApp.listener); guests.maxConnections = 256; guests.requestTimeout = 120_000; guests.headersTimeout = 15_000;
+    servers.push(guests); guests.listen(onlinePort, '127.0.0.1'); await once(guests, 'listening');
+  }
+  if (config.addon) closeBackup = await startBackupControl(undefined, () => online.pause());
   console.info(`${productName} listening on port ${config.port}. Music starts only on Play. Host controls are open to LAN users.`);
   setup.start();
+  online.start();
   let stopping = false;
   const shutdown = () => {
     if (stopping) return; stopping = true;
@@ -57,6 +69,7 @@ try {
     const deadline = setTimeout(() => { cleanup(); process.exit(1); }, 25_000); deadline.unref();
     void (async () => {
       try {
+        await online.close();
         await drainOperations(); await engine.drain(); await preparations.drain(); await integrations.drain(); await uploads.drain();
         cleanup(); process.exitCode = 0;
       } catch { cleanup(); process.exitCode = 1; }

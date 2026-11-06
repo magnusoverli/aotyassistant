@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { ingressContext, requestBase } from './ingress.js';
+import { publicContext } from './public-listener.js';
 
 /** Old open tabs may still ask for 128; normalize it before reaching MA or the image cache. */
 export const artworkSize = z.enum(['128', '160', '512', '1024']).default('512')
@@ -18,7 +19,7 @@ export function setPrivateCookie(response: Response, name: string, value: string
 export function setParticipantCookie(request: Request, response: Response, name: string, value: string, path: string, configuredOrigin: string) {
   // Forwarded headers are authoritative only on the validated Ingress listener.
   const direct = request.secure ? `https://${request.headers.host}` : new URL(configuredOrigin).host === request.headers.host ? configuredOrigin : `${request.protocol}://${request.headers.host}`;
-  const origin = ingressContext(request)?.origin ?? direct;
+  const origin = publicContext(request)?.origin ?? ingressContext(request)?.origin ?? direct;
   setPrivateCookie(response, name, value, `${requestBase(request)}${path}`, origin);
 }
 

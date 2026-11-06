@@ -36,7 +36,7 @@ export const durability = new DurabilityBarrier();
 export const backupSocket = '/run/aoty/backup.sock';
 
 /** Local file permissions, not an HTTP route, protect Supervisor's pre/post hooks. */
-export async function startBackupControl(path = backupSocket) {
+export async function startBackupControl(path = backupSocket, paused?: () => Promise<void>) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const existing = await lstat(path).catch(error => { if (error.code !== 'ENOENT') throw error; return null; });
   if (existing) { if (!existing.isSocket()) throw new Error('Backup control path is occupied.'); await unlink(path); }
@@ -53,7 +53,10 @@ export async function startBackupControl(path = backupSocket) {
       handling = true;
       void (async () => {
         try {
-          if (command === 'freeze\n') await durability.freeze();
+          if (command === 'freeze\n') {
+            await durability.freeze();
+            try { await paused?.(); } catch (error) { durability.thaw(); throw error; }
+          }
           else if (command === 'thaw\n') durability.thaw();
           else throw new Error();
           socket.end('ok\n');

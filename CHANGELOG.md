@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-11-06
+
+- Add opt-in online invitations with a bundled, pinned Tailscale Funnel connector and guided Home Assistant Settings setup. Guests can join over mobile data without a VPN app or HA account; the invitation address survives venue changes and restarts.
+- Publish only a dedicated guest interface, protected by revocable invitations and expiring secure browser grants. Keep host APIs, settings, and Music Assistant playback-file access off the public tunnel.
+- Verify the public HTTPS path before showing online invitations; reconnect automatically and coordinate connector shutdown with backup and app shutdown. Add invitation replacement, key-expiry guidance, and local-access fallback.
+- Online uploads support up to 256 MiB with a two-minute request deadline; local upload behavior is unchanged. Existing installations remain local-only until online invitations are enabled.
+
 ## [1.1.0] — 2026-11-06
 
 - Keep all menu pages on the current browser address, including Home Assistant Ingress, instead of opening Your music and Room display at a separate guest IP.

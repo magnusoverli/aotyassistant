@@ -1,6 +1,6 @@
 import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
-import { appPath, navigationHref } from './paths';
+import { appPath, navigationHref, isPublic } from './paths';
 import { attr, prop, text } from './view-nodes';
 import { demoPlaybackNotice, productName } from '../src/product';
 import { requestJson } from './request';
@@ -36,7 +36,7 @@ export class AppHeader {
       event.preventDefault(); content.focus({ preventScroll: true }); content.scrollIntoView({ block: 'start' });
     };
     const inner = el('div', undefined, 'header-inner');
-    const brand = link('', routes.home, 'brand');
+    const brand = link('', isPublic() ? routes.join : routes.home, 'brand');
     if (page === 'home') brand.setAttribute('aria-current', 'page');
     const mark = el('span', '◉', 'brand-mark'); mark.setAttribute('aria-hidden', 'true');
     const wordmark = el('div'); wordmark.append(el('strong', productName), this.subtitle); brand.append(mark, wordmark);
@@ -106,6 +106,7 @@ export class AppHeader {
     attr(this.subtitle, 'aria-live', demo ? 'polite' : undefined);
     text(this.subtitle, demo ? demoPlaybackNotice : model.subtitle);
     for (const item of model.primary) {
+      if (isPublic() && item.href.startsWith('/host')) continue;
       let anchor = this.links.get(item.id);
       if (!anchor) { anchor = link('', item.href, 'header-nav-link'); const li = el('li'); li.append(anchor); this.primary.append(li); this.links.set(item.id, anchor); }
       this.updateLink(anchor, item);

@@ -26,7 +26,7 @@ Use it for music discovery, listening clubs, or themed track-sharing. The app ma
 - **Home Assistant OS**, with Home Assistant **2026.10.0 or later** and the app store.
 - An **amd64** or **aarch64** system.
 - **Music Assistant**, with a configured music source and speaker or group. Playback supports **API schema 65**; Settings reports compatibility with the connected server.
-- A trusted local network that lets guest devices reach the app’s published port, **3000** by default.
+- A trusted local network for HA and the playback speaker. Guests can use that network or join through optional [online invitations](docs/online-invitations.md) using Tailscale Funnel.
 
 **Home Assistant is the only supported deployment.** See [Music Assistant compatibility](docs/music-assistant.md) for player and provider limitations.
 
@@ -44,6 +44,8 @@ Use it for music discovery, listening clubs, or themed track-sharing. The app ma
 
 The app discovers local addresses and Music Assistant automatically. Setup checks do not start music. For the full walkthrough, options, updates, and backups, see the **[installation guide](DOCS.md)**.
 
+For guests on mobile data or when moving between venues, enable **Settings → Access & network → Online invitations** inside Home Assistant. Complete the guided Tailscale sign-in and Funnel approval once; the bundled connector maintains the invitation address as you move.
+
 ## How it works
 
 The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, open **Your music**, browse **Find music**, and add tracks to **Your playlist** or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play first selection** in the player, then **Reveal details** to show the track information. The turn passes automatically when Music Assistant confirms the track has finished, or earlier with **Finish turn**.
@@ -55,6 +57,8 @@ Pressing Play replaces the selected speaker or group’s queue with one track an
 ## Access and privacy
 
 Use this app on a **trusted LAN**. Anyone who can reach its guest port can also open the host controls, change settings, and manage the listening order. Home Assistant authentication protects the Ingress interface, not the separate LAN port. Do not publish that port to the internet.
+
+The built-in online invitation feature publishes a separate, invitation-protected **guest-only** interface. It never publishes the LAN or Ingress listener. Replace invitations in Settings to revoke old links and online guest sessions.
 
 Each user has one automatic private track list across devices. Select your name/avatar and enter your four-digit PIN on a new browser; remembered browsers continue automatically. The host can reset forgotten PINs in Settings. The app keeps unrevealed track details off the shared display, but cannot hide them in independently accessible Music Assistant or speaker apps. See [security and privacy](SECURITY.md).
 

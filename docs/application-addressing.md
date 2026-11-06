@@ -5,7 +5,8 @@ The app uses separate addresses for different jobs:
 | Address | Used by |
 | --- | --- |
 | Home Assistant Ingress | All app pages opened inside Home Assistant |
-| Guest address | Participant phones, join QR codes, and the shared display |
+| Local guest address | Participant phones and shared display on the trusted LAN |
+| Online invitation address (optional) | Guest-only HTTPS access through the bundled Tailscale Funnel connector |
 | Music Assistant API address | The app connecting to Music Assistant |
 | File-playback address | Music Assistant fetching uploaded audio from the app |
 
@@ -13,13 +14,13 @@ An address that works for one job may not work for another. In particular, guest
 
 ## Guest links
 
-Menu navigation stays on the current address. When opened inside Home Assistant, participant pages, uploads, private lists, and the display remain inside Ingress. Guest invitations and QR codes use a separate LAN address.
+Menu navigation stays on the current address. When opened inside Home Assistant, participant pages, uploads, private lists, and the display remain inside Ingress. Guest invitations and QR codes use a separate LAN address by default. Enabling [online invitations](online-invitations.md) switches sharing to the verified HTTPS invitation without changing local file-playback addressing or redirecting existing tabs. The public guest menu omits host administration.
 
 Home Assistant supplies LAN interfaces and the app’s effective published port. A single preferred LAN address is selected automatically. Automatic selection retains a suitable address across refreshes, and a replacement must appear in two successful discovery scans before it is saved. Address changes wait while the app owns playback. Discovery does not depend on connecting Music Assistant.
 
 **Settings → Access & network → Guest access** shows sharing status. **Advanced guest settings** contains network choices, a discovery refresh, and manual overrides. **Use automatic address** clears an in-app override. The add-on's explicit `guest_url`/environment override still takes precedence over discovery. Existing addresses saved by older releases are preserved as legacy selections because their original source is unknown; use automatic addressing to opt in.
 
-Host desk and Room display hide invitations while automatic discovery is unresolved or the guest port is disabled. A detected address is not proof that every phone can reach it: use **Open guest invitation** and try the link on a guest device. Standalone localhost links are labelled as working only on the current device.
+In local mode, Host desk and Room display hide invitations while automatic discovery is unresolved or the guest port is disabled. A detected address is not proof that every phone can reach it: use **Open guest invitation** and try the link on a guest device. Standalone localhost links are labelled as working only on the current device. Online invitations instead require verified Funnel connectivity and work independently of the published LAN port.
 
 Use a stable hostname or reserved LAN address reachable by participant devices and the display. Include the published port, normally `3000`. An address is an HTTP(S) origin without a path, query, credentials, or fragment. `localhost` refers to the device opening it, so it cannot be shared with phones.
 

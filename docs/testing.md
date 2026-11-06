@@ -10,13 +10,15 @@ The test suites cover application behaviour with isolated services and disposabl
 | Typecheck and production build | Backend/browser TypeScript and packaged browser assets |
 | Backend/controller tests | Turns, private-list access, persistence, uploads, connection identity, playback ownership, recovery, and compatibility handling |
 | Chromium workflows | Host, participant, settings, and display interactions against isolated Music Assistant fixtures |
-| Native amd64/aarch64 package tests | Packaged audio analysis, file permissions, automatic list persistence across restarts, and backup restore |
+| Native amd64/aarch64 package tests | Packaged audio analysis, file permissions, automatic list persistence across restarts, backup restore, and bundled non-root Tailscale userspace startup/shutdown |
 | Dependency audit | Known vulnerabilities reported for the locked dependency tree at the time of the check |
 | Published-image verification | Anonymous registry access, both architectures, content digests, and version/license labels |
 
 Commands are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#verify-a-change). CI results are available in [GitHub Actions](https://github.com/magnusoverli/aotyassistant/actions). The image-publishing workflow requires the shared application checks and package tests to pass before publishing images.
 
 ## Installed-system validation
+
+Online invitation tests cover the real HTTP gateway, guest sign-in/private-library access, route isolation, forwarded-header spoofing, secure cookies, stream revocation, stale-result rejection, persistence, and the Tailscale configuration contract with a simulated connector. They do not authenticate a real Tailscale account. Before releasing this feature, complete the guided setup on HA OS, check actual Funnel approval, join over mobile data, move between networks, expire/reauthorize the device, and verify backup/restore and disable/rotation with active guest browsers. Test on both supported architectures; do not equate a mocked reachability check with an installed-system test.
 
 Record the app version, Home Assistant Core/Supervisor versions, Music Assistant version/schema, host architecture, browser/device, and player integration with each validation result.
 

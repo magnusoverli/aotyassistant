@@ -4,10 +4,13 @@ import { mountPage } from './page-runtime';
 import { pageForPath, routes } from './navigation';
 import { pagePath } from './paths';
 import './style.css';
+import { enterOnline } from './online-entry';
 
 // The shell survives route changes. Page lifetimes own their requests, listeners,
 // subscriptions and controls; late responses cannot update a replacement page.
 const root = document.querySelector<HTMLDivElement>('#app')!;
+void enterOnline(root).then(ready => { if (ready) mountApplication(); });
+function mountApplication() {
 const header = new AppHeader(pageForPath(pagePath(location.pathname)), message => {
   const notice = document.createElement('p'); notice.setAttribute('role', 'alert'); notice.textContent = message;
   content.prepend(notice);
@@ -47,3 +50,4 @@ root.addEventListener('click', event => {
   navigate(url.pathname);
 });
 mount();
+}

@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+umask 077
 # Only the application's explicitly configured data directory is prepared.
 mkdir -p "$DATA_DIR"
 chown node:node "$DATA_DIR"

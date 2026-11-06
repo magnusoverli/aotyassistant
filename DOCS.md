@@ -20,7 +20,7 @@ It is distributed and supported as a **Home Assistant app**. Use Home Assistant 
 1. Open **Settings** and select a detected server. Use **Find Music Assistant** to search again. If needed, enter the server’s direct API address, normally `http://<ma-host>:8095`, rather than its Home Assistant dashboard/Ingress URL.
 2. Choose **Connect Music Assistant**, complete sign-in in the new tab, and return to Settings.
 3. Choose an available **Speaker or group**. Selection is checked and saved immediately.
-4. Check **Guest access**, then open the host desk’s join/display links from a guest device.
+4. Under **Access & network**, check **Guest access** for local joining, or enable **Online invitations** and follow the Tailscale sign-in/approval prompts. Open the host desk’s join/display links from a guest device.
 
 Discovery, connection checks, speaker selection, and file-access checks do not play audio or change volume. An explicit Play action replaces the selected destination’s queue with one song and may interrupt music already playing there.
 
@@ -31,9 +31,11 @@ Use **Reconnect Music Assistant** to renew authorization for the same server whi
 ## Guest and display access
 
 - **All menu pages:** stay on the address you opened, including Home Assistant Ingress. Your music and Room display do not require a separate network address when opened from the menu.
-- **Invitations and QR codes:** use the separate guest address, without Home Assistant accounts. On a standard LAN this is detected automatically; Settings shows sharing status and Advanced guest settings for overrides.
+- **Invitations and QR codes:** use the separate guest address, without Home Assistant accounts. By default the LAN address is detected automatically. Optional **Online invitations** use a stable HTTPS address and private invitation link through the bundled Tailscale Funnel connector.
 
 Supervisor supplies LAN-address and published-port suggestions. Choose a stable address in Settings if several interfaces are available. Phones and the display must be able to reach that address; isolated guest Wi-Fi may block it. Home Assistant remote access does not automatically expose the guest port.
+
+For joining over mobile data and moving between venues, see [online invitations](docs/online-invitations.md). The only external setup is authorizing the bundled device in your Tailscale account and approving HTTPS/Funnel. Music Assistant still needs local access to the speaker.
 
 Keep the address stable. Changing its hostname, IP, port, or HTTP/HTTPS scheme can require participants to rejoin and lose access to previous selections. Browser identities do not move between origins, and there is no list-recovery feature. See [application addresses](docs/application-addressing.md).
 

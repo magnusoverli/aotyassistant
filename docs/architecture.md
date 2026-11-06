@@ -4,7 +4,9 @@
 
 The Home Assistant image runs Node.js 24, a TypeScript/Express backend, and Vite-built browser assets. Startup prepares private storage and drops to the unprivileged `node` user. Supervisor provides `/data`, options, discovery information, Ingress, watchdog monitoring, and backup coordination.
 
-The app has two listeners: guest/display/host LAN traffic on port 3000, and a dedicated authenticated Ingress listener on 8099 supporting all browser pages. Untrusted LAN headers cannot impersonate Supervisor Ingress. Participant cookies, uploads, artwork, and event streams use the trusted Ingress base path. Guest invitations remain separate LAN links. It needs no privileged mode, host networking, Docker socket, Core database, or shared media mount.
+The app has a guest/display/host LAN listener on port 3000, an authenticated Ingress listener on 8099 supporting all browser pages, and a guest-only loopback listener on 8098 in the bundled HA image. Untrusted headers cannot impersonate either trusted listener context. Participant cookies, uploads, artwork, and event streams use the trusted Ingress base path. It needs no privileged mode, host networking, Docker socket, Core database, or shared media mount.
+
+Opt-in online invitations launch a pinned Tailscale userspace daemon as `node`, with a private socket and persistent device state. The manager uses fixed CLI arguments (no shell), projects only status and allowlisted approval URLs, and validates the exact Funnel mapping before a bounded public HTTPS challenge. Guest sharing is independent of LAN discovery and Music Assistant's file origin. The public gateway uses explicit method/path allowlists and invitation grants, plus global/per-grant limits; it cannot route host or media-playback APIs. A request-local WeakMap, not proxy headers, identifies public traffic for HTTPS cookie and CSRF handling. Disable/rotation closes public streams, and generation checks reject stale network results. Backup freeze stops the daemon before acknowledging the snapshot barrier; thaw permits automatic reconnection. See [online invitations](online-invitations.md).
 
 ```text
 Home Assistant Ingress ─ host interface ─┐
@@ -25,6 +27,7 @@ Only one process may own a data directory. JSON stores serialize mutations and u
 | Private preparation and uploads | `src/preparations.ts`, `src/uploads.ts`, `src/upload-analysis.ts` |
 | Permanent users, PINs and browser sessions | `src/users.ts` |
 | HTTP, Ingress, events | `src/http.ts`, `src/integration-http.ts`, `src/ingress.ts`, `src/event-streams.ts` |
+| Online invitations and bundled connector | `src/online-access.ts`, `src/tailscale.ts`, `src/public-listener.ts`, `web/online-panel.ts`, `web/online-entry.ts` |
 | Durability, shutdown, diagnostics | `src/backup.ts`, `src/operation.ts`, `src/index.ts`, `src/diagnostics.ts` |
 | Browser UI and controllers | `web/` |
 | Shared host/participant playback UI | `web/playback.ts`, `web/player-controller.ts`, `web/media.ts` |

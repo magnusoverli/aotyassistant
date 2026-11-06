@@ -198,6 +198,8 @@ export class Engine extends EventEmitter {
       next: room.currentId && room.active.length ? people.get(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) ?? null : null,
       rotation: room.active.map(id => people.get(id)!), playbackStatus: this.playbackStatus(room) };
   }
+  private onlineSharing?: () => { guestAccess: NonNullable<View['guestAccess']>; joinUrl?: string; displayUrl?: string } | undefined;
+  setOnlineSharing(provider: NonNullable<Engine['onlineSharing']>) { this.onlineSharing = provider; }
   view(role: Role): View {
     const room = this.room();
     if (role.kind === 'participant') this.participant(role.credential, room);
@@ -212,14 +214,15 @@ export class Engine extends EventEmitter {
       ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue,
         ...(this.adapter.problem ? { playbackProblem: { ...this.adapter.problem } } : {}) } : {}) };
     const guestUrl = this.catalogue?.guestOrigin || this.guestUrl;
-    const guestAccess = this.catalogue?.guestAccess;
-    const joinUrl = guestAccess && guestAccess.status !== 'ready' ? undefined : `${guestUrl}/join`;
+    const online = this.onlineSharing?.();
+    const guestAccess = online?.guestAccess ?? this.catalogue?.guestAccess;
+    const joinUrl = online ? online.joinUrl : guestAccess && guestAccess.status !== 'ready' ? undefined : `${guestUrl}/join`;
     if (role.kind === 'host') {
       const playback = base.playbackStatus !== 'unavailable' ? room.playback : null;
       return { ...base, active: room.active.map(id => person(id)!), volume: this.adapter.volume,
         hostPlayback: playback ? { id: playback.id, status: playback.status, revealed: playback.revealed } : null,
         progress: playback && playback.status !== 'stopped' ? this.progress(room, playback.revealed) : undefined,
-        guestAccess, joinUrl, displayUrl: joinUrl ? `${guestUrl}/display` : undefined };
+        guestAccess, joinUrl, displayUrl: online ? online.displayUrl : joinUrl ? `${guestUrl}/display` : undefined };
     }
     if (role.kind === 'display') {
       const revealed = Boolean(room.playback?.revealed && !this.concealPlayback && this.ready);
