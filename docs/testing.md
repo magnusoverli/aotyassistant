@@ -40,6 +40,8 @@ Use a designated test speaker or group: Play replaces its current queue and can 
 
 ### Browsers and devices
 
+- Browser speakers: enable and pair against MA 2.10.6 and 2.10.8; confirm destination discovery, guarded selection, audible playback and natural completion. During playback navigate Host → Your music → Settings (including `#access`) → Display and Back/Forward. Verify no document reload or audio gap. Repeat via HA Ingress and real Funnel, including second-tab takeover, revocation, reconnect, phone suspension and audio re-enabling. Automated relay fixtures do not establish these audio/browser outcomes. Browser tests remain opt-in.
+
 - Check iPhone/Safari and Android joining, automatic empty lists, same-browser list persistence, file selection, large/interrupted uploads, and mobile keyboards.
 - Check Music Assistant sign-in inside the Home Assistant companion app.
 - Check shared-display layout, full-screen controls, and reconnection on the intended TV/browser.

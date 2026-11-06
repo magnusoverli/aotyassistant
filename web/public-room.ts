@@ -86,12 +86,13 @@ export class PublicRoom {
     if (this.invitationKey !== invitationKey) {
       this.invitationKey = invitationKey;
       this.invitation.replaceChildren(el('h3', 'Join room'));
-      if (view.guestAccess) this.invitation.append(el('p', view.guestAccess.message, 'muted small'));
-      if (!view.joinUrl) this.invitation.append(link('Guest access settings', '/host/settings#access'));
+      if (!view.joinUrl) {
+        if (view.guestAccess) this.invitation.append(el('p', view.guestAccess.message, 'muted small'));
+        this.invitation.append(link('Guest access settings', '/host/settings#access'));
+      }
       if (view.joinUrl) {
         const join = link('', view.joinUrl, 'room-qr-link'); join.setAttribute('aria-label', 'Join room');
         if (qrImage) { const image = el('img'); image.src = qrImage; image.alt = 'Scan to join the room'; join.append(image); this.invitation.append(join); }
-        this.invitation.append(link(view.joinUrl, view.joinUrl, 'room-join-link'));
       }
     }
   }

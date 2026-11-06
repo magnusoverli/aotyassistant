@@ -1,16 +1,18 @@
 import { AppHeader } from './app-header';
 import { ListeningOrder } from './listening-order';
 import { mountPage } from './page-runtime';
-import { pageForPath, routes } from './navigation';
-import { pagePath } from './paths';
+import { pageForPath, spaDestination } from './navigation';
+import { pagePath, ingressBase } from './paths';
 import './style.css';
 import { enterOnline } from './online-entry';
+import { initializeBrowserSpeaker } from './browser-speaker';
 
 // The shell survives route changes. Page lifetimes own their requests, listeners,
 // subscriptions and controls; late responses cannot update a replacement page.
 const root = document.querySelector<HTMLDivElement>('#app')!;
 void enterOnline(root).then(ready => { if (ready) mountApplication(); });
 function mountApplication() {
+initializeBrowserSpeaker();
 const header = new AppHeader(pageForPath(pagePath(location.pathname)), message => {
   const notice = document.createElement('p'); notice.setAttribute('role', 'alert'); notice.textContent = message;
   content.prepend(notice);
@@ -20,15 +22,17 @@ header.element.append(order.element);
 const content = document.createElement('div');
 root.replaceChildren(header.element, content);
 let currentPath = location.pathname;
+let currentSearch = location.search;
 let dispose = () => {};
 function mount() {
   dispose();
   currentPath = location.pathname;
+  currentSearch = location.search;
   header.setPage(pageForPath(pagePath(currentPath)));
   dispose = mountPage(content, header, order, navigate);
 }
 function navigate(path: string, replace = false) {
-  if (path === currentPath) return;
+  if (path === location.pathname + location.search + location.hash) return;
   if (replace) history.replaceState(null, '', path);
   else history.pushState(null, '', path);
   mount();
@@ -38,16 +42,17 @@ function navigate(path: string, replace = false) {
 // Register before route-local browse history, so Back disposes that listener
 // before it can treat navigation to another page as a catalogue history entry.
 window.addEventListener('popstate', () => {
-  if (location.pathname !== currentPath) mount();
+  if (location.pathname !== currentPath || location.search !== currentSearch) mount();
 });
 root.addEventListener('click', event => {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   const anchor = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>('a[href]') : null;
   if (!anchor || anchor.target && anchor.target !== '_self' || anchor.hasAttribute('download')) return;
   const url = new URL(anchor.href);
-  if (url.origin !== location.origin || url.search || url.hash || !Object.values(routes).some(path => path === pagePath(url.pathname))) return;
+  const destination = spaDestination(url, new URL(location.href), ingressBase());
+  if (destination === undefined) return;
   event.preventDefault();
-  navigate(url.pathname);
+  navigate(destination);
 });
 mount();
 }

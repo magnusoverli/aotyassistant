@@ -4,6 +4,15 @@ export const routes = { home: '/', host: '/host', settings: '/host/settings', pa
 export type Page = keyof typeof routes;
 export const pageForPath = (path: string): Page => (Object.keys(routes) as Page[]).find(page => routes[page] === (path.replace(/\/+$/, '') || '/')) ?? 'home';
 
+/** Preserve deep links without replacing the document that owns browser audio. */
+export function spaDestination(target: URL, current: URL, base = ''): string | undefined {
+  if (target.origin !== current.origin || base && !target.pathname.startsWith(`${base}/`)) return;
+  const path = base ? target.pathname.slice(base.length) : target.pathname;
+  if (!Object.values(routes).some(route => route === path)) return;
+  if (target.pathname === current.pathname && target.search === current.search && target.hash) return;
+  return target.pathname + target.search + target.hash;
+}
+
 /** Only fields needed by the shell; no track metadata, private lists, or integration secrets. */
 export type HeaderView = Pick<View, 'me' | 'mode'>;
 export type HeaderState = { view?: HeaderView };

@@ -19,6 +19,8 @@ import { productName } from './product.js';
 import { OnlineAccess } from './online-access.js';
 import { TailscaleConnector, onlinePort } from './tailscale.js';
 import { publicListener } from './public-listener.js';
+import { BrowserSpeakers } from './browser-speakers.js';
+import { speakerContext } from './browser-speaker-http.js';
 
 let cleanup = () => {};
 try {
@@ -38,21 +40,26 @@ try {
   const connector = config.addon && process.env.TAILSCALE_BUNDLED === '1' ? new TailscaleConnector(config.dataDir) : undefined;
   const online = new OnlineAccess(config.dataDir, connector); await online.init();
   engine.setOnlineSharing(() => online.sharing()); online.on('change', () => engine.emit('change'));
-  const { app, close } = createApp(engine, config, undefined, integrations, preparations, uploads, setup, online);
+  const speakers = new BrowserSpeakers(() => integrations.browserSpeakerConnection());
+  online.on('revoke', () => speakers.revokePublic());
+  const { app, close } = createApp(engine, config, undefined, integrations, preparations, uploads, setup, online, speakers);
   const publicApp = publicListener(app, online);
   let closeBackup = () => {};
   const closeDiagnostics = diagnostics.start();
   const servers: ReturnType<typeof createServer>[] = [];
-  cleanup = () => { void online.close(); publicApp.close(); closeDiagnostics(); setup.close(); closeBackup(); adapter.close(); integrations.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
+  cleanup = () => { speakers.close(); void online.close(); publicApp.close(); closeDiagnostics(); setup.close(); closeBackup(); adapter.close(); integrations.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
   const server = createServer(app); server.listen(config.port, config.listenHost);
+  speakers.attach(server, req => speakerContext(req, 'lan', integrations.guestOrigin || config.guestUrl, config.port));
   servers.push(server);
   await once(server, 'listening'); // Also rejects asynchronous bind/DNS failures.
   if (config.ingressPort) {
     const ingress = createServer(ingressListener(app)); servers.push(ingress);
+    speakers.attach(ingress, req => speakerContext(req, 'ingress', config.guestUrl, config.port));
     ingress.listen(config.ingressPort, config.listenHost); await once(ingress, 'listening');
   }
   if (connector) {
     const guests = createServer(publicApp.listener); guests.maxConnections = 256; guests.requestTimeout = 120_000; guests.headersTimeout = 15_000;
+    speakers.attach(guests, req => speakerContext(req, 'public', config.guestUrl, config.port, online));
     servers.push(guests); guests.listen(onlinePort, '127.0.0.1'); await once(guests, 'listening');
   }
   if (config.addon) closeBackup = await startBackupControl(undefined, () => online.pause());
@@ -62,7 +69,7 @@ try {
   let stopping = false;
   const shutdown = () => {
     if (stopping) return; stopping = true;
-    engine.beginShutdown(); setup.close(); integrations.stopMonitoring(); adapter.beginShutdown(); uploads.stopReceiving();
+    engine.beginShutdown(); speakers.close(); setup.close(); integrations.stopMonitoring(); adapter.beginShutdown(); uploads.stopReceiving();
     // Reject new HTTP work, then let admitted commands/commits settle before disposing
     // their transports. The final bound covers an unavailable upstream or stuck disk.
     for (const server of servers) server.close();

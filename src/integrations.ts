@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
 import { PersistenceError } from './store.js';
@@ -95,6 +95,14 @@ export class IntegrationManager implements CatalogueProvider {
   get catalogueRevision(): string { return this.references.revision; }
   get sourceBindingId(): string | null { return this.state.musicAssistant?.sourceBindingId ?? null; }
   get serverId(): string | undefined { return this.state.musicAssistant?.serverId; }
+  /** Server-only transport configuration. Never include this object in an HTTP view. */
+  browserSpeakerConnection() {
+    const ma = this.state.musicAssistant;
+    if (!ma || this.closed || this.settingsUncertain) throw new AppError(409, 'Connect Music Assistant in Settings first.');
+    if (!this.report || !ma.serverId) throw new AppError(409, 'Refresh the Music Assistant connection in Settings before enabling browser audio.');
+    return { origin: ma.url, token: ma.accessToken, epoch: this.catalogueRevision,
+      scope: createHash('sha256').update(`${ma.sourceBindingId}:${ma.serverId}`).digest('hex'), version: this.report.serverVersion, serverId: ma.serverId };
+  }
   assertSetupRevision(revision: number) {
     this.expected(revision);
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');

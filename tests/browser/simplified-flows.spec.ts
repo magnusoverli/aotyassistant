@@ -174,7 +174,7 @@ test('home, error pages and display invitations provide concrete routes while AP
   const api = await page.request.get('/api/missing'); expect(api.status()).toBe(404); expect(api.headers()['content-type']).toContain('application/json');
   await page.goto('/display'); await expect(page).toHaveTitle('Room display · Listening Room');
   await expect(page.locator('.room-qr-link')).toHaveAttribute('href', /\/join$/);
-  await expect(page.locator('.room-join-link')).toBeVisible();
+  await expect(page.locator('.room-join-link')).toHaveCount(0);
   await page.locator('.room-qr-link').click(); await expect(page.getByLabel('Display name')).toBeVisible();
 });
 

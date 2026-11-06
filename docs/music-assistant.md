@@ -10,6 +10,8 @@ Settings reports the installed MA version/schema and distinguishes an unsupporte
 
 The app selects speakers and groups exposed by Music Assistant. Search coverage, artist albums, availability, seeking, and volume depend on the provider/player. Compatibility has not been established for every player integration or provider. See [testing coverage and limitations](testing.md).
 
+You can also [use the Listening Room browser as a speaker](browser-speaker.md). Its audio engine survives navigation between app pages; setup is available from the menu and Playback settings.
+
 ## Search and saved recordings
 
 Search includes available sources configured in Music Assistant, such as Spotify, Tidal, and local files. Some providers expose only indexed library albums or lack artist-album browsing. Try track search when artist browsing returns no results.

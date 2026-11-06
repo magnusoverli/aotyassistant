@@ -1,8 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { headerModel, routes, pageForPath, type HeaderView, type Page } from '../web/navigation.js';
+import { headerModel, routes, pageForPath, spaDestination, type HeaderView, type Page } from '../web/navigation.js';
 
 const view: HeaderView = { mode: 'demo', me: { id: 'me', nickname: 'Literal <name>' } };
+
+test('SPA navigation retains cross-page fragments, queries and Ingress without intercepting native anchors or external pages', () => {
+  const current = new URL('https://ha.example/api/hassio_ingress/room/display');
+  const base = '/api/hassio_ingress/room';
+  const target = new URL(base + '/host/settings?section=audio#access', current);
+  assert.equal(spaDestination(target, current, base), base + '/host/settings?section=audio#access');
+  assert.equal(spaDestination(new URL('#main-content', current), current, base), undefined);
+  assert.equal(spaDestination(new URL('/host', current), current, base), undefined);
+  assert.equal(spaDestination(new URL('https://elsewhere.test/display'), current, base), undefined);
+  assert.equal(spaDestination(new URL('/api/hassio_ingress/another/host', current), current, base), undefined);
+  assert.equal(spaDestination(new URL('/api/host/state', current), current), undefined);
+  assert.equal(spaDestination(new URL('http://room.local/host/settings#access'), new URL('http://room.local/display')), '/host/settings#access');
+});
 
 test('all pages use the same central route/navigation definitions with one current page', () => {
   for (const page of Object.keys(routes) as Page[]) {

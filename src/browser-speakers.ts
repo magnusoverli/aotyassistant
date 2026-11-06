@@ -1,0 +1,179 @@
+import { createHash, randomBytes } from 'node:crypto';
+import type { IncomingMessage, Server } from 'node:http';
+import type { Duplex } from 'node:stream';
+import WebSocket, { WebSocketServer } from 'ws';
+import { z } from 'zod';
+import { AppError } from './model.js';
+import { MusicAssistantTransport } from './music-assistant-transport.js';
+import { resolveLanAddresses, musicAssistantUrl } from './lan-network.js';
+
+export type SpeakerConnection = { origin: string; token: string; epoch: string; scope: string; version: string; serverId: string };
+export type SpeakerContext = { origin: string; base: string; kind: 'lan' | 'ingress' | 'public'; valid: () => boolean; admin: boolean };
+export type BrowserSpeakerView = { id: string; name: string; code: string; approved: boolean; connected: boolean; paired: boolean; expiresAt: number };
+type Session = BrowserSpeakerView & { clientId: string; owner: string; epoch: string; context: SpeakerContext; close?: () => void; pairing?: Promise<void>; revoked: boolean };
+export const speakerCookie = 'aoty_browser_speaker';
+export const speakerPath = '/api/browser-speaker';
+export const speakerId = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+export const speakerRegistration = z.object({ id: z.string().uuid(), clientId: speakerId, name: z.string().trim().min(1).max(60) }).strict();
+const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+export const requestSpeakerCookie = (req: IncomingMessage) => req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${speakerCookie}=`))?.slice(speakerCookie.length + 1) ?? '';
+
+/** Version-0 pairing token: base32(client public key || PSK), with 9 replacing 2. */
+export function pairingClientId(token: string): string | undefined {
+  if (!/^SP:0[A-Z3-79]{103}$/.test(token)) return;
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let value = 0; let bits = 0; const bytes: number[] = [];
+  for (const character of token.slice(4).replaceAll('9', '2')) {
+    value = (value << 5) | alphabet.indexOf(character); bits += 5;
+    if (bits >= 8) { bits -= 8; bytes.push((value >>> bits) & 255); value &= (1 << bits) - 1; }
+  }
+  if (bytes.length !== 64 || value !== 0) return;
+  return Buffer.from(bytes.slice(0, 32)).toString('base64url');
+}
+
+/** Only authenticated upstream sockets leave this function; auth frames never reach the browser. */
+export async function openSpeakerSocket(connection: SpeakerConnection, clientId: string): Promise<WebSocket> {
+  // An address can be reused by a different MA installation. Verify identity before
+  // authentication/pairing; a cached inventory or matching API schema is insufficient.
+  const transport = new MusicAssistantTransport(connection.origin, connection.token);
+  try {
+    const info = z.object({ server_id: z.string(), server_version: z.string(), schema_version: z.literal(65) }).parse(await transport.read('/info'));
+    if (info.server_id !== connection.serverId || !/^2\.10\.[678](?:$|[-+])/.test(info.server_version)) throw new Error();
+  } catch { throw new AppError(502, 'Music Assistant identity or browser-audio compatibility could not be confirmed. Refresh its connection in Settings.'); }
+  finally { transport.close(); }
+  const url = new URL('/sendspin', musicAssistantUrl.parse(connection.origin));
+  const addresses = await resolveLanAddresses(url.hostname.replace(/^\[|\]$/g, ''), 8000);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url, { agent: false, followRedirects: false, handshakeTimeout: 8000, maxPayload: 2 * 1024 * 1024, perMessageDeflate: false,
+      lookup: (_name, options, callback) => options.all ? callback(null, addresses) : callback(null, addresses[0]!.address, addresses[0]!.family) });
+    const timer = setTimeout(fail, 10_000); timer.unref();
+    function fail() { clearTimeout(timer); socket.terminate(); reject(new AppError(502, 'The Music Assistant browser audio connection could not be established.')); }
+    socket.once('open', () => socket.send(JSON.stringify({ type: 'auth', token: connection.token, client_id: clientId })));
+    const message = (data: WebSocket.RawData, binary: boolean) => {
+      try {
+        if (binary || data.toString().length > 4096 || JSON.parse(data.toString()).type !== 'auth_ok') { fail(); return; }
+        clearTimeout(timer); socket.off('message', message); socket.off('close', fail); socket.off('error', fail);
+        socket.on('error', () => {}); resolve(socket);
+      } catch { fail(); }
+    };
+    socket.on('message', message); socket.once('error', fail); socket.once('close', fail);
+  });
+}
+
+async function pair(connection: SpeakerConnection, token: string) {
+  const transport = new MusicAssistantTransport(connection.origin, connection.token, 20_000);
+  try { await transport.read('/api', 'sendspin/pair_web_player', { pairing_token: token }); }
+  finally { transport.close(); }
+}
+
+/** Ephemeral, explicitly approved output-device grants, separate from participant identities. */
+export class BrowserSpeakers {
+  private sessions = new Map<string, Session>();
+  private upgrades = new WebSocketServer({ noServer: true, maxPayload: 128 * 1024, perMessageDeflate: false });
+  private timer: NodeJS.Timeout;
+  private closed = false;
+  constructor(private connection: () => SpeakerConnection, private changed: () => void = () => {},
+    private open = openSpeakerSocket, private pairClient = pair, private now = Date.now) {
+    this.timer = setInterval(() => this.sweep(), 5000); this.timer.unref();
+  }
+  info() {
+    if (this.closed) throw new AppError(503, 'Browser audio is shutting down.');
+    const c = this.connection();
+    if (!/^2\.10\.[678](?:$|[-+])/.test(c.version)) throw new AppError(422, 'Browser audio requires a supported Music Assistant 2.10.6–2.10.8 server with Sendspin pairing.');
+    return { scope: c.scope, version: c.version };
+  }
+  private usable(session: Session) {
+    try { return !this.closed && !session.revoked && this.now() < session.expiresAt && session.context.valid() && this.connection().epoch === session.epoch; }
+    catch { return false; }
+  }
+  private revoke(session: Session) { session.revoked = true; session.close?.(); this.sessions.delete(session.id); }
+  sweep() { for (const session of this.sessions.values()) if (!this.usable(session)) this.revoke(session); }
+  private view(s: Session): BrowserSpeakerView { return { id: s.id, name: s.name, code: s.code, approved: s.approved, connected: s.connected, paired: s.paired, expiresAt: s.expiresAt }; }
+  list() { this.sweep(); return [...this.sessions.values()].map(s => this.view(s)); }
+  register(input: z.infer<typeof speakerRegistration>, owner: string, context: SpeakerContext) {
+    this.info(); this.sweep();
+    if (!/^[\w-]{43}$/.test(owner)) throw new AppError(401, 'Browser speaker access is unavailable.');
+    const prior = this.sessions.get(input.id);
+    if (prior) { this.owned(input.id, owner, context); return this.view(prior); }
+    if (this.sessions.size >= 16) throw new AppError(429, 'Too many browser speaker requests. Remove unused devices in Playback settings.');
+    const s: Session = { ...input, owner: digest(owner), context, epoch: this.connection().epoch, approved: false, connected: false, paired: false, revoked: false,
+      code: randomBytes(4).toString('hex').toUpperCase(), expiresAt: this.now() + 5 * 60_000 };
+    this.sessions.set(s.id, s);
+    if (context.admin && ![...this.sessions.values()].some(other => other !== s && other.approved && other.clientId === s.clientId)) this.approve(s.id);
+    return this.view(s);
+  }
+  owned(id: string, owner: string, context: SpeakerContext) {
+    const s = this.sessions.get(id);
+    if (!s || !this.usable(s) || s.owner !== digest(owner) || s.context.origin !== context.origin || s.context.base !== context.base || s.context.kind !== context.kind) throw new AppError(403, 'Browser speaker approval expired or was removed. Enable it again.');
+    return s;
+  }
+  status(id: string, owner: string, context: SpeakerContext) { return this.view(this.owned(id, owner, context)); }
+  approve(id: string) {
+    const s = this.sessions.get(id); if (!s || !this.usable(s)) throw new AppError(404, 'The speaker request expired. Try enabling it again.');
+    // An explicit host approval is also the only way another tab can take over an identity.
+    for (const other of this.sessions.values()) if (other !== s && other.clientId === s.clientId) this.revoke(other);
+    s.approved = true; s.expiresAt = this.now() + 8 * 60 * 60_000; return this.view(s);
+  }
+  remove(id: string) { const s = this.sessions.get(id); if (s) this.revoke(s); }
+  revokePublic() { for (const s of this.sessions.values()) if (s.context.kind === 'public') this.revoke(s); }
+  revokeOwner(owner: string) { for (const s of this.sessions.values()) if (s.owner === digest(owner)) this.revoke(s); }
+  async pair(id: string, owner: string, context: SpeakerContext, token: string) {
+    const s = this.owned(id, owner, context);
+    if (!s.approved || !s.connected || pairingClientId(token) !== s.clientId) throw new AppError(403, 'This speaker cannot be paired. Check its host approval and connection.');
+    if (!s.pairing) {
+      s.pairing = this.pairClient(this.connection(), token).then(() => {
+        if (!this.usable(s) || !s.connected) throw new AppError(409, 'The speaker connection changed during pairing.');
+        s.paired = true; this.changed();
+      }).catch(() => { throw new AppError(502, 'Music Assistant could not pair this browser. Check its version and the integration account permissions.'); }).finally(() => { s.pairing = undefined; });
+    }
+    await s.pairing; return this.view(s);
+  }
+  /** Every listener supplies its own provenance validator; Express is not involved in upgrades. */
+  attach(server: Server, context: (req: IncomingMessage) => SpeakerContext | undefined) {
+    server.on('upgrade', (req, socket, head) => { void this.upgrade(req, socket, head, context); });
+  }
+  private async upgrade(req: IncomingMessage, socket: Duplex, head: Buffer, getContext: (req: IncomingMessage) => SpeakerContext | undefined) {
+    let upstream: WebSocket | undefined;
+    let session: Session | undefined;
+    const reject = () => { upstream?.terminate(); if (!socket.destroyed) socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n'); };
+    try {
+      socket.on('error', () => {});
+      const context = getContext(req); if (!context || req.headers.origin !== context.origin || req.headers['sec-fetch-site'] === 'cross-site') { reject(); return; }
+      if (req.method !== 'GET' || req.headers.upgrade?.toLowerCase() !== 'websocket' || req.headers['sec-websocket-version'] !== '13' ||
+        typeof req.headers['sec-websocket-key'] !== 'string' || !/^[+/0-9A-Za-z]{22}==$/.test(req.headers['sec-websocket-key']) || /[\\%]|\/\//.test(req.url ?? '')) { reject(); return; }
+      const url = new URL(req.url!, context.origin);
+      if (url.pathname !== `${context.base}${speakerPath}/socket` && url.pathname !== `${speakerPath}/socket` || url.searchParams.size !== 1) { reject(); return; }
+      session = this.owned(z.string().uuid().parse(url.searchParams.get('id')), requestSpeakerCookie(req), context);
+      if (!session.approved || session.close) { reject(); return; }
+      const s = session;
+      const close = () => { upstream?.terminate(); socket.destroy(); if (s.close === close) s.close = undefined; };
+      s.close = close; // Reserve before awaiting DNS/auth; racing upgrades cannot acquire the same lease.
+      socket.once('close', close);
+      upstream = await this.open(this.connection(), s.clientId);
+      if (!this.usable(s) || socket.destroyed || upstream.readyState !== WebSocket.OPEN) { close(); if (s.close === close) s.close = undefined; return; }
+      const remote = upstream;
+      this.upgrades.handleUpgrade(req, socket, head, client => {
+        socket.off('close', close);
+        s.connected = true;
+        let clientAlive = true; let remoteAlive = true; let done = false;
+        const timer = setInterval(() => {
+          if (!this.usable(s) || !clientAlive || !remoteAlive) { finish(); return; }
+          clientAlive = remoteAlive = false; client.ping(); remote.ping();
+        }, 20_000); timer.unref();
+        const finish = () => {
+          if (done) return; done = true; clearInterval(timer); client.terminate(); remote.terminate();
+          s.connected = false; s.paired = false; s.close = undefined; this.changed();
+        };
+        s.close = finish;
+        client.on('pong', () => { clientAlive = true; }); remote.on('pong', () => { remoteAlive = true; });
+        const forward = (target: WebSocket, data: WebSocket.RawData, binary: boolean) => {
+          if (!this.usable(s) || target.readyState !== WebSocket.OPEN || target.bufferedAmount > 4 * 1024 * 1024) { finish(); return; }
+          target.send(data, { binary }, error => { if (error) finish(); });
+        };
+        client.on('message', (data, binary) => forward(remote, data, binary)); remote.on('message', (data, binary) => forward(client, data, binary));
+        client.on('close', finish); remote.on('close', finish); client.on('error', finish); remote.on('error', finish);
+      });
+    } catch { if (session && !session.connected) session.close = undefined; reject(); }
+  }
+  close() { if (this.closed) return; this.closed = true; clearInterval(this.timer); for (const s of this.sessions.values()) this.revoke(s); this.upgrades.close(); }
+}

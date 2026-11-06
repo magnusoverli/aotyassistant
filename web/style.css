@@ -461,3 +461,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
   body:has(input:not([type='range']):focus,textarea:focus,select:focus) .mobile-player-return { display:none; }
 }
 }
+/* Audio belongs to the shell; only this opt-in dialog exposes its controls. */
+.browser-speaker-dialog { width: min(36rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); overflow: auto; border: 1px solid var(--line); border-radius: 1rem; padding: 1.5rem; background: #18251b; color: var(--text); }
+.browser-speaker-dialog::backdrop { background: rgb(0 0 0 / 60%); }
+.browser-speaker-dialog input { display: block; width: 100%; margin-block: .5rem 1rem; }

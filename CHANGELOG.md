@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.2] — 2026-11-06
+
+- Add an opt-in, host-approved Sendspin browser speaker. Audio belongs to the persistent app shell and continues across internal page navigation; setup is in the menu and Playback settings, without a persistent indicator.
+- Keep cross-page settings fragments and query links inside the app router. Add scoped speaker approvals, single-identity tab takeover, server-side MA authentication, bounded WebSocket relaying and revocation for LAN, Ingress and online access.
+- Simplify the Room display invitation panel to “Join room” and its QR code.
+
 ## [1.1.1] — 2026-11-06
 
 - Add opt-in online invitations with a bundled, pinned Tailscale Funnel connector and guided Home Assistant Settings setup. Guests can join over mobile data without a VPN app or HA account; the invitation address survives venue changes and restarts.

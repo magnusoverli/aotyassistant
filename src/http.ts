@@ -24,6 +24,8 @@ import { maOperation } from './ma-operation.js';
 import { mountStaticAssets } from './static-assets.js';
 import { diagnostics } from './diagnostics.js';
 import { UserManager, pinSchema } from './users.js';
+import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
+import { mountBrowserSpeakers } from './browser-speaker-http.js';
 
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -42,7 +44,7 @@ async function catalogueRead(res: Response, action: string, work: () => Promise<
 }
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
-  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager, onlineAccess?: OnlineAccess) {
+  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager, onlineAccess?: OnlineAccess, browserSpeakers?: BrowserSpeakers) {
   integrations?.configureGuestAccess(config.guestUrl, config.addon, config.guestOverride);
   integrations?.attachUploads(uploads, config.guestUrl);
   const checks = new MediaChecks(); integrations?.attachMediaChecks(checks);
@@ -64,10 +66,13 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.use((req, res, next) => {
     const ingress = ingressContext(req);
     const remote = publicContext(req);
+    const browserAudioOrigin = new URL(ingress?.origin ?? remote?.origin ??
+      ([`localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(req.headers.host ?? '') ? `http://${req.headers.host}` : config.guestUrl));
+    browserAudioOrigin.protocol = browserAudioOrigin.protocol === 'https:' ? 'wss:' : 'ws:';
     res.set({
       'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': ingress ? 'SAMEORIGIN' : 'DENY',
-      'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors ${ingress ? "'self'" : "'none'"}; form-action 'self'`,
+      'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${browserAudioOrigin.origin}; media-src 'self' blob: data:; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors ${ingress ? "'self'" : "'none'"}; form-action 'self'`,
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
     // Supervisor checks process liveness, never speaker recovery or dependency readiness.
@@ -80,7 +85,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       if (req.path === '/' && ['GET', 'HEAD'].includes(req.method)) {
         res.redirect(`${ingress.base}/host`); return;
       }
-      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path === '/api/listening-order/events')) {
+      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path === '/api/listening-order/events')) {
         return next(new AppError(404, 'Page not found.'));
       }
     }
@@ -123,6 +128,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   app.use(express.json({ limit: '16kb' }));
   app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
+  if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess);
   const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users);
   void uploads.cleanup();
   const uploadCleanup = setInterval(() => { void uploads.cleanup(); }, 60 * 60_000); uploadCleanup.unref();
@@ -200,6 +206,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   app.post('/api/participant/logout', async (req, res) => {
     body(req, z.object({}).strict()); await users.logout(participantCredential(req));
+    browserSpeakers?.revokeOwner(requestSpeakerCookie(req));
     res.clearCookie('aoty_participant', { path: `${requestBase(req)}/api/participant` });
     res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` }); res.json({ ok: true });
   });

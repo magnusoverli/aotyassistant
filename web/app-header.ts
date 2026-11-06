@@ -5,6 +5,7 @@ import { attr, prop, text } from './view-nodes';
 import { demoPlaybackNotice, productName } from '../src/product';
 import { requestJson } from './request';
 import type { UserDirectory } from '../src/model';
+import { showBrowserSpeaker } from './browser-speaker';
 
 /** One persistent, compact header for every route and viewport. */
 export class AppHeader {
@@ -71,6 +72,9 @@ export class AppHeader {
     this.logout.type = 'button'; this.logout.onclick = () => { void this.logOut(); };
     this.logoutError.setAttribute('role', 'alert'); this.logoutError.hidden = true;
     this.logoutItem.append(this.logout, this.logoutError); this.logoutItem.hidden = true; this.primary.append(this.logoutItem);
+    const speakerItem = el('li'); const speaker = el('button', 'Use this device as a speaker', 'header-nav-link');
+    speaker.type = 'button'; speaker.onclick = () => { this.setExpanded(false); showBrowserSpeaker(); };
+    speakerItem.append(speaker); this.primary.append(speakerItem);
   }
   private async refreshIdentity() {
     if (this.logoutPending) return;

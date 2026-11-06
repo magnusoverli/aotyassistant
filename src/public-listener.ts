@@ -5,8 +5,10 @@ import { grantLifetime, type OnlineAccess } from './online-access.js';
 const contexts = new WeakMap<IncomingMessage, { origin: string; session: string }>();
 export const publicContext = (request: IncomingMessage) => contexts.get(request);
 const cookieName = '__Host-aoty_online';
-const cookie = (req: Request) => req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) ?? '';
+export const onlineCookie = (req: IncomingMessage) => req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) ?? '';
+const cookie = onlineCookie;
 const readRoutes = [
+  /^\/api\/browser-speaker\/(?:info|session\/[a-f0-9-]{36})$/,
   /^\/(?:join|participant|display)?$/, /^\/demo-cover\.svg$/, /^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css|svg|woff2)$/,
   /^\/api\/participant\/(?:identity|state|events)$/, /^\/api\/participant\/artwork\/[^/]+$/,
   /^\/api\/participant\/preparations\/(?:state|live|events)$/,
@@ -16,6 +18,7 @@ const readRoutes = [
   /^\/api\/listening-order\/events$/,
 ];
 const writeRoutes = [
+  /^\/api\/browser-speaker\/(?:register|pair|stop)$/,
   /^\/api\/participant\/(?:join|logout|finish|search|browse|play|control|volume|reveal)$/,
   /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-upload|purge-upload|move|remove|restore|review|play)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/discard)?$/,
