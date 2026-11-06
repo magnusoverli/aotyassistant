@@ -22,6 +22,8 @@ export type CatalogueAlbum = { id: string; name: string; artist: string; provide
 export type CataloguePage<T> = { items: T[]; notices?: string[] };
 export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueAlbum[]; tracks?: CatalogueTrack[]; notices?: string[]; playbackAvailable: boolean };
 export interface CatalogueProvider {
+  readonly guestOrigin?: string;
+  readonly guestAccess?: GuestAccess;
   readonly configured: boolean;
   readonly playbackAvailable?: boolean;
   readonly output?: OutputState;
@@ -71,6 +73,7 @@ export type OutputState = { name: string | null; state: 'none' | 'checking' | 'r
 export type PlaybackSettings = { enabled: boolean; revision: number };
 export const AUTO_REVEAL_FRACTION = 0.7;
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
+export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambiguous'; source: 'automatic' | 'manual' | 'legacy' | 'configured'; message: string };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;
@@ -88,6 +91,7 @@ export type View = {
   active?: Person[];
   rotation?: Person[]; position?: RotationPosition;
   joinUrl?: string; displayUrl?: string;
+  guestAccess?: GuestAccess;
 };
 
 export class AppError extends Error {

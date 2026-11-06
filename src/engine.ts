@@ -211,13 +211,15 @@ export class Engine extends EventEmitter {
       rotation: room.active.map(id => person(id)!), // Names/order only, never selections or credentials.
       ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue,
         ...(this.adapter.problem ? { playbackProblem: { ...this.adapter.problem } } : {}) } : {}) };
-    const joinUrl = `${this.guestUrl}/join`;
+    const guestUrl = this.catalogue?.guestOrigin || this.guestUrl;
+    const guestAccess = this.catalogue?.guestAccess;
+    const joinUrl = guestAccess && guestAccess.status !== 'ready' ? undefined : `${guestUrl}/join`;
     if (role.kind === 'host') {
       const playback = base.playbackStatus !== 'unavailable' ? room.playback : null;
       return { ...base, active: room.active.map(id => person(id)!), volume: this.adapter.volume,
         hostPlayback: playback ? { id: playback.id, status: playback.status, revealed: playback.revealed } : null,
         progress: playback && playback.status !== 'stopped' ? this.progress(room, playback.revealed) : undefined,
-        joinUrl, displayUrl: `${this.guestUrl}/display` };
+        guestAccess, joinUrl, displayUrl: joinUrl ? `${guestUrl}/display` : undefined };
     }
     if (role.kind === 'display') {
       const revealed = Boolean(room.playback?.revealed && !this.concealPlayback && this.ready);
@@ -225,7 +227,7 @@ export class Engine extends EventEmitter {
       if (track && room.playback) {
         for (const kind of ['artwork', 'artistArtwork'] as const) if (track[kind]?.startsWith('/api/participant/artwork/')) track[kind] = `/api/display/artwork/${room.playback.id}/${kind}`;
       }
-      return { ...base, joinUrl, progress: this.progress(room, revealed), nowPlaying: revealed && track
+      return { ...base, guestAccess, joinUrl, progress: this.progress(room, revealed), nowPlaying: revealed && track
         ? { revealed: true, track } : { revealed: false } };
     }
     const me = this.participant(role.credential, room); const myTurn = room.currentId === me.id;

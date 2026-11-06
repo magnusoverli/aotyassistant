@@ -82,10 +82,12 @@ export class PublicRoom {
     }
     updateProgress(this.progress, active ? view.progress : undefined);
 
-    const invitationKey = JSON.stringify([view.joinUrl, qrImage]);
+    const invitationKey = JSON.stringify([view.joinUrl, qrImage, view.guestAccess]);
     if (this.invitationKey !== invitationKey) {
       this.invitationKey = invitationKey;
       this.invitation.replaceChildren(el('h3', 'Join room'));
+      if (view.guestAccess) this.invitation.append(el('p', view.guestAccess.message, 'muted small'));
+      if (!view.joinUrl) this.invitation.append(link('Guest access settings', '/host/settings#access'));
       if (view.joinUrl) {
         const join = link('', view.joinUrl, 'room-qr-link'); join.setAttribute('aria-label', 'Join room');
         if (qrImage) { const image = el('img'); image.src = qrImage; image.alt = 'Scan to join the room'; join.append(image); this.invitation.append(join); }

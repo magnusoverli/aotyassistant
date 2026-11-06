@@ -42,9 +42,10 @@ test('Supervisor hints use default-role reads, effective ports, private interfac
   };
   const reader = { read: async (path: string) => { calls.push(path); if (!(path in data)) throw new Error(); return data[path]; } };
   const hints = await supervisorHints(reader, 3000);
-  assert.deepEqual(hints.guestOrigins, ['http://192.168.5.20:4567']);
-  assert.deepEqual(hints.mediaOrigins, ['http://local-aoty:3000', 'http://172.30.33.5:3000', 'http://192.168.5.20:4567']);
-  assert.deepEqual(hints.maOrigins, ['http://192.168.5.20:8095', 'http://172.30.32.1:8094']);
+  assert.deepEqual(hints.guestOrigins, ['http://192.168.5.20:4567', 'http://192.168.6.20:4567']);
+  assert.deepEqual(hints.preferredGuestOrigins, ['http://192.168.5.20:4567']);
+  assert.deepEqual(hints.mediaOrigins, ['http://local-aoty:3000', 'http://172.30.33.5:3000', 'http://192.168.5.20:4567', 'http://192.168.6.20:4567']);
+  assert.deepEqual(hints.maOrigins, ['http://192.168.5.20:8095', 'http://192.168.6.20:8095', 'http://172.30.32.1:8094']);
   assert.ok(!calls.includes('/addons') && !calls.some(path => path.startsWith('/discovery')));
   assert.throws(() => new SupervisorClient('never-send').read('http://192.168.1.1/info'));
   data['/addons/self/info'] = { network: { '3000/tcp': null } }; data['/supervisor/info'] = {};
@@ -60,7 +61,7 @@ test('discovery deduplicates server identities and rejects an advertised browser
   assert.equal(found[0]!.playbackCompatible, true);
 });
 
-test('first-run addresses persist once; subsequent Supervisor IP changes and explicit overrides preserve browser identity', async t => {
+test('automatic addresses refresh after stable discovery; explicit overrides preserve browser identity', async t => {
   const dir = await directory(t); const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
   manager.attachUploads({} as never, 'http://localhost:3000');
   const client = { read: async (path: string) => path === '/addons/self/info' ? { network: { '3000/tcp': 4000 } }
@@ -68,10 +69,13 @@ test('first-run addresses persist once; subsequent Supervisor IP changes and exp
   const config = { port: 3000, listenHost: '0.0.0.0', guestUrl: 'http://localhost:3000', dataDir: dir, mode: 'demo' as const, demoSeconds: 30, addon: true };
   let guest = ''; const setup = new SetupManager(config, manager, value => { guest = value; }, client, async () => [], async () => []);
   t.after(() => setup.close()); await setup.refresh(); assert.equal(guest, 'http://192.168.1.8:4000');
-  await manager.initializeGuestOrigin('http://192.168.1.9:4000'); assert.equal(manager.guestOrigin, guest);
+  const changed = await supervisorHints({ read: async path => path === '/network/info' ? { interfaces: [{ primary: true, ipv4: { address: ['192.168.1.9/24'] } }] } : client.read(path) }, 3000);
+  await manager.updateGuestDiscovery(changed); assert.equal(manager.guestOrigin, guest);
+  await manager.updateGuestDiscovery(changed); guest = 'http://192.168.1.9:4000'; assert.equal(manager.guestOrigin, guest);
   const restored = new IntegrationManager(new IntegrationFileStore(dir)); await restored.init(); assert.equal(restored.guestOrigin, guest);
-  const explicit = new SetupManager({ ...config, guestOverride: true }, restored, () => assert.fail('Explicit address replaced'), client, async () => [], async () => []);
+  const explicit = new SetupManager({ ...config, guestUrl: 'http://explicit.local:4000', guestOverride: true }, restored, () => {}, client, async () => [], async () => []);
   t.after(() => explicit.close()); await explicit.refresh();
+  assert.equal(restored.guestOrigin, 'http://explicit.local:4000');
   assert.equal(explicit.allowsGuestHost('192.168.1.8:4000'), true);
   assert.equal(explicit.allowsGuestHost('192.168.1.8:3000'), false);
   assert.equal(explicit.allowsGuestHost('other.local:4000'), false);
@@ -200,8 +204,17 @@ test('Ingress requires its dedicated trusted listener; prefixes assets/auth and 
   assert.match(html, /src="\/api\/hassio_ingress\/fixture\/main.ts"/); assert.ok(html.includes(`content="${guestOrigin}"`));
   const direct = await fetch(`${f.local.origin}/host`, { headers }); assert.equal(direct.headers.get('x-frame-options'), 'DENY');
   assert.ok(!(await direct.text()).includes('src="/api/hassio_ingress'));
-  const guest = await fetch(`${ingress.origin}/participant`, { headers, redirect: 'manual' }); assert.equal(guest.headers.get('location'), `${guestOrigin}/participant`);
-  assert.equal((await fetch(`${ingress.origin}/api/participant/state`, { headers })).status, 404);
+  const guest = await fetch(`${ingress.origin}/participant`, { headers, redirect: 'manual' }); assert.equal(guest.status, 200); assert.equal(guest.headers.get('location'), null);
+  assert.equal((await fetch(`${ingress.origin}/api/participant/state`, { headers })).status, 401);
+  const joined = await fetch(`${ingress.origin}/api/participant/join`, { method: 'POST', headers: { ...headers, Origin: 'https://ha.example.test', 'Content-Type': 'application/json' }, body: JSON.stringify({ nickname: 'Ingress participant', pin: '1234' }) });
+  assert.equal(joined.status, 200); assert.match(joined.headers.get('set-cookie')!, /Path=\/api\/hassio_ingress\/fixture\/api\/participant;/); assert.match(joined.headers.get('set-cookie')!, /Secure/);
+  const memberCookie = joined.headers.get('set-cookie')!.split(';')[0]!;
+  const library = await fetch(`${ingress.origin}/api/participant/preparations/init`, { method: 'POST', headers: { ...headers, Origin: 'https://ha.example.test', Cookie: memberCookie, 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(library.status, 200); assert.match(library.headers.get('set-cookie')!, /Path=\/api\/hassio_ingress\/fixture\/api\/participant\/preparations;/); assert.match(library.headers.get('set-cookie')!, /Secure/);
+  const loggedOut = await fetch(`${ingress.origin}/api/participant/logout`, { method: 'POST', headers: { ...headers, Origin: 'https://ha.example.test', Cookie: memberCookie, 'Content-Type': 'application/json' }, body: '{}' });
+  assert.equal(loggedOut.status, 200);
+  assert.ok(loggedOut.headers.getSetCookie().every(value => value.includes('Path=/api/hassio_ingress/fixture/api/participant')));
+  assert.equal((await fetch(`${ingress.origin}/api/participant/identity`, { headers: { ...headers, Cookie: memberCookie } }).then(response => response.json()) as { current: unknown }).current, null);
   const postHeaders = { ...headers, Origin: 'https://ha.example.test', 'Content-Type': 'application/json' };
   const login = await fetch(`${ingress.origin}/api/host/auth/start`, { method: 'POST', headers: postHeaders, body: JSON.stringify({ url: f.remote.origin, revision: f.manager.view().revision }) });
   assert.equal(login.status, 200); assert.match(login.headers.get('set-cookie')!, /Path=\/api\/hassio_ingress\/fixture\/api\/host\/auth/); assert.match(login.headers.get('set-cookie')!, /Secure/);

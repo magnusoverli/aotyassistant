@@ -2,7 +2,7 @@ import type { IntegrationView } from '../src/integrations';
 import { el, link } from './dom';
 import { AddressingPanel } from './addressing-panel';
 import { requestJson, RequestError } from './request';
-import { appPath } from './paths';
+import { appPath, storageKey } from './paths';
 import type { SetupView } from '../src/setup';
 import { pageFrame } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
@@ -51,7 +51,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   if (authResult) {
     const attemptId = new URL(location.href).searchParams.get('ma_attempt');
     history.replaceState(null, '', location.pathname + location.hash);
-    try { localStorage.setItem('aoty.ma-auth-result', JSON.stringify({ result: authResult, attemptId, at: Date.now() })); } catch { /* The integration stream also confirms successful attempts. */ }
+    try { localStorage.setItem(storageKey('aoty.ma-auth-result'), JSON.stringify({ result: authResult, attemptId, at: Date.now() })); } catch { /* The integration stream also confirms successful attempts. */ }
     if (authResult === 'connected') notice = 'Music Assistant connected. Open Playback to choose a speaker.';
     else if (authResult === 'cancelled') notice = 'Sign-in cancelled. Your saved connection was kept.';
     else if (authResult === 'expired') notice = 'Sign-in expired. Try connecting again.';
@@ -269,17 +269,6 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     if (settings?.compatibility && !settings.compatibility.supported) connectionNodes.push(v.el('compatibility', 'p', settings.compatibility.message, 'warning small'));
     children(connection, ...connectionNodes);
     const accessNodes: Node[] = [];
-    if (setup?.supervisor.enabled && (!setup.supervisor.available || setup.supervisor.guestOrigins.some(origin => origin !== addresses.view?.guestOrigin))) {
-      const detected = panel('detected', 'Home Assistant setup', setup.supervisor.available ? 'Detected' : 'Unavailable');
-      const detectedNodes: Node[] = [detected.firstElementChild!, v.el('supervisor-message', 'p', setup.supervisor.message, 'muted small')];
-      for (const origin of setup.supervisor.guestOrigins) if (origin !== addresses.view?.guestOrigin) detectedNodes.push(action(`Use ${origin} for guests`, async () => {
-        if (!confirm(`Change the guest link from ${addresses.view?.guestOrigin}/join to ${origin}/join? People will need to select their name and enter their PIN at the new address. Their playlists are kept.`)) return;
-        await requestJson('/api/host/addressing/guest', { origin, revision: settings!.revision }); notice = 'Guest address saved.';
-      }, true, 'access'));
-      children(detected, ...detectedNodes);
-      for (const control of detected.querySelectorAll('button')) prop(control, 'disabled', control.disabled || Boolean(settings?.settingsChangesBlocked));
-      accessNodes.push(detected);
-    }
     const inventory = settings?.speakerInventory;
     const inventoryState = speakerFreshness.state;
     const updatingSpeakers = refreshingSpeakers || refreshing || inventoryState === 'loading' || inventoryState === 'refreshing';
@@ -400,7 +389,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   }, 1000);
   window.addEventListener('pagehide', () => clearInterval(authTimer), { once: true, signal });
   window.addEventListener('storage', event => {
-    if (event.key !== 'aoty.ma-auth-result' || !authPending || !event.newValue) return;
+    if (event.key !== storageKey('aoty.ma-auth-result') || !authPending || !event.newValue) return;
     try {
       const result = JSON.parse(event.newValue);
       if (result.attemptId !== authAttempt || typeof result.at !== 'number' || Date.now() - result.at > 60_000) return;

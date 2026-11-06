@@ -30,8 +30,8 @@ Use **Reconnect Music Assistant** to renew authorization for the same server whi
 
 ## Guest and display access
 
-- **Host desk / Settings:** available through Home Assistant Ingress and the published LAN port.
-- **Your music / Join room / Room display:** use the separate guest address, without Home Assistant accounts.
+- **All menu pages:** stay on the address you opened, including Home Assistant Ingress. Your music and Room display do not require a separate network address when opened from the menu.
+- **Invitations and QR codes:** use the separate guest address, without Home Assistant accounts. On a standard LAN this is detected automatically; Settings shows sharing status and Advanced guest settings for overrides.
 
 Supervisor supplies LAN-address and published-port suggestions. Choose a stable address in Settings if several interfaces are available. Phones and the display must be able to reach that address; isolated guest Wi-Fi may block it. Home Assistant remote access does not automatically expose the guest port.
 

@@ -38,7 +38,7 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
   });
   app.get('/api/host/addressing', (_req, res) => res.json(integrations.addressing()));
   app.post('/api/host/addressing/guest', async (req, res) => {
-    const input = body(req, z.object({ origin: applicationOrigin, revision }).strict());
+    const input = body(req, z.object({ origin: applicationOrigin.nullable(), revision }).strict());
     const view = await integrations.saveGuestOrigin(input.origin, input.revision);
     engine.setGuestOrigin(view.guestOrigin); res.json(view);
   });

@@ -10,6 +10,7 @@ const appInfo = z.object({ slug: z.string().optional(), hostname: host.nullish()
 export type SupervisorHints = {
   enabled: boolean; available: boolean; versions: { core?: string; supervisor?: string };
   guestOrigins: string[]; mediaOrigins: string[]; maOrigins: string[]; guestPort: number | null; message: string;
+  networkAvailable?: boolean; preferredGuestOrigins?: string[]; internalHosts?: string[];
 };
 export const emptyHints = (enabled = false): SupervisorHints => ({ enabled, available: false, versions: {},
   guestOrigins: [], mediaOrigins: [], maOrigins: [], guestPort: null,
@@ -54,19 +55,24 @@ export async function supervisorHints(client: Pick<SupervisorClient, 'read'>, co
     if (mapped?.success) result.guestPort = mapped.data;
     if (own.data.hostname) result.mediaOrigins.push(origin(own.data.hostname, containerPort));
     if (own.data.ip_address && privateIP(own.data.ip_address)) result.mediaOrigins.push(origin(own.data.ip_address, containerPort));
+    result.internalHosts = own.data.host_network ? [] : [own.data.hostname, own.data.ip_address].filter((value): value is string => Boolean(value));
   }
   const interfaces = z.object({ interfaces: z.array(z.object({ primary: z.boolean().optional(), enabled: z.boolean().optional(),
     type: z.string().optional(), interface: z.string().optional(), ipv4: z.object({ address: z.array(z.string()) }).nullable().optional(),
     ipv6: z.object({ address: z.array(z.string()) }).nullable().optional() })).max(100) }).safeParse(network);
   const candidates = interfaces.success ? interfaces.data.interfaces.filter(i => i.enabled !== false &&
-    !/^(tun|tap|tailscale|wg|docker|veth|hassio|lo)/i.test(i.interface ?? '') && !/bridge|loopback|tun|wireguard/i.test(i.type ?? '')) : [];
+    !/^(tun|tap|tailscale|wg|docker|veth|hassio|lo|br-[a-f0-9]{12})/i.test(i.interface ?? '') && !/loopback|tun|wireguard/i.test(i.type ?? '')) : [];
+  result.networkAvailable = interfaces.success && own.success && Boolean(own.data.network && Object.hasOwn(own.data.network, `${containerPort}/tcp`));
   const primary = candidates.filter(i => i.primary);
-  const interfacesToUse = primary.length ? primary : candidates;
-  const addresses = [...new Set(interfacesToUse.flatMap(i => {
+  const addressesFor = (items: typeof candidates) => [...new Set(items.flatMap(i => {
     const v4 = (i.ipv4?.address ?? []).map(a => a.split('/')[0]!).filter(privateIP);
     return v4.length ? v4 : (i.ipv6?.address ?? []).map(a => a.split('/')[0]!).filter(privateIP);
-  }))].slice(0, 4);
-  if (result.guestPort) result.guestOrigins = addresses.map(ip => origin(ip, result.guestPort!));
+  }))].filter(ip => !result.internalHosts?.includes(ip)).slice(0, 8);
+  const addresses = addressesFor([...primary, ...candidates]);
+  if (result.guestPort) {
+    result.guestOrigins = addresses.map(ip => origin(ip, result.guestPort!));
+    result.preferredGuestOrigins = addressesFor(primary.length ? primary : candidates).map(ip => origin(ip, result.guestPort!));
+  }
   result.mediaOrigins = [...result.mediaOrigins, ...result.guestOrigins].slice(0, 4);
   // The v1 embedded list is optional/legacy. Never escalate to manager for /addons.
   const apps = z.object({ addons: z.array(z.object({ slug: z.string().regex(/^[a-zA-Z0-9_-]+$/), name: z.string().optional() })).max(500) }).safeParse(supervisor);

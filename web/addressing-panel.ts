@@ -4,7 +4,7 @@ import { requestJson } from './request';
 import { inIngress, setGuestOrigin } from './paths';
 import { ViewNodes, children, prop, attr } from './view-nodes';
 
-/** Suggestions are not trusted until explicit guest selection or an observed MA fetch. */
+/** Guest discovery and file-fetch verification have separate status and controls. */
 export class AddressingPanel {
   view?: AddressingView;
   busy = false;
@@ -76,22 +76,37 @@ export class AddressingPanel {
     else {
       const view = this.view;
       if (this.playbackBlocked()) content.push(v.el('blocked', 'p', 'Finish the current song before changing addresses.', 'muted small'));
-      content.push(v.el('guest-address', 'p', `Guest links: ${view.guestOrigin}`, 'saved-address'));
-      if (view.guestOrigin !== location.origin) {
+      if (view.guestAccess.status === 'ready') content.push(v.el('guest-address', 'p', `Guest links: ${view.guestOrigin}`, 'saved-address'));
+      const guestStatus = v.el('guest-status', 'p', view.guestAccess.message, 'muted small'); attr(guestStatus, 'role', 'status'); content.push(guestStatus);
+      if (view.guestAccess.status === 'ready' && view.guestOrigin !== location.origin) {
         const link = v.el('guest-link', 'a', 'Open saved guest address', 'button secondary'); attr(link, 'href', `${view.guestOrigin}/host/settings`); content.push(link);
       }
-      if (new URL(view.guestOrigin).hostname === 'localhost' || /^127\./.test(new URL(view.guestOrigin).hostname)) content.push(v.el('local-guest', 'p', 'Guest links work only on this device. Choose a LAN address to share the room.', 'muted small'));
       const guestSettings = v.el('guest-settings', 'details', undefined, 'settings-address-help'); prop(guestSettings, 'open', this.guestExpanded);
-      const guestNodes: Node[] = [v.el('guest-summary', 'summary', 'Change guest address')];
+      const guestNodes: Node[] = [v.el('guest-summary', 'summary', 'Advanced guest settings')];
       guestSettings.ontoggle = () => { if (guestSettings.isConnected) this.guestExpanded = guestSettings.open; };
       guestNodes.push(v.el('guest-warning', 'p', 'At a new address, people select their name and enter their PIN again. Their playlists are kept. Keep the guest address stable for automatic recognition.', 'muted small'));
+      guestNodes.push(v.el('guest-source', 'p', `Address selection: ${view.guestAccess.source}.`, 'muted small'));
+      if (view.automaticGuestOrigin) guestNodes.push(v.el('automatic-guest', 'p', `Automatically detected address: ${view.automaticGuestOrigin}`, 'muted small'));
+      if (view.guestAccess.source === 'manual' || view.guestAccess.source === 'legacy') guestNodes.push(this.button('Use automatic address', async () => {
+        if (view.automaticGuestOrigin && !this.confirmGuestChange(view.automaticGuestOrigin)) return;
+        this.accept(await this.request('/guest', { origin: null, revision: this.view!.revision }), true);
+        this.notice = this.view!.guestAccess.source === 'configured' ? 'Using the deployment-configured address. Remove its guest_url override to enable automatic selection.' : 'Automatic guest address enabled.';
+      }, true));
+      guestNodes.push(this.button('Refresh guest discovery', async () => {
+        await requestJson('/api/host/setup/refresh', {}, 60_000); this.accept(await this.request(), true);
+      }));
+      for (const candidate of view.guestCandidates) guestNodes.push(this.button(`Use ${candidate}`, async () => {
+        if (!this.confirmGuestChange(candidate)) return;
+        this.accept(await this.request('/guest', { origin: candidate, revision: this.view!.revision }), true);
+        this.notice = 'Guest address saved.';
+      }, true));
       if (!inIngress()) guestNodes.push(this.button('Use this browser address for guest links', async () => {
         if (!this.confirmGuestChange(location.origin)) return;
         this.accept(await this.request('/guest', { origin: location.origin, revision: this.view!.revision }), true);
         this.notice = 'Guest address saved.';
         if (this.view!.configured && this.view!.guestOrigin === location.origin) await this.check();
       }, true));
-      else guestNodes.push(v.el('ingress', 'p', 'Guests need a LAN address, not the Home Assistant host interface.', 'muted small'));
+      else guestNodes.push(v.el('ingress', 'p', 'Navigation stays in Home Assistant. Invitations use a separate address reachable by guest devices.', 'muted small'));
       const guestForm = v.el('guest-form', 'form', undefined, 'form-stack integration-form');
       const guest = this.field('Guest address', 'app-guest-origin', this.guestDraft, value => { this.guestDraft = value; }); prop(guest.input, 'required', true);
       const save = v.el('save-guest', 'button', 'Save guest address'); prop(save, 'type', 'submit'); prop(save, 'disabled', this.busy || this.blocked() || !navigator.onLine || this.playbackBlocked());

@@ -4,7 +4,7 @@ The app uses separate addresses for different jobs:
 
 | Address | Used by |
 | --- | --- |
-| Home Assistant Ingress | The host opening the app inside Home Assistant |
+| Home Assistant Ingress | All app pages opened inside Home Assistant |
 | Guest address | Participant phones, join QR codes, and the shared display |
 | Music Assistant API address | The app connecting to Music Assistant |
 | File-playback address | Music Assistant fetching uploaded audio from the app |
@@ -13,11 +13,17 @@ An address that works for one job may not work for another. In particular, guest
 
 ## Guest links
 
-Home Assistant supplies LAN interfaces and the app’s effective published port. In **Settings**, select a suggested address under **Home Assistant setup**, or open **Guest access → Change guest address**. A saved address updates join/display links immediately and survives restarts.
+Menu navigation stays on the current address. When opened inside Home Assistant, participant pages, uploads, private lists, and the display remain inside Ingress. Guest invitations and QR codes use a separate LAN address.
+
+Home Assistant supplies LAN interfaces and the app’s effective published port. A single preferred LAN address is selected automatically. Automatic selection retains a suitable address across refreshes, and a replacement must appear in two successful discovery scans before it is saved. Address changes wait while the app owns playback. Discovery does not depend on connecting Music Assistant.
+
+**Settings → Access & network → Guest access** shows sharing status. **Advanced guest settings** contains network choices, a discovery refresh, and manual overrides. **Use automatic address** clears an in-app override. The add-on's explicit `guest_url`/environment override still takes precedence over discovery. Existing addresses saved by older releases are preserved as legacy selections because their original source is unknown; use automatic addressing to opt in.
+
+Host desk and Room display hide invitations while automatic discovery is unresolved or the guest port is disabled. A detected address is not proof that every phone can reach it: use **Open guest invitation** and try the link on a guest device. Standalone localhost links are labelled as working only on the current device.
 
 Use a stable hostname or reserved LAN address reachable by participant devices and the display. Include the published port, normally `3000`. An address is an HTTP(S) origin without a path, query, credentials, or fragment. `localhost` refers to the device opening it, so it cannot be shared with phones.
 
-Changing the origin requires guests to select their name and enter their four-digit PIN again because remembered browser sessions do not move between origins. Their existing playlist and files remain associated with their user. Keep the guest address stable for convenient automatic recognition. See [private selections](private-lists.md).
+Changing the origin requires guests to select their name and enter their four-digit PIN again because remembered browser sessions do not move between origins. This also applies when moving between direct LAN access and Home Assistant Ingress. Their existing playlist and files remain associated with their user. Active tabs are not redirected when discovery updates invitation links. Keep the guest address stable for convenient automatic recognition. See [private selections](private-lists.md).
 
 The optional Home Assistant `guest_url` option is a fallback; a saved in-app guest address takes precedence. Supervisor-verified LAN addresses can also open the guest/display pages. Other address mismatches show a setup/recovery page rather than granting unrestricted access through an arbitrary Host header.
 

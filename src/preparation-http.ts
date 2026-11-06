@@ -7,7 +7,7 @@ import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
 import { PreparationManager, preparationOperationSchema } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
-import { artworkSize, body, rawCookie, setPrivateCookie } from './http-utils.js';
+import { artworkSize, body, rawCookie, setParticipantCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { maOperation } from './ma-operation.js';
 import type { UserManager } from './users.js';
@@ -23,7 +23,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   const rates = new Map<string, { count: number; start: number }>();
   const member = (req: Request) => rawCookie(req, 'aoty_participant');
   const credential = (req: Request) => rawCookie(req, cookieName);
-  const setCookie = (res: Response, value: string) => setPrivateCookie(res, cookieName, value, prefix, config.guestUrl);
+  const setCookie = (res: Response, value: string) => setParticipantCookie(res.req, res, cookieName, value, prefix, config.guestUrl);
   const timer = setInterval(() => {
     const now = Date.now(); for (const [key, value] of rates) if (now - value.start > 60_000) rates.delete(key);
   }, 60_000); timer.unref();

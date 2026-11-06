@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { ingressContext, requestBase } from './ingress.js';
 
 /** Old open tabs may still ask for 128; normalize it before reaching MA or the image cache. */
 export const artworkSize = z.enum(['128', '160', '512', '1024']).default('512')
@@ -12,6 +13,13 @@ export const rawCookie = (request: Request, name: string): string =>
 
 export function setPrivateCookie(response: Response, name: string, value: string, path: string, origin: string) {
   response.cookie(name, value, { path, httpOnly: true, sameSite: 'strict', secure: origin.startsWith('https:'), maxAge: 365 * 24 * 60 * 60_000 });
+}
+
+export function setParticipantCookie(request: Request, response: Response, name: string, value: string, path: string, configuredOrigin: string) {
+  // Forwarded headers are authoritative only on the validated Ingress listener.
+  const direct = request.secure ? `https://${request.headers.host}` : new URL(configuredOrigin).host === request.headers.host ? configuredOrigin : `${request.protocol}://${request.headers.host}`;
+  const origin = ingressContext(request)?.origin ?? direct;
+  setPrivateCookie(response, name, value, `${requestBase(request)}${path}`, origin);
 }
 
 /** A single satisfiable byte range. null means 416; undefined requests the entire file. */

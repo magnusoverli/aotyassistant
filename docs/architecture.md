@@ -4,7 +4,7 @@
 
 The Home Assistant image runs Node.js 24, a TypeScript/Express backend, and Vite-built browser assets. Startup prepares private storage and drops to the unprivileged `node` user. Supervisor provides `/data`, options, discovery information, Ingress, watchdog monitoring, and backup coordination.
 
-The app has two listeners: guest/display/host LAN traffic on port 3000, and a dedicated host-only Ingress listener on 8099. Untrusted LAN headers cannot impersonate Supervisor Ingress. It needs no privileged mode, host networking, Docker socket, Core database, or shared media mount.
+The app has two listeners: guest/display/host LAN traffic on port 3000, and a dedicated authenticated Ingress listener on 8099 supporting all browser pages. Untrusted LAN headers cannot impersonate Supervisor Ingress. Participant cookies, uploads, artwork, and event streams use the trusted Ingress base path. Guest invitations remain separate LAN links. It needs no privileged mode, host networking, Docker socket, Core database, or shared media mount.
 
 ```text
 Home Assistant Ingress ─ host interface ─┐

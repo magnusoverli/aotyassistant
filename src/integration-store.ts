@@ -9,6 +9,7 @@ export const integrationSchema = z.object({
   schema: z.literal(1), revision: z.number().int().nonnegative(),
   mediaOrigin: applicationOrigin.nullable().optional(),
   guestOrigin: applicationOrigin.optional(), automaticMediaOrigin: applicationOrigin.optional(),
+  guestSelection: z.enum(['manual', 'automatic']).optional(), automaticGuestOrigin: applicationOrigin.optional(),
   musicAssistant: z.object({ url: musicAssistantUrl, accessToken: maToken,
     sourceBindingId: z.string().uuid().optional(),
     serverId: z.string().min(1).max(200).optional(), browserUrl: musicAssistantUrl.optional(), tokenExpiresAt: z.number().int().positive().optional(),

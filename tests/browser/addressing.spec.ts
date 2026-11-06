@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
 import { test } from './app-fixture';
+import { emptyHints } from '../../src/supervisor';
 
 test('host suggests the opened address, verifies media automatically without a speaker, and retains guest links across reload', async ({ page, isolatedApp }) => {
   const origin = isolatedApp.origin;
@@ -13,8 +14,8 @@ test('host suggests the opened address, verifies media automatically without a s
   await expect(panel.getByLabel('Application address reachable from Music Assistant', { exact: true })).toBeHidden();
   await expect(panel.getByText('Last tested:', { exact: false })).toBeHidden();
   expect((await (await page.request.get('/api/host/integrations')).json()).destination).toBeNull();
-  await panel.getByText('Change guest address', { exact: true }).click();
-  await expect(panel.getByText('Changing address may require people to rejoin and lose access to previous selections.', { exact: false })).toBeVisible();
+  await panel.getByText('Advanced guest settings', { exact: true }).click();
+  await expect(panel.getByText('At a new address, people select their name and enter their PIN again.', { exact: false })).toBeVisible();
   await panel.getByRole('button', { name: 'Use this browser address for guest links' }).click();
   await expect(panel.getByText('Guest address saved.', { exact: false })).toBeVisible();
   await expect(panel.getByLabel('Guest address', { exact: true })).toHaveValue(origin);
@@ -52,12 +53,51 @@ test('the host can select the opened local hostname without MA and new invitatio
   // localhost is a configured loopback admin alias; save another advertised origin to exercise explicit selection.
   await page.goto(origin + '/host/settings#access');
   const panel = page.getByRole('region', { name: 'Guest access', exact: true });
-  await panel.getByText('Change guest address', { exact: true }).click();
+  await panel.getByText('Advanced guest settings', { exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Use this browser address for guest links' })).toBeEnabled();
-  page.once('dialog', async dialog => { expect(dialog.message()).toContain('Browser identities do not move'); await dialog.accept(); });
+  page.once('dialog', async dialog => { expect(dialog.message()).toContain('PIN'); await dialog.accept(); });
   await panel.getByRole('button', { name: 'Use this browser address for guest links' }).click();
   await expect(panel.getByText('Guest address saved.', { exact: false })).toBeVisible();
   const saved = await (await page.request.get(origin + '/api/host/addressing')).json(); expect(saved.guestOrigin).toBe(origin);
   const created = await page.request.get(origin + '/api/host/state');
   expect(created.status()).toBe(200); expect(new URL((await created.json()).joinUrl).origin).toBe(origin);
+});
+test('host and display share discovery status and update invitations without reloading or navigating away', async ({ page, isolatedApp }) => {
+  isolatedApp.manager.configureGuestAccess(isolatedApp.origin, true);
+  await page.goto('/host');
+  const display = await page.context().newPage();
+  try {
+    await display.goto('/display');
+    await expect(page.getByText(/Preparing guest link/)).toBeVisible();
+    await expect(display.getByText(/Preparing guest link/)).toBeVisible();
+    await expect(page.getByLabel('Join link', { exact: true })).toHaveCount(0);
+    await expect(display.locator('.room-qr-link')).toHaveCount(0);
+    const detected = { ...emptyHints(true), available: true, networkAvailable: true, guestPort: 4000, guestOrigins: ['http://192.168.1.8:4000'] };
+    await isolatedApp.manager.updateGuestDiscovery(detected);
+    await expect(page.getByLabel('Join link', { exact: true })).toHaveValue(`${detected.guestOrigins[0]}/join`);
+    await expect(display.locator('.room-qr-link')).toHaveAttribute('href', `${detected.guestOrigins[0]}/join`);
+    await isolatedApp.manager.updateGuestDiscovery({ ...detected, guestPort: null, guestOrigins: [] });
+    await expect(page.getByText(/Guest access is disabled/)).toBeVisible();
+    await expect(display.getByText(/Guest access is disabled/)).toBeVisible();
+    await expect(page.getByLabel('Join link', { exact: true })).toHaveCount(0);
+    await expect(display.locator('.room-qr-link')).toHaveCount(0);
+    await expect(page).toHaveURL(`${isolatedApp.origin}/host`);
+    await expect(display).toHaveURL(`${isolatedApp.origin}/display`);
+  } finally { await display.close(); }
+});
+
+test('a saved guest address can return to automatic selection from Advanced settings', async ({ page, isolatedApp }) => {
+  isolatedApp.manager.configureGuestAccess(isolatedApp.origin, true);
+  const automatic = 'http://192.168.1.8:4000';
+  await isolatedApp.manager.updateGuestDiscovery({ ...emptyHints(true), available: true, networkAvailable: true, guestPort: 4000, guestOrigins: [automatic] });
+  await isolatedApp.manager.saveGuestOrigin('http://old.local:4000', isolatedApp.manager.view().revision);
+  await page.goto('/host/settings#access');
+  await page.getByText('Advanced guest settings', { exact: true }).click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Use automatic address', exact: true }).click();
+  await expect(page.getByText('Automatic guest address enabled.', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Guest address', { exact: true })).toHaveValue(automatic);
+  await page.reload();
+  await expect(page.getByText(/Guest link detected automatically/)).toBeVisible();
+  await expect(page.getByLabel('Guest address', { exact: true })).toBeHidden();
 });

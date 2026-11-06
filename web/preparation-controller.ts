@@ -2,6 +2,7 @@ import type { CatalogueTrack } from '../src/model';
 import type { PreparationView, PreparationResult, PreparationOperation } from '../src/preparations';
 import { requestJson, RequestError } from './request';
 import { participantEvents } from './participant-events';
+import { storageKey } from './paths';
 
 const prefix = '/api/participant/preparations';
 type Path = 'add' | 'add-upload' | 'purge-upload' | 'move' | 'remove' | 'restore' | 'review';
@@ -35,7 +36,7 @@ export class PreparationController {
   private loadSequence = 0;
   private saveSequence = 0;
   constructor(private changed: () => void, private isMember: () => boolean, private request = preparationRequest) {}
-  private storageKey(ownerId: string) { return `aoty.preparation-pending.v1.${ownerId}`; }
+  private storageKey(ownerId: string) { return storageKey(`aoty.preparation-pending.v1.${ownerId}`); }
   private persist() {
     if (!this.pending) return;
     try { localStorage.setItem(this.storageKey(this.pending.ownerId), JSON.stringify(this.pending)); }

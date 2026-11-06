@@ -1,11 +1,12 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState } from './model.js';
+import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
 import { PersistenceError } from './store.js';
 import { MusicAssistantClient, musicAssistantUrl, maToken, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
 import type { UploadAssets, UploadSelection } from './uploads.js';
-import { applicationOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
+import { applicationOrigin, shareableOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
+import type { SupervisorHints } from './supervisor.js';
 import { SerialQueue } from './serial.js';
 import { maOperation } from './ma-operation.js';
 import { CatalogueReferences } from './catalogue-references.js';
@@ -58,6 +59,10 @@ export class IntegrationManager implements CatalogueProvider {
   private playback?: PlaybackController;
   private uploads?: UploadAssets;
   private defaultMediaOrigin = '';
+  private addon = false;
+  private guestOverride = false;
+  private guestHints?: SupervisorHints;
+  private pendingGuest?: string;
   private checks?: MediaChecks;
   private environmentMediaOrigins: string[] = [];
   private checking = false;
@@ -129,11 +134,43 @@ export class IntegrationManager implements CatalogueProvider {
   }
   attachUploads(uploads: UploadAssets, guestUrl: string) { this.uploads = uploads; this.defaultMediaOrigin = guestUrl; }
   attachMediaChecks(checks: MediaChecks) { this.checks = checks; }
-  get guestOrigin() { return this.state.guestOrigin || this.defaultMediaOrigin; }
+  configureGuestAccess(origin: string, addon = false, override = false) {
+    this.defaultMediaOrigin = origin; this.addon = addon; this.guestOverride = override;
+  }
+  get guestOrigin() { return this.state.guestOrigin || (this.guestOverride ? this.defaultMediaOrigin : this.state.automaticGuestOrigin) || this.defaultMediaOrigin; }
+  get guestAccess(): GuestAccess {
+    const source = this.state.guestOrigin ? this.state.guestSelection === 'manual' ? 'manual' : 'legacy' : this.guestOverride || !this.addon ? 'configured' : 'automatic';
+    const hints = this.guestHints;
+    if (hints?.internalHosts?.includes(new URL(this.guestOrigin).hostname.replace(/^\[|\]$/g, '')) && !hints.guestOrigins.includes(this.guestOrigin)) return { source, status: 'unavailable', message: 'The saved address belongs to the app’s internal network. Use automatic addressing in Advanced guest settings.' };
+    if (source === 'automatic') {
+      if (!hints?.available || !hints.networkAvailable) return { source, status: 'checking', message: 'Preparing guest link. Home Assistant network discovery will retry automatically.' };
+      if (!hints.guestPort) return { source, status: 'unavailable', message: 'Guest access is disabled. Enable the guest port in the app’s Home Assistant Network settings.' };
+      if (!hints.guestOrigins.includes(this.guestOrigin)) {
+        const candidates = hints.preferredGuestOrigins ?? hints.guestOrigins;
+        if (candidates.length === 1) return { source, status: 'checking', message: 'Updating the guest link. Address changes wait until the current song finishes.' };
+        if (candidates.length > 1) return { source, status: 'ambiguous', message: 'Choose the home network your guests use in Advanced guest settings.' };
+        return { source, status: 'unavailable', message: 'No guest network address was found. Check Home Assistant networking or choose an address in Advanced guest settings.' };
+      }
+    }
+    if (!shareableOrigin(this.guestOrigin)) return { source, status: this.addon ? 'unavailable' : 'ready', message: 'These links work only on this device. Choose a LAN address in Advanced guest settings to share with other devices.' };
+    return { source, status: 'ready', message: source === 'automatic' ? 'Guest link detected automatically. For devices on your home network.' : 'Using the saved guest address. Guest devices must be able to reach it.' };
+  }
   setEnvironmentMediaOrigins(origins: string[]) { this.environmentMediaOrigins = origins.map(value => applicationOrigin.parse(value)).slice(0, 4); }
-  async initializeGuestOrigin(origin: string) {
+  async updateGuestDiscovery(hints: SupervisorHints) {
     return this.serial(async () => {
-      if (!this.state.guestOrigin && !this.playback?.ownsPlayback) await this.commit({ ...this.state, guestOrigin: applicationOrigin.parse(origin), revision: this.state.revision + 1 });
+      this.guestHints = hints;
+      if (!hints.available || !hints.networkAvailable) { this.pendingGuest = undefined; this.changed(); return this.guestOrigin; }
+      const previous = this.state.automaticGuestOrigin;
+      const candidates = hints.preferredGuestOrigins ?? hints.guestOrigins;
+      const candidate = previous && hints.guestOrigins.includes(previous) ? previous : candidates.length === 1 ? candidates[0] : undefined;
+      // Initial discovery is immediate; replacing a saved automatic address requires two observations.
+      const settled = !previous || this.pendingGuest === candidate;
+      this.pendingGuest = candidate;
+      if (candidate && candidate !== previous && settled && !this.playback?.ownsPlayback) {
+        this.expected(this.state.revision);
+        await this.commit({ ...this.state, automaticGuestOrigin: applicationOrigin.parse(candidate), revision: this.state.revision + 1 });
+      }
+      this.changed();
       return this.guestOrigin;
     });
   }
@@ -147,15 +184,16 @@ export class IntegrationManager implements CatalogueProvider {
     const check = this.mediaCheck.status === 'verified' && this.mediaCheck.checkedAt! + 5 * 60_000 <= Date.now()
       ? { ...this.mediaCheck, status: 'expired' as const, message: 'The last check is over five minutes old. Check again if the network changed.' } : this.mediaCheck;
     const result = { revision: this.state.revision, guestOrigin: this.guestOrigin, mediaOrigin: this.state.mediaOrigin ?? null,
-      automaticMediaOrigin: this.state.automaticMediaOrigin ?? null, effectiveMediaOrigin: this.effectiveMediaOrigin, configured: this.configured, mediaCheck: { ...check } };
+      automaticMediaOrigin: this.state.automaticMediaOrigin ?? null, effectiveMediaOrigin: this.effectiveMediaOrigin, configured: this.configured, mediaCheck: { ...check },
+      guestAccess: this.guestAccess, automaticGuestOrigin: this.state.automaticGuestOrigin ?? null, guestCandidates: this.guestHints?.guestOrigins ?? [] };
     const key = JSON.stringify(result);
     if (key !== this.lastAddressing) { this.lastAddressing = key; this.addressingSequence++; }
     return { ...result, sequence: this.addressingSequence, instanceId: this.runtimeId };
   }
-  async saveGuestOrigin(origin: string, revision: number) {
+  async saveGuestOrigin(origin: string | null, revision: number) {
     return this.serial(async () => {
-      this.expected(revision); origin = applicationOrigin.parse(origin);
-      await this.commit({ ...this.state, guestOrigin: origin, revision: revision + 1 }); return this.addressing();
+      this.assertSetupRevision(revision);
+      await this.commit({ ...this.state, guestOrigin: origin === null ? undefined : applicationOrigin.parse(origin), guestSelection: origin === null ? 'automatic' : 'manual', revision: revision + 1 }); return this.addressing();
     });
   }
   /** Separate diagnostic lane: never holds the player/volume serializer during network I/O. */

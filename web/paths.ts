@@ -13,10 +13,7 @@ export function pagePath(path: string) {
   const base = ingressBase(); return base && path.startsWith(`${base}/`) ? path.slice(base.length) : path;
 }
 export function navigationHref(path: string) {
-  if (inIngress() && ['/participant', '/join', '/display'].includes(path)) return guestLinksReady() ? `${meta('aoty-guest')}${path}` : appPath('/host/settings');
   return appPath(path);
 }
-export function guestLinksReady(origin = meta('aoty-guest')) {
-  if (!inIngress()) return true;
-  try { return !/^(localhost|127\.|\[::1\])/.test(new URL(origin).hostname); } catch { return false; }
-}
+/** Preserve existing direct-access drafts; isolate installations sharing an HA origin. */
+export const storageKey = (key: string) => ingressBase() ? `${ingressBase()}:${key}` : key;

@@ -22,7 +22,7 @@ import { CatalogueController, catalogueIdentity } from './catalogue-controller';
 import { participantEvents } from './participant-events';
 import { BrowseHistory } from './browse-history';
 import { copyButton } from './copy-text';
-import { appPath, pagePath, guestLinksReady, setGuestOrigin } from './paths';
+import { appPath, pagePath, setGuestOrigin } from './paths';
 import { joinPanel } from './join-panel';
 import { ParticipantAccess } from './participant-access';
 import type { UserDirectory } from '../src/model';
@@ -309,6 +309,7 @@ function accept(next: View) {
     const announcement = turnMessage;
     if (turnAnnouncement.textContent !== announcement) turnAnnouncement.textContent = announcement;
   }
+  if (!next.joinUrl) { qrUrl = ''; qrImage = ''; }
   if (next.joinUrl && next.joinUrl !== qrUrl) {
     qrUrl = next.joinUrl; qrImage = '';
     const url = qrUrl;
@@ -354,7 +355,8 @@ async function mutate(path: string, data: unknown) { accept(await api<View>(path
 function qrCard() {
   const card = panel('qr-card');
   card.append(el('h2', 'Invite people'));
-  if (!guestLinksReady(view?.joinUrl)) { card.append(el('p', 'Choose a guest address in Settings before sharing the room.'), link('Configure guest access', '/host/settings#access')); return card; }
+  if (!view?.joinUrl) { card.append(el('p', view?.guestAccess?.message ?? 'Preparing guest link…'), link('Guest access settings', '/host/settings#access')); return card; }
+  if (view.guestAccess) card.append(el('p', view.guestAccess.message, 'muted small'));
   if (view?.joinUrl) {
     const qr = el('div', undefined, 'invitation-qr');
     if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; qr.append(img); }
@@ -396,7 +398,7 @@ function host() {
   const workspace = v.get('workspace', () => { const node = slot(el('div', undefined, 'host-workspace stack'), 'primary'); node.id = 'overview'; return node; });
   const aside = v.get('invitations', () => { const node = slot(el('aside', undefined, 'host-invitations'), 'secondary'); node.id = 'room-invitation'; node.setAttribute('aria-label', 'Room invitation'); return node; });
   const invitation = v.get('invitation-state', () => ({ key: '' }));
-  const invitationKey = JSON.stringify([view?.joinUrl, view?.displayUrl, qrImage, guestLinksReady(view?.joinUrl)]);
+  const invitationKey = JSON.stringify([view?.joinUrl, view?.displayUrl, qrImage, view?.guestAccess]);
   if (invitation.key !== invitationKey) { invitation.key = invitationKey; children(aside, qrCard()); }
   children(grid, workspace, aside); children(main, heading, grid);
   if (!view) return main;
@@ -700,7 +702,7 @@ async function init() {
   }
   if (page === 'home') return;
   if (page === 'display') {
-    history.replaceState(null, '', '/display');
+    history.replaceState(null, '', appPath('/display'));
     try {
       accept(await api<View>('/api/display/state')); subscribe('display');
     } catch (cause) { error = (cause as Error).message; render(); }
@@ -708,7 +710,7 @@ async function init() {
     try { accept(await api<View>('/api/host/state')); subscribe('host'); }
     catch { error = 'Cannot connect to the app. Check the connection and reload.'; render(); }
   } else {
-    if (page === 'join') history.replaceState(null, '', '/join');
+    if (page === 'join') history.replaceState(null, '', appPath('/join'));
     void library.start();
     void loadUsers();
     await participantAccess.check();

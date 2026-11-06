@@ -10,7 +10,7 @@ import { PreparationManager, PreparationFileStore } from './preparations.js';
 import { mountPreparations } from './preparation-http.js';
 import { UploadAssets } from './uploads.js';
 import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
-import { artworkSize, body, rawCookie, setPrivateCookie } from './http-utils.js';
+import { artworkSize, body, rawCookie, setParticipantCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
 import { mountIntegrations } from './integration-http.js';
 import { ingressContext, requestBase } from './ingress.js';
@@ -41,6 +41,7 @@ async function catalogueRead(res: Response, action: string, work: () => Promise<
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
   preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager) {
+  integrations?.configureGuestAccess(config.guestUrl, config.addon, config.guestOverride);
   integrations?.attachUploads(uploads, config.guestUrl);
   const checks = new MediaChecks(); integrations?.attachMediaChecks(checks);
   const defaults = config;
@@ -73,12 +74,11 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     }
     if (!engine.live) return next(new AppError(503, 'The application is shutting down. Try again after it restarts.'));
     if (ingress) {
-      if (['/', '/join', '/participant', '/display'].includes(req.path) && ['GET', 'HEAD'].includes(req.method)) {
-        res.redirect(req.path === '/' ? `${ingress.base}/host` : /^(localhost|127\.|\[::1\])/.test(new URL(config.guestUrl).hostname)
-          ? `${ingress.base}/host/settings` : `${config.guestUrl}${req.path}`); return;
+      if (req.path === '/' && ['GET', 'HEAD'].includes(req.method)) {
+        res.redirect(`${ingress.base}/host`); return;
       }
-      if (!(req.path === '/host' || req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path === '/api/listening-order/events')) {
-        return next(new AppError(404, 'Use the guest address for participant and display access.'));
+      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path === '/api/listening-order/events')) {
+        return next(new AppError(404, 'Page not found.'));
       }
     }
     const mediaRead = ['GET', 'HEAD'].includes(req.method) && /^\/api\/media\/uploads\/[^/]+\/[^/]+\/track\.[a-z0-9]+$/.test(req.path);
@@ -176,9 +176,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     }
     await engine.joinUser(user.id, credential);
     if (credential !== participantCredential(req)) await users.logout(participantCredential(req));
-    setPrivateCookie(res, 'aoty_participant', credential, '/api/participant', config.guestUrl);
+    setParticipantCookie(req, res, 'aoty_participant', credential, '/api/participant', config.guestUrl);
     // A different identity must never inherit the previous browser user's list cookie.
-    if (credential !== participantCredential(req)) res.clearCookie('aoty_preparation', { path: '/api/participant/preparations' });
+    if (credential !== participantCredential(req)) res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` });
     res.json(engine.view({ kind: 'participant', credential }));
   });
   app.get('/api/participant/identity', (req, res) => res.json(users.directoryView(participantCredential(req))));
@@ -190,8 +190,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   app.post('/api/participant/logout', async (req, res) => {
     body(req, z.object({}).strict()); await users.logout(participantCredential(req));
-    res.clearCookie('aoty_participant', { path: '/api/participant' });
-    res.clearCookie('aoty_preparation', { path: '/api/participant/preparations' }); res.json({ ok: true });
+    res.clearCookie('aoty_participant', { path: `${requestBase(req)}/api/participant` });
+    res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` }); res.json({ ok: true });
   });
   app.get('/api/host/users', (_req, res) => res.json(users.directoryView('', true)));
   app.post('/api/host/users/pin', async (req, res) => {

@@ -1,6 +1,6 @@
 import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
-import { appPath, navigationHref, inIngress } from './paths';
+import { appPath, navigationHref } from './paths';
 import { attr, prop, text } from './view-nodes';
 import { demoPlaybackNotice, productName } from '../src/product';
 import { requestJson } from './request';
@@ -122,7 +122,6 @@ export class AppHeader {
   private updateLink(anchor: HTMLAnchorElement, item: NavigationItem) {
     if (anchor.textContent !== item.text) anchor.textContent = item.text;
     attr(anchor, 'href', navigationHref(item.href));
-    if (inIngress() && ['participant', 'display'].includes(item.id)) { prop(anchor, 'target', '_blank'); prop(anchor, 'rel', 'noopener noreferrer'); }
     attr(anchor, 'aria-current', item.current ? 'page' : undefined);
   }
   private setExpanded(value: boolean, restoreFocus = false) {

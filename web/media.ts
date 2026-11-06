@@ -3,6 +3,7 @@ import { el } from './dom';
 import { vinyl } from './visuals';
 import { ProgressClock } from './progress-clock';
 import { attr, prop } from './view-nodes';
+import { appPath } from './paths';
 
 const clock = new ProgressClock();
 const animated = new Set<HTMLElement>();
@@ -28,7 +29,7 @@ export function artwork(url: string | undefined, alt: string, className = '', ea
   if (url && (url.startsWith('/api/participant/artwork/') || url.startsWith('/api/participant/preparations/artwork/') || /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}\/artwork$/.test(url) || url.startsWith('/api/display/artwork/') || url === '/demo-cover.svg')) {
     const image = el('img'); image.alt = alt; image.loading = eager ? 'eager' : 'lazy'; image.decoding = 'async';
     const size = className.includes('room-artwork') ? 1024 : className.includes('result-artwork') || className.includes('artist-portrait') ? 160 : 512;
-    image.src = url.startsWith('/api/') ? `${url}?size=${size}` : url;
+    image.src = appPath(url.startsWith('/api/') ? `${url}?size=${size}` : url);
     image.onerror = () => image.remove(); frame.append(image);
   }
   return frame;

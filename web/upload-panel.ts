@@ -5,6 +5,7 @@ import { ArtworkView } from './media';
 import { ViewNodes, children, prop, text } from './view-nodes';
 import { operationId, preparationRequest, type PreparationController } from './preparation-controller';
 import { RequestError } from './request';
+import { appPath, storageKey } from './paths';
 
 const prefix = '/api/participant/preparations';
 type Text = { title: string; artist: string; album: string };
@@ -32,7 +33,7 @@ export class UploadPanel {
     this.input.accept = '.mp3,.m4a,.flac,.wav,.aif,.aiff,.ogg,.oga,.opus,audio/mpeg,audio/mp4,audio/flac,audio/wav,audio/aiff,audio/ogg,audio/opus';
     this.input.onchange = () => { const file = this.input.files?.[0]; this.input.value = ''; if (file) void this.choose(file); };
   }
-  private key(ownerId: string) { return `aoty.upload-draft.v1.${ownerId}`; }
+  private key(ownerId: string) { return storageKey(`aoty.upload-draft.v1.${ownerId}`); }
   private persist() {
     if (!this.ownerId) return;
     try {
@@ -93,7 +94,7 @@ export class UploadPanel {
       this.uploadId = uploadId; this.preview = undefined; this.text = { title: '', artist: '', album: '' }; this.persist(); this.changed();
       const preview = await new Promise<UploadPreview>((resolve, reject) => {
         const xhr = new XMLHttpRequest(); this.xhr = xhr;
-        xhr.open('POST', `${prefix}/uploads/${uploadId}`); xhr.responseType = 'json';
+        xhr.open('POST', appPath(`${prefix}/uploads/${uploadId}`)); xhr.responseType = 'json';
         xhr.setRequestHeader('Content-Type', 'application/octet-stream'); xhr.setRequestHeader('X-Upload-Filename', encodeURIComponent(file.name));
         xhr.upload.onprogress = event => {
           if (this.selection !== selection) return;

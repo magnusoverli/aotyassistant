@@ -4,7 +4,7 @@ import ipaddr from 'ipaddr.js';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { errorPage, escapeHtml as escape } from './error-page.js';
-import { AppError } from './model.js';
+import { AppError, type GuestAccess } from './model.js';
 import { isAllowedAddress } from './music-assistant-transport.js';
 import { mediaRange } from './http-utils.js';
 
@@ -21,7 +21,13 @@ export const applicationOrigin = z.string().trim().max(2048).url().transform((va
 
 export type MediaCheck = { status: 'unchecked' | 'checking' | 'verified' | 'failed' | 'expired'; origin: string | null; checkedAt: number | null; message: string };
 export type AddressingView = { revision: number; guestOrigin: string; mediaOrigin: string | null; automaticMediaOrigin: string | null;
-  effectiveMediaOrigin: string; configured: boolean; mediaCheck: MediaCheck; sequence?: number; instanceId?: string };
+  effectiveMediaOrigin: string; configured: boolean; mediaCheck: MediaCheck; sequence?: number; instanceId?: string;
+  guestAccess: GuestAccess; automaticGuestOrigin: string | null; guestCandidates: string[] };
+
+export function shareableOrigin(origin: string) {
+  try { const host = new URL(origin).hostname.toLowerCase(); return !/^(localhost\.?$|127\.|\[::1\]$)/.test(host) && applicationOrigin.safeParse(origin).success; }
+  catch { return false; }
+}
 
 /** Recovery/setup only. Never authorize ordinary APIs by trusting an arbitrary Host or forwarded header. */
 export function setupHostAllowed(host: string, remote: string) {

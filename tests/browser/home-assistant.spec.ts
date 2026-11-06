@@ -5,6 +5,8 @@ import type { AddressInfo } from 'node:net';
 import { ingressListener } from '../../src/ingress.js';
 import { test } from './app-fixture';
 import { openNavigation } from './navigation-helpers';
+import { uploadBytes } from '../fixtures/uploads';
+import { showList } from './preparation-helpers';
 
 test('Connect signs in through MA, selects a speaker, and reconnects without losing catalogue identity', async ({ page, isolatedApp }) => {
   await page.goto('/host/settings');
@@ -63,7 +65,7 @@ test('unrelated settings changes and another attempt cannot announce successful 
 test('cross-tab file diagnostics update without overwriting an unsaved guest address', async ({ page, isolatedApp }) => {
   await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'fixture-token', 0);
   await page.goto('/host/settings#access'); await expect(page.getByText('File access verified.', { exact: true })).toBeVisible();
-  await page.getByText('Change guest address', { exact: true }).click();
+  await page.getByText('Advanced guest settings', { exact: true }).click();
   await page.getByLabel('Guest address', { exact: true }).fill('http://draft.local:3000');
   const before = isolatedApp.manager.addressing().sequence!;
   await isolatedApp.manager.checkMediaOrigins(['http://127.0.0.1:1'], isolatedApp.manager.view().revision);
@@ -142,10 +144,33 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     await expect(login).toHaveURL(`${origin}${prefix}/host`);
     await expect(login.getByRole('link', { name: 'Open guest invitation ↗' })).toHaveAttribute('href', `${guest}/join`);
     await openNavigation(login);
-    await expect(login.getByRole('link', { name: 'Room display', exact: true })).toHaveAttribute('href', `${guest}/display`);
+    await expect(login.getByRole('link', { name: 'Room display', exact: true })).toHaveAttribute('href', `${prefix}/display`);
+    await expect(login.getByRole('link', { name: 'Your music', exact: true })).not.toHaveAttribute('target', '_blank');
     await page.request.post(`${isolatedApp.origin}/api/participant/join`, { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Ingress listener' } });
     await expect(login.getByText('Ingress listener', { exact: true }).first()).toBeVisible(); // Prefixed SSE delivered the live join.
     await expect(frame.locator('.rotation-seat strong')).toHaveText(['Ingress listener']); // Settings uses the names-only prefixed feed.
+    await login.getByRole('link', { name: 'Your music', exact: true }).click();
+    await expect(login).toHaveURL(`${origin}${prefix}/participant`);
+    await login.getByLabel('Display name').fill('HA participant');
+    await login.getByLabel('4-digit PIN', { exact: true }).fill('1234');
+    await login.getByRole('button', { name: 'Join room', exact: true }).click();
+    await login.locator('#list-upload').click();
+    await login.locator('#track-upload-file').setInputFiles({ name: 'ingress.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
+    await expect(login.getByLabel('Track title', { exact: true })).toHaveValue('Uploaded song');
+    const artwork = login.getByRole('img', { name: 'Uploaded album artwork' });
+    await expect(artwork).toBeVisible();
+    await expect(artwork).toHaveAttribute('src', new RegExp(`^${prefix}/api/participant/`));
+    await expect.poll(() => artwork.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await login.locator('.upload-preview').getByRole('button', { name: 'Add to list', exact: true }).click();
+    await login.reload(); await showList(login);
+    await expect(login.locator('.saved-track strong')).toHaveText('Uploaded song');
+    const cookies = await login.context().cookies();
+    expect(cookies.find(cookie => cookie.name === 'aoty_preparation')?.path).toBe(`${prefix}/api/participant/preparations`);
+    expect(cookies.some(cookie => cookie.name === 'aoty_participant' && cookie.path === `${prefix}/api/participant`)).toBe(true);
+    await openNavigation(login); await login.getByRole('link', { name: 'Room display', exact: true }).click();
+    await expect(login).toHaveURL(`${origin}${prefix}/display`);
+    await expect(login.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
+    await expect(login.getByRole('link', { name: `${guest}/join`, exact: true })).toBeVisible();
     expect(escaped.filter(path => path !== '/favicon.ico')).toEqual([]);
     expect(isolatedApp.calls.some(c => /play_media|cmd\/|\/stop$/.test(c.command))).toBe(false);
     await login.close();

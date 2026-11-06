@@ -27,6 +27,7 @@ export class SetupManager {
     private supervisor?: Pick<SupervisorClient, 'read'>,
     private browse = mdnsOrigins, private discover = discoverServers, schedule: Partial<Schedule> = {}) {
     this.schedule = { ...scheduleDefaults, ...schedule };
+    integrations.configureGuestAccess(config.guestUrl, config.addon, config.guestOverride);
     this.state = { status: 'idle', message: 'Looking for Music Assistant does not start audio.', supervisor: emptyHints(Boolean(config.addon)), servers: [] };
   }
   view(): SetupView { return structuredClone(this.state); }
@@ -48,7 +49,7 @@ export class SetupManager {
     catch (error) { this.state.status = 'waiting'; this.state.message = 'Setup discovery could not finish. It will retry automatically.'; throw error; }
     finally {
       this.pending = undefined; this.changed();
-      const retry = this.view().status !== 'ready' || this.integrations.view().status === 'error' || this.integrations.addressing().mediaCheck.status === 'failed';
+      const retry = this.view().status !== 'ready' || this.integrations.guestAccess.status === 'checking' || this.integrations.view().status === 'error' || this.integrations.addressing().mediaCheck.status === 'failed';
       this.failures = retry ? this.failures + 1 : 0;
       const delay = this.requested ? this.schedule.retryMs : retry
         ? Math.min(this.schedule.maxRetryMs, this.schedule.retryMs * 2 ** Math.min(this.failures - 1, 6)) : this.schedule.refreshMs;
@@ -56,23 +57,23 @@ export class SetupManager {
     }
   }
   private async scan(): Promise<SetupView> {
-    const [hints, mdns] = await Promise.all([
-      this.supervisor ? supervisorHints(this.supervisor, this.config.port).catch(() => emptyHints(true)) : Promise.resolve(emptyHints(Boolean(this.config.addon))),
-      this.browse().catch(() => [] as string[]),
-    ]);
+    const mdnsPending = this.browse().catch(() => [] as string[]);
+    const hints = this.supervisor ? await supervisorHints(this.supervisor, this.config.port).catch(() => emptyHints(true)) : emptyHints(Boolean(this.config.addon));
     // Address access must not wait for MA discovery, authentication or media checks.
     if (this.closed) return this.view();
     const mediaChanged = JSON.stringify(this.state.supervisor.mediaOrigins) !== JSON.stringify(hints.mediaOrigins);
     if (mediaChanged) this.recheckMedia = true;
-    this.state.supervisor = hints;
+    // Preserve the last approved hosts on a transient read failure, never manufacture an empty network.
+    if (hints.available && hints.networkAvailable) this.state.supervisor = hints;
     this.changed();
+    if (this.config.addon) {
+      try { this.guestChanged(await this.integrations.updateGuestDiscovery(hints)); } catch { /* A later scan retries discovery; existing settings remain authoritative. */ }
+    }
     const saved = this.integrations.view().url;
+    const mdns = await mdnsPending;
     const servers = await this.discover([...(saved ? [saved] : []), ...hints.maOrigins, ...mdns]);
     if (this.closed) return this.view();
     this.integrations.setEnvironmentMediaOrigins(hints.mediaOrigins);
-    if (this.config.addon && !this.config.guestOverride && hints.guestOrigins.length === 1) {
-      try { this.guestChanged(await this.integrations.initializeGuestOrigin(hints.guestOrigins[0]!)); } catch { /* Retry via next scan/UI; preserve saved settings. */ }
-    }
     if (this.closed) return this.view();
     if (this.integrations.configured) {
       try {
@@ -95,7 +96,7 @@ export class SetupManager {
       } catch { /* Availability errors remain visible in integration/addressing status. */ }
     }
     if (this.closed) return this.view();
-    this.state = { supervisor: hints, servers, status: servers.length ? 'ready' : 'waiting',
+    this.state = { supervisor: this.state.supervisor, servers, status: servers.length ? 'ready' : 'waiting',
       message: servers.length ? this.integrations.configured ? 'Music Assistant found. Connection status updates automatically.' : 'Music Assistant found. Connect, then choose a speaker.'
         : 'Waiting for Music Assistant. Discovery will retry automatically; you can also enter its direct address.' };
     return this.view();
