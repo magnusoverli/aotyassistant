@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-06
+
+- Keep all menu pages on the current browser address, including Home Assistant Ingress, instead of opening Your music and Room display at a separate guest IP.
+- Support participant sign-in, logout, playlists, uploads, artwork, and live display updates through the trusted Ingress path while preserving the persistent app header.
+- Discover guest invitation addresses from Home Assistant LAN interfaces and the published guest port; refresh automatic selections after stable network changes without interrupting playback.
+- Show consistent guest-sharing status on Host desk and Room display, and hide invitations when automatic discovery is unresolved or the guest port is disabled.
+- Move manual guest-address controls under Advanced guest settings and add an option to return to automatic addressing.
+- Upgrade note: existing saved guest addresses are preserved. Select **Settings → Access & network → Advanced guest settings → Use automatic address** to opt an older saved address into automatic management. Moving between LAN access and Home Assistant may require selecting your name and entering your PIN again; playlists and uploaded files are retained.
+
 ## [1.0.13] — 2026-10-28
 
 - Remove the duplicate Music Assistant and Speaker navigation buttons above Settings; use the section navigation instead.
