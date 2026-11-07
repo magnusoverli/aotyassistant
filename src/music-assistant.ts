@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, catalogueSearchNotice, type CatalogueTrack, type CatalogueArtist, type CatalogueAlbum, type CataloguePage, type Track, type VolumeState } from './model.js';
-import type { IdentityMedia } from './catalogue-grouping.js';
+import { sameCatalogueItem, type IdentityMedia } from './catalogue-grouping.js';
 import { matchCatalogue } from './catalogue-matcher.js';
 import { matchesReference, recordingEvidenceSchema, sameRecordingEvidence, type RecordingDescriptor, type RecordingReference } from './recording-identity.js';
 import type { SavedSelection } from './preparations.js';
@@ -28,9 +28,9 @@ export interface CatalogueReader {
 }
 export interface MusicAssistantReader extends InventoryReader, CatalogueReader {}
 
-const imageSchema = z.object({ proxy_id: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional(), type: z.string().optional() });
+const imageSchema = z.object({ proxy_id: z.string().regex(/^[a-f0-9]{64}$/).nullable().optional().catch(undefined), type: z.string().optional() });
 const imageFields = { image: imageSchema.nullable().optional().catch(undefined),
-  metadata: z.object({ images: z.array(imageSchema).max(50).default([]), explicit: z.boolean().nullable().optional() }).optional().catch(undefined) };
+  metadata: z.object({ images: z.array(imageSchema.nullable().catch(null)).max(50).nullish().transform(images => images?.filter(image => image !== null) ?? []), explicit: z.boolean().nullable().optional() }).optional().catch(undefined) };
 const externalIds = z.array(z.tuple([z.string().max(100), z.string().max(500)])).max(100).default([]).catch([]);
 const providerMappings = z.array(z.object({ available: z.boolean().default(true), item_id: z.string().min(1).max(2048).optional(),
   provider_domain: z.string().min(1).max(200).optional(), provider_instance: z.string().min(1).max(200).optional() })).max(100).default([]);
@@ -84,6 +84,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   private imageCache = new Map<string, { data: ArtworkData; expires: number }>();
   private imageRequests = new Map<string, Promise<ArtworkData>>();
   private browseCache = new Map<string, { items: IdentityMedia[]; expires: number }>();
+  private browseImages = new Map<string, { image?: z.infer<typeof imageSchema>; expires: number }>();
   constructor(origin: string, private token: string, timeoutMs = 8000,
     private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs)) {
     this.events = new MusicAssistantEvents(origin, token);
@@ -174,13 +175,48 @@ export class MusicAssistantClient implements MusicAssistantReader {
     }
     return result;
   }
-  private async grouped<T extends Media, R extends { id: string; provider: string }>(kind: MediaRef['kind'], items: T[], convert: (item: T) => R): Promise<R[]> {
+  private async enrichArtwork<T extends Media>(kind: 'artist' | 'album', groups: T[][]) {
+    // Search and browse can return lightweight items. Read full metadata only for
+    // rows still missing artwork, without delaying an entire catalogue indefinitely.
+    const deadline = Date.now() + 1500;
+    let reads = 0; let next = 0;
+    await Promise.all([0, 1].map(async () => {
+      while (next < groups.length) {
+        const group = groups[next++]!;
+        if (group.some(item => this.image(item))) continue;
+        for (const item of group) {
+          const uri = item.uri || `${item.provider}://${kind}/${item.item_id}`;
+          let cached = this.browseImages.get(uri);
+          if (!cached || cached.expires <= Date.now()) {
+            if (reads >= 8 || Date.now() >= deadline) break;
+            reads++;
+            let image: z.infer<typeof imageSchema> | undefined;
+            try {
+              const raw = await maBudget(deadline - Date.now(), () => this.read('/api', 'music/item_by_uri', { uri, allow_update_metadata: false }));
+              const full = kind === 'artist' ? mediaSchema.extend({ media_type: z.literal('artist') }).parse(raw)
+                : albumSchema.extend({ media_type: z.literal('album') }).parse(raw);
+              if (sameCatalogueItem(kind, item, full)) {
+                const id = this.image(full);
+                if (id) image = { proxy_id: id.slice(6), type: 'thumb' };
+              }
+            } catch { /* Optional metadata must not hide usable search results. */ }
+            cached = { image, expires: Date.now() + 60_000 };
+            this.browseImages.delete(uri); this.browseImages.set(uri, cached);
+            while (this.browseImages.size > 128) this.browseImages.delete(this.browseImages.keys().next().value!);
+          }
+          if (cached.image) { item.image = cached.image; break; }
+        }
+      }
+    }));
+  }
+  private async grouped<T extends Media, R extends { id: string; provider: string; artwork?: string; artistArtwork?: string }>(kind: MediaRef['kind'], items: T[], convert: (item: T) => R): Promise<R[]> {
     let count = 0;
     const deadline = Date.now() + 3000;
     const groups = await matchCatalogue(kind, items, (kind, item) => {
       if (Date.now() >= deadline) return Promise.resolve([]);
       return maBudget(deadline - Date.now(), () => this.matchingItems(kind, item));
     });
+    if (kind !== 'track') await this.enrichArtwork(kind, groups);
     return groups.map(group => {
       const variants = new Map<string, R>();
       // Prefer real provider rows to metadata inherited from a library mapping.
@@ -205,7 +241,8 @@ export class MusicAssistantClient implements MusicAssistantReader {
         }
       }
       const sources = [...variants.values()].sort((a, b) => a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id));
-      const first = sources[0]!;
+      const first = { ...sources[0]!, artwork: sources.find(source => source.artwork)?.artwork ?? group.map(item => this.image(item)).find(Boolean),
+        artistArtwork: sources.find(source => source.artistArtwork)?.artistArtwork };
       const sourceIds = sources.map(x => x.id);
       return sources.length === 1 ? first : { ...first, id: this.rememberGroup(kind, sourceIds),
         provider: [...new Set(sources.map(x => x.provider))].join(' + '), sources, matchKind: 'identity' as const,
@@ -313,12 +350,9 @@ export class MusicAssistantClient implements MusicAssistantReader {
       const result = z.object({ artists: z.array(mediaSchema).max(500) }).parse(await this.read('/api', 'music/search', {
         search_query: query, media_types: ['artist'], limit: 20,
       }));
-      return { notices: [catalogueSearchNotice], items: await this.grouped('artist', result.artists, a => {
-        const artwork = this.image(a);
-        const albums = this.browseCache.get(JSON.stringify(['artist', a.provider, a.item_id]))?.items;
-        return { id: this.remember('artist', a), name: this.redact(a.name), provider: this.sourceName(a), artwork,
-          ...(albums?.length ? { description: this.redact(albums.slice(0, 2).map(album => album.name).join(' · ')) } : {}) };
-      }) };
+      return { notices: [catalogueSearchNotice], items: await this.grouped('artist', result.artists, a => ({
+        id: this.remember('artist', a), name: this.redact(a.name), provider: this.sourceName(a), artwork: this.image(a),
+      })) };
     } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible artist response.'); }
   }
   async albums(artistId: string): Promise<CataloguePage<CatalogueAlbum>> {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.1.6] — 2026-11-07
+
+- Remove album-title subtitles from artist search results. Preserve artwork from equivalent sources and retrieve missing artist/album artwork from bounded, cached Music Assistant detail reads.
+
 ## [1.1.5] — 2026-11-07
 
 - Simplify Music Assistant search to artists only, followed by albums and tracks. Remove the Songs/Artists toggle, obsolete search-mode state and styling, and song-search guidance.

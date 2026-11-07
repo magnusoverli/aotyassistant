@@ -21,7 +21,7 @@ export class CatalogueRow {
     const info = v.el('identity', 'div', undefined, 'result-identity'); const copy = v.el('copy', 'div');
     const content: Node[] = [v.el('name', 'strong', kind === 'track' ? track.title : album.name)];
     if (kind === 'track') content.push(v.el('artist', 'p', track.artist, 'result-artist'));
-    content.push(v.el('details', 'p', kind === 'artist' ? (group as CatalogueArtist).description ?? '' : kind === 'album'
+    if (kind !== 'artist') content.push(v.el('details', 'p', kind === 'album'
       ? [album.artist, album.year, album.version].filter(Boolean).join(' · ')
       : [track.album, track.version].filter(Boolean).join(' · '), kind === 'track' ? 'muted result-details' : 'muted'));
     if (kind === 'track' && !track.available) content.push(v.el('unavailable', 'p', 'Currently unavailable', 'muted small'));
