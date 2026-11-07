@@ -179,13 +179,12 @@ export class PreparationPanel {
     }
     children(actions, ...actionNodes); children(ordered, ...upcomingRows); bodyNodes.push(actions, ordered); children(body, ...bodyNodes);
     const tools = v.el('tools', 'div', undefined, 'list-tools'); const toolNodes: Node[] = [];
-    const history = this.details('history', 'History');
-    const historyNodes: Node[] = [history.firstElementChild!, v.el('history-help', 'p', 'Previously played songs were started, not necessarily finished. Add back places a song at the end of your list.', 'muted small')];
+    const history = v.el('history', 'div', undefined, 'list-history'); prop(history, 'id', 'list-history');
+    const historyNodes: Node[] = [];
     let remaining = this.historyLimit; const historyIds = new Set<string>();
     for (const kind of ['played', 'removed'] as const) {
       const entries = snapshot?.[kind] ?? []; if (!entries.length) continue;
       historyNodes.push(v.el(`history-title-${kind}`, 'h3', `${kind === 'played' ? 'Previously played' : 'Removed'} · ${entries.length}`));
-      if (!this.open.has('history')) continue;
       const rows = v.el(`history-${kind}`, 'ul', undefined, 'saved-tracks'); const historyEntries: Node[] = [];
       const visible = entries.slice(0, remaining); remaining -= visible.length;
       for (const entry of visible) {
@@ -203,10 +202,9 @@ export class PreparationPanel {
         historyEntries.push(cached.element);
       } children(rows, ...historyEntries); historyNodes.push(rows);
     }
-    if (this.open.has('history') && (snapshot?.played.length ?? 0) + (snapshot?.removed.length ?? 0) > this.historyLimit) {
+    if ((snapshot?.played.length ?? 0) + (snapshot?.removed.length ?? 0) > this.historyLimit) {
       historyNodes.push(this.control('more-history', 'Show more history', () => { this.historyLimit += 50; this.refresh(); }));
     }
-    history.ontoggle = () => { if (history.isConnected && history.open !== this.open.has('history')) return; if (history.isConnected) this.refresh(); };
     children(history, ...historyNodes);
     for (const id of this.historyRows.keys()) if (!historyIds.has(id)) this.historyRows.delete(id);
     if (snapshot?.played.length || snapshot?.removed.length) toolNodes.push(history);

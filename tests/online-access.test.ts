@@ -135,11 +135,12 @@ test('online artist, album and track artwork reaches MA with participant and inv
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   t.after(() => { gateway.close(); http.close(); adapter.close(); });
   const access = `__Host-aoty_online=${f.online.redeem(invitation(f.online))!}`;
-  const request = (path: string, cookies = access, data?: unknown) => new Promise<Response>((resolve, reject) => {
+  const request = (path: string, cookies = access, data?: unknown, etag?: string) => new Promise<Response>((resolve, reject) => {
     const req = httpRequest(remote.url + path, { method: data === undefined ? 'GET' : 'POST',
-      headers: { Host: host, Cookie: cookies, ...(data === undefined ? {} : { Origin: `https://${host}`, 'Content-Type': 'application/json' }) } }, res => {
+      headers: { Host: host, Cookie: cookies, ...(etag ? { 'If-None-Match': etag } : {}), ...(data === undefined ? {} : { Origin: `https://${host}`, 'Content-Type': 'application/json' }) } }, res => {
       const headers = new Headers(); for (let i = 0; i < res.rawHeaders.length; i += 2) headers.append(res.rawHeaders[i]!, res.rawHeaders[i + 1]!);
-      resolve(new Response(Readable.toWeb(res) as ReadableStream<Uint8Array>, { status: res.statusCode!, headers }));
+      if (res.statusCode === 304) res.resume();
+      resolve(new Response(res.statusCode === 304 ? null : Readable.toWeb(res) as ReadableStream<Uint8Array>, { status: res.statusCode!, headers }));
     });
     req.on('error', reject); req.end(data === undefined ? undefined : JSON.stringify(data));
   });
@@ -147,7 +148,7 @@ test('online artist, album and track artwork reaches MA with participant and inv
   assert.equal(joined.status, 200);
   const participant = joined.headers.get('set-cookie')!.split(';')[0]!;
   const cookies = `${access}; ${participant}`;
-  let value = 'Fixture'; let lastArtwork = '';
+  let value = 'Fixture'; let lastArtwork = ''; let etag = '';
   for (const kind of ['artists', 'albums', 'tracks']) {
     const response = await request('/api/participant/browse', cookies, { kind, value });
     assert.equal(response.status, 200);
@@ -156,15 +157,18 @@ test('online artist, album and track artwork reaches MA with participant and inv
     lastArtwork = `${item.artwork}?size=160`;
     const image = await request(lastArtwork, cookies);
     assert.equal(image.status, 200, `${kind} artwork must pass the public gateway`);
-    assert.equal(image.headers.get('content-type'), 'image/png');
+    assert.equal(image.headers.get('content-type'), 'image/jpeg');
+    etag = image.headers.get('etag')!;
     assert.ok((await image.arrayBuffer()).byteLength > 20);
   }
-  assert.equal((await request(lastArtwork, participant)).status, 401, 'An invitation is still required.');
+  const cached = await request(lastArtwork, cookies, undefined, etag);
+  assert.equal(cached.status, 304); assert.equal((await cached.arrayBuffer()).byteLength, 0);
+  assert.equal((await request(lastArtwork, participant, undefined, etag)).status, 401, 'An invitation is still required, even with a cached image.');
   assert.equal((await request(lastArtwork, access)).status, 401, 'A participant session is still required.');
   const other = await engine.join('Other listener');
   assert.equal((await request(lastArtwork, `${access}; aoty_participant=${other}`)).status, 409);
   await f.online.change('rotate', f.online.view().revision); await f.online.refresh();
-  assert.equal((await request(lastArtwork, cookies)).status, 401, 'Revoked invitations cannot fetch artwork.');
+  assert.equal((await request(lastArtwork, cookies, undefined, etag)).status, 401, 'Revoked invitations cannot revalidate artwork.');
 });
 
 test('public listener gates profiles, supports PIN join/private library, rejects host and media routes, and revokes live streams', async t => {

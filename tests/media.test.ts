@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { mkdtemp } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
@@ -34,12 +34,55 @@ async function fixture() {
     method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `aoty_${role}=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
-  return { remote, manager, engine, adapter, host, alex, sam, request,
+  return { remote, manager, engine, adapter, host, alex, sam, request, origin,
     display: () => engine.view({ kind: 'display' }),
     participant: (credential: string) => engine.view({ kind: 'participant', credential }),
     close() { http.close(); adapter.close(); remote.close(); server.closeAllConnections(); server.close(); } };
 }
 const status = (code: number) => (error: unknown) => error instanceof AppError && error.status === code;
+
+test('repeated artwork revalidates without transferring pixels and still rejects revoked/foreign access', async t => {
+  const f = await fixture(); t.after(f.close);
+  const artist = (await f.engine.browse(f.alex, 'artists', 'Fixture')).artists![0]!;
+  const again = (await f.engine.browse(f.alex, 'artists', 'Fixture')).artists![0]!;
+  assert.equal(again.artwork, artist.artwork, 'The same participant gets a stable artwork URL.');
+  const path = `${artist.artwork}?size=160`;
+  const first = await f.request(path, f.alex);
+  const etag = first.headers.get('etag')!; assert.ok(etag); await first.arrayBuffer();
+  assert.equal(first.headers.get('cache-control'), 'private, no-cache');
+  assert.match(first.headers.get('vary')!, /Cookie/i);
+  assert.match(first.headers.get('server-timing')!, /^artwork;dur=\d+\.\d$/);
+  // Raw HTTP avoids fetch's automatic Cache-Control:no-cache for manual
+  // conditional requests; this models the browser's ordinary revalidation.
+  const conditional = (credential?: string) => new Promise<{ status: number; bytes: number }>((resolve, reject) => {
+    const req = httpRequest(f.origin + path, { headers: { 'If-None-Match': etag,
+      ...(credential ? { Cookie: `aoty_participant=${credential}` } : {}) } }, res => {
+      let bytes = 0; res.on('data', chunk => { bytes += chunk.length; });
+      res.on('end', () => resolve({ status: res.statusCode!, bytes })); res.on('error', reject);
+    }); req.on('error', reject); req.end();
+  });
+  assert.deepEqual(await conditional(f.alex), { status: 304, bytes: 0 });
+  assert.equal(f.remote.imageCalls.length, 1, 'Revalidation uses the server cache.');
+  assert.equal((await conditional()).status, 401);
+  assert.equal((await conditional(f.sam)).status, 409);
+  await f.manager.save(f.remote.origin, 'browser-test-token', f.manager.view().revision);
+  assert.equal((await conditional(f.alex)).status, 409, 'An ETag cannot bypass a changed catalogue.');
+  await f.engine.remove(f.participant(f.alex).me!.id, f.host().revision);
+  assert.equal((await conditional(f.alex)).status, 401);
+});
+
+test('a full album page retains its small thumbnails and simultaneous copies share one upstream read', async t => {
+  const remote = await startMusicAssistantFixture(); t.after(remote.close);
+  const api = new MusicAssistantClient(remote.origin, 'fixture-token'); t.after(() => api.close());
+  const ids = Array.from({ length: 80 }, (_, index) => `image:${index.toString(16).padStart(64, '0')}`);
+  for (const id of ids) await api.artwork(id, 160);
+  assert.equal(remote.imageCalls.length, 80);
+  for (const id of ids) await api.artwork(id, 160);
+  assert.equal(remote.imageCalls.length, 80, 'Browsing back does not thrash the former 64-entry cache.');
+  remote.delayImages(40);
+  await Promise.all(Array.from({ length: 10 }, () => api.artwork(`image:${'f'.repeat(64)}`, 160)));
+  assert.equal(remote.imageCalls.length, 81);
+});
 
 test('artwork is same-origin, participant-bound, reveal-gated, and revoked when turns or membership change', async t => {
   const f = await fixture(); t.after(f.close);
@@ -49,7 +92,7 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
   for (const media of [artists.artists![0]!, albums.albums![0]!, track]) {
     assert.ok(media.artwork?.startsWith('/api/participant/artwork/'));
     const response = await f.request(`${media.artwork!}?size=160`, f.alex); assert.equal(response.status, 200);
-    assert.equal(response.headers.get('content-type'), 'image/png'); assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('content-type'), 'image/jpeg'); assert.equal(response.headers.get('cache-control'), 'private, no-cache');
     assert.ok((await response.arrayBuffer()).byteLength > 20);
   }
   for (const secret of ['private.example', 'secret-search-art', 'fixture-token', 'a'.repeat(64), 'b'.repeat(64)]) assert.ok(!JSON.stringify(tracks).includes(secret));
@@ -119,7 +162,7 @@ test('artwork transport rejects arbitrary references, redirects, SVG/HTML, and o
     await assert.rejects(new MusicAssistantClient(remote.origin, 'fixture-token').artwork(`image:${'a'.repeat(64)}`), status(502));
   }
   assert.equal(remote.imageCalls.length, 3);
-  assert.ok(remote.imageCalls.every(path => /^\/imageproxy\/[a-f0-9]{64}\?size=512&fmt=png$/.test(path)));
+  assert.ok(remote.imageCalls.every(path => /^\/imageproxy\/[a-f0-9]{64}\?size=512&fmt=jpeg$/.test(path)));
 });
 
 test('MA rejects unsupported thumbnail sizes; legacy app URLs normalize to the supported cached thumbnail', async t => {
@@ -131,7 +174,7 @@ test('MA rejects unsupported thumbnail sizes; legacy app URLs normalize to the s
     const response = await f.request(`${artist.artwork}?size=${size}`, f.alex);
     assert.equal(response.status, 200); await response.arrayBuffer();
   }
-  assert.equal(f.remote.imageCalls.length, 1); assert.ok(f.remote.imageCalls[0]!.endsWith('?size=160&fmt=png'));
+  assert.equal(f.remote.imageCalls.length, 1); assert.ok(f.remote.imageCalls[0]!.endsWith('?size=160&fmt=jpeg'));
   assert.equal((await f.request(`${artist.artwork}?size=999`, f.alex)).status, 400);
 });
 

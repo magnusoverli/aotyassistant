@@ -108,12 +108,11 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const pending = this.imageRequests.get(key); if (pending) return pending;
     if (this.imageRequests.size >= 16) throw new AppError(503, 'Artwork is busy.');
     const request = (async () => {
-      // MA's high-quality JPEG keeps large TV covers below the bounded response/cache budgets.
-      const format = size === 1024 ? 'jpeg' : 'png';
-      const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=${format}`, undefined, {}, true) as ArtworkData;
+      // Photographic artwork is much smaller as JPEG, including list thumbnails.
+      const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=jpeg`, undefined, {}, true) as ArtworkData;
       this.imageCache.set(key, { data, expires: Date.now() + 5 * 60_000 });
       let bytes = [...this.imageCache.values()].reduce((sum, item) => sum + item.data.body.length, 0);
-      while (this.imageCache.size > 64 || bytes > 20 * 1024 * 1024) {
+      while (this.imageCache.size > 512 || bytes > 20 * 1024 * 1024) {
         const key = this.imageCache.keys().next().value!; bytes -= this.imageCache.get(key)!.data.body.length; this.imageCache.delete(key);
       }
       return data;

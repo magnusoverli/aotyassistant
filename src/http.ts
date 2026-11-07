@@ -166,10 +166,15 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.get('/api/display/state', (_req, res) => res.json(engine.view({ kind: 'display' })));
   if (integrations) {
     app.get('/api/participant/artwork/:reference', async (req, res) => {
+      const started = performance.now();
       const context = engine.catalogueContext(participantCredential(req));
       const reference = z.string().max(1500).parse(req.params.reference);
       const image = await integrations.artwork(reference, context, artworkSize.parse(req.query.size));
       if (engine.catalogueContext(participantCredential(req)) !== context) throw new AppError(403, 'Artwork access expired.');
+      // A stored image must revalidate on every reuse. Authorization, reference
+      // expiry and catalogue checks above run before Express can return a 304.
+      res.set('Cache-Control', 'private, no-cache').vary('Cookie');
+      res.set('Server-Timing', `artwork;dur=${(performance.now() - started).toFixed(1)}`);
       res.type(image.contentType).send(image.body);
     });
     app.get('/api/display/artwork/:id/:kind', async (req, res) => {

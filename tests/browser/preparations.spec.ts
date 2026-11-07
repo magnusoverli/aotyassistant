@@ -65,8 +65,7 @@ test('one automatic list reorders, restores entries from history, survives remov
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer']);
     await expect(second.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await expect(second.locator('.preparation-list > .list-notice')).toHaveCount(0);
-    await second.locator('#list-history').click();
-    await second.locator('#list-history').locator('..').locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Add back', exact: true }).click();
+    await second.locator('#list-history').locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Add back', exact: true }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     await second.reload(); await showList(second); await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     const overflow = await second.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1); expect(overflow).toBe(false);
@@ -79,7 +78,6 @@ test('one automatic list reorders, restores entries from history, survives remov
     await expect.poll(async () => (await state(second)).played.length).toBe(1);
     await showList(second);
     await expect(titles(second)).toHaveText(['Late Summer', 'Northern Lights']);
-    if (!await second.locator('#list-history').evaluate(node => (node.parentElement as HTMLDetailsElement).open)) await second.locator('#list-history').click();
     await expect(second.getByRole('button', { name: 'Add back', exact: true })).toBeVisible();
     const originalOwner = (await state(second)).ownerId;
     const hostState = await (await host.request.get('/api/host/state')).json(); await r.post('/api/host/remove', { id: hostState.current.id, revision: hostState.revision });

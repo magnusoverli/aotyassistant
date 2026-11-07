@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.11] — 2026-11-07
+
+- Show previously played and removed tracks by default below the playlist. Remove the History expander and its explanatory text.
+- Reduce excess space above music results and combine the browse-back button and artist/album heading into one compact row.
+- Reduce artwork traffic with JPEG thumbnails, a larger bounded server thumbnail cache, and stable participant-scoped image URLs that support authorized browser cache revalidation. Add artwork server-timing headers for diagnosing slow loads.
+
 ## [1.1.10] — 2026-11-07
 
 - Simplify music results by removing the Results/Browse music heading, result-count badge and top divider.

@@ -79,7 +79,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
     await second.getByRole('button', { name: 'Finish turn' }).click(); await expect(first.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
     for (const page of [first, second]) {
-      await showList(page); await page.locator('#list-history').click(); await page.getByRole('button', { name: 'Add back', exact: true }).click(); await expect(page.locator('.saved-track.is-next')).toBeVisible(); await showFind(page);
+      await showList(page); await page.getByRole('button', { name: 'Add back', exact: true }).click(); await expect(page.locator('.saved-track.is-next')).toBeVisible(); await showFind(page);
     }
     settings = await (await host.request.get('/api/host/integrations')).json();
     expect((await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: settings.revision })).ok()).toBe(true);

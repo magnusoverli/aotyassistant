@@ -38,7 +38,7 @@ Upload progress is shown until processing finishes. Use **Choose another file** 
 
 There are no configured file-size, per-person, or total upload-storage quotas. Available Home Assistant disk space remains the limit; monitor storage and keep backups. Uploads are part of the app’s private `/data` and its Home Assistant backup.
 
-**Remove** is reversible and retains the file. To reclaim its storage, open **History → Removed**, choose **Delete file permanently**, and confirm. This removes that file and its entries from the private list/history. Deletion is blocked while the file is starting, playing, paused, or awaiting playback recovery. Deleting here cannot remove copies from existing backups.
+**Remove** is reversible and retains the file. To reclaim its storage, find the file under **Removed** below the playlist, choose **Delete file permanently**, and confirm. This removes that file and its entries from the private list/history. Deletion is blocked while the file is starting, playing, paused, or awaiting playback recovery. Deleting here cannot remove copies from existing backups.
 
 Only the owner can access private upload previews and artwork. The display gets artwork only after reveal. Music Assistant receives a protected, playback-specific file URL; it is revoked when playback is released or the app restarts. Independently accessible Music Assistant/speaker interfaces may still show track information.
 

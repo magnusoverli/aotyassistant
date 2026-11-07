@@ -38,9 +38,7 @@
     #music-collection .saved-menu[open] > summary { float:left; }
     #music-collection .saved-menu button { margin:0 4px 4px 0; }
     #music-collection .saved-unavailable { display:block; font-size:.8125rem; white-space:normal; }
-    #music-collection .list-tools > .list-disclosure { margin:12px 0 0; }
     #music-collection .catalogue-title h2 { font-size:1.125rem; }
-    #music-collection .catalogue-results { margin-top:16px; }
   }
 
   @media(max-width:1099px) {
@@ -79,15 +77,11 @@
     #music-collection .saved-unavailable { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.75rem; line-height:18px; margin:0; }
     #music-collection .list-tools { display:flex; flex-wrap:wrap; gap:0 16px; }
     #music-collection .list-tools:empty { display:none; }
-    #music-collection .list-tools > .list-disclosure { margin:0; border:0; }
-    #music-collection .list-tools > .list-disclosure[open] { flex-basis:100%; border-top:1px solid var(--line); }
-    #music-collection .list-tools > .list-disclosure > summary { min-height:44px; padding:12px 0; font-size:.8125rem; }
 
     #music-collection > .catalogue-panel { width:100%; padding:14px; border:0; border-radius:0 0 13px 13px; background:transparent; }
     #music-collection .catalogue-title { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
     #music-collection .catalogue-title .privacy-tag { display:none; }
     #music-collection .catalogue-toolbar { margin:0; }
-    #music-collection .catalogue-results { margin-top:8px; }
     #music-collection .catalogue-results button,#music-collection .search-form { scroll-margin-top:260px; }
     body[data-short-viewport='true'] #music-collection .list-body { height:60px; min-height:60px; max-height:60px; }
     body[data-short-viewport='true'] #music-collection .list-save-status { display:none; }

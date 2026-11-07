@@ -501,9 +501,10 @@ function participant() {
   if (searching || catalogueBusy) { const status = v.el('status', 'p', searching ? 'Searching…' : 'Loading music…', 'muted'); attr(status, 'role', 'status'); foundNodes.push(status); }
   if (!catalogueBusy) for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
   if (chosenArtist) {
-    const crumbs = v.el('crumbs', 'div', undefined, 'actions browse-crumbs');
-    const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists'); children(crumbs, back);
-    foundNodes.push(crumbs, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`));
+    const crumbs = v.el('crumbs', 'div', undefined, 'browse-crumbs');
+    const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists');
+    children(crumbs, back, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`));
+    foundNodes.push(crumbs);
   }
   const rowIds = new Set<string>(); const occurrences = new Map<string, number>();
   const row = (kind: 'artist' | 'album' | 'track', item: CatalogueArtist | CatalogueAlbum | CatalogueTrack) => {

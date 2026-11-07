@@ -199,9 +199,10 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .search-form input { width:100%; flex:1; border:0; background:transparent; }
 .search-form button { font-size:14px; padding:10px 14px; border-radius:7px; }
 .catalogue-panel .music-upload > summary { padding:10px 0; min-height:44px; font-size:13px; }
-.catalogue-results { padding-top:14px; margin-top:6px; min-width:0; }
-.browse-crumbs { gap:8px; margin:18px 0; }
-.browse-crumbs button { font-size:12px; min-height:44px; padding:8px 12px; }
+.catalogue-results { margin-top:8px; min-width:0; }
+.browse-crumbs { display:flex; align-items:center; gap:12px; margin:0 0 8px; }
+.browse-crumbs button { flex-shrink:0; font-size:12px; min-height:44px; padding:8px 12px; }
+.browse-crumbs h3 { flex:1; min-width:0; margin:0; font-size:16px; overflow-wrap:anywhere; }
 .track-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; padding:19px 0; border-bottom:1px solid var(--line); }
 .track-row:last-child { border-bottom:0; padding-bottom:2px; }
 .track-row > div { min-width:0; overflow-wrap:anywhere; }
@@ -315,6 +316,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .catalogue-panel .music-upload { margin:0; padding-top:0; border:0; }
 .music-upload > summary { padding:8px 0; color:var(--accent); font-size:.875rem; }
 .list-tools h3 { font-size:1rem; margin:16px 0 8px; }
+.list-history { width:100%; min-width:0; }
 .list-tools button,.list-disclosure > button,.list-notice button,.list-actions button { font-size:.875rem; min-height:44px; }
 .saved-source,.saved-unavailable,.list-save-status { font-size:.8125rem; }
 .saved-next-label { display:block; color:var(--muted); font-size:.8125rem; }
@@ -341,7 +343,6 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .music-workspace.is-list-only { display:block; }
 .music-workspace.is-list-only .preparation-list { position:static; max-height:none; margin-bottom:18px; }
 .music-workspace.is-list-only .list-body { overflow:visible; }
-.catalogue-results > h3 { font-size:16px; overflow-wrap:anywhere; }
 .catalogue-results .result-artwork { width:48px; height:48px; flex-basis:48px; }
 .catalogue-results .track-row { gap:12px; padding:16px 0; }
 .catalogue-results .track-row.is-prepared { margin:0; padding:16px 0; box-shadow:0 0 0 8px #2b3926; }

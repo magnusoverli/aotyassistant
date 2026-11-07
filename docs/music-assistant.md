@@ -20,6 +20,12 @@ Choose artists, releases and recordings directly, without a provider dropdown. A
 
 Saved choices retain recording evidence and up to eight alternative source references. Old saved choices remain readable. Before Play, the app may resolve an available equivalent from another provider; live, remastered and other distinct versions are not interchangeable. Once Play is sent, the app never retries it through another source. The app does not import playlists, cast live phone audio, or accept streaming-service links.
 
+## Artwork performance
+
+Artist and album thumbnails use 160-pixel JPEGs to reduce transfers over internet invitations. The app caches up to 512 artwork variants for five minutes, bounded to 20 MiB, and combines simultaneous requests for the same image.
+
+Participant artwork URLs stay stable within their catalogue context. Browsers can retain the image and revalidate access before reuse; unchanged images return a body-free `304` response. Invitation, participant and catalogue checks still apply. The `Server-Timing` artwork duration reports server-side retrieval time to help distinguish Music Assistant delays from browser or internet-transfer delays.
+
 ## Connection maintenance
 
 - **Find Music Assistant** remains available after connection. Background discovery retries outages and periodically refreshes network information.
