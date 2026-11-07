@@ -6,7 +6,8 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import WebSocket, { WebSocketServer } from 'ws';
 import express from 'express';
-import { BrowserSpeakers, openSpeakerSocket, pairingClientId, type SpeakerConnection, type SpeakerContext } from '../src/browser-speakers.js';
+import { BrowserSpeakers, configureBrowserPlayer, openSpeakerSocket, pairingClientId, type SpeakerConnection, type SpeakerContext } from '../src/browser-speakers.js';
+import { browserSpeakerName } from '../src/browser-speaker-name.js';
 import { speakerContext, mountBrowserSpeakers } from '../src/browser-speaker-http.js';
 import { validateIngress } from '../src/ingress.js';
 import { publicRoute } from '../src/public-listener.js';
@@ -36,9 +37,24 @@ async function listen(t: TestContext, handler?: RequestListener) {
 }
 async function fixture(t: TestContext) {
   const auth: unknown[] = []; const commands: unknown[] = [];
+  let configurationFailure = false;
+  let playerConfig = { player_id: clientId, name: null as string | null, values: { hide_in_ui: { value: null as boolean | null }, volume_normalization: { value: true } } };
   const app = express(); app.use(express.json());
   app.get('/info', (_req, res) => res.json({ server_id: connection.serverId, server_version: connection.version, schema_version: 65 }));
-  app.post('/api', (req, res) => { assert.equal(req.headers.authorization, 'Bearer fixture-only'); commands.push(req.body); res.json(null); });
+  app.post('/api', (req, res) => {
+    assert.equal(req.headers.authorization, 'Bearer fixture-only'); commands.push(req.body);
+    if (req.body.command.startsWith('config/players/')) {
+      if (configurationFailure) { res.status(403).json({ error: 'fixture permission failure' }); return; }
+      assert.equal(req.body.args.player_id, clientId);
+      if (req.body.command === 'config/players/save') {
+        const values = req.body.args.values;
+        playerConfig = { ...playerConfig, name: values.name ?? playerConfig.name,
+          values: { ...playerConfig.values, hide_in_ui: { value: values.hide_in_ui ?? playerConfig.values.hide_in_ui.value } } };
+      }
+      res.json(playerConfig); return;
+    }
+    res.json(null);
+  });
   const upstream = await listen(t, app);
   const ws = new WebSocketServer({ server: upstream.server });
   t.after(() => { for (const client of ws.clients) client.terminate(); ws.close(); });
@@ -58,7 +74,8 @@ async function fixture(t: TestContext) {
     const socket = new WebSocket(local.url.replace('http:', 'ws:') + path, { headers: { Origin: local.url, Cookie: `aoty_browser_speaker=${owner}`, ...extra } });
     t.after(() => socket.terminate()); return socket;
   };
-  return { speakers, context, input, connect, auth, commands, local, upstreamSockets: ws.clients, epoch: () => { epoch = 'epoch-2'; } };
+  return { speakers, context, input, connect, auth, commands, local, upstreamSockets: ws.clients, epoch: () => { epoch = 'epoch-2'; },
+    configurationFailure: (fail: boolean) => { configurationFailure = fail; }, playerConfig: () => playerConfig };
 }
 
 test('automatic sessions enforce owner/context and abandoned sessions expire', t => {
@@ -119,6 +136,10 @@ test('relay authenticates server-side, preserves binary/text framing, binds pair
   assert.equal(f.commands.length, 0);
   const result = await f.speakers.pair(f.input.id, owner, f.context, tokenFor(clientId)); assert.equal(result.paired, true);
   assert.equal((f.commands[0] as { command: string }).command, 'sendspin/pair_web_player');
+  assert.equal(result.configurationError, undefined);
+  assert.deepEqual(f.commands.map(command => (command as { command: string }).command), ['sendspin/pair_web_player', 'config/players/get', 'config/players/save']);
+  assert.equal(f.playerConfig().values.hide_in_ui.value, false);
+  assert.equal(f.playerConfig().values.volume_normalization.value, true);
   await assert.rejects(once(f.connect(), 'open'), /403/); assert.equal(f.auth.length, 1);
   const closed = once(socket, 'close'); f.speakers.remove(f.input.id); await closed;
   assert.deepEqual(f.speakers.list(), []);
@@ -203,10 +224,58 @@ test('listener contexts require real Ingress provenance or a valid Funnel grant,
 test('HTTP speaker setup uses an HttpOnly cookie and read-only sanitized info', async t => {
   const app = express(); app.use(express.json()); const local = await listen(t, app);
   const speakers = new BrowserSpeakers(() => connection); t.after(() => speakers.close());
-  mountBrowserSpeakers(app, speakers, () => local.url, local.port);
+  let username: string | undefined = 'Magnus';
+  mountBrowserSpeakers(app, speakers, () => local.url, local.port, undefined, () => username);
   const info = await fetch(local.url + '/api/browser-speaker/info'); const cookie = info.headers.get('set-cookie')!;
   assert.match(cookie, /HttpOnly/); assert.match(cookie, /SameSite=Strict/); assert.match(cookie, /Path=\/api/);
   assert.deepEqual(await info.json(), { scope: 'installation', version: '2.10.9' });
-  const registered = await fetch(local.url + '/api/browser-speaker/register', { method: 'POST', headers: { Cookie: cookie.split(';')[0]!, 'Content-Type': 'application/json' }, body: JSON.stringify(registration()) });
-  assert.equal(registered.status, 200); assert.equal((await registered.json() as { active: boolean }).active, true);
+  const input = { ...registration(), device: 'iPhone', name: 'untrusted display name' };
+  const registered = await fetch(local.url + '/api/browser-speaker/register', { method: 'POST', headers: { Cookie: cookie.split(';')[0]!, 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
+  assert.equal(registered.status, 200);
+  const view = await registered.json() as { active: boolean; name: string };
+  assert.equal(view.active, true); assert.equal(view.name, browserSpeakerName('iPhone', 'Magnus'));
+  username = undefined;
+  const session = await fetch(`${local.url}/api/browser-speaker/session/${input.id}`, { headers: { Cookie: cookie.split(';')[0]! } });
+  assert.equal((await session.json() as { name: string }).name, browserSpeakerName('iPhone'));
+});
+
+test('player naming/group configuration failure leaves audio paired and retries without a reconnect', async t => {
+  const f = await fixture(t); f.configurationFailure(true);
+  const socket = f.connect(); await once(socket, 'open');
+  const result = await f.speakers.pair(f.input.id, owner, f.context, tokenFor(clientId));
+  assert.equal(result.paired, true); assert.match(result.configurationError!, /permissions/);
+  assert.equal(socket.readyState, WebSocket.OPEN);
+  f.configurationFailure(false);
+  f.speakers.status(f.input.id, owner, f.context, 'Magnus');
+  // The next pairing request shares the pending metadata update, without reconnecting audio.
+  await f.speakers.pair(f.input.id, owner, f.context, tokenFor(clientId));
+  assert.equal(f.playerConfig().name, browserSpeakerName('Browser', 'Magnus'));
+  assert.equal(f.playerConfig().values.hide_in_ui.value, false);
+  assert.equal(f.speakers.list()[0]!.configurationError, undefined);
+  assert.equal(f.auth.length, 1); assert.equal(socket.readyState, WebSocket.OPEN);
+  const count = f.commands.length;
+  f.speakers.status(f.input.id, owner, f.context, 'Magnus');
+  assert.equal(f.commands.length, count);
+});
+
+test('configuration patches only the bound player name/visibility and refuses malformed or stale reads', async t => {
+  const calls: Array<{ command: string; args: { player_id: string; values?: Record<string, unknown> } }> = [];
+  const name = browserSpeakerName('Mac', 'Magnus');
+  let config: unknown = { player_id: clientId, name, values: { hide_in_ui: { value: false } } };
+  const app = express(); app.use(express.json());
+  app.post('/api', (req, res) => { calls.push(req.body); res.json(config); });
+  const server = await listen(t, app); const upstream = { ...connection, origin: server.url };
+  await configureBrowserPlayer(upstream, clientId, name, () => true);
+  assert.equal(calls.length, 1); // Already configured: no write.
+  config = { player_id: 'another-player', name, values: { hide_in_ui: { value: true } } };
+  await assert.rejects(configureBrowserPlayer(upstream, clientId, name, () => true));
+  config = { player_id: clientId, name, values: {} };
+  await assert.rejects(configureBrowserPlayer(upstream, clientId, name, () => true));
+  config = { player_id: clientId, name: null, values: { hide_in_ui: { value: true } } };
+  await configureBrowserPlayer(upstream, clientId, name, () => false);
+  assert.ok(calls.every(call => call.command === 'config/players/get'));
+  const f = await fixture(t); const socket = f.connect(); await once(socket, 'open');
+  await f.speakers.pair(f.input.id, owner, f.context, tokenFor(clientId));
+  const save = f.commands.find(command => (command as { command: string }).command === 'config/players/save') as typeof calls[number];
+  assert.deepEqual(save.args, { player_id: clientId, values: { name: browserSpeakerName('Browser'), hide_in_ui: false } });
 });

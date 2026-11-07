@@ -1,5 +1,6 @@
 import type { BrowserSpeakerView } from '../src/browser-speakers';
 import { RequestError } from './request';
+import { browserSpeakerName, type BrowserDevice } from '../src/browser-speaker-name';
 
 export interface BrowserAudioPlayer {
   readonly clientId: string;
@@ -14,7 +15,7 @@ export type BrowserAudioDependencies = {
   request<T>(path: string, data?: unknown): Promise<T>;
   create(id: string, scope: string, reconnected: () => void, exhausted: () => void): BrowserAudioPlayer;
   id(): string;
-  name: string;
+  device: BrowserDevice;
   schedule(work: () => void, delay: number): () => void;
 };
 
@@ -63,7 +64,9 @@ export class BrowserSpeakerRuntime {
           () => { if (current() && this.player === created) { this.attempted = false; this.wake(); } });
         this.player = created;
         this.unlock(); // May remain pending on iOS; connection/pairing proceeds independently.
-        next = await this.deps.request<BrowserSpeakerView>('/api/browser-speaker/register', { id, clientId: this.player.clientId, name: this.deps.name });
+        next = await this.deps.request<BrowserSpeakerView>('/api/browser-speaker/register', {
+          id, clientId: this.player.clientId, device: this.deps.device, name: browserSpeakerName(this.deps.device),
+        });
         if (!current()) { this.release(id); return; }
       } else {
         next = await this.deps.request<BrowserSpeakerView>(`/api/browser-speaker/session/${this.session.id}`);

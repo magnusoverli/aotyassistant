@@ -7,15 +7,16 @@ import { AppError } from './model.js';
 import { MusicAssistantTransport } from './music-assistant-transport.js';
 import { resolveLanAddresses, musicAssistantUrl } from './lan-network.js';
 import { supportsPlaybackSchema } from './music-assistant-policy.js';
+import { browserDevices, browserSpeakerName, type BrowserDevice } from './browser-speaker-name.js';
 
 export type SpeakerConnection = { origin: string; token: string; epoch: string; scope: string; version: string; serverId: string };
 export type SpeakerContext = { origin: string; base: string; kind: 'lan' | 'ingress' | 'public'; valid: () => boolean };
-export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number };
-type Session = BrowserSpeakerView & { clientId: string; owner: string; epoch: string; context: SpeakerContext; leaseUntil: number; close?: () => void; pairing?: Promise<void>; revoked: boolean };
+export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number; configurationError?: string };
+type Session = BrowserSpeakerView & { clientId: string; device: BrowserDevice; owner: string; epoch: string; context: SpeakerContext; leaseUntil: number; close?: () => void; pairing?: Promise<void>; configuring?: Promise<void>; configuredName?: string; revoked: boolean };
 export const speakerCookie = 'aoty_browser_speaker';
 export const speakerPath = '/api/browser-speaker';
 export const speakerId = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
-export const speakerRegistration = z.object({ id: z.string().uuid(), clientId: speakerId, name: z.string().trim().min(1).max(60) }).strict();
+export const speakerRegistration = z.object({ id: z.string().uuid(), clientId: speakerId, name: z.string().trim().min(1).max(60), device: z.enum(browserDevices).optional() }).strict();
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 export const requestSpeakerCookie = (req: IncomingMessage) => req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${speakerCookie}=`))?.slice(speakerCookie.length + 1) ?? '';
 
@@ -67,6 +68,23 @@ async function pair(connection: SpeakerConnection, token: string) {
   finally { transport.close(); }
 }
 
+/** Patch only this paired player's display settings; MA still owns groups and playback. */
+export async function configureBrowserPlayer(connection: SpeakerConnection, clientId: string, name: string, current: () => boolean) {
+  const transport = new MusicAssistantTransport(connection.origin, connection.token, 20_000);
+  const schema = z.object({ player_id: z.literal(clientId), name: z.string().nullable().optional(),
+    values: z.object({ hide_in_ui: z.object({ value: z.boolean().nullable() }) }) });
+  try {
+    const config = schema.parse(await transport.read('/api', 'config/players/get', { player_id: clientId }));
+    if (!current()) return;
+    const values: Record<string, string | boolean> = {};
+    if (config.name !== name) values.name = name;
+    if (config.values.hide_in_ui.value !== false) values.hide_in_ui = false;
+    if (!Object.keys(values).length) return;
+    const saved = schema.parse(await transport.read('/api', 'config/players/save', { player_id: clientId, values }));
+    if (saved.name !== name || saved.values.hide_in_ui.value !== false) throw new Error('Browser player settings were not confirmed.');
+  } finally { transport.close(); }
+}
+
 /** Automatic browser sessions. Only one tab per Sendspin identity may hold the audio lease. */
 export class BrowserSpeakers {
   private sessions = new Map<string, Session>();
@@ -74,7 +92,7 @@ export class BrowserSpeakers {
   private timer: NodeJS.Timeout;
   private closed = false;
   constructor(private connection: () => SpeakerConnection, private changed: () => void = () => {},
-    private open = openSpeakerSocket, private pairClient = pair, private now = Date.now) {
+    private open = openSpeakerSocket, private pairClient = pair, private now = Date.now, private configure = configureBrowserPlayer) {
     this.timer = setInterval(() => this.sweep(), 5000); this.timer.unref();
   }
   info() {
@@ -93,7 +111,20 @@ export class BrowserSpeakers {
       else if (session.active && !session.close && this.now() >= session.leaseUntil) session.active = false;
     }
   }
-  private view(s: Session): BrowserSpeakerView { return { id: s.id, name: s.name, active: s.active, connected: s.connected, paired: s.paired, expiresAt: s.expiresAt }; }
+  private view(s: Session): BrowserSpeakerView { return { id: s.id, name: s.name, active: s.active, connected: s.connected, paired: s.paired, expiresAt: s.expiresAt,
+    ...(s.configurationError ? { configurationError: s.configurationError } : {}) }; }
+  private syncPlayer(s: Session): Promise<void> {
+    if (s.configuring) return s.configuring;
+    if (!s.active || !s.connected || !s.paired || s.configuredName === s.name) return Promise.resolve();
+    const name = s.name; const connection = this.connection(); const close = s.close;
+    const current = () => this.usable(s) && s.connected && s.close === close && s.name === name;
+    s.configuring = this.configure(connection, s.clientId, name, current).then(() => {
+      if (current()) { s.configuredName = name; s.configurationError = undefined; this.changed(); }
+    }).catch(() => {
+      if (current()) s.configurationError = 'Browser player naming/group visibility could not be updated. Check Music Assistant player-configuration permissions.';
+    }).finally(() => { s.configuring = undefined; });
+    return s.configuring;
+  }
   private claim(s: Session) {
     this.sweep();
     if (!s.active && ![...this.sessions.values()].some(other => other !== s && other.active && other.clientId === s.clientId)) {
@@ -101,13 +132,14 @@ export class BrowserSpeakers {
     }
   }
   list() { this.sweep(); return [...this.sessions.values()].map(s => this.view(s)); }
-  register(input: z.infer<typeof speakerRegistration>, owner: string, context: SpeakerContext) {
+  register(input: z.infer<typeof speakerRegistration>, owner: string, context: SpeakerContext, username?: string) {
     this.info(); this.sweep();
     if (!/^[\w-]{43}$/.test(owner)) throw new AppError(401, 'Browser speaker access is unavailable.');
     const prior = this.sessions.get(input.id);
-    if (prior) return this.status(input.id, owner, context);
+    if (prior) return this.status(input.id, owner, context, username);
     if (this.sessions.size >= 64) throw new AppError(429, 'The browser player is busy. It will retry shortly.');
-    const s: Session = { ...input, owner: digest(owner), context, epoch: this.connection().epoch, active: false, connected: false, paired: false, revoked: false,
+    const device = input.device ?? 'Browser';
+    const s: Session = { ...input, device, name: browserSpeakerName(device, username), owner: digest(owner), context, epoch: this.connection().epoch, active: false, connected: false, paired: false, revoked: false,
       leaseUntil: 0, expiresAt: this.now() + 60_000 };
     this.sessions.set(s.id, s);
     this.claim(s);
@@ -118,9 +150,11 @@ export class BrowserSpeakers {
     if (!s || !this.usable(s) || s.owner !== digest(owner) || s.context.origin !== context.origin || s.context.base !== context.base || s.context.kind !== context.kind) throw new AppError(403, 'The browser player session expired. Reconnecting.');
     return s;
   }
-  status(id: string, owner: string, context: SpeakerContext) {
+  status(id: string, owner: string, context: SpeakerContext, username?: string) {
     const s = this.owned(id, owner, context); this.claim(s);
+    s.name = browserSpeakerName(s.device, username);
     s.expiresAt = this.now() + (s.connected ? 8 * 60 * 60_000 : 60_000);
+    void this.syncPlayer(s);
     return this.view(s);
   }
   remove(id: string) { const s = this.sessions.get(id); if (s) this.revoke(s); }
@@ -135,7 +169,8 @@ export class BrowserSpeakers {
         s.paired = true; this.changed();
       }).catch(() => { throw new AppError(502, 'Music Assistant could not pair this browser. Check its version and the integration account permissions.'); }).finally(() => { s.pairing = undefined; });
     }
-    await s.pairing; return this.view(s);
+    await s.pairing;
+    await this.syncPlayer(s); return this.view(s);
   }
   /** Every listener supplies its own provenance validator; Express is not involved in upgrades. */
   attach(server: Server, context: (req: IncomingMessage) => SpeakerContext | undefined) {
@@ -172,7 +207,7 @@ export class BrowserSpeakers {
         }, 20_000); timer.unref();
         const finish = () => {
           if (done) return; done = true; clearInterval(timer); client.terminate(); remote.terminate();
-          s.connected = false; s.paired = false; s.active = false; s.close = undefined; s.expiresAt = this.now() + 60_000; this.changed();
+          s.connected = false; s.paired = false; s.active = false; s.close = undefined; s.configuredName = undefined; s.expiresAt = this.now() + 60_000; this.changed();
         };
         s.close = finish;
         client.on('pong', () => { clientAlive = true; }); remote.on('pong', () => { remoteAlive = true; });

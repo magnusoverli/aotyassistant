@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.4] — 2026-11-07
+
+- Give browser speakers friendly names using the signed-in display name and device type. Refresh names after sign-in without interrupting the audio connection.
+- Make paired Listening Room speakers visible in Music Assistant's group member picker using its player configuration API. Retry failed name/visibility updates without disconnecting audio or changing groups.
+
 ## [1.1.3] — 2026-11-07
 
 - Register the browser player automatically, including invited internet browsers. Remove the extra menu item, setup panel, approval codes and enable/disable controls; use the existing speaker selector.

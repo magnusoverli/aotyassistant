@@ -128,7 +128,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   app.use(express.json({ limit: '16kb' }));
   app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
-  if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess);
+  if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess,
+    req => users.directoryView(participantCredential(req)).current?.nickname);
   const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users);
   void uploads.cleanup();
   const uploadCleanup = setInterval(() => { void uploads.cleanup(); }, 60 * 60_000); uploadCleanup.unref();

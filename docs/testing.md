@@ -40,7 +40,7 @@ Use a designated test speaker or group: Play replaces its current queue and can 
 
 ### Browsers and devices
 
-- Browser speakers: confirm automatic registration/pairing against MA 2.10.9, destination discovery, guarded selection, audible playback and natural completion. During playback navigate Host → Your music → Settings (including `#access`) → Display and Back/Forward. Verify no document reload or audio gap. Repeat via HA Ingress and real Funnel, including automatic standby-tab handover, invitation revocation, reconnect, phone suspension and audio unlock on ordinary interaction. Automated runtime/relay fixtures do not establish audible/browser outcomes. Browser tests remain opt-in.
+- Browser speakers: confirm automatic registration/pairing against MA 2.10.9, destination discovery, guarded selection, audible playback and natural completion. Check friendly user/device names on two browsers, sign-in/name updates without an audio gap, and availability in MA's group picker. Create a Sendspin Sync Group and verify audible playback and synchronization on its actual members. During playback navigate Host → Your music → Settings (including `#access`) → Display and Back/Forward. Verify no document reload or audio gap. Repeat via HA Ingress and real Funnel, including automatic standby-tab handover, invitation revocation, reconnect, phone suspension and audio unlock on ordinary interaction. Automated runtime/relay fixtures do not establish audible/browser outcomes. Browser tests remain opt-in.
 
 - Check iPhone/Safari and Android joining, automatic empty lists, same-browser list persistence, file selection, large/interrupted uploads, and mobile keyboards.
 - Check Music Assistant sign-in inside the Home Assistant companion app.

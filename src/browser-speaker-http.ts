@@ -27,7 +27,7 @@ export function speakerContext(req: IncomingMessage, kind: SpeakerContext['kind'
   return { kind, origin, base: '', valid: () => true };
 }
 
-export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, guestOrigin: () => string, port: number, online?: OnlineAccess) {
+export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, guestOrigin: () => string, port: number, online?: OnlineAccess, username: (req: Request) => string | undefined = () => undefined) {
   const context = (req: Request) => {
     const result = speakerContext(req, ingressContext(req) ? 'ingress' : publicContext(req) ? 'public' : 'lan', guestOrigin(), port, online);
     if (!result) throw new AppError(403, 'Browser speaker access is unavailable.');
@@ -44,9 +44,9 @@ export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, gu
     const c = context(req); const info = speakers.info(); refreshCookie(req, res, c);
     res.json(info);
   });
-  app.post(`${speakerPath}/register`, (req, res) => res.json(speakers.register(body(req, speakerRegistration), requestSpeakerCookie(req), context(req))));
+  app.post(`${speakerPath}/register`, (req, res) => res.json(speakers.register(body(req, speakerRegistration), requestSpeakerCookie(req), context(req), username(req))));
   app.get(`${speakerPath}/session/:id`, (req, res) => {
-    const c = context(req); const session = speakers.status(id.parse(req.params.id), requestSpeakerCookie(req), c);
+    const c = context(req); const session = speakers.status(id.parse(req.params.id), requestSpeakerCookie(req), c, username(req));
     refreshCookie(req, res, c); res.json(session);
   });
   app.post(`${speakerPath}/pair`, async (req, res) => {

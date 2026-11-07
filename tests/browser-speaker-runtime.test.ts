@@ -11,7 +11,7 @@ function fixture() {
   let active = true; let paired = false; let pendingUnlock = false; let pendingRegistration: Promise<void> | undefined;
   let id = 0;
   const runtime = new BrowserSpeakerRuntime({
-    name: 'Listening Room (fixture)', id: () => `session-${++id}`,
+    device: 'Browser', id: () => `session-${++id}`,
     schedule: work => { scheduled = work; return () => { scheduled = undefined; }; },
     create: () => {
       const player = { clientId: 'fixture-client', pairingToken: 'fixture-pairing', isConnected: false, unlocks: 0, connects: 0, destroys: 0,
