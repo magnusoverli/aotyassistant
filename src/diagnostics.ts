@@ -1,6 +1,7 @@
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 
-type Metric = 'operation' | 'queue-wait' | 'queue-depth' | 'upstream' | 'persistence' | 'recovery' | 'playback-read-retry' | 'cleanup-backlog' | 'event-loop';
+type Metric = 'operation' | 'queue-wait' | 'queue-depth' | 'upstream' | 'persistence' | 'recovery' | 'playback-read-retry' | 'cleanup-backlog' | 'event-loop'
+  | 'audio-relay-backpressure' | 'audio-relay-stall' | 'audio-relay-overflow' | 'audio-relay-bytes' | 'audio-relay-peak';
 export type FailureCode = 'TIMEOUT' | 'CANCELLED' | 'BUSY' | 'UPSTREAM' | 'STORAGE' | 'INTERNAL';
 const metrics = new Map<Metric, { count: number; total: number; max: number }>();
 const failures = new Map<FailureCode, number>();

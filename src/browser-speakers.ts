@@ -8,11 +8,15 @@ import { MusicAssistantTransport } from './music-assistant-transport.js';
 import { resolveLanAddresses, musicAssistantUrl } from './lan-network.js';
 import { supportsPlaybackSchema } from './music-assistant-policy.js';
 import { browserDevices, browserSpeakerName, type BrowserDevice } from './browser-speaker-name.js';
+import { SpeakerRelay } from './speaker-relay.js';
+import { diagnostics } from './diagnostics.js';
+import type { AudioHealth } from './browser-audio-health.js';
 
 export type SpeakerConnection = { origin: string; token: string; epoch: string; scope: string; version: string; serverId: string };
 export type SpeakerContext = { origin: string; base: string; kind: 'lan' | 'ingress' | 'public'; valid: () => boolean };
-export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number; configurationError?: string };
-type Session = BrowserSpeakerView & { clientId: string; device: BrowserDevice; owner: string; epoch: string; context: SpeakerContext; leaseUntil: number; close?: () => void; pairing?: Promise<void>; configuring?: Promise<void>; configuredName?: string; revoked: boolean };
+type Transfer = { bytesToBrowser: number; peakQueuedBytes: number; connections: number };
+export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number; configurationError?: string; audio?: AudioHealth; audioReportedAt?: number; transfer?: Transfer };
+type Session = BrowserSpeakerView & { clientId: string; device: BrowserDevice; owner: string; epoch: string; context: SpeakerContext; leaseUntil: number; close?: () => void; pairing?: Promise<void>; configuring?: Promise<void>; configuredName?: string; revoked: boolean; transferStats?: () => Transfer };
 export const speakerCookie = 'aoty_browser_speaker';
 export const speakerPath = '/api/browser-speaker';
 export const speakerId = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
@@ -112,7 +116,15 @@ export class BrowserSpeakers {
     }
   }
   private view(s: Session): BrowserSpeakerView { return { id: s.id, name: s.name, active: s.active, connected: s.connected, paired: s.paired, expiresAt: s.expiresAt,
-    ...(s.configurationError ? { configurationError: s.configurationError } : {}) }; }
+    ...(s.configurationError ? { configurationError: s.configurationError } : {}),
+    ...(s.audio ? { audio: { ...s.audio }, audioReportedAt: s.audioReportedAt } : {}),
+    ...(s.transferStats ? { transfer: s.transferStats() } : {}) }; }
+  report(id: string, owner: string, context: SpeakerContext, audio: AudioHealth) {
+    const s = this.owned(id, owner, context);
+    if (!s.active || !s.connected) throw new AppError(409, 'Browser audio is not connected.');
+    // Client-reported diagnostics, never an input to authorization or routing.
+    s.audio = { ...audio }; s.audioReportedAt = this.now();
+  }
   private syncPlayer(s: Session): Promise<void> {
     if (s.configuring) return s.configuring;
     if (!s.active || !s.connected || !s.paired || s.configuredName === s.name) return Promise.resolve();
@@ -201,21 +213,27 @@ export class BrowserSpeakers {
         s.connected = true; s.expiresAt = this.now() + 8 * 60 * 60_000;
         let clientAlive = true; let remoteAlive = true; let done = false;
         const timer = setInterval(() => {
-          if (!this.usable(s) || !clientAlive || !remoteAlive) { finish(); return; }
+          if (!this.usable(s) || (!clientAlive && !toMa.heartbeatDeferred) || (!remoteAlive && !toBrowser.heartbeatDeferred)) { finish(); return; }
           s.expiresAt = this.now() + 8 * 60 * 60_000;
           clientAlive = remoteAlive = false; client.ping(); remote.ping();
         }, 20_000); timer.unref();
         const finish = () => {
-          if (done) return; done = true; clearInterval(timer); client.terminate(); remote.terminate();
+          if (done) return; done = true; clearInterval(timer); clearInterval(flowTimer);
+          toMa.close(); toBrowser.close();
+          diagnostics.record('audio-relay-bytes', toBrowser.bytes); diagnostics.record('audio-relay-peak', toBrowser.peakBytes);
+          client.terminate(); remote.terminate();
+          s.audio = undefined; s.audioReportedAt = undefined;
           s.connected = false; s.paired = false; s.active = false; s.close = undefined; s.configuredName = undefined; s.expiresAt = this.now() + 60_000; this.changed();
         };
+        const toMa = new SpeakerRelay(client, remote, finish, () => this.usable(s));
+        const toBrowser = new SpeakerRelay(remote, client, finish, () => this.usable(s));
+        const previousTransfer = s.transferStats?.();
+        s.transferStats = () => ({ bytesToBrowser: (previousTransfer?.bytesToBrowser ?? 0) + toBrowser.bytes,
+          peakQueuedBytes: Math.max(previousTransfer?.peakQueuedBytes ?? 0, toBrowser.peakBytes), connections: (previousTransfer?.connections ?? 0) + 1 });
+        const flowTimer = setInterval(() => { toMa.check(); toBrowser.check(); }, 1000); flowTimer.unref();
         s.close = finish;
         client.on('pong', () => { clientAlive = true; }); remote.on('pong', () => { remoteAlive = true; });
-        const forward = (target: WebSocket, data: WebSocket.RawData, binary: boolean) => {
-          if (!this.usable(s) || target.readyState !== WebSocket.OPEN || target.bufferedAmount > 4 * 1024 * 1024) { finish(); return; }
-          target.send(data, { binary }, error => { if (error) finish(); });
-        };
-        client.on('message', (data, binary) => forward(remote, data, binary)); remote.on('message', (data, binary) => forward(client, data, binary));
+        client.on('message', (data, binary) => toMa.forward(data, binary)); remote.on('message', (data, binary) => toBrowser.forward(data, binary));
         client.on('close', finish); remote.on('close', finish); client.on('error', finish); remote.on('error', finish);
       });
     } catch { if (session && !session.connected) session.close = undefined; reject(); }

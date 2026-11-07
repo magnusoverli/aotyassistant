@@ -12,6 +12,7 @@ import { speakerContext, mountBrowserSpeakers } from '../src/browser-speaker-htt
 import { validateIngress } from '../src/ingress.js';
 import { publicRoute } from '../src/public-listener.js';
 import type { OnlineAccess } from '../src/online-access.js';
+import { browserAudioHealth } from '../src/browser-audio-health.js';
 
 const owner = randomBytes(32).toString('base64url');
 const clientId = randomBytes(32).toString('base64url');
@@ -219,10 +220,32 @@ test('listener contexts require real Ingress provenance or a valid Funnel grant,
   valid = false; assert.equal(context.valid(), false); assert.equal(speakerContext(remote, 'public', lan.origin, 3000, online), undefined);
   for (const action of ['register', 'pair', 'stop']) assert.equal(publicRoute('POST', '/api/browser-speaker/' + action), true);
   assert.equal(publicRoute('POST', '/api/participant/browser-speaker/register'), true);
+  assert.equal(publicRoute('POST', '/api/participant/browser-speaker/telemetry'), true);
+  assert.equal(publicRoute('GET', '/api/participant/browser-speaker/telemetry'), false);
   assert.equal(publicRoute('GET', '/api/participant/browser-speaker/session/' + randomUUID()), true);
   assert.equal(publicRoute('POST', '/api/participant/browser-speaker/config'), false);
   assert.equal(publicRoute('GET', '/api/participant/browser-speaker/session/not-a-session'), false);
   assert.equal(publicRoute('POST', '/api/host/browser-speakers'), false);
+});
+
+test('browser audio diagnostics are bounded, owner-scoped and cleared when the connection ends', async t => {
+  const f = await fixture(t);
+  const audio = browserAudioHealth.parse({ codec: 'opus', sampleRate: 48000, channels: 2, bitDepth: 16,
+    decodedChunks: 100, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 500 });
+  assert.throws(() => f.speakers.report(f.input.id, owner, f.context, audio), /not connected/);
+  const socket = f.connect(); await once(socket, 'open');
+  assert.throws(() => f.speakers.report(f.input.id, 'other-owner', f.context, audio), /expired/);
+  f.speakers.report(f.input.id, owner, f.context, audio);
+  const echoed = once(socket, 'message'); socket.send(Buffer.alloc(512)); await echoed;
+  const status = f.speakers.status(f.input.id, owner, f.context);
+  assert.deepEqual(status.audio, audio); assert.ok(status.audioReportedAt);
+  assert.equal(status.transfer?.bytesToBrowser, 512); assert.equal(status.transfer?.connections, 1);
+  for (const extra of [{ codec: 'arbitrary' }, { sampleRate: Infinity }, { decodedChunks: -1 }, { token: 'untrusted' }]) {
+    assert.equal(browserAudioHealth.safeParse({ ...audio, ...extra }).success, false);
+  }
+  const upstreamClosed = once([...f.upstreamSockets][0]!, 'close');
+  const closed = once(socket, 'close'); socket.close(); await closed; await upstreamClosed;
+  assert.equal(f.speakers.status(f.input.id, owner, f.context).audio, undefined);
 });
 
 test('HTTP speaker setup uses an HttpOnly cookie and read-only sanitized info', async t => {

@@ -8,6 +8,7 @@ import { publicContext, onlineCookie } from './public-listener.js';
 import type { OnlineAccess } from './online-access.js';
 import { AppError } from './model.js';
 import { body } from './http-utils.js';
+import { browserAudioHealth } from './browser-audio-health.js';
 
 export function speakerContext(req: IncomingMessage, kind: SpeakerContext['kind'], guestOrigin: string, port: number, online?: OnlineAccess): SpeakerContext | undefined {
   if (kind === 'ingress') {
@@ -47,6 +48,10 @@ export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, gu
   // Identity-aware requests must sit inside the participant cookie's Path.
   // Retain the old routes for already-open clients; new clients use the scoped routes.
   const participantPath = '/api/participant/browser-speaker';
+  app.post(`${participantPath}/telemetry`, (req, res) => {
+    const input = body(req, z.object({ id, audio: browserAudioHealth }).strict());
+    speakers.report(input.id, requestSpeakerCookie(req), context(req), input.audio); res.json({ ok: true });
+  });
   app.post([`${participantPath}/register`, `${speakerPath}/register`], (req, res) => res.json(speakers.register(body(req, speakerRegistration), requestSpeakerCookie(req), context(req), username(req))));
   app.get([`${participantPath}/session/:id`, `${speakerPath}/session/:id`], (req, res) => {
     const c = context(req); const session = speakers.status(id.parse(req.params.id), requestSpeakerCookie(req), c, username(req));

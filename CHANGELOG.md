@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.10] — 2026-11-07
+
+- Simplify music results by removing the Results/Browse music heading, result-count badge and top divider.
+- Allow scrolling over the playlist to continue onto the page when the list reaches its boundary or has too few tracks to scroll, in desktop and compact layouts.
+- Prefer verified Opus/FLAC browser audio instead of forcing uncompressed PCM, with browser-specific compatibility fallbacks, automatic decoder recovery and bounded adaptive buffering. Preserve the existing speaker identity and audio output through recovery.
+- Add ordered, bounded backpressure handling for browser-audio relays and internal output-format/transfer diagnostics without adding user setup or controls.
+
 ## [1.1.9] — 2026-11-07
 
 - Fix artist, album and track artwork returning 404 through online invitations: allow the encoded separator in participant artwork references through the public listener while retaining invitation and participant checks.

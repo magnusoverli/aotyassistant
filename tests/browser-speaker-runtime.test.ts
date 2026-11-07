@@ -5,11 +5,11 @@ import { RequestError } from '../web/request.js';
 import type { BrowserSpeakerView } from '../src/browser-speakers.js';
 
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
-function fixture() {
+function fixture(telemetry = false) {
   const calls: string[] = []; const players: Array<BrowserAudioPlayer & { unlocks: number; connects: number; destroys: number }> = [];
   let scheduled: (() => void) | undefined; let action: 'ok' | 'network' | 'revoked' = 'ok';
   let active = true; let paired = false; let pendingUnlock = false; let pendingRegistration: Promise<void> | undefined;
-  let id = 0;
+  let id = 0; let telemetryFailure = false;
   const runtime = new BrowserSpeakerRuntime({
     device: 'Browser', id: () => `session-${++id}`,
     schedule: work => { scheduled = work; return () => { scheduled = undefined; }; },
@@ -17,12 +17,14 @@ function fixture() {
       const player = { clientId: 'fixture-client', pairingToken: 'fixture-pairing', isConnected: false, unlocks: 0, connects: 0, destroys: 0,
         unlock() { this.unlocks++; return pendingUnlock ? new Promise<void>(() => {}) : Promise.resolve(); },
         async connect() { this.connects++; this.isConnected = true; },
-        disconnect() { this.isConnected = false; }, destroy() { this.destroys++; this.isConnected = false; } };
+        disconnect() { this.isConnected = false; }, destroy() { this.destroys++; this.isConnected = false; },
+        ...(telemetry ? { diagnostics: () => ({ decodedChunks: 100, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 500 }) } : {}) };
       players.push(player); return player;
     },
     async request<T>(path: string) {
       calls.push(path);
       if (path === '/api/browser-speaker/stop') return {} as T;
+      if (path.endsWith('/telemetry')) { if (telemetryFailure) throw new Error('Telemetry unavailable'); return {} as T; }
       if (action === 'network') throw new TypeError('Offline');
       if (action === 'revoked') throw new RequestError('Session expired', 403);
       if (path === '/api/browser-speaker/info') return { scope: 'fixture', version: '2.10.9' } as T;
@@ -33,7 +35,8 @@ function fixture() {
   });
   return { runtime, calls, players, next: async () => { const work = scheduled; scheduled = undefined; work?.(); await settle(); },
     active: (value: boolean) => { active = value; }, network: (value: typeof action) => { action = value; },
-    blockUnlock: () => { pendingUnlock = true; }, registration: (promise: Promise<void>) => { pendingRegistration = promise; } };
+    blockUnlock: () => { pendingUnlock = true; }, registration: (promise: Promise<void>) => { pendingRegistration = promise; },
+    failTelemetry: () => { telemetryFailure = true; } };
 }
 
 test('automatic registration and pairing do not wait for autoplay permission or require an enable button', async () => {
@@ -42,6 +45,14 @@ test('automatic registration and pairing do not wait for autoplay permission or 
   assert.ok(f.calls.includes('/api/participant/browser-speaker/register')); assert.ok(f.calls.includes('/api/browser-speaker/pair'));
   f.runtime.unlock(); assert.equal(f.players[0]!.unlocks, 2);
   assert.ok(f.calls.every(path => /^\/api\/(?:participant\/)?browser-speaker\//.test(path))); f.runtime.stop();
+});
+
+test('optional diagnostics are throttled and telemetry failures never interrupt audio', async () => {
+  const f = fixture(true); f.failTelemetry(); f.runtime.start(); await settle();
+  assert.equal(f.calls.filter(path => path.endsWith('/telemetry')).length, 1);
+  await f.next(); await f.next();
+  assert.equal(f.calls.filter(path => path.endsWith('/telemetry')).length, 1);
+  assert.equal(f.runtime.state, 'ready'); assert.equal(f.players[0]!.destroys, 0); f.runtime.stop();
 });
 
 test('repeated shell initialization, normal gestures and polling preserve the same player and connection', async () => {

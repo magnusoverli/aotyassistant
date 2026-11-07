@@ -1,6 +1,7 @@
 import type { BrowserSpeakerView } from '../src/browser-speakers';
 import { RequestError } from './request';
 import { browserSpeakerName, type BrowserDevice } from '../src/browser-speaker-name';
+import type { AudioHealth } from '../src/browser-audio-health';
 
 export interface BrowserAudioPlayer {
   readonly clientId: string;
@@ -10,6 +11,7 @@ export interface BrowserAudioPlayer {
   connect(): Promise<void>;
   disconnect(): void;
   destroy(): void;
+  diagnostics?(): AudioHealth;
 }
 export type BrowserAudioDependencies = {
   request<T>(path: string, data?: unknown): Promise<T>;
@@ -30,6 +32,7 @@ export class BrowserSpeakerRuntime {
   private again = false;
   private attempted = false;
   private failures = 0;
+  private telemetryAt = 0;
   private cancelTimer?: () => void;
   constructor(private deps: BrowserAudioDependencies) {}
   start() {
@@ -88,6 +91,10 @@ export class BrowserSpeakerRuntime {
           if (!current()) return;
         }
         if (player.isConnected) this.state = 'ready';
+        if (player.isConnected && player.diagnostics && Date.now() - this.telemetryAt >= 30_000) {
+          this.telemetryAt = Date.now();
+          void this.deps.request('/api/participant/browser-speaker/telemetry', { id: next.id, audio: player.diagnostics() }).catch(() => {});
+        }
       }
       this.failures = 0;
     } catch (error) {

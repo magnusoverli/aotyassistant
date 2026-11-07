@@ -27,7 +27,7 @@ import { ParticipantAccess } from './participant-access';
 import type { UserDirectory } from '../src/model';
 import { pinInput } from './user-pin';
 import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
-import { panel, pageHeading, sectionHeading, notice } from './ui-components';
+import { panel, pageHeading, notice } from './ui-components';
 import { productName, productTagline } from '../src/product';
 
 export function mountPage(root: HTMLElement, appHeader: AppHeader, listeningOrder: ListeningOrder, navigate: (path: string, replace?: boolean) => void) {
@@ -480,14 +480,12 @@ function participant() {
       }
     });
   }; searchNodes.push(form);
-  const found = v.get('found', () => { const node = el('section', undefined, 'catalogue-results'); node.setAttribute('aria-labelledby', 'music-results-title'); return node; });
+  const found = v.get('found', () => { const node = el('section', undefined, 'catalogue-results'); node.setAttribute('aria-label', 'Music results'); return node; });
   attr(found, 'aria-busy', String(catalogueBusy));
-  const resultsHeading = v.get('results-heading', () => sectionHeading('Results', 'music-results-title')); text(resultsHeading.querySelector('h2')!, chosenArtist ? 'Browse music' : 'Results');
-  const foundNodes: Node[] = [resultsHeading];
+  const foundNodes: Node[] = [];
   const resultKind = realCatalogue && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
   const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
-  children(resultsHeading, resultsHeading.querySelector('h2')!, searchDone && !catalogueBusy && v.el('count', 'span', resultSummary, 'count-tag'));
   const notices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
   const announcement = searching ? 'Searching…' : catalogueBusy ? 'Loading music…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;

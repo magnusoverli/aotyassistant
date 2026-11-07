@@ -199,9 +199,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .search-form input { width:100%; flex:1; border:0; background:transparent; }
 .search-form button { font-size:14px; padding:10px 14px; border-radius:7px; }
 .catalogue-panel .music-upload > summary { padding:10px 0; min-height:44px; font-size:13px; }
-.catalogue-results { border-top:1px solid var(--line); padding-top:14px; margin-top:6px; min-width:0; }
-.catalogue-results > .section-heading { margin-bottom:4px; gap:8px; }
-.catalogue-results > .section-heading h2 { font-size:14px; font-weight:600; color:var(--muted); }
+.catalogue-results { padding-top:14px; margin-top:6px; min-width:0; }
 .browse-crumbs { gap:8px; margin:18px 0; }
 .browse-crumbs button { font-size:12px; min-height:44px; padding:8px 12px; }
 .track-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; padding:19px 0; border-bottom:1px solid var(--line); }

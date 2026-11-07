@@ -33,7 +33,36 @@ MA **2.10.9** has schema 65 and `aiosendspin[server]==10.2.1`. Its authenticated
 
 ## Access and testing
 
-Audio travels through Listening Room's own address, including the Ingress prefix or Funnel address. The MA account token stays on the backend. Public upgrades require both a valid invitation and a browser session. Invitation revocation, logout and connection replacement close affected audio connections. PCM stereo uses roughly 1.4–1.5 Mbit/s per active speaker, plus transport overhead.
+Audio travels through Listening Room's own address, including the Ingress prefix or Funnel address. The MA account token stays on the backend. Public upgrades require both a valid invitation and a browser session. Invitation revocation, logout and connection replacement close affected audio connections.
+
+## Automatic audio quality and bandwidth
+
+Browser players prefer **Opus, then FLAC, then PCM**, with no codec or quality setup. MA still controls source quality and encodes each browser's output. Explicit MA output-format choices are respected while the browser can decode them. The display's format/bitrate describes the source, not a particular speaker's output or measured internet usage.
+
+| Environment | Automatic preference |
+| --- | --- |
+| Chrome/Edge with native Opus support | Opus → FLAC → PCM |
+| Safari and iOS browsers | Opus → PCM |
+| Firefox desktop/Android | FLAC → PCM (SDK excludes glitch-prone Opus) |
+| Chromium without WebCodecs, including ordinary LAN HTTP | FLAC → PCM |
+
+Before connecting, bounded, inaudible sample-decode checks verify the compressed formats. Native and bundled software Opus decoding are checked independently. A failed check removes that format; PCM remains available. All decoder assets are served through the same app origin, including Ingress and public invitations.
+
+Three received chunks that fail to produce decoded audio within 2.5 seconds trigger automatic recovery: verified software Opus first, then another verified codec. Failed codecs remain excluded for that player lifetime. If MA ignores a format request for four seconds, the existing player reconnects with updated capabilities. Recovery preserves the player identity, pairing, volume and unlocked audio output; it never sends Play or replaces the queue. Silence, no incoming audio and a suspended output do not by themselves trigger codec fallback.
+
+The client requests 250 ms startup lead and a 500 ms minimum buffer, using Sendspin's synchronized mode. Sustained late decoded chunks can raise the minimum buffer in 250 ms steps, at most once per ten seconds, up to two seconds. Stable playback reduces it slowly. This is a server timing request, not a local speaker-delay adjustment or guaranteed instant repair of network loss.
+
+The relay preserves encrypted frame order and pauses its producer above 512 KiB queued output, resuming below 128 KiB. Each direction has an 8 MiB hard bound and a 15-second no-progress deadline. Heartbeats account for intentionally paused readers. WebSocket compression remains disabled because the Sendspin payload is already encrypted.
+
+PCM stereo needs approximately 1.4–1.5 Mbit/s per playing browser, plus transport overhead. Opus is substantially smaller; MA's reviewed encoder uses libopus defaults rather than a bitrate selected by this app. FLAC usage varies with the music. Multiple remote playing browsers multiply home-upload usage; Tailscale Funnel also has non-configurable bandwidth limits.
+
+### Internal diagnostics and SDK maintenance
+
+The existing host browser-speaker API includes `audio` (client-reported codec, rate, decode/late/recovery counters and requested buffer), `audioReportedAt`, and `transfer` (server-observed payload bytes sent towards the browser, peak queued bytes and connection count). Reports are at most once per 30 seconds, scoped to the owning active browser session, bounded and schema-validated. A failed report does not interrupt playback. Transfer bytes include Sendspin framing/encryption but exclude WebSocket/TLS/network overhead; use differences over time, not the source bitrate, to estimate relay throughput. No new UI indicator is added.
+
+`web/sendspin-extension.ts` is an instance-scoped adapter for **Sendspin JS 6.0.0**. It accesses the SDK's decoder/protocol hooks because its public player API does not expose decoder failure events or runtime format requests. Contract tests pin this version and exercise the actual SDK; revalidate these hooks before upgrading. The bundled probe helper also uses the decoder's native/software switch. No node_modules files or global prototypes are patched. MA 2.10.9 accepts `stream/request-format`; servers that ignore it use reconnect/capability negotiation instead.
+
+Automated coverage includes real software Opus decoding, browser exclusions, failed probes, decoder starvation versus network gaps, bounded jitter adjustments, same-identity recovery, ignored format requests, cancellation, relay ordering/backpressure/stalls, telemetry authorization and invitation revocation. Audible playback, native browser decoding, background/lock-screen behaviour and mixed-protocol group synchronization still need installed-system acceptance. Browser tests are opt-in; Node tests do not establish browser compatibility.
 
 **Invited browsers are trusted Sendspin clients.** The protocol includes track metadata and playback-control capabilities. Listening Room's interface still follows its reveal/turn rules, but those rules are not a security boundary against an invited client inspecting or using Sendspin directly. Local browser identity is scoped to the installation/MA source and browser origin.
 
