@@ -19,6 +19,8 @@ import { durability } from '../src/backup.js';
 import { UploadAssets } from '../src/uploads.js';
 import { fixtureUploadAnalysis, uploadBytes } from './fixtures/uploads.js';
 import { randomUUID } from 'node:crypto';
+import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
+import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 const host = 'listening-room.tail123.ts.net';
 class Connector implements TunnelConnector {
@@ -106,6 +108,64 @@ async function listen(t: TestContext, handler?: RequestListener) {
   t.after(() => { server.closeAllConnections(); server.close(); });
   const port = (server.address() as AddressInfo).port; return { server, port, url: `http://127.0.0.1:${port}` };
 }
+
+test('public artwork routes accept encoded reference separators but reject other path encodings', () => {
+  for (const reference of ['ref%3Aabc_-123', 'ref%3aabc_-123', 'ref:abc_-123', 'upload:ref:abc_-123', 'upload%3Aref%3Aabc_-123']) {
+    for (const method of ['GET', 'HEAD']) assert.equal(publicRoute(method, `/api/participant/artwork/${reference}`), true);
+    assert.equal(publicRoute('POST', `/api/participant/artwork/${reference}`), false);
+  }
+  for (const reference of ['ref%253Aabc', 'ref%3Aabc%2fhost', 'ref%3Aabc%5chost', 'ref%3Aabc%00', 'ref%3Aabc%3f',
+    'ref%3Aabc%23', 'ref%3A..', 'ref%3Aabc/extra', 'ref%3Aabc\\extra', 'ref%3A', `ref%3A${'x'.repeat(1001)}`]) {
+    assert.equal(publicRoute('GET', `/api/participant/artwork/${reference}`), false);
+  }
+  for (const path of ['/api/%70articipant/artwork/ref%3Aabc', '/api/host%3Astate', '/api/participant/artwork%2fref%3Aabc']) {
+    assert.equal(publicRoute('GET', path), false);
+  }
+});
+
+test('online artist, album and track artwork reaches MA with participant and invitation checks intact', async t => {
+  const f = await fixture(t); await enable(f.online);
+  const ma = await startMusicAssistantFixture(); t.after(ma.close);
+  const integrations = new IntegrationManager(new IntegrationFileStore(f.dir)); await integrations.init();
+  await integrations.save(ma.origin, 'fixture-token', 0);
+  const local = await listen(t); const adapter = new DemoAdapter();
+  const engine = new Engine(new FileStore(f.dir), adapter, local.url, integrations); await engine.init();
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, mode: 'demo', demoSeconds: 30 }, 'web', integrations);
+  local.server.on('request', http.app);
+  const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
+  t.after(() => { gateway.close(); http.close(); adapter.close(); });
+  const access = `__Host-aoty_online=${f.online.redeem(invitation(f.online))!}`;
+  const request = (path: string, cookies = access, data?: unknown) => new Promise<Response>((resolve, reject) => {
+    const req = httpRequest(remote.url + path, { method: data === undefined ? 'GET' : 'POST',
+      headers: { Host: host, Cookie: cookies, ...(data === undefined ? {} : { Origin: `https://${host}`, 'Content-Type': 'application/json' }) } }, res => {
+      const headers = new Headers(); for (let i = 0; i < res.rawHeaders.length; i += 2) headers.append(res.rawHeaders[i]!, res.rawHeaders[i + 1]!);
+      resolve(new Response(Readable.toWeb(res) as ReadableStream<Uint8Array>, { status: res.statusCode!, headers }));
+    });
+    req.on('error', reject); req.end(data === undefined ? undefined : JSON.stringify(data));
+  });
+  const joined = await request('/api/participant/join', access, { nickname: 'Artwork listener', pin: '1234' });
+  assert.equal(joined.status, 200);
+  const participant = joined.headers.get('set-cookie')!.split(';')[0]!;
+  const cookies = `${access}; ${participant}`;
+  let value = 'Fixture'; let lastArtwork = '';
+  for (const kind of ['artists', 'albums', 'tracks']) {
+    const response = await request('/api/participant/browse', cookies, { kind, value });
+    assert.equal(response.status, 200);
+    const item = (await response.json())[kind][0]; value = item.id;
+    assert.match(item.artwork, /\/ref%3A/);
+    lastArtwork = `${item.artwork}?size=160`;
+    const image = await request(lastArtwork, cookies);
+    assert.equal(image.status, 200, `${kind} artwork must pass the public gateway`);
+    assert.equal(image.headers.get('content-type'), 'image/png');
+    assert.ok((await image.arrayBuffer()).byteLength > 20);
+  }
+  assert.equal((await request(lastArtwork, participant)).status, 401, 'An invitation is still required.');
+  assert.equal((await request(lastArtwork, access)).status, 401, 'A participant session is still required.');
+  const other = await engine.join('Other listener');
+  assert.equal((await request(lastArtwork, `${access}; aoty_participant=${other}`)).status, 409);
+  await f.online.change('rotate', f.online.view().revision); await f.online.refresh();
+  assert.equal((await request(lastArtwork, cookies)).status, 401, 'Revoked invitations cannot fetch artwork.');
+});
 
 test('public listener gates profiles, supports PIN join/private library, rejects host and media routes, and revokes live streams', async t => {
   const f = await fixture(t); await enable(f.online);

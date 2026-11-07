@@ -11,7 +11,7 @@ const readRoutes = [
   /^\/api\/browser-speaker\/(?:info|session\/[a-f0-9-]{36})$/,
   /^\/api\/participant\/browser-speaker\/session\/[a-f0-9-]{36}$/,
   /^\/(?:join|participant|display)?$/, /^\/demo-cover\.svg$/, /^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css|svg|woff2)$/,
-  /^\/api\/participant\/(?:identity|state|events)$/, /^\/api\/participant\/artwork\/[^/]+$/,
+  /^\/api\/participant\/(?:identity|state|events)$/,
   /^\/api\/participant\/preparations\/(?:state|live|events)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/artwork)?$/,
   /^\/api\/participant\/preparations\/artwork\/[a-f0-9-]{36}\/(?:artwork|artistArtwork)$/,
@@ -26,6 +26,10 @@ const writeRoutes = [
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/discard)?$/,
 ];
 export function publicRoute(method: string, path: string) {
+  // Catalogue URLs encode the colon in ref:<base64url>. Accept only that exact
+  // segment grammar, leaving Express to decode it once for the normal handler.
+  // No general percent-decoding: encoded slashes, traversal and double encoding stay blocked.
+  if ((method === 'GET' || method === 'HEAD') && /^\/api\/participant\/artwork\/(?:upload(?::|%3[Aa]))?ref(?::|%3[Aa])[A-Za-z0-9_-]{1,996}$/.test(path)) return true;
   // Reject ambiguous encodings and paths before Express's case-insensitive routing/decoding.
   if (/[\\%]|\/\//.test(path)) return false;
   return (method === 'GET' || method === 'HEAD' ? readRoutes : method === 'POST' ? writeRoutes : []).some(pattern => pattern.test(path));

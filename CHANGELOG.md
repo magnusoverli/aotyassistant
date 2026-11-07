@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.1.9] — 2026-11-07
+
+- Fix artist, album and track artwork returning 404 through online invitations: allow the encoded separator in participant artwork references through the public listener while retaining invitation and participant checks.
+
 ## [1.1.8] — 2026-11-07
 
 - Clear visible catalogue rows while loading the next browse results, and sort combined artist albums newest first by release year, with undated albums last.
