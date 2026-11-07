@@ -30,6 +30,8 @@ Participant artwork URLs stay stable within their catalogue context. Browsers ca
 
 The player retains its loaded cover and artist portrait when playback confirms the same saved image. Different images load and decode before replacing the visible artwork. Reuse is based on verified image identity, not matching song titles; current download authorization still applies.
 
+The room display downloads an encrypted 1024-pixel cover and 160-pixel artist portrait while the track is playing or paused. The reveal update supplies the decryption key, so a completed download needs only local decryption and image decoding at reveal. The cover remains unreadable before reveal, including through the display's network responses. Preparations are scoped to the current playback and discarded on turn changes or lost access. An immediate reveal or interrupted download can still need time to finish; failed preparation falls back to ordinary authorized artwork loading. This works over HTTPS/Ingress/Funnel and plain LAN HTTP.
+
 ## Connection maintenance
 
 - **Find Music Assistant** remains available after connection. Background discovery retries outages and periodically refreshes network information.

@@ -35,6 +35,8 @@ The shared display shows **Track details hidden.** until playback reaches **70%*
 
 If cover artwork is unavailable, the revealed title and artist appear on the display’s spinning record label. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the track controlled by the app and pass to the next person, or **Pass turn** to advance without playing a track. Other Music Assistant and speaker interfaces may independently show track information before reveal.
 
+The display smooths progress locally between playback updates. Before reveal, it eases toward received positions without exposing elapsed time or duration; afterward it uses a bounded local clock and gently corrects ordinary timing differences. Stale updates stop animation rather than implying continued playback. This visual smoothing does not trigger reveal or advance turns.
+
 When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song.
 
 The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.13] — 2026-11-07
+
+- Smooth concealed display progress between received positions, ease ordinary timing corrections after reveal, and widen the display's track-information/progress column.
+- Prepare display artwork during playback by downloading an encrypted cover/portrait bundle before reveal. Reveal unlocks the downloaded images locally; stale preparations are discarded and ordinary artwork loading remains a fallback.
+
 ## [1.1.12] — 2026-11-07
 
 - Keep loaded player covers and artist portraits when confirmed playback uses the same saved artwork. Decode genuinely changed images before swapping them in, and ignore superseded image loads.

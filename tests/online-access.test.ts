@@ -167,7 +167,11 @@ test('online artist, album and track artwork reaches MA with participant and inv
   assert.equal((await request(lastArtwork, access)).status, 401, 'A participant session is still required.');
   const other = await engine.join('Other listener');
   assert.equal((await request(lastArtwork, `${access}; aoty_participant=${other}`)).status, 409);
+  const prepared = '/api/display/prepared-artwork/11111111-1111-4111-8111-111111111111';
+  assert.equal((await request(prepared)).status, 403, 'Invited displays reach the current-playback preparation guard.');
+  assert.equal((await request(prepared, participant)).status, 401, 'Encrypted prefetch still requires an online invitation.');
   await f.online.change('rotate', f.online.view().revision); await f.online.refresh();
+  assert.equal((await request(prepared)).status, 401);
   assert.equal((await request(lastArtwork, cookies, undefined, etag)).status, 401, 'Revoked invitations cannot revalidate artwork.');
 });
 

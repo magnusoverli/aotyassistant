@@ -48,6 +48,58 @@ test('progress freezes immediately on pending pause/offline, retains the anchor 
   assert.equal(clock.position()!.elapsed, 0);
 });
 
+test('concealed progress eases between irregular samples without exposing times or extrapolating past a received fraction', () => {
+  let now = 0; const clock = new ProgressClock(() => now);
+  const sample = { id: 'hidden', status: 'playing' as const, fraction: .2 };
+  clock.accept(sample); assert.equal(clock.animating, false);
+  now = 3000; const next = { ...sample, fraction: .21 }; clock.accept(next);
+  assert.equal(clock.position()!.fraction, .2); assert.equal(clock.animating, true);
+  now = 4500; const midpoint = clock.position()!; assert.ok(Math.abs(midpoint.fraction! - .205) < 1e-9);
+  assert.equal(midpoint.duration, undefined); assert.equal(midpoint.elapsed, undefined);
+  clock.accept(next); assert.equal(clock.position()!.fraction, midpoint.fraction, 'An unrelated rerender cannot restart interpolation.');
+  now = 5000; const interrupted = clock.position()!.fraction!;
+  clock.accept({ ...sample, fraction: .216 }); assert.equal(clock.position()!.fraction, interrupted);
+  now = 6000; assert.ok(clock.position()!.fraction! > interrupted && clock.position()!.fraction! < .216);
+  now = 20_000; assert.equal(clock.position()!.fraction, .216); assert.equal(clock.animating, false);
+  assert.equal(clock.position()!.status, 'playing', 'Visual completion never controls playback.');
+});
+
+test('concealed progress stops on pause/offline and resets on missing position, a seek or a replacement', () => {
+  let now = 0; const clock = new ProgressClock(() => now);
+  const sample = { id: 'hidden', status: 'playing' as const, fraction: .2 };
+  clock.accept(sample); now = 1500; clock.accept({ ...sample, fraction: .21 }); now = 2000;
+  clock.connect(false); const frozen = clock.position()!.fraction; now = 10_000;
+  assert.equal(clock.position()!.fraction, frozen); assert.equal(clock.animating, false);
+  clock.connect(true); clock.accept({ ...sample, fraction: .22 }); now += 100;
+  clock.accept({ ...sample, status: 'paused', fraction: .225 }); now += 5000;
+  assert.equal(clock.position()!.fraction, .225); assert.equal(clock.animating, false);
+  clock.accept({ ...sample, fraction: .23 }); now += 1500; clock.accept({ ...sample, fraction: .24 });
+  clock.accept({ ...sample, fraction: .7 }); assert.equal(clock.position()!.fraction, .7); assert.equal(clock.animating, false);
+  clock.accept({ ...sample, fraction: .1 }); assert.equal(clock.position()!.fraction, .1);
+  clock.accept({ ...sample, id: 'replacement', fraction: .01 }); assert.equal(clock.position()!.fraction, .01);
+  clock.accept({ ...sample, id: 'replacement', fraction: null }); now += 5000;
+  assert.equal(clock.position()!.fraction, null); assert.equal(clock.animating, false);
+  clock.accept(undefined); assert.equal(clock.position(), undefined);
+});
+
+test('revealing times preserves the visible bar and ordinary timing corrections settle without backwards motion', () => {
+  let now = 0; const clock = new ProgressClock(() => now);
+  const hidden = { id: 'track', status: 'playing' as const, fraction: .2 };
+  clock.accept(hidden); now = 3000; clock.accept({ ...hidden, fraction: .21 }); now = 4500;
+  const fraction = clock.position()!.fraction!;
+  clock.accept({ ...hidden, fraction: .215, elapsed: 64.5, duration: 300 });
+  assert.ok(Math.abs(clock.position()!.fraction! - fraction) < 1e-9);
+  let previous = clock.position()!.elapsed!;
+  for (let i = 0; i < 50; i++) { now += 100; const elapsed = clock.position()!.elapsed!; assert.ok(elapsed >= previous); previous = elapsed; }
+  assert.equal(clock.position()!.elapsed, 69.5); assert.equal(clock.animating, false);
+  clock.accept({ ...hidden, fraction: .225, elapsed: 67.5, duration: 300 });
+  assert.equal(clock.position()!.elapsed, 69.5);
+  previous = 69.5;
+  for (let i = 0; i < 40; i++) { now += 100; const elapsed = clock.position()!.elapsed!; assert.ok(elapsed > previous); previous = elapsed; }
+  assert.equal(clock.position()!.elapsed, 71.5);
+  clock.accept({ ...hidden, fraction: .5, elapsed: 150, duration: 300 }); assert.equal(clock.position()!.elapsed, 150, 'Real seeks remain immediate.');
+});
+
 test('slow Play, Pause and Finish do not occupy the room lane or overwrite concurrent joins/order', async t => {
   const dir = await mkdtemp('/tmp/opencode/aoty-room-lanes-'); const demo = new DemoAdapter(3600); t.after(() => demo.close());
   const engine = new Engine(new FileStore(dir), demo, 'http://localhost:3000'); await engine.init();

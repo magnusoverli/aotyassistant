@@ -1,10 +1,12 @@
-import type { View } from '../src/model';
+import type { Track, View } from '../src/model';
 import { el, link } from './dom';
 import { vinyl, updateVinylLabel } from './visuals';
 import { artwork, progressBar, updateProgress } from './media';
 import { publicRecordLabels } from './record-labels';
 import { pageFrame } from './page-layout';
 import { attr, prop, text } from './view-nodes';
+import { DisplayArtworkLoader, fetchDisplayArtwork, unlockDisplayArtwork } from './display-artwork';
+import { artworkKinds, type DisplayImages, type ArtworkKind } from '../src/display-artwork-format';
 
 export function publicPlaybackState(view: View, online: boolean) {
   if (!online || !view.connected) return 'unavailable';
@@ -37,6 +39,41 @@ export class PublicRoom {
   private technical = el('p', undefined, 'room-stream-details');
   private invitationKey = '';
   private trackKey = '';
+  private revealed?: Track;
+  private artworkEpoch = 0;
+  private objectUrls: string[] = [];
+  private prepared = new DisplayArtworkLoader({ load: fetchDisplayArtwork, unlock: unlockDisplayArtwork,
+    ready: images => { void this.showPrepared(images); }, failed: () => this.showArtworkNormally() });
+
+  private clearImages() {
+    this.artworkEpoch++;
+    for (const url of this.objectUrls) URL.revokeObjectURL(url);
+    this.objectUrls = [];
+  }
+  destroy() { this.prepared.clear(); this.clearImages(); this.revealed = undefined; }
+  private showArtworkNormally(kind?: ArtworkKind) {
+    const track = this.revealed; if (!track) return;
+    if ((!kind || kind === 'artwork') && track.artwork && !this.cover.querySelector('.room-artwork')) this.cover.append(artwork(track.artwork, 'Current album artwork', 'room-artwork', true));
+    if ((!kind || kind === 'artistArtwork') && track.artistArtwork && !this.credit.querySelector('.artist-portrait')) this.credit.prepend(artwork(track.artistArtwork, 'Current artist image', 'artist-portrait', true));
+  }
+  private async showPrepared(images: DisplayImages) {
+    if (!this.revealed) return;
+    const epoch = this.artworkEpoch;
+    await Promise.all(artworkKinds.map(async kind => {
+      const asset = images[kind];
+      if (!asset) { this.showArtworkNormally(kind); return; }
+      const url = URL.createObjectURL(new Blob([new Uint8Array(asset.body)], { type: asset.contentType })); this.objectUrls.push(url);
+      const image = el('img'); image.alt = kind === 'artwork' ? 'Current album artwork' : 'Current artist image'; image.decoding = 'async';
+      try {
+        const loaded = new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(Error('Artwork unavailable.')); });
+        image.src = url; await loaded; if (image.decode) await image.decode();
+        if (epoch !== this.artworkEpoch || !this.revealed) return;
+        const frame = el('div', undefined, `media-artwork ${kind === 'artwork' ? 'room-artwork' : 'artist-portrait'}`); frame.append(image);
+        if (kind === 'artwork') this.cover.append(frame); else this.credit.prepend(frame);
+      } catch { if (epoch === this.artworkEpoch) this.showArtworkNormally(kind); }
+      finally { image.onload = image.onerror = null; }
+    }));
+  }
 
   constructor() {
     const grid = el('div', undefined, 'room-stage');
@@ -71,9 +108,11 @@ export class PublicRoom {
       : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the listening room.');
 
     const revealed = active && view.nowPlaying?.revealed === true ? view.nowPlaying.track : undefined;
-    const trackKey = active ? JSON.stringify([view.progress!.id, revealed ?? null, revealed ? null : view.current]) : '';
+    this.revealed = revealed;
+    const trackKey = active ? JSON.stringify([view.progress!.id, view.preparedArtwork?.id, revealed ?? null, revealed ? null : view.current]) : '';
     if (this.trackKey !== trackKey) {
       this.trackKey = trackKey;
+      this.clearImages();
       this.cover.querySelector('.room-artwork')?.remove(); this.credit.replaceChildren();
       updateVinylLabel(this.record);
       this.title.textContent = active ? revealed?.title ?? 'Track details hidden.' : '';
@@ -85,11 +124,12 @@ export class PublicRoom {
         const sticker = revealed ? { owner: revealed.title, caption: revealed.artist }
           : publicRecordLabels.label(JSON.stringify([view.roomId, view.turnId, view.progress!.id, view.current?.id]), view.current?.nickname);
         updateVinylLabel(this.record, sticker);
-        if (revealed?.artwork) this.cover.append(artwork(revealed.artwork, 'Current album artwork', 'room-artwork', true));
-        if (revealed?.artistArtwork) this.credit.append(artwork(revealed.artistArtwork, 'Current artist image', 'artist-portrait', true));
+        if (!view.preparedArtwork) this.showArtworkNormally();
         if (revealed?.artist) this.credit.append(el('p', revealed.artist, 'artist'));
       }
     }
+    this.prepared.update(active ? view.preparedArtwork : undefined,
+      active ? JSON.stringify([view.roomId, view.turnId, view.progress!.id]) : '', Boolean(revealed));
     updateProgress(this.progress, active ? view.progress : undefined);
     const technical = publicStreamDetails(view, online);
     text(this.technical, technical); prop(this.technical, 'hidden', !technical);

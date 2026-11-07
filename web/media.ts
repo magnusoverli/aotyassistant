@@ -10,6 +10,7 @@ const animated = new Set<HTMLElement>();
 let animation = 0;
 let lastPaint = 0;
 let connected = true;
+const progressFrameMs = 1000 / 30;
 export function progressConnected(online: boolean) { connected = online; clock.connect(online); }
 export function displayedProgress(progress?: PlaybackProgress) {
   const shown = clock.position(); return shown?.id === progress?.id ? shown : progress;
@@ -18,9 +19,10 @@ function animate(now: number) {
   animation = 0;
   for (const frame of animated) {
     if (!frame.isConnected || !connected) { animated.delete(frame); continue; }
-    if (now - lastPaint >= 80) paintProgress(frame, clock.position());
+    if (now - lastPaint >= progressFrameMs || !clock.animating) paintProgress(frame, clock.position());
+    if (!clock.animating) animated.delete(frame);
   }
-  if (now - lastPaint >= 80) lastPaint = now;
+  if (now - lastPaint >= progressFrameMs) lastPaint = now;
   if (animated.size) animation = requestAnimationFrame(animate);
 }
 
@@ -42,7 +44,7 @@ const time = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.flo
 export function updateProgress(frame: HTMLElement, progress?: PlaybackProgress) {
   const shown = clock.accept(progress);
   paintProgress(frame, shown);
-  if (connected && shown?.status === 'playing' && shown.elapsed !== undefined && shown.duration && !shown.id.startsWith('pending-')) {
+  if (connected && clock.animating) {
     animated.add(frame); if (!animation) animation = requestAnimationFrame(animate);
   } else animated.delete(frame);
 }

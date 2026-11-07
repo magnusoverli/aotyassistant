@@ -367,11 +367,12 @@ function qrCard() {
 }
 function renderDisplay() {
   if (!view) {
-    publicRoom = undefined;
+    publicRoom?.destroy(); publicRoom = undefined;
     const message = notice(error, 'error'); message.hidden = !error;
     pageContent.replaceChildren(message, closedRoom()); return;
   }
   if (!publicRoom?.element.isConnected) {
+    publicRoom?.destroy();
     publicRoom = new PublicRoom();
     const message = notice('', 'error'); message.id = 'display-notice';
     pageContent.replaceChildren(message, publicRoom.element);
@@ -715,7 +716,7 @@ return () => {
   lifecycle.abort();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
   stream?.close(); stream = undefined; library.stop(); music.uploads.stop();
-  playback?.clear(); playerReturn?.destroy(); browseHistory?.destroy();
+  playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); browseHistory?.destroy();
   turnAnnouncement.remove(); searchAnnouncement.remove();
   root.replaceChildren();
 };

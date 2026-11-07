@@ -14,6 +14,7 @@ import { MusicAssistantClient } from '../src/music-assistant.js';
 import { createApp } from '../src/http.js';
 import { AppError, type View } from '../src/model.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
+import { unlockDisplayArtwork } from '../web/display-artwork.js';
 
 async function fixture() {
   const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-media-');
@@ -40,6 +41,50 @@ async function fixture() {
     close() { http.close(); adapter.close(); remote.close(); server.closeAllConnections(); server.close(); } };
 }
 const status = (code: number) => (error: unknown) => error instanceof AppError && error.status === code;
+
+test('display downloads encrypted full-size artwork before reveal and unlocks it locally without another image read', async t => {
+  const f = await fixture(); t.after(f.close);
+  const selected = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, selected.id);
+  const display = async () => (await f.request('/api/display/state')).json() as Promise<View>;
+  const hidden = await display(); assert.equal(hidden.nowPlaying?.revealed, false);
+  assert.ok(hidden.preparedArtwork); assert.equal(hidden.preparedArtwork.key, undefined);
+  for (const secret of [selected.title, selected.artist, selected.artwork!, selected.artistArtwork!]) assert.ok(!JSON.stringify(hidden).includes(secret));
+  const path = `/api/display/prepared-artwork/${hidden.preparedArtwork.id}`;
+  const response = await f.request(path); assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/octet-stream'); assert.equal(response.headers.get('cache-control'), 'no-store');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  assert.ok(f.remote.imageCalls.some(path => path.endsWith('?size=1024&fmt=jpeg')));
+  assert.ok(f.remote.imageCalls.some(path => path.endsWith('?size=160&fmt=jpeg')));
+  const playback = f.participant(f.alex).ownPlayback!;
+  assert.equal((await f.request(`/api/display/artwork/${playback.id}/artwork`)).status, 403);
+  assert.equal((await display()).preparedArtwork?.key, undefined);
+  const upstream = f.remote.imageCalls.length;
+  const duplicate = await f.request(path); assert.deepEqual(new Uint8Array(await duplicate.arrayBuffer()), bytes);
+  assert.equal(f.remote.imageCalls.length, upstream);
+  const abort = new AbortController(); t.after(() => abort.abort());
+  const events = await fetch(`${f.origin}/api/display/events`, { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(5000)]) });
+  const reader = events.body!.getReader(); const decoder = new TextDecoder(); let buffer = '';
+  const nextState = async (): Promise<View> => {
+    while (!buffer.includes('\n\n')) {
+      const chunk = await reader.read(); if (chunk.done) throw Error('Display stream ended'); buffer += decoder.decode(chunk.value, { stream: true });
+    }
+    const end = buffer.indexOf('\n\n'); const frame = buffer.slice(0, end); buffer = buffer.slice(end + 2);
+    return JSON.parse(frame.split('\n').find(line => line.startsWith('data: '))!.slice(6));
+  };
+  assert.equal((await nextState()).preparedArtwork?.key, undefined);
+  await f.engine.reveal(f.alex, f.host().turnId!, playback.id);
+  const revealed = await display(); assert.equal(revealed.preparedArtwork?.id, hidden.preparedArtwork.id);
+  let live = await nextState(); while (!live.nowPlaying?.revealed) { assert.equal(live.preparedArtwork?.key, undefined); live = await nextState(); }
+  assert.deepEqual(live.preparedArtwork, revealed.preparedArtwork, 'The reveal event carries the same unlock key as the filtered state endpoint.');
+  abort.abort();
+  const images = await unlockDisplayArtwork(bytes, revealed.preparedArtwork!.key!);
+  assert.equal(images.artwork?.contentType, 'image/jpeg'); assert.equal(images.artistArtwork?.contentType, 'image/jpeg');
+  assert.equal(f.remote.imageCalls.length, upstream, 'Reveal/decryption does not fetch the image again.');
+  assert.equal(f.participant(f.alex).preparedArtwork, undefined); assert.equal(f.host().preparedArtwork, undefined);
+  await f.engine.advance(f.host().turnId!);
+  assert.equal((await display()).preparedArtwork, undefined); assert.equal((await f.request(path)).status, 403);
+});
 
 test('repeated artwork revalidates without transferring pixels and still rejects revoked/foreign access', async t => {
   const f = await fixture(); t.after(f.close);

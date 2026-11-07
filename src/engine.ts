@@ -272,6 +272,17 @@ export class Engine extends EventEmitter {
     if (!url?.startsWith('/api/participant/artwork/')) throw new AppError(404, 'Artwork unavailable.');
     return { reference: decodeURIComponent(url.slice('/api/participant/artwork/'.length)), context: `${room.id}:${room.currentId}` };
   }
+  /** Backend-only input for encrypted prefetch; never exposes clear images early. */
+  displayArtworkTarget() {
+    const room = this.state.room; const playback = room?.playback;
+    if (!room || !this.ready || this.concealPlayback || !playback || playback.status === 'stopped') return;
+    const references: Partial<Record<'artwork' | 'artistArtwork', string>> = {};
+    for (const kind of ['artwork', 'artistArtwork'] as const) {
+      const url = playback.track[kind];
+      if (url?.startsWith('/api/participant/artwork/')) references[kind] = decodeURIComponent(url.slice('/api/participant/artwork/'.length));
+    }
+    return { playbackId: playback.id, context: `${room.id}:${room.currentId}`, references };
+  }
   async setVolume(level: number, turnId: string | null, credential?: string, playbackId?: string, volumeRevision?: string) {
     return maOperation('volume', () => this.audio(async () => {
       await this.inspect(() => {

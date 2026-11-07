@@ -93,6 +93,7 @@ export type View = {
   progress?: PlaybackProgress; volume?: VolumeState;
   streamInfo?: StreamInfo;
   nowPlaying?: { revealed: false } | { revealed: true; track: Track };
+  preparedArtwork?: { id: string; key?: string };
   active?: Person[];
   rotation?: Person[]; position?: RotationPosition;
   joinUrl?: string; displayUrl?: string;

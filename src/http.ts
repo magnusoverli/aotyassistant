@@ -14,6 +14,7 @@ import { UploadAssets } from './uploads.js';
 import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
 import { artworkSize, body, rawCookie, setParticipantCookie } from './http-utils.js';
 import { EventStreams } from './event-streams.js';
+import { DisplayArtwork } from './display-artwork.js';
 import { mountIntegrations } from './integration-http.js';
 import { ingressContext, requestBase } from './ingress.js';
 import { mountAuthorization } from './ma-authorization.js';
@@ -72,7 +73,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.set({
       'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': ingress ? 'SAMEORIGIN' : 'DENY',
-      'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${browserAudioOrigin.origin}; media-src 'self' blob: data:; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors ${ingress ? "'self'" : "'none'"}; form-action 'self'`,
+      'Content-Security-Policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${browserAudioOrigin.origin}; media-src 'self' blob: data:; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors ${ingress ? "'self'" : "'none'"}; form-action 'self'`,
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
     });
     // Supervisor checks process liveness, never speaker recovery or dependency readiness.
@@ -163,8 +164,17 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     await engine.setVolume(input.level, input.turnId, undefined, undefined, input.volumeRevision); res.json(engine.view({ kind: 'host' }));
   });
   app.get('/api/participant/state', (req, res) => res.json(engine.view(participant(req))));
-  app.get('/api/display/state', (_req, res) => res.json(engine.view({ kind: 'display' })));
+  const displayArtwork = integrations ? new DisplayArtwork(() => engine.displayArtworkTarget(), (reference, context, size) => integrations.artwork(reference, context, size)) : undefined;
+  const readView = (role: Role) => {
+    const view = engine.view(role);
+    return role.kind === 'display' && displayArtwork ? displayArtwork.project(view) : view;
+  };
+  app.get('/api/display/state', (_req, res) => res.json(readView({ kind: 'display' })));
   if (integrations) {
+    app.get('/api/display/prepared-artwork/:id', async (req, res) => {
+      const data = await displayArtwork!.read(turn.parse(req.params.id));
+      res.type('application/octet-stream').send(data);
+    });
     app.get('/api/participant/artwork/:reference', async (req, res) => {
       const started = performance.now();
       const context = engine.catalogueContext(participantCredential(req));
@@ -291,15 +301,15 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   // Public-role projections may be shared; participant authorization always runs per recipient.
   const publicSnapshots = new Map<'host' | 'display', string>();
-  const invalidatePublic = () => publicSnapshots.clear(); engine.on('change', invalidatePublic);
+  const invalidatePublic = () => { publicSnapshots.clear(); displayArtwork?.refresh(); }; engine.on('change', invalidatePublic);
   const encodedView = (role: Role) => {
     if (role.kind === 'participant') return JSON.stringify(engine.view(role));
     let encoded = publicSnapshots.get(role.kind);
-    if (encoded === undefined) { encoded = JSON.stringify(engine.view(role)); publicSnapshots.set(role.kind, encoded); }
+    if (encoded === undefined) { encoded = JSON.stringify(readView(role)); publicSnapshots.set(role.kind, encoded); }
     return encoded;
   };
   const events = (res: Response, role: Role) => {
-    const initial = engine.view(role); // Authorize before streaming headers.
+    const initial = readView(role); // Authorize before streaming headers.
     const stream = streams.reserve(res);
     if (!stream.open()) return;
     const send = () => {
@@ -350,5 +360,5 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, drain: async () => { await users.drain(); await preparations!.drain(); }, close: () => { engine.off('change', invalidatePublic); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, drain: async () => { await users.drain(); await preparations!.drain(); }, close: () => { engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
 }
