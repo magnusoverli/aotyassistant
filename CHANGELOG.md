@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.1.8] — 2026-11-07
+
+- Clear visible catalogue rows while loading the next browse results, and sort combined artist albums newest first by release year, with undated albums last.
+
 ## [1.1.7] — 2026-11-07
 
 - Add a subtle display-page line for the current stream's MA-reported format, bitrate and sample rate, visible independently of reveal. Omit unavailable technical fields.

@@ -286,6 +286,27 @@ test('one artist unions provider albums [1,2,3] and [1,3,4] into [1,2,3,4] witho
   assert.deepEqual(reordered.items.map(release => release.name), ['Album 1', 'Album 2', 'Album 3', 'Album 4']);
 });
 
+test('combined artist albums sort newest first, use a known source year, and put undated releases last', async () => {
+  const image = { proxy_id: 'a'.repeat(64) };
+  const release = (provider: string, name: string, year: number | null) => ({
+    ...album(provider, name), item_id: `${provider}-${name}`, uri: `${provider}://album/${name}`,
+    external_ids: [], provider_mappings: [], year, image,
+  });
+  const client = new MusicAssistantClient('http://localhost:8095', 'PRIVATE', 8000, { async read(_path, command, args = {}) {
+    if (command === 'music/search') return { artists: ['spotify', 'tidal'].map(provider => ({ ...artist(provider), image })) };
+    assert.equal(command, 'music/artists/artist_albums');
+    return (args as { provider_instance_id_or_domain: string }).provider_instance_id_or_domain === 'spotify'
+      ? [release('spotify', 'Undated', null), release('spotify', 'Old', 1991), release('spotify', 'Shared', null), release('spotify', 'Same year', 2023)]
+      : [release('tidal', 'Newest', 2025), release('tidal', 'Shared', 2023), release('tidal', 'Unknown zero', 0)];
+  } });
+  const selected = (await client.artists('Metallica')).items[0]!;
+  const result = (await client.albums(selected.id)).items;
+  assert.deepEqual(result.map(item => [item.name, item.year]), [
+    ['Newest', 2025], ['Shared', 2023], ['Same year', 2023], ['Old', 1991], ['Undated', null], ['Unknown zero', null],
+  ]);
+  assert.equal(result[1]!.sources?.length, 2);
+});
+
 test('browse matching includes existing library unions and keeps identity and edition conflicts separate', () => {
   const unknown = metadataOnly(artist('qobuz'));
   const group = browseCatalogueItems('artist', [artist('spotify'), artist('tidal'), unknown]);

@@ -487,9 +487,9 @@ function participant() {
   const resultKind = realCatalogue && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
   const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
-  children(resultsHeading, resultsHeading.querySelector('h2')!, searchDone && !searching && v.el('count', 'span', resultSummary, 'count-tag'));
+  children(resultsHeading, resultsHeading.querySelector('h2')!, searchDone && !catalogueBusy && v.el('count', 'span', resultSummary, 'count-tag'));
   const notices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
-  const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.` : '';
+  const announcement = searching ? 'Searching…' : catalogueBusy ? 'Loading music…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (catalogueError) {
     const notice = v.el('error', 'div', undefined, 'list-notice'); const message = v.el('error-text', 'p', catalogueError); attr(message, 'role', 'alert');
@@ -501,7 +501,7 @@ function participant() {
   }
   if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', realCatalogue ? 'Search for an artist, then choose an album and tracks.' : 'Search for music to add to your private list.', 'muted small'));
   if (searching || catalogueBusy) { const status = v.el('status', 'p', searching ? 'Searching…' : 'Loading music…', 'muted'); attr(status, 'role', 'status'); foundNodes.push(status); }
-  for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
+  if (!catalogueBusy) for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
   if (chosenArtist) {
     const crumbs = v.el('crumbs', 'div', undefined, 'actions browse-crumbs');
     const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists'); children(crumbs, back);
@@ -526,21 +526,21 @@ function participant() {
       }); },
     });
   };
-  for (const artist of !chosenArtist ? artists : []) {
+  for (const artist of !catalogueBusy && !chosenArtist ? artists : []) {
     foundNodes.push(row('artist', artist));
   }
-  for (const album of chosenArtist && !chosenAlbum ? albums : []) {
+  for (const album of !catalogueBusy && chosenArtist && !chosenAlbum ? albums : []) {
     foundNodes.push(row('album', album));
   }
-  const emptyBrowse = searchDone && realCatalogue && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
+  const emptyBrowse = searchDone && !catalogueBusy && realCatalogue && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
     if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist.'
     : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name.', 'muted'));
-  if (searchDone && !realCatalogue && !results.length) {
+  if (searchDone && !catalogueBusy && !realCatalogue && !results.length) {
     const empty = v.el('empty-tracks', 'p', 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
     attr(empty, 'role', 'status'); foundNodes.push(empty);
   }
-  for (const group of results) {
+  for (const group of catalogueBusy ? [] : results) {
     foundNodes.push(row('track', group));
   }
   for (const id of catalogueRows.keys()) if (!rowIds.has(id)) catalogueRows.delete(id);

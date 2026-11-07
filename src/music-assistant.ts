@@ -350,9 +350,14 @@ export class MusicAssistantClient implements MusicAssistantReader {
       });
       if (page.items.length > 2000) throw new AppError(502, 'Too many albums returned. Try a more specific search.');
       if (possiblyLimited) (page.notices ??= []).push('Large catalogue: this listing may be limited by Music Assistant.');
-      return { ...page, items: await this.grouped('album', page.items, a => ({ id: this.remember('album', a, this.image(a.artists[0])), name: this.redact(a.name),
+      const items: CatalogueAlbum[] = await this.grouped('album', page.items, a => ({ id: this.remember('album', a, this.image(a.artists[0])), name: this.redact(a.name),
         artist: this.redact(a.artists.map(x => x.name).join(', ')), provider: this.sourceName(a), version: this.redact(a.version), year: a.year ?? null,
-        artwork: this.image(a), artistArtwork: this.image(a.artists[0]) })) };
+        artwork: this.image(a), artistArtwork: this.image(a.artists[0]) }));
+      // A merged release can have a year on only one provider copy. Unknown years
+      // come last; equal years retain their stable catalogue order.
+      for (const item of items) item.year = [item, ...(item.sources ?? [])].find(source => source.year !== null && source.year > 0)?.year ?? null;
+      items.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+      return { ...page, items };
     } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible album response.'); }
   }
   async tracks(albumId: string): Promise<CataloguePage<CatalogueTrack>> {
