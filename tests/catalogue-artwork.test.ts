@@ -11,14 +11,13 @@ const artist = (provider: string) => ({ item_id: 'artist', provider, media_type:
 const album = (provider: string) => ({ item_id: 'album', provider, media_type: 'album', name: 'ReLoad',
   uri: `${provider}://album/album`, artists: [{ name: 'Metallica' }], external_ids: [['musicbrainz_albumid', albumId]] });
 
-test('artist results retain artist identity without album subtitles after matching reads', async () => {
+test('artist results retain artist names and artwork without album subtitles or matching reads', async () => {
   const client = new MusicAssistantClient('http://localhost:8095', 'PRIVATE', 8000, { async read(_path, command, args = {}) {
     if (command === 'music/search') {
       assert.deepEqual(args, { search_query: 'Metallica', media_types: ['artist'], limit: 20 });
       return { artists: ['spotify', 'tidal'].map(provider => ({ ...artist(provider), external_ids: [], image })) };
     }
-    assert.equal(command, 'music/artists/artist_albums');
-    return [album((args as { provider_instance_id_or_domain: string }).provider_instance_id_or_domain)];
+    throw new Error(`Unexpected catalogue read: ${command}`);
   } });
   const result = (await client.artists('Metallica')).items;
   assert.equal(result.length, 1);

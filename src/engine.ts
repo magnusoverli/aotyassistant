@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, roomSchema, catalogueSearchNotice, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track, type ListeningOrderView, type UserProfile } from './model.js';
+import { AppError, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track, type ListeningOrderView, type UserProfile } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
@@ -230,7 +230,9 @@ export class Engine extends EventEmitter {
       if (track && room.playback) {
         for (const kind of ['artwork', 'artistArtwork'] as const) if (track[kind]?.startsWith('/api/participant/artwork/')) track[kind] = `/api/display/artwork/${room.playback.id}/${kind}`;
       }
-      return { ...base, guestAccess, joinUrl, progress: this.progress(room, revealed), nowPlaying: revealed && track
+      const streamInfo = room.playback && this.ready && !this.concealPlayback && (base.playbackStatus === 'playing' || base.playbackStatus === 'paused')
+        ? this.adapter.streamInfo?.(room.playback.id) : undefined;
+      return { ...base, guestAccess, joinUrl, progress: this.progress(room, revealed), streamInfo, nowPlaying: revealed && track
         ? { revealed: true, track } : { revealed: false } };
     }
     const me = this.participant(role.credential, room); const myTurn = room.currentId === me.id;
@@ -355,7 +357,7 @@ export class Engine extends EventEmitter {
     if (`${latest.id}:${member.id}` !== context) throw new AppError(401, 'Room membership changed. Join again.');
     const currentCatalogue = this.catalogueState;
     if (catalogue.source !== currentCatalogue.source || catalogue.revision !== currentCatalogue.revision) throw new AppError(409, 'The catalogue connection changed. Search again.');
-    return { ...currentCatalogue, tracks, ...(catalogue.source === 'music-assistant' ? { notices: [catalogueSearchNotice] } : {}) };
+    return { ...currentCatalogue, tracks };
   }
   async browse(credential: string, kind: 'artists' | 'albums' | 'tracks', value: string): Promise<CatalogueBrowse> {
     if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');

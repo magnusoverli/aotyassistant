@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { MusicAssistantClient } from '../src/music-assistant.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { AppError } from '../src/model.js';
-import { groupCatalogueItems, presentCatalogueItems, sameCatalogueItem, sameMetadataPresentation, type IdentityMedia } from '../src/catalogue-grouping.js';
+import { browseCatalogueItems, groupCatalogueItems, presentCatalogueItems, sameCatalogueItem, sameMetadataPresentation, type IdentityMedia } from '../src/catalogue-grouping.js';
 import { metadataOnly } from './fixtures/music-assistant.js';
 
 const mbArtist = '11111111-1111-4111-8111-111111111111';
@@ -248,7 +248,64 @@ test('same-name artist portraits cannot be copied by name into an unrelated albu
   const tracks = await client.tracks(albums.items[0]!.id); assert.equal(tracks.items[0]!.artistArtwork, undefined);
 });
 
-test('ID-less same-name artists remain separately browsable when corroborating metadata is unavailable', async () => {
+test('one artist unions provider albums [1,2,3] and [1,3,4] into [1,2,3,4] without shared IDs', async () => {
+  const calls: { command?: string; args: Record<string, unknown> }[] = [];
+  let reverse = false;
+  const image = { proxy_id: 'a'.repeat(64) };
+  const client = new MusicAssistantClient('http://localhost:8095', 'PRIVATE', 8000, { async read(_path, command, args = {}) {
+    const data = args as Record<string, unknown>; calls.push({ command, args: data });
+    if (command === 'music/search') {
+      const artists = ['spotify', 'tidal'].map(provider => ({ ...metadataOnly(artist(provider)), image,
+        name: provider === 'spotify' ? 'Metallica' : ' metallica ' }));
+      return { artists: reverse ? artists.reverse() : artists };
+    }
+    const provider = data.provider_instance_id_or_domain as string;
+    if (command === 'music/artists/artist_albums') return (provider === 'spotify' ? [1, 2, 3] : [1, 3, 4]).map(number => ({
+      ...metadataOnly(album(provider, `Album ${number}`)), item_id: `${provider}-${number}`, uri: `${provider}://album/${number}`, image,
+      provider_mappings: [{ item_id: `${provider}-${number}`, provider_instance: provider, provider_domain: provider }],
+    }));
+    assert.equal(command, 'music/albums/album_tracks');
+    return [];
+  } });
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-union-')), () => client);
+  await manager.init(); await manager.save('http://localhost:8095', 'PRIVATE', 0);
+  const search = await manager.browse('artists', 'Metallica', 'alice');
+  assert.equal(search.artists!.length, 1); assert.equal(search.notices, undefined);
+  assert.equal(calls.length, 1, 'The single search returns one artist without loading albums in advance.');
+  const selected = search.artists![0]!;
+  const releases = (await manager.browse('albums', selected.id, 'alice')).albums!;
+  assert.deepEqual(releases.map(release => release.name), ['Album 1', 'Album 2', 'Album 3', 'Album 4']);
+  assert.deepEqual(releases.map(release => release.sources?.length ?? 1), [2, 1, 2, 1]);
+  await manager.browse('tracks', releases[0]!.id, 'alice');
+  assert.deepEqual(calls.filter(call => call.command === 'music/albums/album_tracks').map(call => call.args.provider_instance_id_or_domain), ['spotify', 'tidal']);
+  await assert.rejects(manager.browse('albums', selected.id, 'bob'), /another participant/);
+  assert.ok(!JSON.stringify(releases).includes('://'));
+  reverse = true;
+  const repeated = (await client.artists('Metallica')).items[0]!;
+  const reordered = await client.albums(repeated.id);
+  assert.deepEqual(reordered.items.map(release => release.name), ['Album 1', 'Album 2', 'Album 3', 'Album 4']);
+});
+
+test('browse matching includes existing library unions and keeps identity and edition conflicts separate', () => {
+  const unknown = metadataOnly(artist('qobuz'));
+  const group = browseCatalogueItems('artist', [artist('spotify'), artist('tidal'), unknown]);
+  assert.equal(group.length, 1); assert.equal(group[0]!.items.length, 3);
+  const mapped = { ...metadataOnly(artist('spotify')), provider: 'library',
+    provider_mappings: [...artist('spotify').provider_mappings, ...artist('tidal').provider_mappings] };
+  assert.equal(browseCatalogueItems('artist', [mapped, unknown]).length, 1);
+  const conflicting = { ...artist('tidal'), external_ids: [['musicbrainz_artistid', other]] as [string, string][] };
+  for (const input of [[artist('spotify'), unknown, conflicting], [unknown, conflicting, artist('spotify')]]) {
+    assert.equal(browseCatalogueItems('artist', input).length, 3, 'Unknown metadata cannot bridge conflicting artists.');
+  }
+  const a = metadataOnly(album('spotify')); const b = metadataOnly(album('tidal'));
+  assert.equal(browseCatalogueItems('album', [a, b]).length, 1);
+  for (const changed of [{ ...b, version: 'Live' }, { ...b, version: 'Deluxe' }, { ...b, version: 'Remastered' }, { ...b, year: 2005 },
+    { ...b, artists: [{ name: 'Other artist' }] }, { ...b, metadata: { explicit: false } }]) {
+    assert.equal(browseCatalogueItems('album', [{ ...a, metadata: { explicit: true } }, changed]).length, 2);
+  }
+});
+
+test('ID-less same-name artists merge and browse both providers without corroborating reads', async () => {
   for (const name of ['Metallica', 'Iron Maiden', 'Megadeth', 'Slayer']) {
     const artists = ['spotify', 'tidal'].map(provider => metadataOnly({ ...artist(provider), name }));
     assert.equal(sameCatalogueItem('artist', artists[0]!, artists[1]!), false);
@@ -256,18 +313,20 @@ test('ID-less same-name artists remain separately browsable when corroborating m
     const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command) {
       calls.push(command!); return command === 'music/search' ? { artists } : [];
     } });
-    const page = await client.artists(name); assert.equal(page.items.length, 2);
+    const page = await client.artists(name); assert.equal(page.items.length, 1);
+    assert.equal(page.notices, undefined);
+    assert.ok(!calls.includes('music/artists/artist_albums'), 'Searching must not require catalogue corroboration.');
     const group = page.items[0]!;
-    assert.equal(group.matchKind, undefined); assert.equal(group.name, name);
-    assert.equal(group.sources, undefined);
+    assert.equal(group.matchKind, 'metadata'); assert.equal(group.name, name);
+    assert.equal(group.sources?.length, 2);
     const before = calls.length;
     assert.deepEqual((await client.albums(group.id)).items, []);
-    assert.equal(calls.length, before + 1);
+    assert.equal(calls.length, before + 2);
     assert.ok(!JSON.stringify(group).includes('private-instance'));
   }
 });
 
-test('ambiguous releases and metadata-only tracks remain directly selectable without merging identities', async () => {
+test('metadata-matched albums merge for browsing while recording substitution still requires identity', async () => {
   const calls: { command?: string; args: Record<string, unknown> }[] = [];
   const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command, args = {}) {
     const data = args as Record<string, unknown>; calls.push({ command, args: data });
@@ -281,8 +340,10 @@ test('ambiguous releases and metadata-only tracks remain directly selectable wit
   } });
   const artistGroup = (await client.artists('Metallica')).items[0]!;
   assert.equal(artistGroup.matchKind, 'identity');
-  const albums = await client.albums(artistGroup.id); assert.equal(albums.items.length, 2);
-  const tidalAlbum = albums.items.find(a => a.provider === 'tidal')!;
+   const albums = await client.albums(artistGroup.id); assert.equal(albums.items.length, 1);
+   assert.equal(albums.items[0]!.matchKind, 'metadata');
+   assert.equal((await client.tracks(albums.items[0]!.id)).items.length, 2);
+   const tidalAlbum = albums.items[0]!.sources!.find(a => a.provider === 'tidal')!;
   await client.tracks(tidalAlbum.id); assert.equal(calls.at(-1)!.args.provider_instance_id_or_domain, 'tidal');
   const results = await client.search('Sandman'); assert.equal(results.length, 2);
   const group = results[0]!; assert.equal(group.matchKind, undefined);
@@ -331,7 +392,7 @@ test('metadata display grouping preserves known conflicts/editions and does not 
   assert.equal(presentCatalogueItems('artist', [unknownSpotify, otherSpotify]).length, 2); // Same-provider ambiguity is not paired away.
 });
 
-test('unconfirmed artist references remain opaque, participant-bound and revoked without requiring provider selection', async () => {
+test('merged artist references remain opaque, participant-bound and revoked without requiring provider selection', async () => {
   const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command) {
     if (command === 'music/search') return { artists: ['spotify', 'tidal'].map(provider => metadataOnly(artist(provider))) };
     return [];
@@ -340,11 +401,11 @@ test('unconfirmed artist references remain opaque, participant-bound and revoked
   await manager.init(); await manager.save('http://localhost:8095', 'token', 0);
   const artists = (await manager.browse('artists', 'Metallica', 'alice')).artists!;
   const group = artists[0]!;
-  assert.equal(artists.length, 2);
+  assert.equal(artists.length, 1);
   for (const secret of ['display:', 'PRIVATE', 'private-instance', 'spotify://', 'provider_mappings']) assert.ok(!JSON.stringify(group).includes(secret));
   await assert.rejects(manager.browse('albums', group.id, 'bob'), /another participant/);
   assert.deepEqual((await manager.browse('albums', group.id, 'alice')).albums, []);
-  const source = artists.find(a => a.provider === 'tidal')!;
+  const source = group.sources!.find(a => a.provider === 'tidal')!;
   assert.deepEqual((await manager.browse('albums', source.id, 'alice')).albums, []);
   await manager.save('http://localhost:8095', 'new-token', 1);
   await assert.rejects(manager.browse('albums', source.id, 'alice'), /expired/);

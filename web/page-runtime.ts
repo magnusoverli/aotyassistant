@@ -1,6 +1,5 @@
 import QRCode from 'qrcode';
 import type { CatalogueTrack, CatalogueArtist, CatalogueAlbum, View } from '../src/model';
-import { catalogueSearchNotice } from '../src/catalogue-messages';
 import { mountSettings } from './settings';
 import { el, link } from './dom';
 import { vinyl } from './visuals';
@@ -62,15 +61,14 @@ let chosenAlbum: CatalogueAlbum | undefined;
 let artistNotices: string[] = [];
 let albumNotices: string[] = [];
 let trackNotices: string[] = [];
-let catalogueDetails = false;
 const browseSnapshot = () => ({ results, searchText, searchDone, artists, albums, chosenArtist, chosenAlbum,
-  artistNotices, albumNotices, trackNotices, scroll: scrollY, catalogueDetails });
+  artistNotices, albumNotices, trackNotices, scroll: scrollY });
 const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
   catalogue.cancel(); resetCatalogueTask();
   results = snapshot?.results ?? []; searchText = snapshot?.searchText ?? ''; searchDone = snapshot?.searchDone ?? false;
   artists = snapshot?.artists ?? []; albums = snapshot?.albums ?? []; chosenArtist = snapshot?.chosenArtist; chosenAlbum = snapshot?.chosenAlbum;
   artistNotices = snapshot?.artistNotices ?? []; albumNotices = snapshot?.albumNotices ?? []; trackNotices = snapshot?.trackNotices ?? [];
-  catalogueDetails = snapshot?.catalogueDetails ?? false; render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
+  render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
 }) : undefined;
 let stream: { close(): void } | undefined;
 let qrUrl = '';
@@ -490,11 +488,8 @@ function participant() {
   const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
   const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
   children(resultsHeading, resultsHeading.querySelector('h2')!, searchDone && !searching && v.el('count', 'span', resultSummary, 'count-tag'));
-  const allNotices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
-  // Keep API coverage caveats available without repeating a warning banner on every successful search.
-  const notices = allNotices.filter(notice => notice !== catalogueSearchNotice);
-  const coverageUnconfirmed = notices.length > 0 || allNotices.length > notices.length;
-  const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.${coverageUnconfirmed ? ' Source coverage unconfirmed.' : ''}` : '';
+  const notices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
+  const announcement = searching ? 'Searching…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (catalogueError) {
     const notice = v.el('error', 'div', undefined, 'list-notice'); const message = v.el('error-text', 'p', catalogueError); attr(message, 'role', 'alert');
@@ -506,11 +501,7 @@ function participant() {
   }
   if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', realCatalogue ? 'Search for an artist, then choose an album and tracks.' : 'Search for music to add to your private list.', 'muted small'));
   if (searching || catalogueBusy) { const status = v.el('status', 'p', searching ? 'Searching…' : 'Loading music…', 'muted'); attr(status, 'role', 'status'); foundNodes.push(status); }
-  if (coverageUnconfirmed) {
-    const details = v.el('help', 'details', undefined, 'catalogue-help'); prop(details, 'open', catalogueDetails);
-    children(details, v.el('help-summary', 'summary', 'Some sources may be missing · Details'), ...allNotices.map((notice, index) => v.el(`help-${index}`, 'p', notice, 'muted small')));
-    details.ontoggle = () => { if (details.isConnected) catalogueDetails = details.open; }; foundNodes.push(details);
-  }
+  for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
   if (chosenArtist) {
     const crumbs = v.el('crumbs', 'div', undefined, 'actions browse-crumbs');
     const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists'); children(crumbs, back);
@@ -542,9 +533,9 @@ function participant() {
     foundNodes.push(row('album', album));
   }
   const emptyBrowse = searchDone && realCatalogue && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
-    if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', coverageUnconfirmed ? 'No results returned. Try another search or check Details.' : chosenArtist && !chosenAlbum
+    if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist.'
-    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name; Music Assistant may omit unavailable sources.', 'muted'));
+    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name.', 'muted'));
   if (searchDone && !realCatalogue && !results.length) {
     const empty = v.el('empty-tracks', 'p', 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
     attr(empty, 'role', 'status'); foundNodes.push(empty);

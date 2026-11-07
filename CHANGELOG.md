@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.7] — 2026-11-07
+
+- Add a subtle display-page line for the current stream's MA-reported format, bitrate and sample rate, visible independently of reveal. Omit unavailable technical fields.
+- Merge matching artist results across providers and show their combined catalogue with each matching album once, including when shared identifiers are missing. Preserve distinct editions and exact-recording playback checks.
+- Remove the routine source-coverage disclaimer from successful searches and simplify empty-result text.
+
 ## [1.1.6] — 2026-11-07
 
 - Remove album-title subtitles from artist search results. Preserve artwork from equivalent sources and retrieve missing artist/album artwork from bounded, cached Music Assistant detail reads.

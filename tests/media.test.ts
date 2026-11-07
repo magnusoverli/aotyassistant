@@ -78,6 +78,39 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
   assert.equal((await f.request(track.artwork!, f.alex)).status, 401);
 });
 
+test('public stream details follow the verified stream independently of reveal and clear on missing data or stop', async t => {
+  const f = await fixture(); t.after(f.close);
+  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, f.host().turnId!, null, track.id);
+  const id = f.participant(f.alex).ownPlayback!.id;
+  assert.equal(f.display().streamInfo, undefined);
+  const expected = { format: 'FLAC', bitRate: 1411, sampleRate: 44100 };
+  f.remote.queue.current_item!.streamdetails!.audio_format = { content_type: 'flac', bit_rate: 1411, sample_rate: 44100,
+    title: 'PRIVATE stream title', path: 'PRIVATE stream URL' };
+  const waitForInfo = async (value: View['streamInfo']) => {
+    for (let i = 0; i < 100 && JSON.stringify(f.display().streamInfo) !== JSON.stringify(value); i++) await delay(10);
+    assert.deepEqual(f.display().streamInfo, value);
+  };
+  await waitForInfo(expected);
+  assert.deepEqual(f.display().nowPlaying, { revealed: false });
+  assert.ok(!JSON.stringify(f.display()).includes('PRIVATE'));
+  assert.equal(f.participant(f.sam).streamInfo, undefined);
+  await f.engine.reveal(f.alex, f.host().turnId!, id);
+  assert.deepEqual(f.display().streamInfo, expected);
+  await f.engine.control(f.alex, f.host().turnId!, id, 'pause');
+  assert.deepEqual(f.display().streamInfo, expected);
+  f.remote.queue.current_item!.streamdetails!.audio_format = { content_type: 'aac', bit_rate: 256 };
+  await waitForInfo({ format: 'AAC', bitRate: 256 });
+  delete f.remote.queue.current_item!.streamdetails!.audio_format;
+  await waitForInfo(undefined);
+  f.remote.queue.current_item!.streamdetails!.audio_format = { content_type: 'flac', bit_rate: 1411, sample_rate: 44100 };
+  await waitForInfo(expected);
+  await f.engine.control(f.alex, f.host().turnId!, id, 'stop');
+  assert.equal(f.display().streamInfo, undefined);
+  await f.engine.play(f.alex, f.host().turnId!, id, track.id);
+  assert.equal(f.display().streamInfo, undefined, 'A replacement without technical metadata must not inherit the old stream.');
+});
+
 test('artwork transport rejects arbitrary references, redirects, SVG/HTML, and oversized image responses', async t => {
   const remote = await startMusicAssistantFixture(); t.after(remote.close);
   await assert.rejects(new MusicAssistantClient(remote.origin, 'fixture-token').artwork('http://169.254.169.254/secret'), status(404));

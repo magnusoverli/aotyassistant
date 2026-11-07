@@ -10,7 +10,7 @@ export type IdentityMedia = {
   metadata?: { explicit?: boolean | null };
 };
 type Kind = 'artist' | 'album' | 'track';
-const text = (value: string) => value.normalize('NFC').trim().toLowerCase();
+const text = (value: string) => value.normalize('NFC').trim().replace(/\s+/g, ' ').toLowerCase();
 function ids(media: { external_ids?: [string, string][] }, type: string) {
   return new Set((media.external_ids ?? []).filter(([key, value]) => key === type &&
     (type.startsWith('musicbrainz_') || type === 'acoustid' ? /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/i.test(value)
@@ -79,7 +79,7 @@ export function groupCatalogueItems<T extends IdentityMedia>(kind: Kind, items: 
   return groups;
 }
 
-/** Presentation compatibility is NOT identity evidence and must never authorize a union browse. */
+/** Browse compatibility is not recording identity and never authorizes playback substitution. */
 export function sameMetadataPresentation(kind: Kind, a: IdentityMedia, b: IdentityMedia): boolean {
   if (!text(a.name) || text(a.name) !== text(b.name) || text(a.version) !== text(b.version)) return false;
   // Release-group/barcode/track IDs are vetoes here, never positive evidence of recording equality.
@@ -106,8 +106,9 @@ function evidenceProfile(item: IdentityMedia): string {
 }
 
 export type CataloguePresentation<T> = { items: T[]; matchKind: 'identity' | 'metadata' };
-/** Identity groups first; metadata buckets only flatten choices for a clearly unverified display row. */
-export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items: T[]): CataloguePresentation<T>[] {
+/** Identity groups first, then compatible metadata buckets. Browse unions are
+ * labelled metadata matches rather than recording identity evidence. */
+export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items: T[], browse = false): CataloguePresentation<T>[] {
   const identities = groupCatalogueItems(kind, items);
   const order = new Map(items.map((item, index) => [item, index]));
   const buckets = new Map<string, T[][]>();
@@ -120,9 +121,10 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
       }
       return sources.size > 1;
     });
-    // Do not downgrade a verified multi-source union or an alias group to a metadata-only display bucket.
+    // Browse rows may combine compatible provider copies with an existing library
+    // union. Recording identity groups retain their stricter evidence boundary.
     const keys = new Set(group.map(item => metadataKey(kind, item)));
-    const key = group.length === 1 && !mappedUnion && keys.size === 1 ? [...keys][0]! : `identity:${order.get(group[0]!)}`;
+    const key = (browse || group.length === 1 && !mappedUnion) && keys.size === 1 ? [...keys][0]! : `identity:${order.get(group[0]!)}`;
     if (!buckets.has(key)) buckets.set(key, []); buckets.get(key)!.push(group);
   }
   const result: CataloguePresentation<T>[] = [];
@@ -130,8 +132,8 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
   let comparisons = 0;
   const complete = (groups: T[][]) => {
     if (groups.length < 2) return true;
-    // Multi-group buckets contain only singleton identity groups with the same
-    // normalized metadata key. Equal evidence profiles need one comparison, not n².
+    // Bucket members share a normalized metadata key. Equal evidence profiles
+    // need one comparison, not n², including multi-source library groups.
     const representatives = [...new Map(groups.flat().map(item => [profiles.get(item)!, item])).values()];
     for (let i = 0; i < representatives.length; i++) {
       for (let j = i; j < representatives.length; j++) {
@@ -142,7 +144,7 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
   };
   const emit = (groups: T[][], verified = false) => {
     const members = groups.flat();
-    if (groups.length > 1 && new Set(members.map(item => item.provider)).size > 1 && (verified || complete(groups))) {
+    if (groups.length > 1 && (browse || new Set(members.map(item => item.provider)).size > 1) && (verified || complete(groups))) {
       result.push({ items: members, matchKind: 'metadata' });
     } else for (const group of groups) result.push({ items: group, matchKind: 'identity' });
   };
@@ -158,4 +160,11 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
     for (const profile of byProfile.values()) emit(profile);
   }
   return result.sort((a, b) => Math.min(...a.items.map(item => order.get(item)!)) - Math.min(...b.items.map(item => order.get(item)!)));
+}
+
+/** One navigable artist/release row with all its provider references. Unlike a
+ * recording match, browsing can use compatible names/editions without shared IDs.
+ * Known conflicting identities and editions still remain separate. */
+export function browseCatalogueItems<T extends IdentityMedia>(kind: 'artist' | 'album', items: T[]): CataloguePresentation<T>[] {
+  return presentCatalogueItems(kind, items, true);
 }

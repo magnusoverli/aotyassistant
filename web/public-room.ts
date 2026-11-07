@@ -11,6 +11,14 @@ export function publicPlaybackState(view: View, online: boolean) {
   return view.progress?.status === 'playing' || view.progress?.status === 'paused' ? view.progress.status : 'idle';
 }
 
+export function publicStreamDetails(view: View, online: boolean) {
+  const state = publicPlaybackState(view, online);
+  if (state !== 'playing' && state !== 'paused') return '';
+  const info = view.streamInfo;
+  return [info?.format, info?.bitRate ? `${info.bitRate} kbps` : undefined,
+    info?.sampleRate ? `${info.sampleRate / 1000} kHz` : undefined].filter(Boolean).join(' · ');
+}
+
 /** Keep motion on persistent nodes: revealing metadata must never restart or change its rhythm. */
 export class PublicRoom {
   readonly element = pageFrame('display', 'display-page');
@@ -26,6 +34,7 @@ export class PublicRoom {
   private credit = el('div', undefined, 'artist-credit');
   private album = el('p', undefined, 'room-album');
   private progress = progressBar(undefined, true);
+  private technical = el('p', undefined, 'room-stream-details');
   private invitationKey = '';
   private trackKey = '';
 
@@ -42,7 +51,8 @@ export class PublicRoom {
     const info = el('div', undefined, 'track-info');
     info.append(this.title, this.credit, this.album);
     const activity = el('div', undefined, 'room-activity');
-    activity.append(this.progress); info.append(activity);
+    this.technical.title = 'Source audio reported by Music Assistant'; this.technical.hidden = true;
+    activity.append(this.progress); info.append(activity, this.technical);
     this.stage.append(visual, info);
     listening.append(this.turn, this.rest, this.stage);
     this.invitation.setAttribute('aria-label', 'Join room');
@@ -81,6 +91,8 @@ export class PublicRoom {
       }
     }
     updateProgress(this.progress, active ? view.progress : undefined);
+    const technical = publicStreamDetails(view, online);
+    text(this.technical, technical); prop(this.technical, 'hidden', !technical);
 
     const invitationKey = JSON.stringify([view.joinUrl, qrImage, view.guestAccess]);
     if (this.invitationKey !== invitationKey) {

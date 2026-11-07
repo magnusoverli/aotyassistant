@@ -59,7 +59,7 @@ Audio and queue-policy writes are never retried. A lost Play/Pause/Resume/Stop a
 4. **Dynamic queues:** explicit takeover stops and clears the queue before changing locked policies, with queue read-back before Play.
 5. **Position corrections:** `queue_time_updated` prompts authoritative refresh; periodic polling still covers progress and missed events.
 6. **Monitoring cost:** background volume reads are limited to once per 15 seconds, with player events and explicit operations refreshing sooner. Ownership and readiness reads remain authoritative.
-7. **Provider transparency:** `catalogue-matcher.ts` uses MA identities first and bounded release/tracklist corroboration for ambiguous artists/albums. Recording substitution requires IDs or mappings, not matching names. `recording-identity.ts` persists private evidence and bounded equivalents without library mutations; public references remain participant-bound and opaque. Existing saved choices continue to load.
+7. **Provider transparency:** `catalogue-grouping.ts` combines compatible artist/album metadata into navigable browse groups, retaining every provider reference for union browsing. Known identity and edition conflicts remain separate. Recording substitution requires IDs or mappings, not browse matches or matching names. `recording-identity.ts` persists private evidence and bounded equivalents without library mutations; public references remain participant-bound and opaque. Existing saved choices continue to load.
 
 Explicit recovery performs a fresh connection/speaker inspection after releasing the command lock, rather than acknowledging readiness from a cached failed inspection. Observation and configuration revisions prevent older inspections from undoing the recovered status.
 
@@ -82,6 +82,8 @@ Session and private-list credentials use separate HttpOnly cookies. The user sto
 Permanent user deletion first persists a revocation marker under the owner's write lock. It then removes any listening-order seat using the engine's existing stop/advance behavior, deletes owner-scoped uploads, list data and legacy bindings, and retains only opaque user/list/registration IDs to reject stale credentials and registration retries. Partial deletions stay hidden from participants and visible to the host for explicit, idempotent cleanup retries, including after restart. Other users' lists and uploads are retained.
 
 Role-filtered HTTP and server-sent events exclude unrevealed title/artist/artwork from public views and another person’s list from all other roles. Public artwork requires the exact revealed playback, checked before and after the upstream read. Upload streams use scoped capabilities; original media URLs and MA tokens remain server-side.
+
+The display's subtle technical line is independent of reveal: it exposes only fixed format labels and positive bitrate/sample-rate values reported in the verified current queue item's `streamdetails.audio_format`. It describes source audio, not the destination's potentially transcoded output. Missing fields are omitted; recording names, paths and free-form stream metadata are excluded.
 
 The browser uses independently updated regions so routine events preserve focus, input state, scroll position, and animation nodes. Public reveal/playback remains server-confirmed even when private controls show a pending state.
 

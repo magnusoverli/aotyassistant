@@ -59,13 +59,11 @@ test('partial provider browse is explicit, and full failure is not shown as an e
   const search = async (query: string) => { await page.getByRole('searchbox', { name: 'Search catalogue' }).fill(query); await page.getByRole('button', { name: 'Search', exact: true }).click(); };
   await search('multi-provider-partial');
   await expect(page.locator('.catalogue-results .catalogue-notice')).toHaveCount(0);
-  await page.locator('.catalogue-help summary').click();
-  await expect(page.locator('.catalogue-help p')).toBeVisible();
-  await expect(page.locator('.catalogue-help')).toContainText('search coverage is unconfirmed');
+  await expect(page.locator('.catalogue-help')).toHaveCount(0);
+  await expect(page.getByText(/Some sources may be missing|search coverage is unconfirmed/)).toHaveCount(0);
   await page.getByRole('button', { name: 'View albums' }).first().click();
-  await expect(page.locator('.catalogue-help')).toContainText('Could not load tidal');
-  await expect(page.locator('.catalogue-help')).toContainText('Results are incomplete');
-  await expect(page.locator('.catalogue-help')).toHaveJSProperty('open', true);
+  await expect(page.locator('.catalogue-results')).toContainText('Could not load tidal');
+  await expect(page.locator('.catalogue-results')).toContainText('Results are incomplete');
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible();
   await expect(page.getByText('tidal exclusive', { exact: true })).toHaveCount(0);
   await search('multi-provider-failure'); await page.getByRole('button', { name: 'View albums' }).first().click();
@@ -74,7 +72,7 @@ test('partial provider browse is explicit, and full failure is not shown as an e
   await expect(page.getByText(/No albums returned/)).toHaveCount(0); await expect(page.getByText('PRIVATE SOURCE FAILURE')).toHaveCount(0);
 });
 
-test('ambiguous ID-less artists and recordings remain directly selectable as separate musical results', async ({ page, isolatedApp }) => {
+test('ID-less artists combine provider catalogues into unique browse rows', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await page.goto('/host'); const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
@@ -83,27 +81,23 @@ test('ambiguous ID-less artists and recordings remain directly selectable as sep
   await page.setViewportSize({ width: 390, height: 1000 });
   for (const name of ['Metallica', 'Iron Maiden', 'Megadeth', 'Slayer', 'Metallica']) {
     await search(name);
-    await expect(page.locator('.catalogue-results .track-row')).toHaveCount(2);
-    await expect(page.locator('.catalogue-results strong')).toHaveText([name, name]);
+    await expect(page.locator('.catalogue-results .track-row')).toHaveCount(1);
+    await expect(page.locator('.catalogue-results strong')).toHaveText([name]);
     await expect(page.getByRole('button', { name: 'View albums', exact: true }).first()).toBeEnabled();
     await expect(page.locator('.catalogue-results').getByRole('combobox')).toHaveCount(0);
   }
   const response = await (await post('/api/participant/browse', { kind: 'artists', value: 'Metallica' })).json();
-  const group = response.artists[0]; expect(group.sources).toBeUndefined();
+  const group = response.artists[0]; expect(group.sources).toHaveLength(2);
   expect((await post('/api/participant/browse', { kind: 'albums', value: group.id })).status()).toBe(200);
   expect(JSON.stringify(response)).not.toMatch(/private-instance|private-multi|spotify:\/\/|external_ids/);
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
   await page.screenshot({ path: 'test-results/metadata-artists-mobile.png', fullPage: true });
-  await page.getByRole('button', { name: 'View albums', exact: true }).nth(1).click();
+  await page.getByRole('button', { name: 'View albums', exact: true }).click();
   await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
-  await expect(page.getByText('spotify exclusive', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: '← Artists', exact: true }).click();
-  await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '← Artists', exact: true }).click();
-  await page.getByRole('button', { name: 'View albums', exact: true }).nth(1).click();
+  await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
   await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click();
-  const original = page.locator('.catalogue-results .track-row').first();
+  const original = page.locator('.catalogue-results .track-row').nth(1);
   await expect(original.getByRole('combobox')).toHaveCount(0);
   await expect(original.getByRole('button', { name: 'Add to list', exact: true })).toBeEnabled();
   await original.getByRole('button', { name: 'Add to list', exact: true }).click();
@@ -111,23 +105,23 @@ test('ambiguous ID-less artists and recordings remain directly selectable as sep
   expect(isolatedApp.calls.filter(c => c.command === 'player_queues/play_media')).toHaveLength(0);
 });
 
-test('unconfirmed releases remain separate while verified artist groups include both catalogues', async ({ page, isolatedApp }) => {
+test('metadata-matched releases appear once and browse both provider copies', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: 0 });
   await page.goto('/host'); const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
   await page.getByLabel('Display name').fill('Release choices'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
   await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('multi-provider-metadata-albums'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
-  await expect(page.locator('.catalogue-results .track-row')).toHaveCount(4);
+  await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible(); await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
   const releases = page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' });
-  await expect(releases).toHaveCount(2);
-  const release = releases.nth(1);
+  await expect(releases).toHaveCount(1);
+  const release = releases.first();
   await expect(release.getByRole('combobox')).toHaveCount(0);
   const before = isolatedApp.calls.length;
   await release.getByRole('button', { name: 'View tracks', exact: true }).click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(1);
-  expect(isolatedApp.calls.slice(before).filter(c => c.command === 'music/albums/album_tracks').map(c => c.args.provider_instance_id_or_domain)).toEqual(['tidal']);
+  expect(isolatedApp.calls.slice(before).filter(c => c.command === 'music/albums/album_tracks').map(c => c.args.provider_instance_id_or_domain).sort()).toEqual(['spotify', 'tidal']);
 });
 
 test('Play automatically selects the available equivalent once, and reveal remains guarded', async ({ browser, page, isolatedApp }) => {

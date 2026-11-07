@@ -106,6 +106,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .display-page[data-playback="playing"] .room-record { animation-play-state:running; }
 .room-activity { display:flex; margin-top:28px; }
 .room-activity .public-playback { flex:1; min-width:0; margin:0; }
+.room-stream-details { margin:8px 0 0; color:var(--muted); font-size:clamp(.7rem,.8vw,.85rem); line-height:1.5; letter-spacing:.02em; }
 .public-playback .track-times { display:flex; min-height:1.2em; }
 .room-rest { grid-row:2; padding:48px 0; }
 .room-rest h1 { font-size:clamp(2.5rem,4.5vw,5rem); margin-bottom:20px; }
@@ -412,8 +413,6 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .catalogue-source { display: block; margin-top: .55rem; max-width: 100%; }
 .catalogue-source select { max-width: 100%; min-height: 44px; }
 .catalogue-match-note { display: block; margin-bottom: .4rem; }
-.catalogue-help { margin-block: .75rem; }
-.catalogue-help summary { cursor: pointer; font-size: .85rem; }
 .catalogue-notice { padding: .8rem; border-left: 3px solid var(--accent); background: #ffffff08; color: var(--muted); font-size: .82rem; line-height: 1.5; }
 
 /* Phone/tablet workspace: one compact, stable player without a redundant shortcut row. */
@@ -441,7 +440,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
   .volume-control input[type='range'] { min-height:44px; }
   .volume-control label,.volume-control output { font-size:14px; }
   .header-nav-link { font-size:14px; }
-  .catalogue-help summary,.music-upload > summary { min-height:44px; padding-block:12px; font-size:14px; }
+  .music-upload > summary { min-height:44px; padding-block:12px; font-size:14px; }
   .catalogue-match-note,.catalogue-results .result-identity p,.list-disclosure > summary,
   .saved-track p,.saved-source,.saved-unavailable,.saved-next-label,.list-save-status { font-size:14px; }
   .preparation-list .saved-track strong { font-size:15px; }

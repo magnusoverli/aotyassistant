@@ -1,4 +1,4 @@
-import { AppError, type Track, type VolumeState } from './model.js';
+import { AppError, type StreamInfo, type Track, type VolumeState } from './model.js';
 import type { SavedSelection } from './preparations.js';
 import type { PlaybackProblem } from './playback-problem.js';
 
@@ -11,6 +11,7 @@ export interface PlaybackAdapter {
   readonly volume?: VolumeState;
   setVolume?(level: number, playbackId?: string): Promise<void>;
   progress?(id: string): { elapsed: number; duration: number } | null;
+  streamInfo?(id: string): StreamInfo | undefined;
   onProgress?: () => void;
   search(query: string): Promise<Track[]>;
   resolve(id: string, context?: string): Promise<Track>;

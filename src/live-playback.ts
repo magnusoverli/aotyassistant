@@ -1,4 +1,4 @@
-import { AppError, type Track, type VolumeState } from './model.js';
+import { AppError, type StreamInfo, type Track, type VolumeState } from './model.js';
 import { DemoAdapter, type PlaybackAdapter } from './playback.js';
 import { type IntegrationManager, type PlaybackController } from './integrations.js';
 import type { MusicAssistantApi, QueueSnapshot } from './music-assistant.js';
@@ -15,7 +15,7 @@ type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configuratio
   'withPlayback' | 'withDemoPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
 type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback'>;
 type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; previousQueueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
-  idleSince?: number; position?: { elapsed: number; duration: number; at: number } };
+  idleSince?: number; position?: { elapsed: number; duration: number; at: number }; streamInfo?: StreamInfo };
 
 // MA schema 65 settles a naturally finished queue after a five-second idle debounce.
 const completionConfirmationMs = 10_000;
@@ -64,7 +64,13 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     const { elapsed, duration, at } = own.position;
     return { elapsed: Math.min(duration || Infinity, elapsed + (own.status === 'playing' ? Math.max(0, Math.min(3, (Date.now() - at) / 1000)) : 0)), duration };
   }
+  streamInfo(id: string): StreamInfo | undefined {
+    const own = this.own;
+    if (!this.available || this.failed || !own || own.appId !== id) return;
+    return own.streamInfo ? { ...own.streamInfo } : undefined;
+  }
   private observe(own: Ownership, queue: QueueSnapshot) {
+    own.streamInfo = queue.current_item?.streamdetails?.audio_format;
     if (queue.elapsed_time === undefined) { own.position = undefined; return; }
     const correction = queue.state === 'playing' && queue.elapsed_time_last_updated ? Math.max(0, Math.min(5, Date.now() / 1000 - queue.elapsed_time_last_updated)) : 0;
     own.position = { elapsed: queue.elapsed_time + correction, duration: own.track.duration, at: Date.now() };
@@ -432,6 +438,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         }
         if (parked) {
           // MA releases paused streams after ~30s. Retain the exact selection and frozen position, with no pause expiry and no auto-resume.
+           if (q.state === 'paused') own.streamInfo = q.current_item?.streamdetails?.audio_format;
            maBackground(() => { void this.refreshVolume(own.api, own.destination, false); }); this.onProgress(); return;
         }
         if (q.state === 'idle' && !q.ended && own.status === 'playing' && own.seenPlaying && this.sameQueueItem(q, own) && this.safeQueue(q)) {

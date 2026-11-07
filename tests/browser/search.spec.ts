@@ -56,7 +56,7 @@ test('participant searches privately with empty/errors but cannot play until a s
     expect(requests.some(url => url.endsWith('/api/participant/search'))).toBe(false);
     expect(isolatedApp.calls.filter(call => call.command === 'music/search').every(call => JSON.stringify(call.args.media_types) === '["artist"]')).toBe(true);
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('empty'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(alice.getByText('No results returned. Try another search or check Details.')).toBeVisible();
+    await expect(alice.getByText('No artists found. Try another artist name.')).toBeVisible();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('failure'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(alice.getByRole('alert')).toContainText('Music Assistant did not accept');

@@ -15,7 +15,6 @@ export type CatalogueTrack = {
   sources?: CatalogueTrack[];
   matchKind?: CatalogueMatchKind;
 };
-export { catalogueSearchNotice } from './catalogue-messages.js';
 export type CatalogueSearch = { source: CatalogueSource; playbackAvailable: boolean; tracks: CatalogueTrack[]; notices?: string[] };
 export type CatalogueArtist = { id: string; name: string; provider: string; description?: string; artwork?: string; sources?: CatalogueArtist[]; matchKind?: CatalogueMatchKind };
 export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[]; matchKind?: CatalogueMatchKind };
@@ -73,6 +72,8 @@ export type OutputState = { name: string | null; state: 'none' | 'checking' | 'r
 export type PlaybackSettings = { enabled: boolean; revision: number };
 export const AUTO_REVEAL_FRACTION = 0.7;
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
+/** Source stream reported by MA; bitrate in kbps and sample rate in Hz. */
+export type StreamInfo = { format?: string; bitRate?: number; sampleRate?: number };
 export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambiguous'; source: 'automatic' | 'manual' | 'legacy' | 'configured' | 'online'; message: string };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
@@ -87,6 +88,7 @@ export type View = {
   playbackIssue?: string;
   playbackProblem?: PlaybackProblem;
   progress?: PlaybackProgress; volume?: VolumeState;
+  streamInfo?: StreamInfo;
   nowPlaying?: { revealed: false } | { revealed: true; track: Track };
   active?: Person[];
   rotation?: Person[]; position?: RotationPosition;
