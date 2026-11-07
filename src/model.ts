@@ -4,6 +4,9 @@ import type { PlaybackProblem } from './playback-problem.js';
 export const trackSchema = z.object({
   id: z.string(), title: z.string(), artist: z.string(), album: z.string(),
   duration: z.number().nonnegative(), artwork: z.string().optional(), artistArtwork: z.string().optional(),
+  // Private comparison hints: a verified saved image may keep its existing DOM
+  // node even when playback uses a different authorized download URL.
+  artworkIdentity: z.string().optional(), artistArtworkIdentity: z.string().optional(),
 }).strict();
 export type Track = z.infer<typeof trackSchema>;
 

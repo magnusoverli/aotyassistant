@@ -328,7 +328,18 @@ export class IntegrationManager implements CatalogueProvider {
     const result = await this.getApi().resolveRecording({ ...saved.recording, artwork: saved.metadata.artworkId, artistArtwork: saved.metadata.artistArtworkId });
     this.savedSource(saved);
     if (revision !== this.state.revision || epoch !== this.catalogueRevision) throw new AppError(409, 'Playback setup changed during lookup. Your saved list was kept; review the destination and try again.');
-    return { ...result, track: this.withArtwork({ ...result.track, id: trackId }, context), revision };
+    const track = this.withArtwork({ ...result.track, id: trackId }, context);
+    // Only exact image-ID equality permits reuse, not matching track metadata.
+    // These hints never authorize a download; the normal playback URL is retained.
+    return { ...result, track: { ...track,
+      ...(result.track.artwork && result.track.artwork === saved.metadata.artworkId
+        ? { artworkIdentity: this.savedImageIdentity(trackId, 'artwork') } : {}),
+      ...(result.track.artistArtwork && result.track.artistArtwork === saved.metadata.artistArtworkId
+        ? { artistArtworkIdentity: this.savedImageIdentity(trackId, 'artistArtwork') } : {}) }, revision };
+  }
+  private savedImageIdentity(trackId: string, kind: 'artwork' | 'artistArtwork') {
+    const entry = /^prepared:([a-f0-9-]{36})$/.exec(trackId);
+    return entry ? `/api/participant/preparations/artwork/${entry[1]}/${kind}` : undefined;
   }
   async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: ArtworkSize = 512) {
     const saved = this.savedSource(selection); const epoch = this.catalogueRevision;
@@ -352,7 +363,8 @@ export class IntegrationManager implements CatalogueProvider {
       if (!lease.observed) throw new AppError(422, 'Music Assistant did not reach this application’s uploaded file. Check the uploaded-file playback address. No audio was started.');
       return { ...resolved, revision, uploaded: true, release: lease.revoke, suspend: lease.suspend,
         track: { id: trackId, title: selection.metadata.title, artist: selection.metadata.artist, album: selection.metadata.album, duration: selection.metadata.duration ?? 0,
-          ...(selection.artworkAssetId ? { artwork: `/api/participant/artwork/upload:${this.seal(selection.assetId, 'upload-image', context)}` } : {}) } };
+          ...(selection.artworkAssetId ? { artwork: `/api/participant/artwork/upload:${this.seal(selection.assetId, 'upload-image', context)}`,
+            artworkIdentity: this.savedImageIdentity(trackId, 'artwork') } : {}) } };
     } catch (error) { lease.revoke(); throw error; }
   }
   async saveMediaOrigin(origin: string | null, revision: number) {

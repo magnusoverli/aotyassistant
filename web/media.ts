@@ -26,13 +26,17 @@ function animate(now: number) {
 
 export function artwork(url: string | undefined, alt: string, className = '', eager = false) {
   const frame = el('div', undefined, `media-artwork ${className}`); frame.append(vinyl());
+  const image = artworkImage(url, alt, className, eager);
+  if (image) { image.onerror = () => image.remove(); frame.append(image); }
+  return frame;
+}
+function artworkImage(url: string | undefined, alt: string, className: string, eager: boolean) {
   if (url && (url.startsWith('/api/participant/artwork/') || url.startsWith('/api/participant/preparations/artwork/') || /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}\/artwork$/.test(url) || url.startsWith('/api/display/artwork/') || url === '/demo-cover.svg')) {
     const image = el('img'); image.alt = alt; image.loading = eager ? 'eager' : 'lazy'; image.decoding = 'async';
     const size = className.includes('room-artwork') ? 1024 : className.includes('result-artwork') || className.includes('artist-portrait') ? 160 : 512;
     image.src = appPath(url.startsWith('/api/') ? `${url}?size=${size}` : url);
-    image.onerror = () => image.remove(); frame.append(image);
+    return image;
   }
-  return frame;
 }
 const time = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 export function updateProgress(frame: HTMLElement, progress?: PlaybackProgress) {
@@ -110,17 +114,53 @@ export function updateVolume(root: HTMLElement, volume?: VolumeState) {
   }
 }
 
-/** Replace only a changed image, keeping its surrounding layout and fallback mounted. */
+/** Keep verified identical pixels mounted. Decode replacements before swapping,
+ * and fence late image events when the requested track or identity changes. */
 export class ArtworkView {
   readonly element: HTMLElement;
-  private url?: string;
+  private requested?: { url: string; identity: string };
+  private displayed?: { image: HTMLImageElement; identity: string };
+  private pending?: { image: HTMLImageElement; url: string; identity: string };
   constructor(private alt: string, private className = '') { this.element = artwork(undefined, alt, className); }
-  update(url?: string) {
-    if (url === this.url) return this.element;
-    this.url = url;
-    this.element.querySelector('img')?.remove();
-    const image = artwork(url, this.alt, this.className).querySelector('img');
-    if (image) this.element.append(image);
+  clear() {
+    this.cancelPending(); this.displayed?.image.remove(); this.displayed = undefined; this.requested = undefined;
+  }
+  private cancelPending() {
+    if (!this.pending) return;
+    const { image } = this.pending; this.pending = undefined;
+    image.onload = image.onerror = null; image.removeAttribute('src'); image.remove();
+  }
+  update(url?: string, identity = url) {
+    if (!url || !identity) { this.clear(); return this.element; }
+    if (url === this.requested?.url && identity === this.requested.identity) return this.element;
+    this.requested = { url, identity };
+    if (identity === this.displayed?.identity) { this.cancelPending(); return this.element; }
+    // Confirmation can arrive before the saved image finishes loading, too.
+    if (identity === this.pending?.identity) return this.element;
+    this.cancelPending();
+    // Keep first loads lazy in the DOM (especially long catalogue lists).
+    // Only replacements load eagerly off-DOM while the previous image remains.
+    const image = artworkImage(url, this.alt, this.className, Boolean(this.displayed));
+    if (!image) { this.clear(); return this.element; }
+    const pending = this.pending = { image, url, identity };
+    const commit = () => {
+      if (this.pending !== pending) return;
+      image.onload = image.onerror = null; this.pending = undefined;
+      if (this.displayed) this.displayed.image.replaceWith(image);
+      else if (image.parentElement !== this.element) this.element.append(image);
+      this.displayed = { image, identity };
+    };
+    const failed = () => {
+      if (this.pending !== pending) return;
+      const latest = this.requested!; this.cancelPending();
+      // If the old saved URL failed during confirmation, try the latest
+      // authorized playback URL once rather than retaining a broken image.
+      if (latest.url !== url) { this.requested = undefined; this.update(latest.url, latest.identity); return; }
+      this.displayed?.image.remove(); this.displayed = undefined;
+    };
+    image.onload = () => { if (image.decode) void image.decode().then(commit, failed); else commit(); };
+    image.onerror = failed;
+    if (!this.displayed) this.element.append(image);
     return this.element;
   }
 }

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.12] — 2026-11-07
+
+- Keep loaded player covers and artist portraits when confirmed playback uses the same saved artwork. Decode genuinely changed images before swapping them in, and ignore superseded image loads.
+- Combine matching album browse rows even when providers use different product barcodes or MusicBrainz release IDs. Preserve edition, year, artist, explicitness and release-group distinctions, and retain strict recording checks for playback.
+
 ## [1.1.11] — 2026-11-07
 
 - Show previously played and removed tracks by default below the playlist. Remove the History expander and its explanatory text.

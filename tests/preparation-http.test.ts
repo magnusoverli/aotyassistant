@@ -101,8 +101,37 @@ test('saved catalogue entries/artwork survive expired references, fresh readers,
   const current = await f.json('/api/participant/state', undefined, f.first.membership);
   const played = await f.json<{ view: View; preparation: PreparationView }>(prefix + '/play', { turnId: current.turnId, previousPlaybackId: null, entryId: added.entryId, revision: added.view.revision }, f.first.credentials);
   assert.equal(played.preparation.played[0]!.id, added.entryId); assert.equal(played.view.ownPlayback!.track.id, `prepared:${added.entryId}`);
+  const preview = added.view.upcoming[0]!; const confirmed = played.view.ownPlayback!;
+  assert.notEqual(confirmed.track.artwork, preview.artwork, 'Playback keeps its own authorized download URL.');
+  assert.equal(confirmed.track.artworkIdentity, preview.artwork, 'The already displayed cover can be retained.');
+  assert.equal(confirmed.track.artistArtworkIdentity, preview.artistArtwork);
+  await f.json('/api/participant/reveal', { turnId: played.view.turnId, playbackId: confirmed.id }, f.first.membership);
+  const display = await f.json('/api/display/state'); assert.equal(display.nowPlaying?.revealed, true);
+  for (const audience of [display, await f.json('/api/host/state'), await f.json('/api/participant/state', undefined, f.second.membership)]) {
+    assert.ok(!JSON.stringify(audience).includes('artworkIdentity'));
+    assert.ok(!JSON.stringify(audience).includes('artistArtworkIdentity'));
+    assert.ok(!JSON.stringify(audience).includes('/api/participant/preparations/artwork/'));
+  }
+  assert.equal((await f.request(confirmed.track.artwork!, undefined, f.second.membership)).status, 409);
   const plays = f.remote.calls.filter(call => call.command === 'player_queues/play_media');
   assert.equal(plays.length, 1); assert.deepEqual(plays[0]!.args.media, [f.remote.track.uri]);
+});
+
+test('saved artwork reuse requires exact image identity independently for cover and portrait', async t => {
+  const f = await fixture(t); const added = await f.add();
+  const saved = (await f.running.preparationStore.load(added.view.ownerId))!.entries[0]!.selection;
+  const resolve = () => f.running.integrations.resolveSaved(saved, 'authorized-context', `prepared:${added.entryId}`);
+  f.remote.track.metadata.images[0]!.proxy_id = 'c'.repeat(64);
+  const changedCover = (await resolve()).track;
+  assert.equal(changedCover.artworkIdentity, undefined);
+  assert.equal(changedCover.artistArtworkIdentity, added.view.upcoming[0]!.artistArtwork);
+  f.remote.track.artists[0]!.image.proxy_id = 'd'.repeat(64);
+  const changedBoth = (await resolve()).track;
+  assert.equal(changedBoth.artworkIdentity, undefined); assert.equal(changedBoth.artistArtworkIdentity, undefined);
+  f.remote.track.metadata.images[0]!.proxy_id = 'a'.repeat(64);
+  const originalCover = (await resolve()).track;
+  assert.equal(originalCover.artworkIdentity, added.view.upcoming[0]!.artwork);
+  assert.equal(originalCover.artistArtworkIdentity, undefined);
 });
 
 test('one participant stream separates room and owner events and revokes removed membership', async t => {

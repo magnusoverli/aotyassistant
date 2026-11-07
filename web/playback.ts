@@ -38,6 +38,8 @@ export class Playback {
   private volumeState?: VolumeState;
   private audibleVolume = 35;
   private details?: ParticipantPlayerDetails;
+  private cover?: ArtworkView;
+  private portrait?: ArtworkView;
 
   constructor(private options: HostOptions | ParticipantOptions) {}
 
@@ -65,7 +67,10 @@ export class Playback {
   }
   private get output() { return this.nodes.get('output', () => outputLabel(undefined, false)); }
 
-  clear() { this.details?.destroy(); this.details = undefined; this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear(); }
+  clear() {
+    this.details?.destroy(); this.details = undefined; this.cover?.clear(); this.portrait?.clear(); this.cover = this.portrait = undefined;
+    this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear();
+  }
 
   updateVolume(volume?: VolumeState) {
     if (!this.state) return;
@@ -264,9 +269,12 @@ export class Playback {
     prop(title, 'title', title.textContent!);
     const artist = v.el('artist', 'div', undefined, 'artist-credit');
     const credit = v.el('credit', 'p', preview?.artist ?? 'Search or use your list.', 'artist'); prop(credit, 'title', credit.textContent!);
-    children(artist, Boolean(preview?.artistArtwork) && v.get('portrait', () => new ArtworkView('Artist image', 'artist-portrait')).update(preview?.artistArtwork), credit);
+    const portrait = this.portrait ??= new ArtworkView('Artist image', 'artist-portrait');
+    portrait.update(preview?.artistArtwork, playback?.track.artistArtworkIdentity);
+    children(artist, Boolean(preview?.artistArtwork) && portrait.element, credit);
     children(track, title, artist, this.output, details.button);
-    children(now, v.get('cover', () => new ArtworkView('Album artwork', 'mini-record')).update(preview?.artwork), track);
+    const cover = this.cover ??= new ArtworkView('Album artwork', 'mini-record');
+    children(now, cover.update(preview?.artwork, playback?.track.artworkIdentity), track);
     const progress = this.progress; const status = progress.querySelector<HTMLElement>('.playback-status')!;
     const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
     const privacy = playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player';

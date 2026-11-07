@@ -326,6 +326,60 @@ test('browse matching includes existing library unions and keeps identity and ed
   }
 });
 
+test('album browse unions combine provider product IDs while retaining conflicting musical editions', () => {
+  const release = (provider: string, releaseId: string, barcode: string): IdentityMedia => ({
+    ...album(provider), name: 'Requiem Mass', version: 'Deluxe Edition', year: 2023, artists: [{ name: 'Korn' }],
+    external_ids: [['musicbrainz_albumid', releaseId], ['barcode', barcode]],
+  });
+  const a = release('spotify', mbRelease, '0123456789012'); const b = release('tidal', other, '0123456789013');
+  assert.equal(sameCatalogueItem('album', a, b), false);
+  assert.equal(sameMetadataPresentation('album', a, b), false, 'Strict matching must still reject different products.');
+  const c = { ...b, item_id: 'another-tidal-product', provider_mappings: [], external_ids: [['barcode', '0123456789014']] as [string, string][] };
+  const merged = browseCatalogueItems('album', [a, b, c]);
+  assert.equal(merged.length, 1); assert.equal(merged[0]!.matchKind, 'metadata'); assert.equal(merged[0]!.items.length, 3);
+  for (const changed of [{ ...b, version: '' }, { ...b, version: 'Live' }, { ...b, year: 2022 },
+    { ...b, metadata: { explicit: false } }, { ...b, album_type: 'single' }, { ...b, artists: [{ name: 'Another Korn' }] }]) {
+    assert.equal(browseCatalogueItems('album', [{ ...a, album_type: 'album', metadata: { explicit: true } }, changed]).length, 2);
+  }
+  const groupedA = { ...a, external_ids: [...a.external_ids!, ['musicbrainz_releasegroupid', mbRelease] as [string, string]] };
+  const groupedB = { ...b, external_ids: [...b.external_ids!, ['musicbrainz_releasegroupid', other] as [string, string]] };
+  for (const input of [[groupedA, c, groupedB], [groupedB, groupedA, c]]) {
+    assert.equal(browseCatalogueItems('album', input).length, 3, 'An unknown product must not bridge conflicting release groups.');
+  }
+  const clean = { ...c, metadata: { explicit: false } };
+  const explicit = [a, b].map(item => ({ ...item, metadata: { explicit: true } }));
+  assert.deepEqual(browseCatalogueItems('album', [...explicit, clean]).map(group => group.items.length), [2, 1],
+    'A clean edition must not prevent matching explicit provider products from merging.');
+});
+
+test('duplicate Korn release rows browse all retained provider products without extra matching requests', async () => {
+  const calls: { command?: string; args: Record<string, unknown> }[] = [];
+  const release = (provider: string, itemId: string, name: string, year: number, version: string, barcode: string) => ({
+    ...metadataOnly(album(provider)), item_id: itemId, uri: `${provider}://album/${itemId}`, name, year, version,
+    provider_mappings: [{ item_id: itemId, provider_domain: provider, provider_instance: provider, available: true }],
+    artists: [{ name: 'Korn' }], external_ids: [['barcode', barcode]],
+    metadata: { images: [{ type: 'thumb', proxy_id: 'a'.repeat(64) }] },
+  });
+  const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command, args = {}) {
+    const data = args as Record<string, unknown>; calls.push({ command, args: data });
+    if (command === 'music/search') return { artists: ['spotify', 'tidal'].map(provider => ({ ...artist(provider), name: 'Korn', image: { type: 'thumb', proxy_id: 'b'.repeat(64) } })) };
+    const provider = data.provider_instance_id_or_domain as string;
+    if (command === 'music/artists/artist_albums') return [
+      release(provider, `${provider}-reward`, 'Reward the Scars', 2026, '', provider === 'spotify' ? '0123456789012' : '0123456789013'),
+      release(provider, `${provider}-mass`, 'Requiem Mass', 2023, 'Deluxe Edition', provider === 'spotify' ? '0123456789014' : '0123456789015'),
+      ...(provider === 'tidal' ? [release(provider, 'tidal-mass-other', 'Requiem Mass', 2023, 'Deluxe Edition', '0123456789016')] : []),
+    ];
+    if (command === 'music/albums/album_tracks') return [];
+    throw new Error(`Unexpected enrichment: ${command}`);
+  } });
+  const chosen = (await client.artists('Korn')).items[0]!; const releases = (await client.albums(chosen.id)).items;
+  assert.deepEqual(releases.map(row => [row.name, row.sources?.length]), [['Reward the Scars', 2], ['Requiem Mass', 3]]);
+  assert.deepEqual(calls.map(call => call.command), ['music/search', 'music/artists/artist_albums', 'music/artists/artist_albums']);
+  await client.tracks(releases[1]!.id);
+  assert.deepEqual(calls.filter(call => call.command === 'music/albums/album_tracks').map(call => call.args.item_id).sort(),
+    ['spotify-mass', 'tidal-mass', 'tidal-mass-other']);
+});
+
 test('ID-less same-name artists merge and browse both providers without corroborating reads', async () => {
   for (const name of ['Metallica', 'Iron Maiden', 'Megadeth', 'Slayer']) {
     const artists = ['spotify', 'tidal'].map(provider => metadataOnly({ ...artist(provider), name }));

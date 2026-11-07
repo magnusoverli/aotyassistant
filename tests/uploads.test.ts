@@ -178,6 +178,8 @@ test('uploaded playback verifies a typed exact source before queue writes, suppo
   const f = await fixture(t); await f.connect(); const added = await f.add(); const played = await f.play(added);
   const playback = played.view.ownPlayback!;
   assert.equal(playback.track.title, 'My exact recording'); assert.equal(played.preparation.played[0]!.id, added.entryId);
+  assert.equal(playback.track.artworkIdentity, added.view.upcoming[0]!.artwork);
+  assert.notEqual(playback.track.artwork, playback.track.artworkIdentity);
   const read = f.remote.calls.find(call => call.command === 'music/item_by_uri' && String(call.args.uri).startsWith('builtin://track/'))!;
   const mediaURL = String(read.args.uri).slice('builtin://track/'.length);
   assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/play_media').length, 1);
@@ -197,6 +199,7 @@ test('uploaded playback verifies a typed exact source before queue writes, suppo
   await f.json('/api/participant/reveal', { turnId: played.view.turnId, playbackId: playback.id }, f.first.membership);
   const publicView = await f.json('/api/display/state', undefined, f.displayCookie);
   assert.equal(publicView.nowPlaying?.revealed, true);
+  assert.ok(!JSON.stringify(publicView).includes('artworkIdentity'));
   assert.equal((await f.request(`/api/display/artwork/${playback.id}/artwork`, undefined, f.displayCookie)).status, 200);
   await f.json('/api/participant/control', { turnId: played.view.turnId, playbackId: playback.id, action: 'stop' }, f.first.membership);
   assert.equal((await fetch(mediaURL)).status, 404); assert.equal(f.uploads.busy(added.body.uploadId), false);

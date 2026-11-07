@@ -228,6 +228,7 @@ export class Engine extends EventEmitter {
       const revealed = Boolean(room.playback?.revealed && !this.concealPlayback && this.ready);
       const track = room.playback ? structuredClone(room.playback.track) : undefined;
       if (track && room.playback) {
+        delete track.artworkIdentity; delete track.artistArtworkIdentity;
         for (const kind of ['artwork', 'artistArtwork'] as const) if (track[kind]?.startsWith('/api/participant/artwork/')) track[kind] = `/api/display/artwork/${room.playback.id}/${kind}`;
       }
       const streamInfo = room.playback && this.ready && !this.concealPlayback && (base.playbackStatus === 'playing' || base.playbackStatus === 'paused')

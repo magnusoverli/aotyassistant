@@ -80,10 +80,13 @@ export function groupCatalogueItems<T extends IdentityMedia>(kind: Kind, items: 
 }
 
 /** Browse compatibility is not recording identity and never authorizes playback substitution. */
-export function sameMetadataPresentation(kind: Kind, a: IdentityMedia, b: IdentityMedia): boolean {
+export function sameMetadataPresentation(kind: Kind, a: IdentityMedia, b: IdentityMedia, browse = false): boolean {
   if (!text(a.name) || text(a.name) !== text(b.name) || text(a.version) !== text(b.version)) return false;
-  // Release-group/barcode/track IDs are vetoes here, never positive evidence of recording equality.
-  const unique = kind === 'artist' ? ['musicbrainz_artistid'] : kind === 'album' ? ['musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode']
+  // Store barcodes and MusicBrainz release IDs can differ for regional/digital
+  // products of the same album. Only browsing may combine those products, with
+  // edition/year/artist/explicitness and release-group conflicts still guarded.
+  // Strict matching and recording substitution retain all identity vetoes.
+  const unique = kind === 'artist' ? ['musicbrainz_artistid'] : kind === 'album' ? browse ? ['musicbrainz_releasegroupid'] : ['musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode']
     : ['musicbrainz_recordingid', 'musicbrainz_trackid', 'isrc', 'acoustid'];
   if (conflicts(a, b, unique) || !compatibleMetadata(kind, a, b)) return false;
   if (kind === 'track' && a.album && b.album && conflicts(a.album, b.album, ['musicbrainz_albumid', 'musicbrainz_releasegroupid', 'barcode'])) return false;
@@ -128,7 +131,8 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
     if (!buckets.has(key)) buckets.set(key, []); buckets.get(key)!.push(group);
   }
   const result: CataloguePresentation<T>[] = [];
-  const profiles = new Map(items.map(item => [item, evidenceProfile(item)]));
+  const profiles = new Map(items.map(item => [item, evidenceProfile(browse && kind === 'album' ? { ...item,
+    external_ids: item.external_ids?.filter(([type]) => type !== 'musicbrainz_albumid' && type !== 'barcode') } : item)]));
   let comparisons = 0;
   const complete = (groups: T[][]) => {
     if (groups.length < 2) return true;
@@ -137,7 +141,7 @@ export function presentCatalogueItems<T extends IdentityMedia>(kind: Kind, items
     const representatives = [...new Map(groups.flat().map(item => [profiles.get(item)!, item])).values()];
     for (let i = 0; i < representatives.length; i++) {
       for (let j = i; j < representatives.length; j++) {
-        if (++comparisons > 20_000 || !sameMetadataPresentation(kind, representatives[i]!, representatives[j]!)) return false;
+        if (++comparisons > 20_000 || !sameMetadataPresentation(kind, representatives[i]!, representatives[j]!, browse)) return false;
       }
     }
     return true;
