@@ -54,6 +54,31 @@ test('same names remain separate users; wrong PINs, cooldowns and expiration nev
   f.advance(366 * 24 * 60 * 60_000); assert.equal(f.users.current(a.token), undefined);
 });
 
+test('current-user control and reveal follow the same seat across devices, never a matching display name', async t => {
+  const f = await fixture(t);
+  const first = await f.users.register('Alex', '1234'); await f.engine.joinUser(first.user.id, first.token);
+  const other = await f.users.register('Alex', '5678'); await f.engine.joinUser(other.user.id, other.token);
+  const secondDevice = await f.users.login(first.user.id, '1234'); await f.engine.joinUser(secondDevice.user.id, secondDevice.token);
+  const participant = (credential: string) => f.engine.view({ kind: 'participant', credential });
+  const turn = participant(first.token).turnId!;
+  await f.engine.play(first.token, turn, null, 'demo:aurora');
+  const playback = participant(first.token).ownPlayback!;
+  assert.equal(participant(secondDevice.token).me!.id, participant(first.token).me!.id);
+  assert.equal(participant(secondDevice.token).myTurn, true);
+  assert.equal(participant(other.token).myTurn, false);
+  const list = await f.users.ensureList(other.token, '');
+  await f.lists.add(list.credential, { id: randomUUID(), revision: 0, issuedAt: Date.now() }, selection);
+  await assert.rejects(f.engine.control(other.token, turn, playback.id, 'pause'), status(403));
+  await assert.rejects(f.engine.reveal(other.token, turn, playback.id), status(403));
+  await f.engine.control(secondDevice.token, turn, playback.id, 'pause');
+  await f.engine.reveal(secondDevice.token, turn, playback.id);
+  assert.equal(participant(first.token).ownPlayback!.revealed, true);
+  assert.equal(f.engine.view({ kind: 'display' }).nowPlaying?.revealed, true);
+  await f.users.logout(secondDevice.token);
+  await assert.rejects(f.engine.reveal(secondDevice.token, turn, playback.id), status(401));
+  await f.engine.control(first.token, turn, playback.id, 'resume');
+});
+
 test('PIN reset revokes browser and playlist credentials, including subscribed streams, without changing music or membership', async t => {
   const f = await fixture(t); const first = await f.users.register('Alex', '1234');
   await f.engine.joinUser(first.user.id, first.token);

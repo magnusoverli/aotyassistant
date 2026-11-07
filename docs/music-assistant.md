@@ -24,9 +24,13 @@ Album browsing combines compatible provider products even when their barcodes or
 
 ## Artwork performance
 
-Artist and album thumbnails use 160-pixel JPEGs to reduce transfers over internet invitations. The app caches up to 512 artwork variants for five minutes, bounded to 20 MiB, and combines simultaneous requests for the same image.
+Results, saved playlists/history and the small participant player use the same 160-pixel JPEG size. The app caches up to 512 Music Assistant artwork variants for five minutes, bounded to 20 MiB, and combines simultaneous requests for the same image.
 
 Participant artwork URLs stay stable within their catalogue context. Browsers can retain the image and revalidate access before reuse; unchanged images return a body-free `304` response. Invitation, participant and catalogue checks still apply. The `Server-Timing` artwork duration reports server-side retrieval time to help distinguish Music Assistant delays from browser or internet-transfer delays.
+
+Authorized saved-artwork routes redirect joined participants to that same image URL, so moving a track from results to the playlist, player and history can reuse the browser's downloaded pixels. The small authorization/redirect and revalidation requests still occur; redirects are not cached. Private-list access without room membership uses its own authorized, revalidating image response. Browser caches are local to each browser/origin and can be evicted; another device still needs its own download.
+
+Uploaded artwork also uses size-specific JPEG responses and stable authorized URLs, with up to 128 variants/8 MiB cached for five minutes. New uploads retain covers up to 1024 pixels for `/display` (512 if needed to fit the stored-artwork limit); older covers keep their existing resolution. Original audio and existing stored cover files are unchanged.
 
 The player retains its loaded cover and artist portrait when playback confirms the same saved image. Different images load and decode before replacing the visible artwork. Reuse is based on verified image identity, not matching song titles; current download authorization still applies.
 

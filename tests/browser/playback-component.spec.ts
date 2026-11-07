@@ -32,7 +32,7 @@ test('the shared playback component preserves host and participant actions, priv
       }
       await expect(host.locator('#host-player img, #host-player .artist-portrait')).toHaveCount(0);
       await expect(host.locator('#host-play')).toBeDisabled();
-      await expect(host.locator('#host-reveal-status')).toBeDisabled();
+      await expect(host.locator('#host-reveal-status')).toHaveCount(0);
     }
     await expect(host.locator('.host-progress .track-times')).toBeEmpty();
     await expect(waiting.locator('#player-transport')).toBeDisabled();

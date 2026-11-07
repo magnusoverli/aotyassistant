@@ -37,6 +37,8 @@ If cover artwork is unavailable, the revealed title and artist appear on the dis
 
 The display smooths progress locally between playback updates. Before reveal, it eases toward received positions without exposing elapsed time or duration; afterward it uses a bounded local clock and gently corrects ordinary timing differences. Stale updates stop animation rather than implying continued playback. This visual smoothing does not trigger reveal or advance turns.
 
+Reveal follows the current participant's user identity across signed-in devices. Everyone can prepare their own playlist while waiting; only the current participant can play or reveal their track. The host has separate transport controls and no reveal button. A reveal request shows **Revealing…** until confirmed; **Details revealed** means the server has already accepted the reveal, including automatic reveal.
+
 When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song.
 
 The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.

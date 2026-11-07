@@ -248,10 +248,7 @@ export class Playback {
     const transport = this.transport(state);
     const stop = transport.querySelector<HTMLButtonElement>('#host-stop')!;
     if ((changedPlayback || !songActive) && document.activeElement === stop && !advance.disabled) advance.focus({ preventScroll: true });
-    const reveal = this.button('host-reveal-status', 'Hidden', () => {}, true);
-    this.decorate(reveal, playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal', playback?.revealed ? 'Revealed' : 'Reveal');
-    prop(reveal, 'disabled', true); prop(reveal, 'title', 'Only the current participant can reveal their song on the room display.');
-    children(controls, reveal, advance);
+    children(controls, advance);
     children(this.element, livePerson, transport, this.progress, this.footer(controls));
   }
 
@@ -293,8 +290,11 @@ export class Playback {
     card.classList.toggle('has-next-pick', Boolean(next));
     card.classList.toggle('has-active-song', Boolean(playback && playback.status !== 'stopped'));
     const reveal = this.button('player-reveal', 'Reveal details', () => options.reveal()); reveal.classList.add('reveal-button');
-    this.decorate(reveal, playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal', playback?.revealed ? 'Revealed' : 'Reveal');
-    prop(reveal, 'title', playback?.revealed ? 'Details revealed' : 'Reveal track details on the room display');
+    const revealing = Boolean(playback?.revealed && !view.ownPlayback?.revealed);
+    this.decorate(reveal, revealing ? 'Revealing…' : playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal', revealing ? 'Revealing…' : playback?.revealed ? 'Revealed' : 'Reveal');
+    prop(reveal, 'title', !online ? 'Waiting for the room connection' : !view.connected ? 'Playback is unavailable'
+      : !view.myTurn ? 'Only the current participant can reveal their track' : !playback ? 'Play a track before revealing'
+      : revealing ? 'Waiting for reveal confirmation' : playback.revealed ? 'Details are already visible on the room display' : 'Reveal track details on the room display');
     prop(reveal, 'disabled', !online || !view.connected || !view.myTurn || !playback || playback.revealed);
     const finish = this.button('finish-my-turn', 'Pass turn', () => { void options.run(() => options.finish()); }, true);
     this.decorate(finish, playback ? 'Finish turn' : 'Pass turn', 'advance');

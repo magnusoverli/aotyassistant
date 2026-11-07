@@ -88,6 +88,21 @@ test('uploads stream privately, retry identically, reject changed/foreign IDs an
   assert.equal(f.remote.calls.filter(call => /play_media|add_track/.test(call.command)).length, 0);
 });
 
+test('uploaded artwork keeps one cache URL through preview, saved list and playback', async t => {
+  const f = await fixture(t); await f.connect();
+  const response = await f.upload(); assert.equal(response.status, 200); const preview = await response.json() as UploadPreview;
+  const first = await f.request(`${preview.artwork}?size=160`, undefined, f.first.credentials);
+  assert.equal(first.status, 200); assert.equal(first.headers.get('content-type'), 'image/jpeg');
+  assert.equal(first.headers.get('cache-control'), 'private, no-cache');
+  const canonical = first.url; const etag = first.headers.get('etag'); await first.arrayBuffer();
+  const added = await f.add(f.first, preview.id);
+  const saved = await f.request(`${added.view.upcoming[0]!.artwork}?size=160`, undefined, f.first.credentials);
+  assert.equal(saved.url, canonical); assert.equal(saved.headers.get('etag'), etag); await saved.arrayBuffer();
+  const played = await f.play(added);
+  assert.equal(`${f.origin}${played.view.ownPlayback!.track.artwork}?size=160`, canonical);
+  assert.equal((await f.request(new URL(canonical).pathname, undefined, f.second.membership)).status, 409);
+});
+
 test('host user deletion stops their playback and deletes saved and draft uploads, but keeps other users and their files', async t => {
   const f = await fixture(t); await f.connect(); const added = await f.add(); await f.play(added);
   const draftId = randomUUID(); const keptId = randomUUID();

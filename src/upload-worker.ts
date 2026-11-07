@@ -37,8 +37,9 @@ process.once('message', async (message: { directory: string; filename: string })
     const picture = selectCover(common?.picture);
     if (picture && ['image/jpeg', 'image/png', 'image/webp'].includes(picture.format)) {
       try {
-        const image = await sharp(picture.data, { limitInputPixels: 16 * 1024 * 1024, animated: false }).rotate()
-          .resize(512, 512, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+        const source = sharp(picture.data, { limitInputPixels: 16 * 1024 * 1024, animated: false }).rotate();
+        let image = await source.clone().resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+        if (image.length > 2 * 1024 * 1024) image = await source.clone().resize(512, 512, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
         if (image.length <= 2 * 1024 * 1024) { await writeFile(join(message.directory, 'cover.png'), image, { mode: 0o600 }); artwork = true; }
       } catch { /* Bad artwork must not discard valid audio. */ }
     }

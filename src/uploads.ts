@@ -5,6 +5,8 @@ import { Transform, Writable, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import sharp from 'sharp';
+import type { ArtworkData, ArtworkSize } from './music-assistant.js';
 import { AppError } from './model.js';
 import { writePrivateJson } from './store.js';
 import { PreparationFileStore, type PreparationStore, type SavedSelection } from './preparations.js';
@@ -33,6 +35,9 @@ export class UploadAssets {
   private queue = new KeyedSerialQueue();
   private leases = new Set<Lease>();
   private closed = false;
+  private artworkCache = new Map<string, { data: ArtworkData; expires: number }>();
+  private artworkRequests = new Map<string, Promise<ArtworkData>>();
+  private artworkBytes = 0;
   private ownerAllowed: (ownerId: string) => boolean = () => true;
   setOwnerPolicy(policy: (ownerId: string) => boolean) { this.ownerAllowed = policy; }
   private shutdown = new AbortController();
@@ -150,10 +155,35 @@ export class UploadAssets {
     }
     finally { await file.close(); }
   }
-  async artwork(assetId: string, ownerId?: string) {
+  async artwork(assetId: string, ownerId?: string, size: ArtworkSize = 512): Promise<ArtworkData> {
     const value = await this.load(assetId, ownerId); if (!value.artwork) throw new AppError(404, 'Artwork unavailable.');
+    if (!this.ownerAllowed(value.ownerId)) throw new AppError(401, 'This user is no longer available.');
     const file = await open(join(this.path(assetId), 'cover.png'), 'r');
-    try { if ((await file.stat()).size > 2 * 1024 * 1024) throw new AppError(404, 'Artwork unavailable.'); return { body: await file.readFile(), contentType: 'image/png' }; }
+    try {
+      const info = await file.stat();
+      if (info.size > 2 * 1024 * 1024) throw new AppError(404, 'Artwork unavailable.');
+      const key = `${assetId}:${size}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+      const cached = this.artworkCache.get(key);
+      if (cached && cached.expires > this.now()) {
+        this.artworkCache.delete(key); this.artworkCache.set(key, cached); return cached.data;
+      }
+      if (cached) { this.artworkBytes -= cached.data.body.length; this.artworkCache.delete(key); }
+      const pending = this.artworkRequests.get(key); if (pending) return await pending;
+      if (this.artworkRequests.size >= 8) throw new AppError(503, 'Artwork is busy.');
+      const request = (async () => {
+        const body = await sharp(await file.readFile(), { limitInputPixels: 16 * 1024 * 1024, animated: false })
+          .rotate().resize(size, size, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
+        const data = { body, contentType: 'image/jpeg' as const };
+        this.artworkCache.set(key, { data, expires: this.now() + 5 * 60_000 }); this.artworkBytes += body.length;
+        while (this.artworkCache.size > 128 || this.artworkBytes > 8 * 1024 * 1024) {
+          const oldest = this.artworkCache.keys().next().value!;
+          this.artworkBytes -= this.artworkCache.get(oldest)!.data.body.length; this.artworkCache.delete(oldest);
+        }
+        return data;
+      })();
+      this.artworkRequests.set(key, request);
+      try { return await request; } finally { this.artworkRequests.delete(key); }
+    }
     finally { await file.close(); }
   }
   busy(assetId: string) { return [...this.leases].some(lease => lease.assetId === assetId); }

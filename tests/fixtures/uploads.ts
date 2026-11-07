@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { AppError } from '../../src/model.js';
 import type { UploadAnalysis } from '../../src/uploads.js';
 
-export const coverPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jZXkAAAAASUVORK5CYII=', 'base64');
+export const coverPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWP4//8/AAX+Av5Y8msOAAAAAElFTkSuQmCC', 'base64');
 export const uploadBytes = Buffer.from('SYNTHETIC AUDIO FIXTURE ONLY');
 /** Transport/UI fixture only. Real format validation is exercised separately in the unprivileged container smoke. */
 export async function fixtureUploadAnalysis(directory: string, _filename: string): Promise<UploadAnalysis> {

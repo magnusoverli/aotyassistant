@@ -1,7 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -134,6 +134,45 @@ test('saved artwork reuse requires exact image identity independently for cover 
   assert.equal(originalCover.artistArtworkIdentity, undefined);
 });
 
+test('search, saved lists, history and playback reuse one authorized thumbnail cache target', async t => {
+  const f = await fixture(t); const added = await f.add();
+  const selected = added.search.tracks[0]!; const entry = added.view.upcoming[0]!;
+  const cached = new Map<string, string>();
+  for (const kind of ['artwork', 'artistArtwork'] as const) {
+    const canonical = `${selected[kind]}?size=160`;
+    const first = await f.request(canonical, undefined, f.first.membership);
+    assert.equal(first.status, 200); cached.set(kind, first.headers.get('etag')!); await first.arrayBuffer();
+    const saved = await fetch(`${f.origin}${entry[kind]}?size=160`, { headers: { Cookie: f.first.credentials }, redirect: 'manual' });
+    assert.equal(saved.status, 302); assert.equal(saved.headers.get('location'), canonical);
+    assert.equal(saved.headers.get('cache-control'), 'no-store');
+  }
+  const conditional = (path: string, credential: string, etag: string) => new Promise<{ status: number; bytes: number }>((resolve, reject) => {
+    const req = httpRequest(f.origin + path, { headers: { Cookie: credential, 'If-None-Match': etag } }, res => {
+      let bytes = 0; res.on('data', part => { bytes += part.length; });
+      res.on('end', () => resolve({ status: res.statusCode!, bytes })); res.on('error', reject);
+    }); req.on('error', reject); req.end();
+  });
+  const current = await f.json('/api/participant/state', undefined, f.first.membership);
+  const played = await f.json<{ view: View; preparation: PreparationView }>(prefix + '/play',
+    { turnId: current.turnId, previousPlaybackId: null, entryId: entry.id, revision: added.view.revision }, f.first.credentials);
+  for (const kind of ['artwork', 'artistArtwork'] as const) {
+    const canonical = `${selected[kind]}?size=160`;
+    assert.equal(played.view.ownPlayback!.track[kind], selected[kind]);
+    assert.deepEqual(await conditional(canonical, f.first.membership, cached.get(kind)!), { status: 304, bytes: 0 });
+    const history = await f.request(`${played.preparation.played[0]![kind]}?size=160`, undefined, f.first.credentials);
+    assert.equal(history.url, f.origin + canonical); await history.arrayBuffer();
+    assert.equal((await conditional(canonical, f.second.membership, cached.get(kind)!)).status, 409);
+    assert.equal((await f.request(`${entry[kind]}?size=160`, undefined, f.second.credentials)).status, 404);
+    // Private-list-only clients still get safe conditional caching.
+    const fallback = await f.request(`${entry[kind]}?size=160`, undefined, f.first.privateCookie);
+    assert.equal(fallback.headers.get('cache-control'), 'private, no-cache');
+    await fallback.arrayBuffer();
+    assert.deepEqual(await conditional(`${entry[kind]}?size=160`, f.first.privateCookie, cached.get(kind)!), { status: 304, bytes: 0 });
+  }
+  assert.equal(f.remote.imageCalls.length, 2, 'Only the cover and portrait are fetched from Music Assistant.');
+  assert.ok(f.remote.imageCalls.every(path => path.endsWith('?size=160&fmt=jpeg')));
+});
+
 test('one participant stream separates room and owner events and revokes removed membership', async t => {
   const f = await fixture(t); const added = await f.add();
   assert.equal((await f.request(prefix + '/live', undefined, f.first.privateCookie)).status, 401);
@@ -214,7 +253,7 @@ test('bounded thumbnail variants remain owner-authorized and independently cache
   const f = await fixture(t); const added = await f.add(); const url = added.view.upcoming[0]!.artwork!;
   for (const size of [160, 512, 1024, 128, 160]) {
     const response = await f.request(`${url}?size=${size}`, undefined, f.first.privateCookie);
-    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store'); await response.arrayBuffer();
+    assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-cache'); await response.arrayBuffer();
   }
   assert.equal(f.remote.imageCalls.filter(path => path.includes('size=128')).length, 0);
   assert.equal(f.remote.imageCalls.filter(path => path.includes('size=160')).length, 1);

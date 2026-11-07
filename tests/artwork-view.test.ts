@@ -59,7 +59,7 @@ test('confirmation retains the exact loaded image node and performs no new image
   assert.equal(image.loading, 'lazy', 'First loads remain lazy so long catalogue pages do not fetch every image at once.');
   for (let i = 0; i < 10; i++) f.view.update(playback, saved);
   assert.equal(f.images.length, 1); assert.equal(f.shown(), image); assert.equal(image.src, src);
-  assert.ok(image.src.endsWith('?size=512'));
+  assert.ok(image.src.endsWith('?size=160'));
 });
 
 test('confirmation also shares an in-flight portrait instead of restarting its download', async t => {

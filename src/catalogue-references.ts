@@ -10,7 +10,7 @@ export class CatalogueReferences {
     // Reuse only image capabilities, within the same owner/catalogue context.
     // Stable URLs let browsers revalidate pixels instead of transferring them
     // again. Encryption still uses a fresh random nonce for every new token.
-    const imageKey = kind === 'image' ? JSON.stringify([id, context]) : undefined;
+    const imageKey = kind === 'image' || kind === 'upload-image' ? JSON.stringify([kind, id, context]) : undefined;
     const cached = imageKey ? this.images.get(imageKey) : undefined;
     if (imageKey && cached && cached.expires > Date.now() + 60_000) {
       this.images.delete(imageKey); this.images.set(imageKey, cached); return cached.reference;

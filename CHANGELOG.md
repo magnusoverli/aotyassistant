@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.1.14] — 2026-11-07
+
+- Reuse 160-pixel JPEG thumbnails across catalogue results, saved lists/history and the participant player. Authorized saved-artwork routes share the catalogue cache target; private-list-only reads support conditional caching.
+- Resize and cache uploaded artwork as JPEG variants, sharing its cache URL through preview, saved lists and playback. Preserve larger covers for the display on new uploads.
+- Distinguish pending reveal confirmation from completed reveal in the player button and explain disabled reveal states in its tooltip.
+- Remove the unavailable reveal button from the host-desk player.
+
 ## [1.1.13] — 2026-11-07
 
 - Smooth concealed display progress between received positions, ease ordinary timing corrections after reveal, and widen the display's track-information/progress column.

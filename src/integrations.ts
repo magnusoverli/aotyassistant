@@ -276,7 +276,7 @@ export class IntegrationManager implements CatalogueProvider {
     const revision = this.catalogueRevision;
     try {
       return reference.startsWith('upload:') && this.uploads
-        ? await this.uploads.artwork(this.unseal(reference.slice(7), 'upload-image', context))
+        ? await this.uploads.artwork(this.unseal(reference.slice(7), 'upload-image', context), undefined, size)
         : await this.getApi().artwork(this.unseal(reference, 'image', context), size);
     } finally {
       if (revision !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');
@@ -340,6 +340,16 @@ export class IntegrationManager implements CatalogueProvider {
   private savedImageIdentity(trackId: string, kind: 'artwork' | 'artistArtwork') {
     const entry = /^prepared:([a-f0-9-]{36})$/.exec(trackId);
     return entry ? `/api/participant/preparations/artwork/${entry[1]}/${kind}` : undefined;
+  }
+  /** Called only after private-list authorization. Share the catalogue browser
+   * cache key; the target still checks membership and catalogue on every read. */
+  savedArtworkUrl(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', context: string) {
+    if (selection.source === 'upload') {
+      return kind === 'artwork' && selection.artworkAssetId
+        ? `/api/participant/artwork/upload:${this.seal(selection.assetId, 'upload-image', context)}` : undefined;
+    }
+    const saved = this.savedSource(selection);
+    return this.withArtwork({ artwork: saved.metadata.artworkId, artistArtwork: saved.metadata.artistArtworkId }, context)[kind];
   }
   async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: ArtworkSize = 512) {
     const saved = this.savedSource(selection); const epoch = this.catalogueRevision;
