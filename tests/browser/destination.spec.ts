@@ -23,7 +23,6 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     const tv = await tvContext.newPage(); await tv.goto(state.displayUrl);
     const prepare = async (page: Page) => {
       await showFind(page);
-      await page.getByRole('button', { name: 'Artists', exact: true }).click();
       await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await page.getByRole('button', { name: 'Search', exact: true }).click();
       await page.getByRole('button', { name: 'View albums', exact: true }).click();
       const response = page.waitForResponse(response => response.url().endsWith('/api/participant/browse') && response.request().postDataJSON().kind === 'tracks');
@@ -47,7 +46,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     for (const page of [first, second]) {
       expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(1);
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
-      await expect(page.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
       await expect(page.getByRole('button', { name: '← Albums', exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as unknown as { destinationTestDocument: string }).destinationTestDocument)).toBe('same-document');
     }

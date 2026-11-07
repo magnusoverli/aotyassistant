@@ -44,8 +44,11 @@ export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, gu
     const c = context(req); const info = speakers.info(); refreshCookie(req, res, c);
     res.json(info);
   });
-  app.post(`${speakerPath}/register`, (req, res) => res.json(speakers.register(body(req, speakerRegistration), requestSpeakerCookie(req), context(req), username(req))));
-  app.get(`${speakerPath}/session/:id`, (req, res) => {
+  // Identity-aware requests must sit inside the participant cookie's Path.
+  // Retain the old routes for already-open clients; new clients use the scoped routes.
+  const participantPath = '/api/participant/browser-speaker';
+  app.post([`${participantPath}/register`, `${speakerPath}/register`], (req, res) => res.json(speakers.register(body(req, speakerRegistration), requestSpeakerCookie(req), context(req), username(req))));
+  app.get([`${participantPath}/session/:id`, `${speakerPath}/session/:id`], (req, res) => {
     const c = context(req); const session = speakers.status(id.parse(req.params.id), requestSpeakerCookie(req), c, username(req));
     refreshCookie(req, res, c); res.json(session);
   });

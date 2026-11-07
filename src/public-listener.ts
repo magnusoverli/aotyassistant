@@ -9,6 +9,7 @@ export const onlineCookie = (req: IncomingMessage) => req.headers.cookie?.split(
 const cookie = onlineCookie;
 const readRoutes = [
   /^\/api\/browser-speaker\/(?:info|session\/[a-f0-9-]{36})$/,
+  /^\/api\/participant\/browser-speaker\/session\/[a-f0-9-]{36}$/,
   /^\/(?:join|participant|display)?$/, /^\/demo-cover\.svg$/, /^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css|svg|woff2)$/,
   /^\/api\/participant\/(?:identity|state|events)$/, /^\/api\/participant\/artwork\/[^/]+$/,
   /^\/api\/participant\/preparations\/(?:state|live|events)$/,
@@ -19,6 +20,7 @@ const readRoutes = [
 ];
 const writeRoutes = [
   /^\/api\/browser-speaker\/(?:register|pair|stop)$/,
+  /^\/api\/participant\/browser-speaker\/register$/,
   /^\/api\/participant\/(?:join|logout|finish|search|browse|play|control|volume|reveal)$/,
   /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-upload|purge-upload|move|remove|restore|review|play)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/discard)?$/,

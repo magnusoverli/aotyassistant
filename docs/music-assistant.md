@@ -14,7 +14,7 @@ The [Listening Room browser registers automatically as a speaker](browser-speake
 
 ## Search and saved recordings
 
-Search includes available sources configured in Music Assistant, such as Spotify, Tidal, and local files. Some providers expose only indexed library albums or lack artist-album browsing. Try track search when artist browsing returns no results.
+Search by artist, then open an album to choose tracks. Search includes available sources configured in Music Assistant, such as Spotify, Tidal, and local files. Some providers expose only indexed library albums or lack artist-album browsing, which can limit the albums shown.
 
 Choose artists, releases and recordings directly, without a provider dropdown. Equivalent results are combined using Music Assistant mappings or recording identifiers, with artist, edition, explicitness and duration checks. Small duration differences (up to three seconds) are tolerated only alongside identity evidence. Same-name results without enough evidence remain separately selectable. Artist and album matching can make bounded read-only requests for corroborating releases and ordered tracklists; it never adds private choices to the shared MA library.
 

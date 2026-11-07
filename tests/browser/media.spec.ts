@@ -32,7 +32,6 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     tv.on('request', request => { if (request.url().includes('/artwork/')) publicImages.push(request.url()); });
     await tv.goto(state.displayUrl); await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await showFind(first);
-    await first.getByRole('button', { name: 'Artists', exact: true }).click();
     await first.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await first.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(first.getByAltText('Artist image', { exact: true })).toHaveJSProperty('naturalWidth', 1);
     await expect(first.getByAltText('Artist image', { exact: true })).toHaveAttribute('src', /\?size=160$/);

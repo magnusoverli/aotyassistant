@@ -246,7 +246,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
       ? `Only the first ${maxBrowseSources} sources were attempted; remaining sources were not checked. ` : ''}Try again or check Music Assistant.`);
     const notices: string[] = [];
     if (failures.length) notices.push(`Could not load ${[...new Set(failures)].join(', ')} (${failures.length} source${failures.length === 1 ? '' : 's'}). Results are incomplete; try again later.`);
-    if (sources.length > selected.length) notices.push(`Only the first ${maxBrowseSources} sources were loaded. Try a more specific track search for missing music.`);
+    if (sources.length > selected.length) notices.push(`Only the first ${maxBrowseSources} sources were loaded.`);
     return { items, ...(notices.length ? { notices } : {}) };
   }
   private track(media: z.infer<typeof searchTrackSchema>): CatalogueTrack {
@@ -331,7 +331,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
         possiblyLimited ||= items.length === 500; return items;
       });
       if (page.items.length > 2000) throw new AppError(502, 'Too many albums returned. Try a more specific search.');
-      if (possiblyLimited) (page.notices ??= []).push('Large catalogue: this listing may be limited by Music Assistant. Try track search for releases not shown.');
+      if (possiblyLimited) (page.notices ??= []).push('Large catalogue: this listing may be limited by Music Assistant.');
       return { ...page, items: await this.grouped('album', page.items, a => ({ id: this.remember('album', a, this.image(a.artists[0])), name: this.redact(a.name),
         artist: this.redact(a.artists.map(x => x.name).join(', ')), provider: this.sourceName(a), version: this.redact(a.version), year: a.year ?? null,
         artwork: this.image(a), artistArtwork: this.image(a.artists[0]) })) };

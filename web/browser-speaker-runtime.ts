@@ -64,12 +64,12 @@ export class BrowserSpeakerRuntime {
           () => { if (current() && this.player === created) { this.attempted = false; this.wake(); } });
         this.player = created;
         this.unlock(); // May remain pending on iOS; connection/pairing proceeds independently.
-        next = await this.deps.request<BrowserSpeakerView>('/api/browser-speaker/register', {
+        next = await this.deps.request<BrowserSpeakerView>('/api/participant/browser-speaker/register', {
           id, clientId: this.player.clientId, device: this.deps.device, name: browserSpeakerName(this.deps.device),
         });
         if (!current()) { this.release(id); return; }
       } else {
-        next = await this.deps.request<BrowserSpeakerView>(`/api/browser-speaker/session/${this.session.id}`);
+        next = await this.deps.request<BrowserSpeakerView>(`/api/participant/browser-speaker/session/${this.session.id}`);
         if (!current()) return;
       }
       this.session = next;

@@ -26,7 +26,7 @@ function fixture() {
       if (action === 'network') throw new TypeError('Offline');
       if (action === 'revoked') throw new RequestError('Session expired', 403);
       if (path === '/api/browser-speaker/info') return { scope: 'fixture', version: '2.10.9' } as T;
-      if (path === '/api/browser-speaker/register') await pendingRegistration;
+      if (path === '/api/participant/browser-speaker/register') await pendingRegistration;
       if (path === '/api/browser-speaker/pair') paired = true;
       return { id: `session-${id}`, name: 'Browser', active, connected: Boolean(players.at(-1)?.isConnected), paired, expiresAt: 1 } satisfies BrowserSpeakerView as T;
     },
@@ -39,14 +39,15 @@ function fixture() {
 test('automatic registration and pairing do not wait for autoplay permission or require an enable button', async () => {
   const f = fixture(); f.blockUnlock(); f.runtime.start(); await settle();
   assert.equal(f.runtime.state, 'ready'); assert.equal(f.players[0]!.connects, 1);
-  assert.ok(f.calls.includes('/api/browser-speaker/register')); assert.ok(f.calls.includes('/api/browser-speaker/pair'));
+  assert.ok(f.calls.includes('/api/participant/browser-speaker/register')); assert.ok(f.calls.includes('/api/browser-speaker/pair'));
   f.runtime.unlock(); assert.equal(f.players[0]!.unlocks, 2);
-  assert.ok(f.calls.every(path => path.startsWith('/api/browser-speaker/'))); f.runtime.stop();
+  assert.ok(f.calls.every(path => /^\/api\/(?:participant\/)?browser-speaker\//.test(path))); f.runtime.stop();
 });
 
 test('repeated shell initialization, normal gestures and polling preserve the same player and connection', async () => {
   const f = fixture(); f.runtime.start(); await settle();
   f.runtime.start(); f.runtime.unlock(); await f.next(); await f.next();
+  assert.ok(f.calls.includes('/api/participant/browser-speaker/session/session-1'));
   assert.equal(f.players.length, 1); assert.equal(f.players[0]!.connects, 1); assert.equal(f.players[0]!.destroys, 0);
   assert.equal(f.calls.filter(path => path.endsWith('/pair')).length, 1); f.runtime.stop();
 });

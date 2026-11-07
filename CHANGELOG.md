@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.5] — 2026-11-07
+
+- Simplify Music Assistant search to artists only, followed by albums and tracks. Remove the Songs/Artists toggle, obsolete search-mode state and styling, and song-search guidance.
+- Fix missing usernames in browser speaker names: registration and session checks now use the participant cookie's path, so the signed-in Listening Room profile reaches the naming code.
+
 ## [1.1.4] — 2026-11-07
 
 - Give browser speakers friendly names using the signed-in display name and device type. Refresh names after sign-in without interrupting the audio connection.

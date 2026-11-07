@@ -193,9 +193,6 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .catalogue-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
 .catalogue-title h2 { font-size:18px; line-height:1.3; margin:0 0 2px; }
 .catalogue-title .privacy-tag { display:block; text-align:left; }
-.search-tabs { display:flex; background:#111b14; border-radius:8px; padding:3px; gap:2px; margin:0; }
-.search-tabs button { flex:1; min-height:44px; padding:8px 10px; font-size:13px; border-color:transparent; border-radius:5px; background:#34452e; color:var(--accent); }
-.search-tabs button.secondary { background:transparent; color:var(--muted); }
 .search-form { display:flex; gap:4px; margin:0; padding:3px; background:var(--field-bg); border:1px solid var(--field-line); border-radius:10px; }
 .search-form:focus-within { border-color:var(--accent); }
 .search-form input { width:100%; flex:1; border:0; background:transparent; }
@@ -289,7 +286,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
   .host-live-actions button { min-height:44px; }
   .welcome-record { width:130px; }
   .participant-page .privacy-tag { font-size:10px; }
-  .participant-page .row-actions button,.participant-page .search-tabs button { min-height:44px; }
+  .participant-page .row-actions button { min-height:44px; }
   .private-now-playing { gap:14px; }
   .mini-record { width:58px; flex-basis:58px; }
   .display-page { gap:32px; }

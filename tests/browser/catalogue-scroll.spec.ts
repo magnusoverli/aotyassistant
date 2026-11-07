@@ -57,8 +57,9 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000
     await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(artistScroll, 0);
     await page.getByRole('searchbox').fill('Fixture again'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.locator('.catalogue-results .track-row')).toHaveCount(24); await expectListStart(page);
-    await page.getByRole('button', { name: 'Songs', exact: true }).click();
     await page.getByRole('searchbox').fill('Fixture'); await page.getByRole('searchbox').press('Enter');
+    await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
+    await page.getByRole('button', { name: 'View tracks', exact: true }).first().click();
     await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toHaveCount(24);
     await expectListStart(page);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();

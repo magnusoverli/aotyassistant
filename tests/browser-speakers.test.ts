@@ -218,6 +218,10 @@ test('listener contexts require real Ingress provenance or a valid Funnel grant,
   const context = speakerContext(remote, 'public', lan.origin, 3000, online)!; assert.equal(context.kind, 'public'); assert.equal(context.valid(), true);
   valid = false; assert.equal(context.valid(), false); assert.equal(speakerContext(remote, 'public', lan.origin, 3000, online), undefined);
   for (const action of ['register', 'pair', 'stop']) assert.equal(publicRoute('POST', '/api/browser-speaker/' + action), true);
+  assert.equal(publicRoute('POST', '/api/participant/browser-speaker/register'), true);
+  assert.equal(publicRoute('GET', '/api/participant/browser-speaker/session/' + randomUUID()), true);
+  assert.equal(publicRoute('POST', '/api/participant/browser-speaker/config'), false);
+  assert.equal(publicRoute('GET', '/api/participant/browser-speaker/session/not-a-session'), false);
   assert.equal(publicRoute('POST', '/api/host/browser-speakers'), false);
 });
 

@@ -49,10 +49,6 @@ test('equivalent artists, releases and tracks are selectable without provider dr
   expect(isolatedApp.calls.some(c => c.command.startsWith('player_queues/play_media'))).toBe(false);
   const json = privateResponses.join('');
   for (const secret of ['private-multi', 'private-other', 'browser-test-token', 'musicbrainz_', 'spotify://', 'tidal://']) expect(json).not.toContain(secret);
-  // Track mode still separates Live from the original.
-  await page.getByRole('button', { name: 'Songs', exact: true }).click(); await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await expect(page.locator('.catalogue-results .track-row')).toHaveCount(2);
-  await expect(page.locator('.catalogue-results .result-details').filter({ hasText: /Live/ })).toBeVisible();
 });
 
 test('partial provider browse is explicit, and full failure is not shown as an empty catalogue', async ({ page, isolatedApp }) => {
@@ -104,9 +100,10 @@ test('ambiguous ID-less artists and recordings remain directly selectable as sep
   await page.getByRole('button', { name: '← Artists', exact: true }).click();
   await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Songs', exact: true }).click(); await search('multi-provider-metadata');
-  await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3); // Unconfirmed copies and Live remain distinct.
-  const original = page.locator('.catalogue-results .track-row').nth(1);
+  await page.getByRole('button', { name: '← Artists', exact: true }).click();
+  await page.getByRole('button', { name: 'View albums', exact: true }).nth(1).click();
+  await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click();
+  const original = page.locator('.catalogue-results .track-row').first();
   await expect(original.getByRole('combobox')).toHaveCount(0);
   await expect(original.getByRole('button', { name: 'Add to list', exact: true })).toBeEnabled();
   await original.getByRole('button', { name: 'Add to list', exact: true }).click();
@@ -144,8 +141,9 @@ test('Play automatically selects the available equivalent once, and reveal remai
   try {
     const tv = await tvContext.newPage(); await tv.goto(display!); await page.goto(join!);
     await page.getByLabel('Display name').fill('Exact-source listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
-    await page.getByRole('button', { name: 'Songs', exact: true }).click();
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('multi-provider'); await page.getByRole('button', { name: 'Search', exact: true }).click();
+    await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
+    await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click();
     expect(isolatedApp.calls.filter(c => c.command === 'player_queues/play_media')).toHaveLength(0);
     const original = page.locator('.catalogue-results .track-row').first();
     await expect(original.getByRole('combobox')).toHaveCount(0);

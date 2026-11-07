@@ -43,18 +43,16 @@ async function search(page: Page, query: string) {
 }
 const workspace = ['.app-header', '.participant-page', '.music-workspace', '.playback-card', '#volume-level', '.search-form', '#catalogue-search', '.preparation-list', '.upload-panel'];
 
-test('search, source selection and playback patch existing regions without detaching unrelated controls', async ({ page, isolatedApp }) => {
+test('artist browsing and playback patch existing regions without detaching unrelated controls', async ({ page, isolatedApp }) => {
   await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'fixture-token', 0);
   await isolatedApp.manager.selectDestination('sonos:room', isolatedApp.manager.view().revision);
   await join(page, isolatedApp.origin);
-  await page.getByRole('button', { name: 'Songs', exact: true }).click();
   await retain(page, workspace); await search(page, 'multi-provider'); await retained(page);
+  await page.getByRole('button', { name: 'View albums', exact: true }).first().click(); await retained(page);
+  await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click(); await retained(page);
   const row = page.locator('.catalogue-results .track-row').first();
-  const source = row.getByRole('combobox');
-  const value = await source.locator('option').filter({ hasText: /^Tidal/ }).getAttribute('value');
-  await source.focus();
-  await retain(page, [...workspace, '.catalogue-results', '.catalogue-results .track-row', '.catalogue-results .track-row:last-child', '.catalogue-results select']);
-  await source.selectOption(value!); await retained(page); await expect(source).toBeFocused();
+  await expect(row.getByRole('combobox')).toHaveCount(0);
+  await retain(page, [...workspace, '.catalogue-results', '.catalogue-results .track-row']);
   await row.getByRole('button', { name: 'Play', exact: true }).click();
   await expect(page.locator('.player-pending')).toHaveCount(0); await expect(page.locator('.playback-card .playback-status')).toHaveText('● Playing');
   await retained(page);

@@ -16,14 +16,10 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     const first = await firstContext.newPage(); await first.goto(join!); await first.getByLabel('Display name').fill('First'); await first.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await first.getByRole('button', { name: 'Join room' }).click();
     const second = await secondContext.newPage(); await second.goto(join!); await second.getByLabel('Display name').fill('Second'); await second.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await second.getByRole('button', { name: 'Join room' }).click();
     await showFind(second);
-    await expect(second.getByRole('button', { name: 'Artists', exact: true })).toBeEnabled();
-    await expect(second.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
-    // Returning to the page also starts in artist mode, without an automatic search.
-    await second.getByRole('button', { name: 'Songs', exact: true }).click();
-    await expect(second.getByRole('button', { name: 'Songs', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    // Returning to the page retains artist-only search, without an automatic search.
     await second.reload();
-    await expect(second.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
     await expect(second.locator('.catalogue-results .track-row')).toHaveCount(0);
     await second.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await second.getByRole('button', { name: 'Search', exact: true }).click();
     await second.getByRole('button', { name: 'View albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
@@ -41,7 +37,7 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
     await showFind(second);
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
-    await expect(second.getByRole('button', { name: 'Artists', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
     await expect(second.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
     await second.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
