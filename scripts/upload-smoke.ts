@@ -59,8 +59,10 @@ try {
     assert.equal(preview.title, `Container ${format.name}`); assert.equal(preview.artist, 'Container track artist'); assert.equal(preview.album, 'Container album'); assert.ok(preview.duration > 1 && preview.duration < 3);
     if (format.cover || format.embedded) {
       assert.ok(preview.artwork, `${format.name} cover extraction`);
-      const image = await fetch(origin + preview.artwork, { headers: { Cookie: libraryCookie } }); assert.equal(image.status, 200);
-      assert.equal(Buffer.from(await image.arrayBuffer()).subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+      const image = await fetch(`${origin}${preview.artwork}?size=160`, { headers: { Cookie: libraryCookie } }); assert.equal(image.status, 200);
+      assert.equal(image.headers.get('content-type'), 'image/jpeg');
+      assert.equal(image.headers.get('cache-control'), 'private, no-cache');
+      assert.equal(Buffer.from(await image.arrayBuffer()).subarray(0, 3).toString('hex'), 'ffd8ff');
     }
     const added = await post('/api/participant/preparations/add-upload', { uploadId: id, text: { title: preview.title, artist: preview.artist, album: preview.album }, operation: { id: randomUUID(), revision: library.revision, issuedAt: Date.now() } }, credentials);
     assert.equal(added.status, 200, await added.clone().text()); library = (await added.json() as PreparationResult).view;
