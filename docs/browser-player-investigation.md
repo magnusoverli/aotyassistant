@@ -1,6 +1,6 @@
 # Browser speaker investigation
 
-Date: 2026-11-06. Original investigation and design record. The host-approved browser-speaker implementation now follows this design, without a persistent status indicator. See [setup and validation status](browser-speaker.md); live Music Assistant/audio acceptance remains outstanding.
+Date: 2026-11-06. Historical investigation and proposal, superseded by the requested automatic browser-player behavior on 2026-11-07. The enable/disable controls and manual approval workflow below are no longer the design. See [current behavior and compatibility evidence](browser-speaker.md), including MA 2.10.9; live Music Assistant/audio acceptance remains outstanding.
 
 ## Recommendation
 

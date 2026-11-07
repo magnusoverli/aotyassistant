@@ -99,9 +99,11 @@ export class IntegrationManager implements CatalogueProvider {
   browserSpeakerConnection() {
     const ma = this.state.musicAssistant;
     if (!ma || this.closed || this.settingsUncertain) throw new AppError(409, 'Connect Music Assistant in Settings first.');
-    if (!this.report || !ma.serverId) throw new AppError(409, 'Refresh the Music Assistant connection in Settings before enabling browser audio.');
+    const report = this.report ?? this.lastInventoryReport;
+    if (!report || !ma.serverId) throw new AppError(409, 'Waiting for the Music Assistant connection.');
+    if (!supportsPlaybackSchema(report.schemaVersion)) throw new AppError(422, playbackCompatibility(report.schemaVersion, report.serverVersion).message);
     return { origin: ma.url, token: ma.accessToken, epoch: this.catalogueRevision,
-      scope: createHash('sha256').update(`${ma.sourceBindingId}:${ma.serverId}`).digest('hex'), version: this.report.serverVersion, serverId: ma.serverId };
+      scope: createHash('sha256').update(`${ma.sourceBindingId}:${ma.serverId}`).digest('hex'), version: report.serverVersion, serverId: ma.serverId };
   }
   assertSetupRevision(revision: number) {
     this.expected(revision);

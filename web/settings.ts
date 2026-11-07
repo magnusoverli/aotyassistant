@@ -12,7 +12,6 @@ import { PlaybackSettingsPanel } from './playback-settings';
 import { UserSettingsPanel } from './user-pin';
 import { SettingsSections, type SettingsSection } from './settings-sections';
 import { OnlinePanel } from './online-panel';
-import { BrowserSpeakerPanel } from './browser-speaker-panel';
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement, signal: AbortSignal) {
@@ -21,7 +20,6 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   const sections = new SettingsSections(signal);
   const onlineInvitations = new OnlinePanel(signal);
   const playbackSettings = new PlaybackSettingsPanel(signal);
-  const browserSpeakers = new BrowserSpeakerPanel(signal);
   void playbackSettings.load();
   const userPins = new UserSettingsPanel(signal); void userPins.load();
   let settings: IntegrationView | undefined;
@@ -365,7 +363,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', explanation, 'warning'), requiresRecovery && recovery, requiresRecovery && details);
       playbackNodes.push(playback);
     }
-    playbackNodes.push(destination, browserSpeakers.element, playbackSettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
+    playbackNodes.push(destination, playbackSettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
     sections.update('music-assistant', ...(feedbackSection === 'music-assistant' ? feedback : []), connection);
     sections.update('playback', ...(feedbackSection === 'playback' ? feedback : []), ...playbackNodes);
     sections.update('access', ...(feedbackSection === 'access' ? feedback : []), ...accessNodes);

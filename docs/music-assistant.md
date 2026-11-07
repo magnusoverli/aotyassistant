@@ -4,13 +4,13 @@ Listening Room uses Music Assistant for catalogue search, artwork, speaker disco
 
 ## Supported API
 
-**Playback supports Music Assistant API schema 65**, used by MA 2.10.6–2.10.8. Core, Supervisor, Music Assistant, and this app have independent version numbers. A higher MA version number alone is not proof of playback compatibility.
+**Playback supports Music Assistant API schema 65**, including MA 2.10.9. Compatibility is checked by API schema, not a 2.10.8 version ceiling. Core, Supervisor, Music Assistant, and this app have independent version numbers.
 
 Settings reports the installed MA version/schema and distinguishes an unsupported playback API from an offline speaker. Read-only browsing may remain available on other compatible schemas; unsupported playback is blocked before queue changes. Check for an app update when Settings reports incompatibility.
 
 The app selects speakers and groups exposed by Music Assistant. Search coverage, artist albums, availability, seeking, and volume depend on the provider/player. Compatibility has not been established for every player integration or provider. See [testing coverage and limitations](testing.md).
 
-You can also [use the Listening Room browser as a speaker](browser-speaker.md). Its audio engine survives navigation between app pages; setup is available from the menu and Playback settings.
+The [Listening Room browser registers automatically as a speaker](browser-speaker.md). Select it in the existing Playback speaker selector; its audio engine survives navigation between app pages.
 
 ## Search and saved recordings
 

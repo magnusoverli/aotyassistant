@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.3] — 2026-11-07
+
+- Register the browser player automatically, including invited internet browsers. Remove the extra menu item, setup panel, approval codes and enable/disable controls; use the existing speaker selector.
+- Remove the browser player's 2.10.6–2.10.8 version restriction. Verify MA server identity, API schema and Sendspin exchanges instead; source-verify the unchanged authentication/pairing contract in MA 2.10.9.
+- Separate audio permission from registration so a pending browser audio unlock cannot stall connection. Add automatic standby-tab handover and lifecycle/reconnection regression tests.
+
 ## [1.1.2] — 2026-11-06
 
 - Add an opt-in, host-approved Sendspin browser speaker. Audio belongs to the persistent app shell and continues across internal page navigation; setup is in the menu and Playback settings, without a persistent indicator.

@@ -40,7 +40,9 @@ try {
   const connector = config.addon && process.env.TAILSCALE_BUNDLED === '1' ? new TailscaleConnector(config.dataDir) : undefined;
   const online = new OnlineAccess(config.dataDir, connector); await online.init();
   engine.setOnlineSharing(() => online.sharing()); online.on('change', () => engine.emit('change'));
-  const speakers = new BrowserSpeakers(() => integrations.browserSpeakerConnection());
+  const speakers = new BrowserSpeakers(() => integrations.browserSpeakerConnection(), () => {
+    void integrations.check(integrations.view().revision).catch(() => {});
+  });
   online.on('revoke', () => speakers.revokePublic());
   const { app, close } = createApp(engine, config, undefined, integrations, preparations, uploads, setup, online, speakers);
   const publicApp = publicListener(app, online);

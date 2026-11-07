@@ -1,38 +1,28 @@
-# Use this browser as a speaker
+# Browser playback
 
-Listening Room can send Music Assistant audio to the device displaying the app. Connect a laptop's USB, HDMI or headphone output to your sound system, or use the device's own speakers.
+Opening Listening Room automatically registers its browser as a Music Assistant speaker. This applies to Home Assistant, local access and invited internet browsers. There are no separate enable/disable buttons, approval codes, setup panels or persistent indicators.
 
-## Enable and select
+Choose **Listening Room (Chrome)**, **Listening Room (Safari)** or the corresponding browser name in the existing **Settings → Playback** speaker selector. Refresh the speaker list if necessary. Registration does not select a destination or start a track; playback uses the existing controls.
 
-1. Open **Menu → Use this device as a speaker**, or the same button in **Settings → Playback → Browser speakers**.
-2. Give the speaker a recognizable name and click **Use this device as a speaker**. This click also enables browser audio.
-3. If an approval code appears, open the host's **Settings → Playback → Browser speakers**, match the name and code, and approve the trusted device. Authenticated Home Assistant Ingress approves the first tab automatically; another tab using the same speaker identity requires explicit takeover approval.
-4. In **Settings → Playback**, refresh the speaker list and select the browser's name as the room destination. Destination changes use the normal playback safeguards. Start music with the existing **Play** action.
+The audio engine belongs to the application shell and stays alive across page navigation, settings deep links and Back/Forward. Browser audio permission is handled during normal clicks and key presses, separately from registration and pairing. Some browsers require interaction with that tab before they allow sound. Phone screen-lock/background behavior remains browser-dependent.
 
-Close the dialog and navigate normally. There is no persistent speaker indicator. To enable audio again after a browser suspension, or to disable the speaker, reopen the menu's speaker dialog. The host can disconnect an approved device with **Remove** in Playback settings.
+Only one tab per browser identity connects at a time. Other tabs wait and can take over automatically when the active tab closes. Reloading or closing the active document interrupts its audio; registration resumes automatically when the application opens again. Network recovery does not send Play or replace the queue.
 
-## What stays playing?
+## Music Assistant compatibility
 
-| Action | Behavior |
-| --- | --- |
-| Navigate between Listening Room pages, use settings deep links, or Back/Forward | The same audio engine and connection remain alive |
-| Close the speaker dialog or enter full screen | Audio continues |
-| Refresh, close the tab, log out, or leave/recreate the HA app iframe | Browser audio stops; enable it again |
-| Open a second tab | A second tab cannot take over the same speaker identity without host approval |
-| Lose the network | Bounded reconnection attempts; recovery never issues Play or replaces the queue |
-| Phone lock, background tab, or operating-system suspension | Browser-dependent; keep a dedicated output device awake for reliable room playback |
+Compatibility uses the supported **API schema (currently 65)**, server identity, and the Sendspin authentication/pairing exchanges. There is no 2.10.8 version ceiling.
 
-Speaker approvals last eight hours and expire on application restart. Online invitation rotation/disable also disconnects online speakers. Replacing the Music Assistant connection invalidates its speaker grants. Browser identity is stored per installation and MA source on the current browser origin; LAN, HA Ingress, and Funnel origins can have separate identities.
+MA **2.10.9** has schema 65 and `aiosendspin[server]==10.2.1`. Its authenticated Sendspin proxy and `pair_web_player` implementation are identical to 2.10.8. Its frontend automatically connects and pairs the browser player; Listening Room follows that lifecycle. This is source verification, not a claim of tested audible playback on an installed MA server.
 
-## Requirements and access
+- [MA 2.10.9 API schema](https://github.com/music-assistant/server/blob/2.10.9/music_assistant/constants.py)
+- [MA 2.10.9 Sendspin proxy](https://github.com/music-assistant/server/blob/2.10.9/music_assistant/controllers/webserver/sendspin_proxy.py)
+- [MA 2.10.9 pairing implementation](https://github.com/music-assistant/server/blob/2.10.9/music_assistant/providers/sendspin/provider.py)
+- [MA frontend automatic connection and pairing](https://github.com/music-assistant/frontend/blob/2.17.297/src/components/SendspinPlayer.vue)
 
-- Connect Music Assistant first and refresh its status. The adapter is restricted to **MA 2.10.6–2.10.8**, the versions whose authenticated Sendspin proxy and pairing API were inspected. The bundled browser SDK is pinned to **Sendspin JS 6.0.0**. Actual audible compatibility across these versions still requires installed-system testing.
-- Use a current browser with Web Audio and site storage enabled. HTTPS is recommended. PCM audio avoids optional WASM decoder requirements and uses roughly **1.4–1.5 Mbit/s per active stereo speaker**, plus transport overhead.
-- Audio uses Listening Room's own address over a WebSocket, including the Ingress prefix or Funnel HTTPS address. Guests do not need a direct connection to Music Assistant. The MA account token remains on the backend.
-- The MA integration account needs access to the browser destination and permission to pair web players. If pairing or discovery fails, check that account's access and the installed MA version; no destination is selected automatically.
+## Access and testing
 
-Approve only a **trusted output device**. Sendspin includes track metadata and control capabilities, so a browser speaker is more privileged than an ordinary guest. Listening Room does not display Sendspin metadata or attach SDK playback commands to OS media controls; its normal reveal and turn controls remain authoritative in the app. This is not a guarantee that a trusted speaker cannot inspect the protocol's metadata. Removing a device here revokes its Listening Room relay grant; any saved MA-side pairing can be managed separately in Music Assistant.
+Audio travels through Listening Room's own address, including the Ingress prefix or Funnel address. The MA account token stays on the backend. Public upgrades require both a valid invitation and a browser session. Invitation revocation, logout and connection replacement close affected audio connections. PCM stereo uses roughly 1.4–1.5 Mbit/s per active speaker, plus transport overhead.
 
-## Validation status
+**Invited browsers are trusted Sendspin clients.** The protocol includes track metadata and playback-control capabilities. Listening Room's interface still follows its reveal/turn rules, but those rules are not a security boundary against an invited client inspecting or using Sendspin directly. Local browser identity is scoped to the installation/MA source and browser origin.
 
-Automated tests cover real HTTP/WebSocket relaying against a simulated MA authentication endpoint, binary/text framing, pairing identity binding, approval/expiry, tab takeover, listener provenance, account replacement and revocation. Navigation tests cover deep-link and Ingress routing. These tests do not establish audible playback, real MA pairing, mobile suspension behavior, or actual Ingress/Funnel audio delivery. See [testing](testing.md) for installed-system checks and [the design investigation](browser-player-investigation.md) for protocol findings.
+Automated tests cover automatic startup without waiting for audio permission, retained player lifetimes, standby tabs, reconnect/cancellation, HTTP/WebSocket authorization, pairing identity binding, schema/server checks and revocation. Actual sound, real MA pairing and HA/Funnel/mobile behavior still require [installed-system testing](testing.md).

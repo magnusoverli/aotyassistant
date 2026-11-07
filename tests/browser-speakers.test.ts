@@ -14,8 +14,8 @@ import type { OnlineAccess } from '../src/online-access.js';
 
 const owner = randomBytes(32).toString('base64url');
 const clientId = randomBytes(32).toString('base64url');
-const lan: SpeakerContext = { kind: 'lan', origin: 'http://room.local:3000', base: '', admin: false, valid: () => true };
-const connection: SpeakerConnection = { origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: 'epoch-1', scope: 'installation', version: '2.10.8', serverId: 'ma-fixture' };
+const lan: SpeakerContext = { kind: 'lan', origin: 'http://room.local:3000', base: '', valid: () => true };
+const connection: SpeakerConnection = { origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: 'epoch-1', scope: 'installation', version: '2.10.9', serverId: 'ma-fixture' };
 const registration = () => ({ id: randomUUID(), clientId, name: 'Room browser' });
 function tokenFor(id: string) {
   let bits = 0; let value = 0; let encoded = '';
@@ -37,7 +37,7 @@ async function listen(t: TestContext, handler?: RequestListener) {
 async function fixture(t: TestContext) {
   const auth: unknown[] = []; const commands: unknown[] = [];
   const app = express(); app.use(express.json());
-  app.get('/info', (_req, res) => res.json({ server_id: connection.serverId, server_version: '2.10.8', schema_version: 65 }));
+  app.get('/info', (_req, res) => res.json({ server_id: connection.serverId, server_version: connection.version, schema_version: 65 }));
   app.post('/api', (req, res) => { assert.equal(req.headers.authorization, 'Bearer fixture-only'); commands.push(req.body); res.json(null); });
   const upstream = await listen(t, app);
   const ws = new WebSocketServer({ server: upstream.server });
@@ -61,25 +61,24 @@ async function fixture(t: TestContext) {
   return { speakers, context, input, connect, auth, commands, local, upstreamSockets: ws.clients, epoch: () => { epoch = 'epoch-2'; } };
 }
 
-test('speaker grants require approval, enforce owner/context, and expire independently of identity', t => {
+test('automatic sessions enforce owner/context and abandoned sessions expire', t => {
   let now = 0; const speakers = new BrowserSpeakers(() => connection, undefined, undefined, undefined, () => now); t.after(() => speakers.close());
   const input = registration(); const view = speakers.register(input, owner, lan);
-  assert.equal(view.approved, false); assert.equal(JSON.stringify(view).includes(owner), false);
+  assert.equal(view.active, true); assert.equal(JSON.stringify(view).includes(owner), false);
   assert.throws(() => speakers.status(input.id, 'wrong', lan), /expired/);
   assert.throws(() => speakers.status(input.id, owner, { ...lan, kind: 'public' }), /expired/);
   assert.throws(() => speakers.status(input.id, owner, { ...lan, origin: 'http://evil.test' }), /expired/);
-  speakers.approve(input.id); now = 5 * 60_000 + 1;
-  assert.equal(speakers.status(input.id, owner, lan).approved, true);
-  now = 8 * 60 * 60_000; assert.throws(() => speakers.status(input.id, owner, lan), /expired/);
+  now = 20_000; assert.equal(speakers.status(input.id, owner, lan).active, true);
+  now = 80_000; assert.throws(() => speakers.status(input.id, owner, lan), /expired/);
   speakers.sweep(); assert.deepEqual(speakers.list(), []);
 });
 
-test('another tab needs explicit approval to take over an existing identity; logout and public revocation are scoped', t => {
+test('another tab waits for the identity lease and takes over automatically after the first leaves', t => {
   const speakers = new BrowserSpeakers(() => connection); t.after(() => speakers.close());
-  const ingress: SpeakerContext = { ...lan, kind: 'ingress', base: '/api/hassio_ingress/test', admin: true };
-  const first = speakers.register(registration(), owner, ingress); assert.equal(first.approved, true);
-  const second = speakers.register(registration(), owner, ingress); assert.equal(second.approved, false);
-  speakers.approve(second.id); assert.throws(() => speakers.status(first.id, owner, ingress), /expired/);
+  const ingress: SpeakerContext = { ...lan, kind: 'ingress', base: '/api/hassio_ingress/test' };
+  const first = speakers.register(registration(), owner, ingress); assert.equal(first.active, true);
+  const second = speakers.register(registration(), owner, ingress); assert.equal(second.active, false);
+  speakers.remove(first.id); assert.equal(speakers.status(second.id, owner, ingress).active, true);
   const remote = speakers.register({ ...registration(), clientId: randomBytes(32).toString('base64url') }, owner, { ...lan, kind: 'public' });
   speakers.revokePublic(); assert.equal(speakers.list().some(s => s.id === remote.id), false); assert.equal(speakers.list().length, 1);
   speakers.revokeOwner(owner); assert.deepEqual(speakers.list(), []);
@@ -90,10 +89,18 @@ test('pairing tokens bind exactly to their public identity and reject malformed/
   for (const token of ['', 'SP:1' + 'A'.repeat(103), tokenFor(clientId).slice(0, -1), 'SP:0' + 'A'.repeat(102) + 'B']) assert.equal(pairingClientId(token), undefined);
 });
 
-test('unapproved, wrong-origin, wrong-owner and off-route websocket upgrades never authenticate upstream', async t => {
+test('an abandoned connection attempt cannot indefinitely reserve the browser identity', t => {
+  let now = 0; const speakers = new BrowserSpeakers(() => connection, undefined, undefined, undefined, () => now); t.after(() => speakers.close());
+  const first = speakers.register(registration(), owner, lan); const second = speakers.register(registration(), owner, lan);
+  assert.equal(first.active, true); assert.equal(second.active, false);
+  now = 31_000;
+  assert.equal(speakers.status(second.id, owner, lan).active, true);
+  assert.equal(speakers.status(first.id, owner, lan).active, false);
+});
+
+test('unregistered, wrong-origin, wrong-owner and off-route websocket upgrades never authenticate upstream', async t => {
   const f = await fixture(t);
-  await assert.rejects(once(f.connect(), 'open'), /403/);
-  f.speakers.approve(f.input.id);
+  await assert.rejects(once(f.connect({}, '/api/browser-speaker/socket?id=' + randomUUID()), 'open'), /403/);
   await assert.rejects(once(f.connect({ Origin: 'https://evil.test' }), 'open'), /403/);
   await assert.rejects(once(f.connect({ Cookie: '' }), 'open'), /403/);
   await assert.rejects(once(f.connect({}, '/api/host/state?id=' + f.input.id), 'open'), /403/);
@@ -101,7 +108,7 @@ test('unapproved, wrong-origin, wrong-owner and off-route websocket upgrades nev
 });
 
 test('relay authenticates server-side, preserves binary/text framing, binds pairing and closes on revocation', async t => {
-  const f = await fixture(t); f.speakers.approve(f.input.id);
+  const f = await fixture(t);
   const socket = f.connect(); await once(socket, 'open');
   assert.deepEqual(f.auth, [{ type: 'auth', token: 'fixture-only', client_id: clientId }]);
   const binary = Buffer.from([0, 255, 32, 127]); const echoed = once(socket, 'message'); socket.send(binary);
@@ -118,15 +125,26 @@ test('relay authenticates server-side, preserves binary/text framing, binds pair
 });
 
 test('server/account replacement revokes a connected relay without issuing queue commands', async t => {
-  const f = await fixture(t); f.speakers.approve(f.input.id); const socket = f.connect(); await once(socket, 'open');
+  const f = await fixture(t); const socket = f.connect(); await once(socket, 'open');
   const closed = once(socket, 'close'); f.epoch(); f.speakers.sweep(); await closed;
   assert.equal(f.commands.length, 0); assert.deepEqual(f.speakers.list(), []);
 });
 
-test('a dropped stream releases its lease for reconnection without taking over the queue or replacing approval', async t => {
-  const f = await fixture(t); f.speakers.approve(f.input.id); const socket = f.connect(); await once(socket, 'open');
+test('two real websocket clients cannot play the same identity simultaneously and hand over after disconnect', async t => {
+  const f = await fixture(t); const first = f.connect(); await once(first, 'open');
+  const next = registration(); assert.equal(f.speakers.register(next, owner, f.context).active, false);
+  const path = '/api/browser-speaker/socket?id=' + next.id;
+  await assert.rejects(once(f.connect({}, path), 'open'), /403/); assert.equal(f.auth.length, 1);
+  const closed = once(first, 'close'); f.speakers.remove(f.input.id); await closed;
+  assert.equal(f.speakers.status(next.id, owner, f.context).active, true);
+  const second = f.connect({}, path); await once(second, 'open');
+  assert.equal(f.auth.length, 2); assert.equal(f.commands.length, 0);
+});
+
+test('a dropped stream releases its lease for reconnection without taking over the queue', async t => {
+  const f = await fixture(t); const socket = f.connect(); await once(socket, 'open');
   const closed = once(socket, 'close'); for (const remote of f.upstreamSockets) remote.terminate(); await closed;
-  const status = f.speakers.status(f.input.id, owner, f.context); assert.equal(status.approved, true); assert.equal(status.connected, false);
+  const status = f.speakers.status(f.input.id, owner, f.context); assert.equal(status.active, true); assert.equal(status.connected, false);
   const reconnect = f.connect(); await once(reconnect, 'open');
   assert.equal(f.auth.length, 2); assert.equal(f.commands.length, 0); assert.equal(f.speakers.status(f.input.id, owner, f.context).connected, true);
 });
@@ -134,8 +152,8 @@ test('a dropped stream releases its lease for reconnection without taking over t
 test('public websocket upgrades require both invitation and device grants; losing the invitation closes audio', async t => {
   const f = await fixture(t); const gateway = await listen(t);
   let valid = true; const online = { origin: 'https://room.ts.net', authorized: (grant: string) => valid && grant === 'fixture-grant' } as OnlineAccess;
-  const context: SpeakerContext = { kind: 'public', origin: online.origin!, base: '', admin: false, valid: () => valid };
-  const input = registration(); f.speakers.register(input, owner, context); f.speakers.approve(input.id);
+  const context: SpeakerContext = { kind: 'public', origin: online.origin!, base: '', valid: () => valid };
+  const input = { ...registration(), clientId: randomBytes(32).toString('base64url') }; assert.equal(f.speakers.register(input, owner, context).active, true);
   f.speakers.attach(gateway.server, req => speakerContext(req, 'public', f.local.url, f.local.port, online));
   const connect = (cookie: string) => {
     const ws = new WebSocket(gateway.url.replace('http:', 'ws:') + '/api/browser-speaker/socket?id=' + input.id,
@@ -156,11 +174,11 @@ test('upstream authentication failure is sanitized and cannot establish a relay'
   await assert.rejects(openSpeakerSocket({ ...connection, origin: server.url }, clientId), error => error instanceof Error && /could not be established/.test(error.message) && !error.message.includes('sensitive'));
 });
 
-test('a reused MA address or unsupported version/schema is rejected before websocket authentication', async t => {
+test('a reused MA address or unsupported API schema is rejected before websocket authentication', async t => {
   let info = { server_id: 'different-server', server_version: '2.10.8', schema_version: 65 }; let upgrades = 0;
   const server = await listen(t, (_req, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(info)); });
   server.server.on('upgrade', (_req, socket) => { upgrades++; socket.destroy(); });
-  for (const next of [info, { ...info, server_id: connection.serverId, server_version: '2.11.0' }, { ...info, server_id: connection.serverId, schema_version: 66 }]) {
+  for (const next of [info, { ...info, server_id: connection.serverId, schema_version: 66 }]) {
     info = next;
     await assert.rejects(openSpeakerSocket({ ...connection, origin: server.url }, clientId), /identity or browser-audio compatibility/);
   }
@@ -173,10 +191,10 @@ test('listener contexts require real Ingress provenance or a valid Funnel grant,
   assert.equal(validateIngress(req(ingressHeaders)), undefined);
   assert.equal(speakerContext(req(ingressHeaders), 'lan', lan.origin, 3000), undefined);
   const trusted = speakerContext(req(ingressHeaders, '172.30.32.2'), 'ingress', lan.origin, 3000)!;
-  assert.equal(trusted.origin, 'https://ha.example'); assert.equal(trusted.admin, true);
+  assert.equal(trusted.origin, 'https://ha.example'); assert.equal(trusted.kind, 'ingress');
   let valid = true; const online = { origin: 'https://room.ts.net', authorized: (grant: string) => valid && grant === 'fixture-grant' } as OnlineAccess;
   const remote = req({ host: 'room.ts.net', cookie: '__Host-aoty_online=fixture-grant' });
-  const context = speakerContext(remote, 'public', lan.origin, 3000, online)!; assert.equal(context.admin, false); assert.equal(context.valid(), true);
+  const context = speakerContext(remote, 'public', lan.origin, 3000, online)!; assert.equal(context.kind, 'public'); assert.equal(context.valid(), true);
   valid = false; assert.equal(context.valid(), false); assert.equal(speakerContext(remote, 'public', lan.origin, 3000, online), undefined);
   for (const action of ['register', 'pair', 'stop']) assert.equal(publicRoute('POST', '/api/browser-speaker/' + action), true);
   assert.equal(publicRoute('POST', '/api/host/browser-speakers'), false);
@@ -188,7 +206,7 @@ test('HTTP speaker setup uses an HttpOnly cookie and read-only sanitized info', 
   mountBrowserSpeakers(app, speakers, () => local.url, local.port);
   const info = await fetch(local.url + '/api/browser-speaker/info'); const cookie = info.headers.get('set-cookie')!;
   assert.match(cookie, /HttpOnly/); assert.match(cookie, /SameSite=Strict/); assert.match(cookie, /Path=\/api/);
-  assert.deepEqual(await info.json(), { scope: 'installation', version: '2.10.8' });
+  assert.deepEqual(await info.json(), { scope: 'installation', version: '2.10.9' });
   const registered = await fetch(local.url + '/api/browser-speaker/register', { method: 'POST', headers: { Cookie: cookie.split(';')[0]!, 'Content-Type': 'application/json' }, body: JSON.stringify(registration()) });
-  assert.equal(registered.status, 200); assert.equal((await registered.json() as { approved: boolean }).approved, false);
+  assert.equal(registered.status, 200); assert.equal((await registered.json() as { active: boolean }).active, true);
 });
