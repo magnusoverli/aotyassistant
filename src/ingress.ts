@@ -1,12 +1,13 @@
 import type { IncomingMessage, RequestListener } from 'node:http';
 import type { Request } from 'express';
+import { peerAddress } from './http-guards.js';
 
 type IngressContext = { base: string; origin: string; userId: string };
 const contexts = new WeakMap<IncomingMessage, IngressContext>();
 export const ingressContext = (request: IncomingMessage) => contexts.get(request);
 export const requestBase = (request: IncomingMessage) => ingressContext(request)?.base ?? '';
 export function validateIngress(req: IncomingMessage, proxyAddress = '172.30.32.2'): IngressContext | undefined {
-  const peer = req.socket.remoteAddress?.replace(/^::ffff:/, '');
+  const peer = peerAddress(req);
   const base = req.headers['x-ingress-path']; const proto = req.headers['x-forwarded-proto'];
   const host = req.headers['x-forwarded-host']; const userId = req.headers['x-remote-user-id'];
   try {

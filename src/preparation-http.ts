@@ -7,9 +7,10 @@ import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
 import { PreparationManager, preparationOperationSchema } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
-import { artworkSize, body, rawCookie, setParticipantCookie } from './http-utils.js';
+import { artworkSize, body, setParticipantCookie } from './http-utils.js';
+import { RateLimiter, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
-import { maOperation } from './ma-operation.js';
+import { operation } from './operation.js';
 import type { UserManager } from './users.js';
 import { requestBase } from './ingress.js';
 
@@ -21,20 +22,18 @@ const empty = z.object({}).strict();
 /** Private library routes deliberately use a separate credential, revision, rate lane, and event stream. */
 export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets, users: UserManager) {
   const streams = new EventStreams(200, 'Too many private-list connections. Close unused tabs.');
-  const rates = new Map<string, { count: number; start: number }>();
-  const member = (req: Request) => rawCookie(req, 'aoty_participant');
-  const credential = (req: Request) => rawCookie(req, cookieName);
+  const rates = new RateLimiter(5000);
+  const member = (req: Request) => readCookie(req, 'aoty_participant');
+  const credential = (req: Request) => readCookie(req, cookieName);
   const setCookie = (res: Response, value: string) => setParticipantCookie(res.req, res, cookieName, value, prefix, config.guestUrl);
-  const timer = setInterval(() => {
-    const now = Date.now(); for (const [key, value] of rates) if (now - value.start > 60_000) rates.delete(key);
-  }, 60_000); timer.unref();
+  const timer = setInterval(() => rates.prune(), 60_000); timer.unref();
   app.use(prefix, (req, _res, next) => {
     if (req.method === 'GET' || ['/play', '/join', '/pin'].includes(req.path)) return next();
     const initializing = req.path === '/init';
     const key = initializing ? `identity:${createHash('sha256').update(member(req)).digest('hex')}` : `owner:${createHash('sha256').update(credential(req)).digest('hex')}`;
-    const now = Date.now(); let rate = rates.get(key); if (!rate || now - rate.start > 60_000) rate = { count: 0, start: now };
-    if (rates.size > 5000) return next(new AppError(503, 'Private lists are busy. Try again shortly.'));
-    rates.set(key, rate); rate.count++; next(rate.count > (initializing ? 60 : 180) ? new AppError(429, 'Too many list changes. Wait a minute; saved entries were kept.') : undefined);
+    const rate = rates.hit(key, initializing ? 60 : 180);
+    next(rate === 'full' ? new AppError(503, 'Private lists are busy. Try again shortly.')
+      : rate === 'limited' ? new AppError(429, 'Too many list changes. Wait a minute; saved entries were kept.') : undefined);
   });
   app.get(`${prefix}/state`, async (req, res) => {
     if (!credential(req)) throw new AppError(401, 'Your selections are not ready. Reload the participant page.');
@@ -123,7 +122,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     const input = body(req, z.object({ entryId: uuid, revision: z.number().int().nonnegative(), turnId: uuid, previousPlaybackId: uuid.nullable() }).strict());
     const role = { kind: 'participant' as const, credential: member(req) }; const view = engine.view(role);
     if (!view.myTurn || view.turnId !== input.turnId) throw new AppError(403, 'Only the current participant can play their next track.');
-    const result = await maOperation('prepared-play', () => manager.playHead(credential(req), input.entryId, input.revision, async selection => {
+    const result = await operation('prepared-play', () => manager.playHead(credential(req), input.entryId, input.revision, async selection => {
       const playbackId = await engine.playPrepared(member(req), input.turnId, input.previousPlaybackId, selection, input.entryId);
       return { playbackId, value: engine.view(role) };
     }));

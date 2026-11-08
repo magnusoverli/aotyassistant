@@ -130,7 +130,7 @@ test('online artist, album and track artwork reaches MA with participant and inv
   await integrations.save(ma.origin, 'fixture-token', 0);
   const local = await listen(t); const adapter = new DemoAdapter();
   const engine = new Engine(new FileStore(f.dir), adapter, local.url, integrations); await engine.init();
-  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, mode: 'demo', demoSeconds: 30 }, 'web', integrations);
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, demoSeconds: 30 }, 'web', integrations);
   local.server.on('request', http.app);
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   t.after(() => { gateway.close(); http.close(); adapter.close(); });
@@ -180,7 +180,7 @@ test('public listener gates profiles, supports PIN join/private library, rejects
   const local = await listen(t); const adapter = new DemoAdapter(); const engine = new Engine(new FileStore(f.dir), adapter, local.url); await engine.init();
   engine.setOnlineSharing(() => f.online.sharing());
   const uploads = new UploadAssets(f.dir, fixtureUploadAnalysis);
-  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, mode: 'demo', demoSeconds: 30 }, 'web', undefined, undefined, uploads, undefined, f.online);
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, demoSeconds: 30 }, 'web', undefined, undefined, uploads, undefined, f.online);
   local.server.on('request', http.app);
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   const ingress = await listen(t, ingressListener(http.app, '127.0.0.1'));

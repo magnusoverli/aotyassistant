@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform, Writable, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,7 +8,8 @@ import { z } from 'zod';
 import sharp from 'sharp';
 import type { ArtworkData, ArtworkSize } from './music-assistant.js';
 import { AppError } from './model.js';
-import { writePrivateJson } from './store.js';
+import { listDirectory, readPrivateJson, syncDirectory, writePrivateJson } from './store.js';
+import { BoundedCache } from './bounded-cache.js';
 import { PreparationFileStore, type PreparationStore, type SavedSelection } from './preparations.js';
 import { KeyedSerialQueue } from './serial.js';
 import { mediaRange } from './http-utils.js';
@@ -23,6 +24,9 @@ const id = z.string().uuid().regex(/^[a-f0-9-]+$/);
 const manifestSchema = analysisSchema.extend({ schema: z.literal(1), id, ownerId: id, filename: z.string().min(1).max(1000),
   sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), createdAt: z.number().int().nonnegative(), retained: z.boolean() }).strict();
 type Manifest = z.infer<typeof manifestSchema>;
+const recordBytes = 32 * 1024;
+const stagedOwner = z.object({ id, ownerId: id });
+const receivingSchema = z.object({ id, ownerId: id, createdAt: z.number().int().nonnegative() }).strict();
 export type UploadPreview = { id: string; filename: string; title: string; artist: string; album: string; duration: number; artwork?: string };
 export type UploadSelection = Extract<SavedSelection, { source: 'upload' }>;
 type Lease = { assetId: string; origin: string; key: string; active: boolean; observed: boolean; connections: Set<() => void> };
@@ -35,33 +39,27 @@ export class UploadAssets {
   private queue = new KeyedSerialQueue();
   private leases = new Set<Lease>();
   private closed = false;
-  private artworkCache = new Map<string, { data: ArtworkData; expires: number }>();
+  private artworkCache: BoundedCache<ArtworkData>;
   private artworkRequests = new Map<string, Promise<ArtworkData>>();
-  private artworkBytes = 0;
   private ownerAllowed: (ownerId: string) => boolean = () => true;
   setOwnerPolicy(policy: (ownerId: string) => boolean) { this.ownerAllowed = policy; }
   private shutdown = new AbortController();
   constructor(private dataDirectory: string, private analyze = analyzeUpload, private now = Date.now,
     private preparations: Pick<PreparationStore, 'load'> = new PreparationFileStore(dataDirectory)) {
     this.directory = join(dataDirectory, 'uploads'); this.staging = join(dataDirectory, 'upload-staging');
+    this.artworkCache = new BoundedCache(128, 8 * 1024 * 1024, now);
   }
   private path(assetId: string) { return join(this.directory, id.parse(assetId)); }
   private async serial<T>(assetId: string, work: () => Promise<T>) {
     return this.queue.run(assetId, work);
   }
   private async load(assetId: string, ownerId?: string): Promise<Manifest> {
-    try {
-      const file = await open(join(this.path(assetId), 'manifest.json'), 'r');
-      let value;
-      try { if ((await file.stat()).size > 32 * 1024) throw new Error(); value = manifestSchema.parse(JSON.parse(await file.readFile('utf8'))); }
-      finally { await file.close(); }
-      if (value.id !== assetId || (ownerId !== undefined && value.ownerId !== ownerId)) throw new AppError(404, 'Uploaded file not found.');
-      return value;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError(404, 'Uploaded file not found. Select the file again if the upload did not finish.');
-      throw new AppError(503, 'The uploaded file record could not be read. Nothing was reset.');
-    }
+    let value: Manifest | undefined;
+    try { value = await readPrivateJson(join(this.path(assetId), 'manifest.json'), manifestSchema, recordBytes); }
+    catch { throw new AppError(503, 'The uploaded file record could not be read. Nothing was reset.'); }
+    if (!value) throw new AppError(404, 'Uploaded file not found. Select the file again if the upload did not finish.');
+    if (value.id !== assetId || (ownerId !== undefined && value.ownerId !== ownerId)) throw new AppError(404, 'Uploaded file not found.');
+    return value;
   }
   private preview(value: Manifest): UploadPreview {
     return { id: value.id, filename: value.filename, title: value.metadata.title, artist: value.metadata.artist, album: value.metadata.album, duration: value.metadata.duration,
@@ -120,14 +118,12 @@ export class UploadAssets {
           const manifest: Manifest = { ...analyzed, schema: 1, id: assetId, ownerId, filename, sha256: digest, bytes, createdAt: this.now(), retained: false };
           await writePrivateJson(directory, 'manifest.json', manifest);
           await unlink(join(directory, 'receiving.json'));
-          const parent = await open(directory, 'r'); try { await parent.sync(); } finally { await parent.close(); }
+          await syncDirectory(directory);
           await durability.run(async () => {
             signal.throwIfAborted();
             await mkdir(this.directory, { recursive: true, mode: 0o700 });
             await rename(directory, this.path(assetId));
-            for (const path of [this.directory, this.staging, this.dataDirectory]) {
-              const parent = await open(path, 'r'); try { await parent.sync(); } finally { await parent.close(); }
-            }
+            for (const path of [this.directory, this.staging, this.dataDirectory]) await syncDirectory(path);
           });
           return this.preview(manifest);
         } catch (error) {
@@ -163,22 +159,14 @@ export class UploadAssets {
       const info = await file.stat();
       if (info.size > 2 * 1024 * 1024) throw new AppError(404, 'Artwork unavailable.');
       const key = `${assetId}:${size}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
-      const cached = this.artworkCache.get(key);
-      if (cached && cached.expires > this.now()) {
-        this.artworkCache.delete(key); this.artworkCache.set(key, cached); return cached.data;
-      }
-      if (cached) { this.artworkBytes -= cached.data.body.length; this.artworkCache.delete(key); }
+      const cached = this.artworkCache.get(key); if (cached) return cached;
       const pending = this.artworkRequests.get(key); if (pending) return await pending;
       if (this.artworkRequests.size >= 8) throw new AppError(503, 'Artwork is busy.');
       const request = (async () => {
         const body = await sharp(await file.readFile(), { limitInputPixels: 16 * 1024 * 1024, animated: false })
           .rotate().resize(size, size, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
         const data = { body, contentType: 'image/jpeg' as const };
-        this.artworkCache.set(key, { data, expires: this.now() + 5 * 60_000 }); this.artworkBytes += body.length;
-        while (this.artworkCache.size > 128 || this.artworkBytes > 8 * 1024 * 1024) {
-          const oldest = this.artworkCache.keys().next().value!;
-          this.artworkBytes -= this.artworkCache.get(oldest)!.data.body.length; this.artworkCache.delete(oldest);
-        }
+        this.artworkCache.set(key, data, { expires: this.now() + 5 * 60_000, size: body.length });
         return data;
       })();
       this.artworkRequests.set(key, request);
@@ -190,8 +178,7 @@ export class UploadAssets {
   async removeOwner(ownerId: string) {
     ownerId = id.parse(ownerId);
     if (this.receiving.has(ownerId)) throw new AppError(409, 'An upload is finishing. The user is signed out; retry Delete user when it finishes.');
-    const names = await readdir(this.directory).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
-    for (const assetId of names.filter(name => id.safeParse(name).success)) {
+    for (const assetId of (await listDirectory(this.directory)).filter(name => id.safeParse(name).success)) {
       let manifest: Manifest;
       try { manifest = await this.load(assetId); }
       catch (error) {
@@ -201,23 +188,16 @@ export class UploadAssets {
       if (manifest.ownerId === ownerId) await this.remove(ownerId, assetId);
     }
     // Interrupted transfers can leave private staging bytes even before a saved entry exists.
-    const staged = await readdir(this.staging).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
-    for (const assetId of staged.filter(name => id.safeParse(name).success)) {
+    for (const assetId of (await listDirectory(this.staging)).filter(name => id.safeParse(name).success)) {
       const directory = join(this.staging, assetId);
-      const file = await open(join(directory, 'manifest.json'), 'r').catch(error => {
-        if (error.code !== 'ENOENT') throw error;
-        return open(join(directory, 'receiving.json'), 'r').catch(cause => { if (cause.code === 'ENOENT') return undefined; throw cause; });
-      });
-      if (!file) continue; // Startup cleanup handles unidentifiable, uncommitted staging directories.
-      let owner: { id: string; ownerId: string };
-      try {
-        if ((await file.stat()).size > 32 * 1024) throw new AppError(503, 'An unfinished upload record could not be read. Check storage before retrying deletion.');
-        owner = z.object({ id, ownerId: id }).parse(JSON.parse(await file.readFile('utf8')));
-      } finally { await file.close(); }
-      if (owner.id !== assetId || owner.ownerId !== ownerId) continue;
+      let owner: z.infer<typeof stagedOwner> | undefined;
+      try { owner = await readPrivateJson(join(directory, 'manifest.json'), stagedOwner, recordBytes) ?? await readPrivateJson(join(directory, 'receiving.json'), stagedOwner, recordBytes); }
+      catch { throw new AppError(503, 'An unfinished upload record could not be read. Check storage before retrying deletion.'); }
+      // Startup cleanup handles unidentifiable, uncommitted staging directories.
+      if (!owner || owner.id !== assetId || owner.ownerId !== ownerId) continue;
       await this.serial(assetId, () => durability.run(async () => {
         await rm(directory, { recursive: true, force: true });
-        const parent = await open(this.staging, 'r'); try { await parent.sync(); } finally { await parent.close(); }
+        await syncDirectory(this.staging);
       }));
     }
   }
@@ -234,8 +214,7 @@ export class UploadAssets {
       if (this.busy(assetId)) throw new AppError(409, 'Stop or finish this file before permanently deleting it.');
       await durability.run(async () => {
         if (value) await rm(this.path(value.id), { recursive: true, force: true });
-        const directory = await open(this.directory, 'r').catch(error => { if (error.code === 'ENOENT') return null; throw error; });
-        if (directory) { try { await directory.sync(); } finally { await directory.close(); } }
+        await syncDirectory(this.directory, true);
       });
     });
   }
@@ -291,9 +270,8 @@ export class UploadAssets {
           catch (error) { if (!(error instanceof AppError && error.status === 404)) return; }
           if (manifest?.retained || this.busy(name)) return;
           // A missing/corrupt manifest is not proof of an abandoned upload. Only a durable receiving marker establishes that.
-          const receiving = manifest ? undefined : z.object({ id, ownerId: id, createdAt: z.number().int().nonnegative() }).strict()
-            .parse(JSON.parse(await readFile(join(this.path(name), 'receiving.json'), 'utf8')));
-          if (receiving && receiving.id !== name) return;
+          const receiving = manifest ? undefined : await readPrivateJson(join(this.path(name), 'receiving.json'), receivingSchema, recordBytes);
+          if (!manifest && !receiving || receiving && receiving.id !== name) return;
           const createdAt = manifest?.createdAt ?? receiving!.createdAt;
           const ownerId = manifest?.ownerId ?? receiving!.ownerId;
           if (this.now() - createdAt <= 7 * 24 * 60 * 60_000) return;

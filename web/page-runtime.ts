@@ -5,10 +5,10 @@ import { el, link } from './dom';
 import { vinyl } from './visuals';
 import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
-import { pageForPath } from './navigation';
+import { pageForPath, pageTitles } from './navigation';
 import { progressConnected, displayedProgress } from './media';
 import { PlayerController } from './player-controller';
-import { Playback } from './playback';
+import { Playback, roomMessages } from './playback';
 import { PlayerReturn } from './player-return';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 import { CatalogueRow } from './catalogue-row';
@@ -34,11 +34,14 @@ export function mountPage(root: HTMLElement, appHeader: AppHeader, listeningOrde
 const lifecycle = new AbortController();
 const signal = lifecycle.signal;
 const page = pageForPath(pagePath(location.pathname));
-document.title = `${({ home: 'Home', join: 'Join room', participant: 'Your music', display: 'Room display', host: 'Host desk', settings: 'Settings' })[page]} · ${productName}`;
-const turnAnnouncement = el('div', undefined, 'sr-only');
-turnAnnouncement.setAttribute('role', 'status'); turnAnnouncement.setAttribute('aria-live', 'polite'); turnAnnouncement.setAttribute('aria-atomic', 'true');
-const searchAnnouncement = el('div', undefined, 'sr-only');
-searchAnnouncement.setAttribute('role', 'status'); searchAnnouncement.setAttribute('aria-live', 'polite'); searchAnnouncement.setAttribute('aria-atomic', 'true');
+document.title = `${pageTitles[page]} · ${productName}`;
+const liveRegion = () => {
+  const region = el('div', undefined, 'sr-only');
+  region.setAttribute('role', 'status'); region.setAttribute('aria-live', 'polite'); region.setAttribute('aria-atomic', 'true');
+  return region;
+};
+const turnAnnouncement = liveRegion();
+const searchAnnouncement = liveRegion();
 if (page === 'participant') document.body.append(turnAnnouncement, searchAnnouncement);
 let view: View | undefined;
 const catalogue = new CatalogueController(() => view);
@@ -63,11 +66,14 @@ let albumNotices: string[] = [];
 let trackNotices: string[] = [];
 const browseSnapshot = () => ({ results, searchText, searchDone, artists, albums, chosenArtist, chosenAlbum,
   artistNotices, albumNotices, trackNotices, scroll: scrollY });
-const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
-  catalogue.cancel(); resetCatalogueTask();
-  results = snapshot?.results ?? []; searchText = snapshot?.searchText ?? ''; searchDone = snapshot?.searchDone ?? false;
+/** Restores a browse snapshot; without one, clears all results (optionally keeping the typed query). */
+function restoreBrowse(snapshot?: ReturnType<typeof browseSnapshot>, query = snapshot?.searchText ?? '') {
+  results = snapshot?.results ?? []; searchText = query; searchDone = snapshot?.searchDone ?? false;
   artists = snapshot?.artists ?? []; albums = snapshot?.albums ?? []; chosenArtist = snapshot?.chosenArtist; chosenAlbum = snapshot?.chosenAlbum;
   artistNotices = snapshot?.artistNotices ?? []; albumNotices = snapshot?.albumNotices ?? []; trackNotices = snapshot?.trackNotices ?? [];
+}
+const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
+  catalogue.cancel(); resetCatalogueTask(); restoreBrowse(snapshot);
   render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
 }) : undefined;
 let stream: { close(): void } | undefined;
@@ -158,9 +164,7 @@ const participantAccess = new ParticipantAccess(
     if (signal.aborted) return;
     view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.clearIdentity();
     participantNodes.clear(); playback?.clear(); catalogueRows.clear();
-    resetCatalogueTask();
-    results = []; searchDone = false; searching = false; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
-    artistNotices = []; albumNotices = []; trackNotices = [];
+    resetCatalogueTask(); restoreBrowse(undefined, searchText);
     browseHistory?.reset();
     searchAnnouncement.textContent = '';
     void loadUsers();
@@ -277,10 +281,7 @@ function accept(next: View) {
   if (catalogueIdentity(view) !== catalogueIdentity(next)) {
     catalogueRows.clear();
     catalogue.cancel();
-    resetCatalogueTask();
-    results = []; searchText = ''; searchDone = false;
-    artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
-    artistNotices = []; albumNotices = []; trackNotices = [];
+    resetCatalogueTask(); restoreBrowse();
     browseHistory?.reset();
     if (page === 'participant') void library.refresh();
   }
@@ -301,8 +302,7 @@ function accept(next: View) {
     const turnMessage = next.myTurn ? 'It’s your turn to share.'
       : next.current ? `${next.current.nickname}’s turn. ${position?.turnsUntil === 1 ? 'You are up next.' : position?.turnsUntil != null ? `Your turn is ${position.turnsUntil} turns away.` : ''}`
       : 'The listening room is ready.';
-    const announcement = turnMessage;
-    if (turnAnnouncement.textContent !== announcement) turnAnnouncement.textContent = announcement;
+    if (turnAnnouncement.textContent !== turnMessage) turnAnnouncement.textContent = turnMessage;
   }
   if (!next.joinUrl) { qrUrl = ''; qrImage = ''; }
   if (next.joinUrl && next.joinUrl !== qrUrl) {
@@ -352,15 +352,13 @@ function qrCard() {
   card.append(el('h2', 'Invite people'));
   if (!view?.joinUrl) { card.append(el('p', view?.guestAccess?.message ?? 'Preparing guest link…'), link('Guest access settings', '/host/settings#access')); return card; }
   if (view.guestAccess) card.append(el('p', view.guestAccess.message, 'muted small'));
-  if (view?.joinUrl) {
-    const qr = el('div', undefined, 'invitation-qr');
-    if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; qr.append(img); }
-    qr.append(el('p', 'Scan the QR code to join.', 'muted')); card.append(qr);
-    const address = el('input'); address.value = view.joinUrl; address.readOnly = true; address.setAttribute('aria-label', 'Join link'); address.className = 'join-link-field';
-    const sharing = el('div', undefined, 'invitation-sharing'); sharing.append(address, copyButton('Copy join link', address)); card.append(sharing);
-    const invitation = link('Open guest invitation ↗', view.joinUrl); invitation.target = '_blank'; invitation.rel = 'noopener noreferrer'; card.append(invitation);
-  }
-  if (view?.displayUrl) {
+  const qr = el('div', undefined, 'invitation-qr');
+  if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; qr.append(img); }
+  qr.append(el('p', 'Scan the QR code to join.', 'muted')); card.append(qr);
+  const address = el('input'); address.value = view.joinUrl; address.readOnly = true; address.setAttribute('aria-label', 'Join link'); address.className = 'join-link-field';
+  const sharing = el('div', undefined, 'invitation-sharing'); sharing.append(address, copyButton('Copy join link', address)); card.append(sharing);
+  const invitation = link('Open guest invitation ↗', view.joinUrl); invitation.target = '_blank'; invitation.rel = 'noopener noreferrer'; card.append(invitation);
+  if (view.displayUrl) {
     const display = link('Open room display ↗', view.displayUrl); display.target = '_blank'; display.rel = 'noopener noreferrer'; card.append(display);
   }
   return card;
@@ -467,8 +465,7 @@ function participant() {
     const query = input.value.trim();
     if (!query) { catalogueError = realCatalogue ? 'Enter an artist name to search.' : 'Enter a demo search.'; catalogueRetry = undefined; render(); return; }
     browseHistory?.remember();
-    searching = true; searchDone = false; results = []; artists = []; albums = []; chosenArtist = undefined; chosenAlbum = undefined;
-    artistNotices = []; albumNotices = []; trackNotices = [];
+    restoreBrowse(undefined, searchText); searching = true;
     void runCatalogue(async () => {
       if (realCatalogue) {
         const response = await catalogue.browse('artists', query);
@@ -533,7 +530,7 @@ function participant() {
     foundNodes.push(row('album', album));
   }
   const emptyBrowse = searchDone && !catalogueBusy && realCatalogue && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
-    if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', chosenArtist && !chosenAlbum
+  if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist.'
     : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name.', 'muted'));
   if (searchDone && !catalogueBusy && !realCatalogue && !results.length) {
@@ -632,7 +629,7 @@ function render() {
   const scrollY = window.scrollY;
   const content: Node[] = [];
   if (error) { const message = pageNodes.get('error', () => notice('', 'error')); text(message, error); content.push(message); }
-  if (view && !realtime) content.push(pageNodes.get('connection', () => notice('Connection lost. Your saved songs are kept. Controls return when the room reconnects.', 'connection')));
+  if (view && !realtime) content.push(pageNodes.get('connection', () => notice(roomMessages.connectionLost, 'connection')));
   else if (view?.playbackIssue) {
     const message = pageNodes.get('recovery', () => notice('', 'warning'));
     const reason = pageNodes.el('playback-reason', 'span', view.playbackProblem?.message ?? view.playbackIssue);
@@ -642,7 +639,7 @@ function render() {
     attr(message, 'data-playback-problem', view.playbackProblem?.code);
     children(message, reason, recovery && pageNodes.get('playback-reason-space', () => document.createTextNode(' ')), recovery && action);
     content.push(message);
-  } else if (view && !view.connected) content.push(pageNodes.get('unavailable', () => notice('The room cannot confirm playback or save changes. Ask the host to check Settings.', 'error')));
+  } else if (view && !view.connected) content.push(pageNodes.get('unavailable', () => notice(roomMessages.unavailable, 'error')));
   if (page === 'host') content.push(host());
   else if (page === 'join' && !view) content.push(participantEntry());
   else if (page === 'participant' || page === 'join') content.push(participant());
@@ -689,9 +686,6 @@ async function init() {
   }
 }
 void init();
-window.addEventListener('hashchange', () => {
-  if ((page === 'display' && location.hash.startsWith('#access=')) || (page === 'join' && location.hash.startsWith('#invite='))) history.replaceState(null, '', location.pathname);
-}, { signal });
 window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.uploads.stop(); }, { signal });
 window.addEventListener('pageshow', event => { if (event.persisted) void init(); }, { signal });
 window.addEventListener('offline', () => {

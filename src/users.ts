@@ -1,14 +1,13 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
-import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError, type UserDirectory, type UserProfile } from './model.js';
 import type { Engine } from './engine.js';
 import { PreparationManager, PreparationFileStore } from './preparations.js';
-import { PreparationIdentity } from './preparation-identity.js';
+import { PreparationIdentity, bindingDirectory, readBinding, selectionCredential } from './preparation-identity.js';
 import { SerialQueue } from './serial.js';
-import { writePrivateJson, removePrivateFile } from './store.js';
-import { maOperation, maRemaining } from './ma-operation.js';
+import { listDirectory, readPrivateJson, writePrivateJson, removePrivateFile } from './store.js';
+import { operation, remaining } from './operation.js';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -29,8 +28,8 @@ const schema = z.object({ schema: z.literal(1), users: z.array(userSchema).max(1
   new Set(state.users.flatMap(user => user.sessions.map(session => session.hash))).size === state.users.reduce((sum, user) => sum + user.sessions.length, 0), 'Duplicate user identity.');
 type User = z.infer<typeof userSchema>;
 const lifetime = 365 * 24 * 60 * 60_000;
+const maxUserBytes = 8 * 1024 * 1024;
 const profile = (user: User): UserProfile => ({ id: user.id, nickname: user.nickname, pinRequired: !user.pin });
-const preparationCredential = (ownerId: string, session: string) => `${ownerId}.${createHash('sha256').update(`aoty-selections:${session}`).digest('base64url')}`;
 
 /** Stable users and independently revocable browser sessions. PIN work never occupies the audio lane. */
 export class UserManager {
@@ -49,13 +48,8 @@ export class UserManager {
     preparations.setCredentialPolicy((ownerId, hash) => this.listCredentialAllowed(ownerId, hash));
   }
   private async load() {
-    try {
-      const path = join(this.directory, 'users.json');
-      if ((await stat(path)).size > 8 * 1024 * 1024) throw Error();
-      this.state = schema.parse(JSON.parse(await readFile(path, 'utf8')));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { this.healthy = false; throw new AppError(503, 'User profiles could not be loaded. Nothing was reset.'); }
-    }
+    try { this.state = await readPrivateJson(join(this.directory, 'users.json'), schema, maxUserBytes) ?? this.state; }
+    catch { this.healthy = false; throw new AppError(503, 'User profiles could not be loaded. Nothing was reset.'); }
   }
   private session(token: string) {
     if (!this.healthy || !/^[A-Za-z0-9_-]{43}$/.test(token)) return undefined;
@@ -69,7 +63,7 @@ export class UserManager {
   ownerAvailable(ownerId: string) { return this.healthy && !this.state.deleted.some(user => user.ownerId === ownerId) && !this.state.users.some(user => user.ownerId === ownerId && user.deleting); }
   private check() { if (!this.healthy) throw new AppError(503, 'User storage is unavailable. Restart after checking the data directory.'); }
   private work<T>(action: string, work: () => Promise<T>): Promise<T> {
-    const result = maOperation(action, work); this.pending.add(result);
+    const result = operation(action, work); this.pending.add(result);
     void result.then(() => this.pending.delete(result), () => this.pending.delete(result)); return result;
   }
   register(nickname: string, pin: string, registration?: string, previous = '') {
@@ -79,11 +73,12 @@ export class UserManager {
   ensureList(token: string, previous: string) { return this.work('user-playlist', () => this.ensureUserList(token, previous)); }
   setPin(id: string, pin: string, token?: string) { return this.work('user-pin', () => this.setUserPin(id, pin, token)); }
   logout(token: string) { return this.work('user-logout', () => this.logoutUser(token)); }
-  migrate() { return this.work('user-migration', () => this.migrateUsers()); }
+  /** Cheap when nothing needs migrating; HTTP calls this before every API request. */
+  migrate() { return this.engine.hasLegacyParticipants() ? this.work('user-migration', () => this.migrateUsers()) : this.ready; }
   deleteUser(id: string, removeUploads: (ownerId: string) => Promise<void>) { return this.work('user-delete', () => this.deleteUserData(id, removeUploads)); }
   private async save(state: typeof this.state) {
     this.check();
-    try { await writePrivateJson(this.directory, 'users.json', schema.parse(state), 8 * 1024 * 1024); this.state = state; }
+    try { await writePrivateJson(this.directory, 'users.json', schema.parse(state), maxUserBytes); this.state = state; }
     catch { this.healthy = false; this.engine.emit('change'); throw new AppError(503, 'The user change could not be confirmed. Restart after checking the data directory.'); }
   }
   private listCredentialAllowed(ownerId: string, hash: string) {
@@ -94,18 +89,15 @@ export class UserManager {
   /** Upgrade persisted membership by its private binding, never by display name. Idempotent after a crash. */
   private async migrateUsers() {
     await this.ready;
-    if (!this.engine.identityParticipants().some(person => !person.userId)) return;
+    if (!this.engine.hasLegacyParticipants()) return;
     await this.queue.run(async () => {
       this.check(); const state = structuredClone(this.state); const links: { participantId: string; userId: string }[] = [];
       for (const person of this.engine.identityParticipants().filter(person => !person.userId)) {
         let user = state.users.find(user => user.id === person.id);
         if (!user) {
           let ownerId: string | undefined;
-          try {
-            const path = join(this.directory, 'preparations', 'bindings', `${person.credentialHash}.json`);
-            if ((await stat(path)).size > 512) throw Error();
-            ownerId = z.object({ schema: z.literal(1), ownerId: uuid }).strict().parse(JSON.parse(await readFile(path, 'utf8'))).ownerId;
-          } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new AppError(503, 'Existing user binding could not be loaded. Nothing was reset.'); }
+          try { ownerId = await readBinding(this.directory, person.credentialHash); }
+          catch { throw new AppError(503, 'Existing user binding could not be loaded. Nothing was reset.'); }
           if (this.state.deleted.some(user => user.id === person.id || ownerId && user.ownerId === ownerId)) throw new AppError(409, 'This legacy participant belongs to a deleted user. Remove their listening-order seat.');
           user = ownerId ? state.users.find(user => user.ownerId === ownerId) : undefined;
           if (!user) {
@@ -131,7 +123,7 @@ export class UserManager {
       await new Promise<void>(resolve => this.hashWaiters.push(resolve));
     } else this.hashes++;
     try {
-      maRemaining(Infinity);
+      remaining(Infinity);
       return await new Promise<Buffer>((resolve, reject) => scrypt(pin, Buffer.from(salt, 'hex'), 32,
         { N: 16384, r: 8, p: 5, maxmem: 32 * 1024 * 1024 }, (error, key) => error ? reject(error) : resolve(key)));
     } finally { const next = this.hashWaiters.shift(); if (next) next(); else this.hashes--; }
@@ -143,7 +135,7 @@ export class UserManager {
     const token = randomBytes(32).toString('base64url');
     user.sessions = user.sessions.filter(session => session.expires > this.now()).slice(-99);
     user.sessions.push({ hash: digest(token), expires: this.now() + lifetime,
-      ...(user.ownerId ? { preparationHash: digest(preparationCredential(user.ownerId, token)) } : {}) });
+      ...(user.ownerId ? { preparationHash: digest(selectionCredential(user.ownerId, token)) } : {}) });
     return token;
   }
   private async registerUser(nickname: string, pin: string, registration?: string, previous = '') {
@@ -178,7 +170,7 @@ export class UserManager {
       const user: User = { id, ownerId, listPending: !previousOwner, nickname: name, pin: verifier, version: 1, registration,
         sessions: [], legacyListHashes: [], failures: 0, blockedUntil: 0 };
       const token = this.addSession(user); state.users.push(user); await this.save(state);
-      await this.preparations.bindParticipant(ownerId, preparationCredential(ownerId, token), !previousOwner);
+      await this.preparations.bindParticipant(ownerId, selectionCredential(ownerId, token), !previousOwner);
       const completed = structuredClone(this.state); completed.users.find(user => user.id === id)!.listPending = false; await this.save(completed);
       return { user: profile(user), token };
     });
@@ -212,7 +204,7 @@ export class UserManager {
       if (!user.ownerId) {
         const owner = await this.legacy.ensure(token, previous); user.ownerId = owner.view.ownerId; credential = owner.credential;
         if (state.users.some(other => other.id !== user.id && other.ownerId === user.ownerId)) throw new AppError(409, 'This playlist already belongs to an existing user. Select that user to continue.');
-      } else credential = preparationCredential(user.ownerId, token);
+      } else credential = selectionCredential(user.ownerId, token);
       const session = user.sessions.find(session => session.hash === digest(token))!;
       if (session.preparationHash !== digest(credential) || current.ownerId !== user.ownerId) {
         session.preparationHash = digest(credential); await this.save(state);
@@ -276,12 +268,12 @@ export class UserManager {
       if (user.ownerId) {
         await removeUploads(user.ownerId);
         await this.preparations.deleteOwner(user.ownerId);
-        const directory = join(this.directory, 'preparations', 'bindings');
-        const names = await readdir(directory).catch(error => { if (error.code === 'ENOENT') return []; throw error; });
-        for (const name of names.filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
-          const path = join(directory, name); if ((await stat(path)).size > 512) throw new AppError(503, 'A legacy user binding could not be read. Retry deletion after checking storage.');
-          const binding = z.object({ schema: z.literal(1), ownerId: uuid }).strict().parse(JSON.parse(await readFile(path, 'utf8')));
-          if (binding.ownerId === user.ownerId) await removePrivateFile(directory, name);
+        const directory = bindingDirectory(this.directory);
+        for (const name of (await listDirectory(directory)).filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
+          let ownerId: string | undefined;
+          try { ownerId = await readBinding(this.directory, name.slice(0, -'.json'.length)); }
+          catch { throw new AppError(503, 'A legacy user binding could not be read. Retry deletion after checking storage.'); }
+          if (ownerId === user.ownerId) await removePrivateFile(directory, name);
         }
       }
       const state = structuredClone(this.state); state.users = state.users.filter(user => user.id !== id);

@@ -1,12 +1,19 @@
 import { createHash } from 'node:crypto';
-import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from './model.js';
 import type { PreparationManager } from './preparations.js';
-import { writePrivateJson } from './store.js';
+import { readPrivateJson, writePrivateJson } from './store.js';
 
 const bindingSchema = z.object({ schema: z.literal(1), ownerId: z.string().uuid() }).strict();
+export const bindingDirectory = (dataDirectory: string) => join(dataDirectory, 'preparations', 'bindings');
+/** A legacy participant binding's owner, keyed by the credential's SHA-256 hex digest. */
+export async function readBinding(dataDirectory: string, key: string): Promise<string | undefined> {
+  return (await readPrivateJson(join(bindingDirectory(dataDirectory), `${key}.json`), bindingSchema, 512))?.ownerId;
+}
+/** Private-list credential derived from a browser session; never stored or sent in clear. */
+export const selectionCredential = (ownerId: string, session: string) =>
+  `${ownerId}.${createHash('sha256').update(`aoty-selections:${session}`).digest('base64url')}`;
 
 /** One durable private association per authenticated browser participant.
  * No names, user-selectable IDs, recovery keys, or raw credentials are stored. */
@@ -23,20 +30,10 @@ export class PreparationIdentity {
   }
 
   private async resolve(key: string, member: string, previous: string) {
-    const directory = join(this.directory, 'preparations', 'bindings');
-    const filename = `${key}.json`;
     let ownerId: string | undefined;
-    try {
-      const file = await open(join(directory, filename), 'r');
-      try {
-        if ((await file.stat()).size > 512) throw new Error('Oversized binding.');
-        ownerId = bindingSchema.parse(JSON.parse(await file.readFile('utf8'))).ownerId;
-      } finally { await file.close(); }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new AppError(503, 'Your selections could not be loaded. Nothing was reset.');
-    }
-    const secret = createHash('sha256').update(`aoty-selections:${member}`).digest('base64url');
-    if (ownerId) return this.manager.bindParticipant(ownerId, `${ownerId}.${secret}`);
+    try { ownerId = await readBinding(this.directory, key); }
+    catch { throw new AppError(503, 'Your selections could not be loaded. Nothing was reset.'); }
+    if (ownerId) return this.manager.bindParticipant(ownerId, selectionCredential(ownerId, member));
 
     // Adopt only a list proved by its existing private cookie, never by nickname.
     if (previous) ownerId = await this.manager.ownerForBinding(previous);
@@ -45,9 +42,9 @@ export class PreparationIdentity {
       bytes[6] = (bytes[6]! & 15) | 64; bytes[8] = (bytes[8]! & 63) | 128;
       const hex = bytes.toString('hex'); ownerId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
       // Deterministic creation makes retries safe even if the binding write fails.
-      await this.manager.bindParticipant(ownerId, `${ownerId}.${secret}`, true);
+      await this.manager.bindParticipant(ownerId, selectionCredential(ownerId, member), true);
     }
-    await writePrivateJson(directory, filename, { schema: 1, ownerId });
-    return this.manager.bindParticipant(ownerId, `${ownerId}.${secret}`);
+    await writePrivateJson(bindingDirectory(this.directory), `${key}.json`, { schema: 1, ownerId });
+    return this.manager.bindParticipant(ownerId, selectionCredential(ownerId, member));
   }
 }

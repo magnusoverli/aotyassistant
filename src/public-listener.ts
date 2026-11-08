@@ -1,12 +1,12 @@
 import express, { type Request, type Response } from 'express';
 import type { IncomingMessage, RequestListener } from 'node:http';
 import { grantLifetime, type OnlineAccess } from './online-access.js';
+import { RateLimiter, isLoopbackPeer, readCookie } from './http-guards.js';
 
 const contexts = new WeakMap<IncomingMessage, { origin: string; session: string }>();
 export const publicContext = (request: IncomingMessage) => contexts.get(request);
 const cookieName = '__Host-aoty_online';
-export const onlineCookie = (req: IncomingMessage) => req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) ?? '';
-const cookie = onlineCookie;
+export const onlineCookie = (req: IncomingMessage) => readCookie(req, cookieName);
 const readRoutes = [
   /^\/api\/browser-speaker\/(?:info|session\/[a-f0-9-]{36})$/,
   /^\/api\/participant\/browser-speaker\/session\/[a-f0-9-]{36}$/,
@@ -40,22 +40,15 @@ export function publicRoute(method: string, path: string) {
 export function publicListener(handler: RequestListener, online: OnlineAccess) {
   const gateway = express(); gateway.disable('x-powered-by');
   const active = new Set<Response>();
-  const rates = new Map<string, { at: number; count: number }>();
-  const limited = (key: string, maximum: number) => {
-    const now = Date.now();
-    for (const [key, entry] of rates) if (now - entry.at >= 60_000) rates.delete(key);
-    const entry = rates.get(key) ?? { at: now, count: 0 };
-    if (!rates.has(key) && rates.size >= 2048) return true;
-    entry.count++; rates.set(key, entry); return entry.count > maximum;
-  };
+  const rates = new RateLimiter(2048);
+  const limited = (key: string, maximum: number) => { rates.prune(); return rates.hit(key, maximum) !== 'ok'; };
   const revoke = () => { for (const response of active) response.destroy(); };
   online.on('revoke', revoke);
   gateway.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY',
       'Strict-Transport-Security': 'max-age=31536000', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" });
     const origin = online.origin;
-    const peer = req.socket.remoteAddress?.replace(/^::ffff:/, '');
-    if (!origin || !['127.0.0.1', '::1'].includes(peer ?? '') || req.headers.host !== new URL(origin).host) { res.status(503).json({ error: 'Online invitations are unavailable. Ask the host to check the connection.' }); return; }
+    if (!origin || !isLoopbackPeer(req) || req.headers.host !== new URL(origin).host) { res.status(503).json({ error: 'Online invitations are unavailable. Ask the host to check the connection.' }); return; }
     if (active.size >= 256) { res.status(503).json({ error: 'The room is busy. Try again shortly.' }); return; }
     active.add(res); res.once('close', () => active.delete(res));
     const path = req.url.split('?')[0]!;
@@ -67,7 +60,7 @@ export function publicListener(handler: RequestListener, online: OnlineAccess) {
       if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') { res.status(403).json({ error: 'Cross-origin controls are not allowed.' }); return; }
       if (limited('writes', 600)) { res.status(429).set('Retry-After', '60').json({ error: 'Too many requests. Wait a minute.' }); return; }
     }
-    const grant = cookie(req);
+    const grant = onlineCookie(req);
     const authorized = online.authorized(grant);
     if (authorized) {
       const expiry = setTimeout(() => res.destroy(), Math.max(1, Number(grant.split('.')[0]) - Date.now())); expiry.unref();

@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { MusicAssistantTransport } from '../src/music-assistant-transport.js';
 import { MusicAssistantClient } from '../src/music-assistant.js';
-import { maOperation } from '../src/ma-operation.js';
+import { operation } from '../src/operation.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 import { MusicAssistantEvents } from '../src/music-assistant-events.js';
 
@@ -34,7 +34,7 @@ test('HTTP connections are reused per lane, with independent capacity for contro
   assert.equal(remote.connections, 2, 'Catalogue requests have their own pool.');
   remote.delayImages(300);
   const artwork = Promise.all(Array.from({ length: 8 }, () => transport.read(`/imageproxy/${'a'.repeat(64)}`, undefined, {}, true)));
-  await maOperation('control-capacity', () => transport.read('/api', 'players/all'), 200);
+  await operation('control-capacity', () => transport.read('/api', 'players/all'), 200);
   await artwork;
   transport.close(); await assert.rejects(transport.read('/info'), /closed/);
 });
@@ -83,7 +83,7 @@ test('cancelling a catalogue read aborts its upstream request without retrying i
   server.listen(0, '127.0.0.1'); await once(server, 'listening'); t.after(() => { server.closeAllConnections(); server.close(); });
   const transport = new MusicAssistantTransport(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, 'SECRET'); t.after(() => transport.close());
   const controller = new AbortController();
-  const reading = maOperation('browse', () => transport.read('/api', 'music/search', {}), 12_000, controller.signal);
+  const reading = operation('browse', () => transport.read('/api', 'music/search', {}), 12_000, controller.signal);
   const rejected = assert.rejects(reading); await waiting; controller.abort(); await rejected; await closed;
   assert.equal(requests, 1);
 });
@@ -94,7 +94,7 @@ test('opt-in timings correlate commands and include no token, URI, arguments or 
   const logs: string[] = []; t.mock.method(console, 'info', (value: string) => logs.push(value));
   const previous = process.env.AOTY_MA_TIMINGS; process.env.AOTY_MA_TIMINGS = '1';
   t.after(() => { if (previous === undefined) delete process.env.AOTY_MA_TIMINGS; else process.env.AOTY_MA_TIMINGS = previous; });
-  await maOperation('play', () => transport.read('/api', 'music/item_by_uri', { uri: remote.track.uri }));
+  await operation('play', () => transport.read('/api', 'music/item_by_uri', { uri: remote.track.uri }));
   assert.equal(logs.length, 1);
   const report = JSON.parse(logs[0]!); assert.equal(report.action, 'play'); assert.equal(report.ok, true);
   assert.ok(report.stages.some((s: { stage: string }) => s.stage === 'music/item_by_uri'));

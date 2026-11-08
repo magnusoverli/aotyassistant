@@ -16,7 +16,7 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   const port = (server.address() as AddressInfo).port;
   const base = `http://127.0.0.1:${port}`;
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: base,
-    dataDir: await mkdtemp('/tmp/opencode/aoty-http-'), mode: 'demo', demoSeconds: 3600 };
+    dataDir: await mkdtemp('/tmp/opencode/aoty-http-'), demoSeconds: 3600 };
   const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl);
   await engine.init();
   const { app, close } = createApp(engine, config, 'web');

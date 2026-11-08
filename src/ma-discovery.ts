@@ -1,7 +1,8 @@
 import { Bonjour } from 'bonjour-service';
 import { isIP } from 'node:net';
 import { z } from 'zod';
-import { MusicAssistantTransport, musicAssistantUrl, isAllowedAddress } from './music-assistant-transport.js';
+import { MusicAssistantTransport } from './music-assistant-transport.js';
+import { bareHostname, musicAssistantUrl, isAllowedAddress } from './lan-network.js';
 import { supportsPlaybackSchema } from './music-assistant-policy.js';
 
 export const serverInfoSchema = z.object({ server_id: z.string().min(1).max(200), server_version: z.string().max(80),
@@ -48,7 +49,7 @@ export async function discoverServers(origins: string[], read = readServerInfo):
       const advertised = musicAssistantUrl.safeParse(info.base_url);
       if (advertised.success && (advertised.data === url || (await read(advertised.data)).server_id === info.server_id)) browserUrl = advertised.data;
       // IP/ .local URLs are usable candidates for browsers; private Docker DNS is not.
-      const hostname = new URL(url).hostname.replace(/^\[|\]$/g, '');
+      const hostname = bareHostname(new URL(url).hostname);
       if (!browserUrl && (hostname.endsWith('.local') || isIP(hostname) && !/^172\.30\.(32|33)\./.test(hostname))) browserUrl = url;
       return { id: info.server_id, name: info.name || info.server_name || 'Music Assistant', url, browserUrl, version: info.server_version,
         ready: info.onboard_done !== false, playbackCompatible: supportsPlaybackSchema(info.schema_version) } satisfies DiscoveredServer;

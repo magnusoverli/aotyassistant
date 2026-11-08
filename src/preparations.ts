@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { AppError } from './model.js';
 import { writePrivateJson, removePrivateFile } from './store.js';
 import { KeyedSerialQueue } from './serial.js';
+import { BoundedCache } from './bounded-cache.js';
 import { diagnostics } from './diagnostics.js';
 import { recordingDescriptorSchema, sameRecordingEvidence } from './recording-identity.js';
 
@@ -78,17 +79,20 @@ export interface PreparationStore {
   save(state: PreparationState): Promise<void>;
   remove?(ownerId: string): Promise<void>;
 }
+/** Whether a saved selection can play through the current connection. */
+export function savedSourceAvailable(integrations?: { configured: boolean; uploadPlaybackAvailable: boolean; sourceBindingId: string | null }) {
+  return (selection: SavedSelection) => selection.source === 'demo' ? !integrations?.configured
+    : selection.source === 'upload' ? Boolean(integrations?.uploadPlaybackAvailable) : selection.sourceBindingId === integrations?.sourceBindingId;
+}
+
 export class PreparationFileStore implements PreparationStore {
   private directory: string;
-  private cache = new Map<string, { stamp: string; state: PreparationState; bytes: number }>();
-  private cachedBytes = 0;
+  private cache = new BoundedCache<{ stamp: string; state: PreparationState }>(64, maxPreparationBytes);
   constructor(dataDirectory: string) { this.directory = join(dataDirectory, 'preparations'); }
   async load(ownerId: string): Promise<PreparationState | null> {
     return structuredClone(await this.snapshot(ownerId));
   }
-  private forget(ownerId: string) {
-    this.cachedBytes -= this.cache.get(ownerId)?.bytes ?? 0; this.cache.delete(ownerId);
-  }
+  private forget(ownerId: string) { this.cache.delete(ownerId); }
   /** Immutable validated snapshots; stat on every access detects replacement/corruption and revocation. */
   async snapshot(ownerId: string): Promise<PreparationState | null> {
     ownerId = input(id, ownerId);
@@ -98,7 +102,7 @@ export class PreparationFileStore implements PreparationStore {
       const info = await fileStat(filename);
       if (info.size > BigInt(maxPreparationBytes)) throw new Error('Oversized preparation state.');
       const cached = this.cache.get(ownerId);
-      if (cached?.stamp === stamp(info)) { this.cache.delete(ownerId); this.cache.set(ownerId, cached); return cached.state; }
+      if (cached?.stamp === stamp(info)) return cached.state;
       this.forget(ownerId);
       const file = await open(filename, 'r');
       try {
@@ -107,9 +111,7 @@ export class PreparationFileStore implements PreparationStore {
         const state = preparationStateSchema.parse(JSON.parse(await file.readFile('utf8')));
         if (state.ownerId !== ownerId || stamp(before) !== stamp(await file.stat({ bigint: true }))) throw new Error('Mismatching or changing owner file.');
         freezeSnapshot(state);
-        const bytes = Number(before.size);
-        this.cache.set(ownerId, { stamp: stamp(before), state, bytes }); this.cachedBytes += bytes;
-        while (this.cache.size > 64 || this.cachedBytes > maxPreparationBytes) this.forget(this.cache.keys().next().value!);
+        this.cache.set(ownerId, { stamp: stamp(before), state }, { size: Number(before.size) });
         return state;
       } finally { await file.close(); }
     } catch (error) {

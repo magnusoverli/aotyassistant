@@ -2,6 +2,7 @@ import type { View } from '../src/model';
 
 export const routes = { home: '/', host: '/host', settings: '/host/settings', participant: '/participant', join: '/join', display: '/display' } as const;
 export type Page = keyof typeof routes;
+export const pageTitles: Record<Page, string> = { home: 'Home', join: 'Join room', participant: 'Your music', display: 'Room display', host: 'Host desk', settings: 'Settings' };
 export const pageForPath = (path: string): Page => (Object.keys(routes) as Page[]).find(page => routes[page] === (path.replace(/\/+$/, '') || '/')) ?? 'home';
 
 /** Preserve deep links without replacing the document that owns browser audio. */
@@ -20,13 +21,8 @@ export type NavigationItem = { id: string; text: string; href: string; current: 
 
 export function headerModel(page: Page, state: HeaderState) {
   const view = state.view;
-  const primary: NavigationItem[] = [
-    { id: 'host', text: 'Host desk', href: routes.host, current: page === 'host' },
-    { id: 'settings', text: 'Settings', href: routes.settings, current: page === 'settings' },
-    { id: 'participant', text: 'Your music', href: routes.participant, current: page === 'participant' },
-    { id: 'display', text: 'Room display', href: routes.display, current: page === 'display' },
-  ];
-  const subtitle = page === 'participant' && view?.me ? view.me.nickname : page === 'display' ? 'Room display'
-    : page === 'settings' ? 'Settings' : page === 'host' ? 'Host desk' : page === 'join' ? 'Join room' : page === 'participant' ? 'Your music' : 'Home';
+  const primary: NavigationItem[] = (['host', 'settings', 'participant', 'display'] as const)
+    .map(id => ({ id, text: pageTitles[id], href: routes[id], current: page === id }));
+  const subtitle = page === 'participant' && view?.me ? view.me.nickname : pageTitles[page];
   return { primary, subtitle };
 }

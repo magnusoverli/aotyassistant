@@ -10,10 +10,12 @@ import { emptyHints } from './supervisor.js';
 import { EventStreams } from './event-streams.js';
 
 const revision = z.number().int().nonnegative();
+const idleSetup = () => ({ status: 'idle', message: 'Enter the Music Assistant address below.', supervisor: emptyHints(), servers: [] });
 
 /** Host integration/addressing routes. Global HTTP origin/content-type policy is mounted first. */
 export function mountIntegrations(app: Express, engine: Engine, integrations: IntegrationManager, setup?: SetupManager) {
   const streams = new EventStreams(100, 'Too many Settings connections. Close unused tabs and try again.');
+  // Every integration change reaches room views through this one subscription.
   const unsubscribe = integrations.subscribe(() => engine.emit('change', 'output'));
   integrations.startMonitoring();
   app.get('/api/host/integrations/events', (_req, res) => {
@@ -31,10 +33,10 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
     stream.every(() => { send(); stream.heartbeat(); }, 15_000);
     integrations.refreshOutputSoon();
   });
-  app.get('/api/host/setup', (_req, res) => res.json(setup?.view() ?? { status: 'idle', message: 'Enter the Music Assistant address below.', supervisor: emptyHints(), servers: [] }));
+  app.get('/api/host/setup', (_req, res) => res.json(setup?.view() ?? idleSetup()));
   app.post('/api/host/setup/refresh', async (req, res) => {
     body(req, z.object({}).strict());
-    res.json(setup ? await setup.refresh() : { status: 'idle', message: 'Enter the Music Assistant address below.', supervisor: emptyHints(), servers: [] });
+    res.json(setup ? await setup.refresh() : idleSetup());
   });
   app.get('/api/host/addressing', (_req, res) => res.json(integrations.addressing()));
   app.post('/api/host/addressing/guest', async (req, res) => {
@@ -50,25 +52,23 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
   app.get('/api/host/integrations/destinations', async (_req, res) => res.json(await integrations.check(integrations.view().revision)));
   app.post('/api/host/integrations/save', async (req, res) => {
     const input = body(req, z.object({ url: musicAssistantUrl, accessToken: maToken.optional(), revision }).strict());
-    const result = await integrations.save(input.url, input.accessToken, input.revision);
-    engine.emit('change'); res.json(result);
+    res.json(await integrations.save(input.url, input.accessToken, input.revision));
   });
   app.post('/api/host/integrations/media-origin', async (req, res) => {
     const input = body(req, z.object({ origin: applicationOrigin.nullable(), revision }).strict());
-    const view = await integrations.saveMediaOrigin(input.origin, input.revision); engine.emit('change'); res.json(view);
+    res.json(await integrations.saveMediaOrigin(input.origin, input.revision));
   });
   app.post('/api/host/integrations/check', async (req, res) => {
     const input = body(req, z.object({ revision }).strict()); res.json(await integrations.check(input.revision));
   });
   app.post('/api/host/integrations/destination', async (req, res) => {
     const input = body(req, z.object({ id: z.string().min(1).max(500), revision }).strict());
-    const result = await integrations.selectDestination(input.id, input.revision); engine.emit('change'); res.json(result);
+    res.json(await integrations.selectDestination(input.id, input.revision));
   });
   for (const action of ['clear', 'recover'] as const) {
     app.post(`/api/host/integrations/${action}`, async (req, res) => {
       const input = body(req, z.object({ revision }).strict());
-      const result = action === 'clear' ? await integrations.clear(input.revision) : await integrations.recoverPlayback(input.revision);
-      engine.emit('change'); res.json(result);
+      res.json(action === 'clear' ? await integrations.clear(input.revision) : await integrations.recoverPlayback(input.revision));
     });
   }
   return () => { unsubscribe(); integrations.stopMonitoring(); streams.close(); };

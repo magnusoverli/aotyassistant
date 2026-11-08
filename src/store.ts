@@ -1,6 +1,7 @@
-import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises';
+import { mkdir, open, readdir, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { z } from 'zod';
 import { stateSchema, type State } from './model.js';
 import { durability } from './backup.js';
 import { stage } from './operation.js';
@@ -11,18 +12,39 @@ export class PersistenceError extends Error {
 
 export interface Store { load(): Promise<State>; save(state: State): Promise<void> }
 
+const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT';
+
+/** Bounded, validated read of one application-owned JSON file. Only a missing file returns
+ * undefined; oversized, unreadable or invalid records throw and are never replaced. */
+export async function readPrivateJson<T extends z.ZodTypeAny>(path: string, schema: T, maxBytes: number): Promise<z.infer<T> | undefined> {
+  let file;
+  try { file = await open(path, 'r'); }
+  catch (error) { if (missing(error)) return undefined; throw error; }
+  try {
+    if ((await file.stat()).size > maxBytes) throw new Error('Persistent record exceeds its readable size limit.');
+    return schema.parse(JSON.parse(await file.readFile('utf8')));
+  } finally { await file.close(); }
+}
+
+/** fsync a directory so completed renames/deletions survive power loss. */
+export async function syncDirectory(path: string, allowMissing = false): Promise<void> {
+  const handle = await open(path, 'r').catch(error => { if (allowMissing && missing(error)) return undefined; throw error; });
+  if (handle) { try { await handle.sync(); } finally { await handle.close(); } }
+}
+
+/** Directory entries, treating a directory that was never created as empty. */
+export async function listDirectory(path: string): Promise<string[]> {
+  return readdir(path).catch(error => { if (missing(error)) return []; throw error; });
+}
+
 /** Single-process store. Each commit is an atomic, fsynced replacement, never a partial JSON write. */
 export class FileStore implements Store {
   constructor(private directory: string) {}
   async load(): Promise<State> {
-    try {
-      const value = JSON.parse(await readFile(join(this.directory, 'state.json'), 'utf8'));
-      return stateSchema.parse(value);
-    }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { schema: 3, room: null };
-      throw new Error('Persistent state could not be loaded. Check the data directory; it was not overwritten.');
-    }
+    let state: State | undefined;
+    try { state = await readPrivateJson(join(this.directory, 'state.json'), stateSchema, 8 * 1024 * 1024); }
+    catch { throw new Error('Persistent state could not be loaded. Check the data directory; it was not overwritten.'); }
+    return state ?? { schema: 3, room: null };
   }
   async save(state: State): Promise<void> {
     await writePrivateJson(this.directory, 'state.json', stateSchema.parse(state));
@@ -37,9 +59,8 @@ export async function writePrivateJson(directory: string, filename: string, data
 /** Idempotent deletion with the same backup and durability guarantees as JSON commits. */
 export async function removePrivateFile(directory: string, filename: string): Promise<void> {
   await durability.run(async () => {
-    await unlink(join(directory, filename)).catch(error => { if (error.code !== 'ENOENT') throw error; });
-    const handle = await open(directory, 'r').catch(error => { if (error.code === 'ENOENT') return undefined; throw error; });
-    if (handle) { try { await handle.sync(); } finally { await handle.close(); } }
+    await unlink(join(directory, filename)).catch(error => { if (!missing(error)) throw error; });
+    await syncDirectory(directory, true);
   });
 }
 async function commitPrivateJson(directory: string, filename: string, data: unknown, maxBytes: number): Promise<void> {
@@ -54,9 +75,6 @@ async function commitPrivateJson(directory: string, filename: string, data: unkn
       await handle.sync();
     } finally { await handle.close(); }
     await rename(temporary, join(directory, filename));
-    try {
-      const directoryHandle = await open(directory, 'r');
-      try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
-    } catch { throw new PersistenceError('uncertain'); }
+    await syncDirectory(directory).catch(() => { throw new PersistenceError('uncertain'); });
   } finally { await unlink(temporary).catch(() => {}); }
 }

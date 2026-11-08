@@ -1,16 +1,16 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type Track, type ListeningOrderView, type UserProfile } from './model.js';
+import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
 import { SerialQueue } from './serial.js';
-import { maBackground, maOperation, maRemaining, maStage } from './ma-operation.js';
-import { playbackResolution } from './operation.js';
-import { AUTO_REVEAL_FRACTION, type PlaybackSettings } from './model.js';
+import { background, operation, playbackResolution, remaining, stage } from './operation.js';
+import { artworkPath, artworkReference } from './catalogue-references.js';
 
 const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+const defaultAutoReveal = { enabled: true, revision: 0 };
 export type EngineChange = 'room' | 'playback' | 'output';
 
 export class Engine extends EventEmitter {
@@ -29,6 +29,7 @@ export class Engine extends EventEmitter {
 
   attachUsers(resolve: (credential: string) => UserProfile | undefined) { this.userForSession = resolve; }
   identityParticipants() { return structuredClone(this.room().participants); }
+  hasLegacyParticipants() { return this.room().participants.some(person => !person.userId); }
   async linkUsers(links: { participantId: string; userId: string }[]) {
     if (!links.length) return;
     await this.transaction(async state => {
@@ -68,24 +69,37 @@ export class Engine extends EventEmitter {
       const affectedId = this.startingPlayback?.id === id ? this.startingPlayback.previousId : id;
       const affectedTurn = this.startingPlayback?.id === id ? this.startingPlayback.turnId : this.state.room?.turnId;
       this.concealPlayback = true; this.emit('change');
-      void maBackground(() => this.serial(async () => {
-        if (!affectedId || this.state.room?.playback?.id !== affectedId || this.state.room.turnId !== affectedTurn) return;
-        const next = structuredClone(this.state); next.room!.playback = null; next.room!.revision++;
-        try { await this.store.save(next); this.state = next; } catch { this.storageHealthy = false; }
-        this.emit('change');
-      })).catch(() => { this.storageHealthy = false; this.emit('change'); });
+      // The app already lost this playback; a failed save must not touch other audio.
+      void this.commitInBackground(room => {
+        if (!affectedId || room.playback?.id !== affectedId || room.turnId !== affectedTurn) return false;
+        room.playback = null;
+      }, { stopOnFailure: false }).catch(this.failClosed);
     };
     adapter.onStatus = (id, status) => {
       const epoch = this.controlEpoch;
-      void maBackground(() => this.serial(async () => {
-        if (this.state.room?.playback?.id !== id || this.state.room.playback.status === 'stopped' ||
-          this.state.room.playback.status === status || epoch !== this.controlEpoch) return;
-        const next = structuredClone(this.state); next.room!.playback!.status = status; next.room!.revision++;
-        try { await this.store.save(next); this.state = next; }
-        catch { this.storageHealthy = false; this.concealPlayback = true; await this.adapter.control('stop').catch(() => {}); }
-        this.emit('change');
-      })).catch(() => { this.storageHealthy = false; this.concealPlayback = true; this.emit('change'); });
+      void this.commitInBackground(room => {
+        if (room.playback?.id !== id || room.playback.status === 'stopped' || room.playback.status === status || epoch !== this.controlEpoch) return false;
+        room.playback.status = status;
+      }).catch(this.failClosed);
     };
+  }
+  /** A playback change that could not even be queued leaves saved state uncertain. */
+  private failClosed = () => { this.storageHealthy = false; this.emit('change'); };
+  /** Saves a background room change; `apply` returns false to skip. */
+  private commitInBackground(apply: (room: Room) => boolean | void, options?: { stopOnFailure: boolean }): Promise<boolean> {
+    return background(() => this.serial(async () => {
+      const next = structuredClone(this.state);
+      if (apply(next.room!) === false) return false;
+      next.room!.revision++;
+      return this.commit(next, options);
+    }));
+  }
+  /** The only place room state is persisted. A failed save disables controls and, unless
+   * the caller opts out, stops the app-owned song so it cannot continue unrecorded. */
+  private async commit(next: State, { stopOnFailure = true } = {}): Promise<boolean> {
+    try { await this.store.save(next); this.state = next; return true; }
+    catch { this.storageHealthy = false; if (stopOnFailure) await this.adapter.control('stop').catch(() => {}); return false; }
+    finally { this.emit('change'); }
   }
   get ready(): boolean { return this.adapter.connected && this.storageHealthy; }
   get playbackAvailable(): boolean { return this.ready && this.catalogueState.playbackAvailable; }
@@ -94,10 +108,10 @@ export class Engine extends EventEmitter {
   beginShutdown() { this.stopping = true; }
   async drain() { await this.audioQueue.drain(); await this.queue.drain(); }
   setGuestOrigin(origin: string) { this.guestUrl = origin; this.emit('change'); }
-  playbackSettings(): PlaybackSettings { return { ...(this.room().autoReveal ?? { enabled: true, revision: 0 }) }; }
+  playbackSettings(): PlaybackSettings { return { ...(this.room().autoReveal ?? defaultAutoReveal) }; }
   async setAutoReveal(enabled: boolean, revision: number): Promise<PlaybackSettings> {
     await this.transaction(async state => {
-      const room = this.room(state); const current = room.autoReveal ?? { enabled: true, revision: 0 };
+      const room = this.room(state); const current = room.autoReveal ?? defaultAutoReveal;
       if (current.revision !== revision) throw new AppError(409, 'Playback settings changed. Refresh them before trying again.');
       room.autoReveal = { enabled, revision: current.revision + 1 };
     });
@@ -115,14 +129,12 @@ export class Engine extends EventEmitter {
     if (this.revealCheckPending || !this.autoRevealEligible()) return;
     const id = this.state.room!.playback!.id;
     this.revealCheckPending = true;
-    void maBackground(() => this.serial(async () => {
-      // Recheck identity, setting, ownership and progress after any queued work.
-      if (!this.autoRevealEligible(id)) return;
-      const next = structuredClone(this.state); next.room!.playback!.revealed = true; next.room!.revision++;
-      try { await this.store.save(next); this.state = next; }
-      catch { this.storageHealthy = false; }
-      this.emit('change');
-    })).catch(() => {}).finally(() => { this.revealCheckPending = false; });
+    // Recheck identity, setting, ownership and progress after any queued work. A failed
+    // reveal keeps the song playing; one that cannot be queued retries on the next sample.
+    void this.commitInBackground(room => {
+      if (!this.autoRevealEligible(id)) return false;
+      room.playback!.revealed = true;
+    }, { stopOnFailure: false }).catch(() => {}).finally(() => { this.revealCheckPending = false; });
   }
   private get catalogueState() {
     return this.catalogue?.configured ? { source: 'music-assistant' as const, playbackAvailable: this.catalogue.playbackAvailable ?? false, revision: this.catalogue.catalogueRevision ?? this.catalogue.configurationRevision ?? 0 }
@@ -141,27 +153,27 @@ export class Engine extends EventEmitter {
     return this.queue.run(work, 'engine');
   }
   private audio<T>(work: () => Promise<T>) {
-    return this.audioQueue.run(() => { maRemaining(Infinity); return work(); }, 'engine-playback');
+    return this.audioQueue.run(() => { remaining(Infinity); return work(); }, 'engine-playback');
   }
   private inspect<T>(work: (room: Room) => T) {
     return this.serial(async () => {
-      maRemaining(Infinity);
+      remaining(Infinity);
       if (!this.ready) throw new AppError(503, 'Playback or storage connectivity is uncertain. Controls are disabled.');
       return work(this.room());
     });
   }
+  /** Commits a changed room. An unchanged room (e.g. an existing member rejoining) is neither saved nor re-versioned. */
   private async transaction<T>(work: (state: State) => Promise<T>, playback = false): Promise<T> {
     return this.serial(async () => {
-      maRemaining(Infinity);
+      remaining(Infinity);
       if (!this.storageHealthy || playback && !this.adapter.connected) throw new AppError(503, 'Playback or storage connectivity is uncertain. Controls are disabled.');
+      const before = JSON.stringify(this.state.room);
       const state = structuredClone(this.state); const result = await work(state);
-      const room = this.room(state); room.revision++; roomSchema.parse(room);
-      try { await this.store.save(state); }
-      catch {
-        this.storageHealthy = false; await this.adapter.control('stop').catch(() => {}); this.emit('change');
-        throw new AppError(503, 'State could not be saved. Controls are disabled; restart after fixing storage.');
-      }
-      this.state = state; this.emit('change'); return result;
+      const room = this.room(state);
+      if (JSON.stringify(room) === before) return result;
+      room.revision++; roomSchema.parse(room);
+      if (!await this.commit(state)) throw new AppError(503, 'State could not be saved. Controls are disabled; restart after fixing storage.');
+      return result;
     });
   }
   private room(state = this.state): Room {
@@ -191,25 +203,29 @@ export class Engine extends EventEmitter {
     room.currentId = room.active.length ? room.active[(index + 1) % room.active.length]! : null;
     room.turnId = randomUUID(); room.playback = null;
   }
-  listeningOrder(): ListeningOrderView {
-    const room = this.room();
+  /** Public names by participant ID; never credentials or selections. */
+  private people(room: Room) {
     const people = new Map(room.participants.map(({ id, nickname }) => [id, { id, nickname }]));
-    return { roomId: room.id, revision: room.revision, current: people.get(room.currentId ?? '') ?? null,
-      next: room.currentId && room.active.length ? people.get(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) ?? null : null,
-      rotation: room.active.map(id => people.get(id)!), playbackStatus: this.playbackStatus(room) };
+    return (id: string | null) => id ? people.get(id) ?? null : null;
+  }
+  private nextId(room: Room) {
+    return room.currentId && room.active.length ? room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]! : null;
+  }
+  listeningOrder(): ListeningOrderView {
+    const room = this.room(); const person = this.people(room);
+    return { roomId: room.id, revision: room.revision, current: person(room.currentId), next: person(this.nextId(room)),
+      rotation: room.active.map(id => person(id)!), playbackStatus: this.playbackStatus(room) };
   }
   private onlineSharing?: () => { guestAccess: NonNullable<View['guestAccess']>; joinUrl?: string; displayUrl?: string } | undefined;
   setOnlineSharing(provider: NonNullable<Engine['onlineSharing']>) { this.onlineSharing = provider; }
   view(role: Role): View {
     const room = this.room();
     if (role.kind === 'participant') this.participant(role.credential, room);
-    const people = new Map(room.participants.map(p => [p.id, { id: p.id, nickname: p.nickname }]));
-    const person = (id: string | null) => id ? people.get(id) ?? null : null;
+    const person = this.people(room);
     const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id,
       playbackAvailable: this.playbackAvailable, playbackStatus: this.playbackStatus(room),
       ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
-      revision: room.revision, turnId: room.turnId, current: person(room.currentId),
-      next: room.currentId && room.active.length ? person(room.active[(room.active.indexOf(room.currentId) + 1) % room.active.length]!) : null,
+      revision: room.revision, turnId: room.turnId, current: person(room.currentId), next: person(this.nextId(room)),
       rotation: room.active.map(id => person(id)!), // Names/order only, never selections or credentials.
       ...(role.kind !== 'display' && this.adapter.issue ? { playbackIssue: this.adapter.issue,
         ...(this.adapter.problem ? { playbackProblem: { ...this.adapter.problem } } : {}) } : {}) };
@@ -229,7 +245,7 @@ export class Engine extends EventEmitter {
       const track = room.playback ? structuredClone(room.playback.track) : undefined;
       if (track && room.playback) {
         delete track.artworkIdentity; delete track.artistArtworkIdentity;
-        for (const kind of ['artwork', 'artistArtwork'] as const) if (track[kind]?.startsWith('/api/participant/artwork/')) track[kind] = `/api/display/artwork/${room.playback.id}/${kind}`;
+        for (const kind of ['artwork', 'artistArtwork'] as const) if (track[kind]?.startsWith(artworkPath)) track[kind] = `/api/display/artwork/${room.playback.id}/${kind}`;
       }
       const streamInfo = room.playback && this.ready && !this.concealPlayback && (base.playbackStatus === 'playing' || base.playbackStatus === 'paused')
         ? this.adapter.streamInfo?.(room.playback.id) : undefined;
@@ -268,9 +284,9 @@ export class Engine extends EventEmitter {
   displayArtwork(playbackId: string, kind: 'artwork' | 'artistArtwork') {
     const room = this.room();
     if (!this.ready || this.concealPlayback || !room.playback?.revealed || room.playback.id !== playbackId) throw new AppError(403, 'This artwork is not revealed.');
-    const url = room.playback.track[kind];
-    if (!url?.startsWith('/api/participant/artwork/')) throw new AppError(404, 'Artwork unavailable.');
-    return { reference: decodeURIComponent(url.slice('/api/participant/artwork/'.length)), context: `${room.id}:${room.currentId}` };
+    const reference = artworkReference(room.playback.track[kind]);
+    if (!reference) throw new AppError(404, 'Artwork unavailable.');
+    return { reference, context: `${room.id}:${room.currentId}` };
   }
   /** Backend-only input for encrypted prefetch; never exposes clear images early. */
   displayArtworkTarget() {
@@ -278,13 +294,13 @@ export class Engine extends EventEmitter {
     if (!room || !this.ready || this.concealPlayback || !playback || playback.status === 'stopped') return;
     const references: Partial<Record<'artwork' | 'artistArtwork', string>> = {};
     for (const kind of ['artwork', 'artistArtwork'] as const) {
-      const url = playback.track[kind];
-      if (url?.startsWith('/api/participant/artwork/')) references[kind] = decodeURIComponent(url.slice('/api/participant/artwork/'.length));
+      const reference = artworkReference(playback.track[kind]);
+      if (reference) references[kind] = reference;
     }
     return { playbackId: playback.id, context: `${room.id}:${room.currentId}`, references };
   }
   async setVolume(level: number, turnId: string | null, credential?: string, playbackId?: string, volumeRevision?: string) {
-    return maOperation('volume', () => this.audio(async () => {
+    return operation('volume', () => this.audio(async () => {
       await this.inspect(() => {
         if (!Number.isInteger(level) || level < 0 || level > 100) throw new AppError(400, 'Choose a volume from 0 to 100.');
         if ((this.state.room?.turnId ?? null) !== turnId) throw new AppError(409, 'The turn changed. Review the current volume.');
@@ -319,7 +335,7 @@ export class Engine extends EventEmitter {
     });
   }
   async advance(turnId: string, credential?: string): Promise<void> {
-    return maOperation('finish', () => this.audio(async () => {
+    return operation('finish', () => this.audio(async () => {
       const check = (room: Room) => {
         if (credential !== undefined) this.current(credential, turnId, room);
         if (room.turnId !== turnId) throw new AppError(409, 'The turn changed. Refresh your view and try again.');
@@ -334,7 +350,7 @@ export class Engine extends EventEmitter {
     const remove = (room: Room) => {
       room.active = room.active.filter(p => p !== id); room.participants = room.participants.filter(p => p.id !== id);
     };
-    return maOperation('remove', () => this.room().currentId !== id ? this.transaction(async state => {
+    return operation('remove', () => this.room().currentId !== id ? this.transaction(async state => {
       const room = this.room(state); this.expected(room, revision);
       if (!room.participants.some(p => p.id === id)) throw new AppError(404, 'Participant not found.');
       if (room.currentId === id) throw new AppError(409, 'The current participant changed. Review the listening order.');
@@ -353,9 +369,12 @@ export class Engine extends EventEmitter {
       });
     }));
   }
-  /** User access is revoked first; fence any join already committing before removing its seat. */
+  /** User access is revoked first; fence any join already committing before removing its seat.
+   * Only removing the current seat needs playback connectivity (to stop its song). */
   async removeUser(userId: string) {
-    const seat = await this.inspect(room => ({ person: room.participants.find(person => person.userId === userId), revision: room.revision }));
+    const seat = await this.serial(async () => {
+      const room = this.room(); return { person: room.participants.find(person => person.userId === userId), revision: room.revision };
+    });
     if (seat.person) await this.remove(seat.person.id, seat.revision);
   }
   async search(credential: string, _turnId: string, query: string): Promise<CatalogueSearch> {
@@ -383,11 +402,11 @@ export class Engine extends EventEmitter {
     return { ...result, playbackAvailable: this.catalogueState.playbackAvailable };
   }
   async play(credential: string, turnId: string, previousPlaybackId: string | null, trackId: string): Promise<void> {
-    await maOperation('play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolve(trackId, context)));
+    await operation('play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolve(trackId, context)));
   }
   async playPrepared(credential: string, turnId: string, previousPlaybackId: string | null, selection: SavedSelection, entryId: string): Promise<string> {
     if (!this.adapter.resolveSaved) throw new AppError(422, 'Saved-track playback is unavailable.');
-    return maOperation('prepared-play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolveSaved!(selection, context, `prepared:${entryId}`)));
+    return operation('prepared-play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolveSaved!(selection, context, `prepared:${entryId}`)));
   }
   private async playSelection(credential: string, turnId: string, previousPlaybackId: string | null, resolve: (context: string) => Promise<Track>): Promise<string> {
     return this.audio(async () => {
@@ -402,7 +421,7 @@ export class Engine extends EventEmitter {
         }
         return `${room.id}:${this.participant(credential, room).id}`;
       });
-      const track = await maStage('resolve', () => playbackResolution(() => resolve(context))); const id = randomUUID();
+      const track = await stage('resolve', () => playbackResolution(() => resolve(context))); const id = randomUUID();
       const concealed = this.concealPlayback; const epoch = this.invalidationEpoch;
       try {
         await this.inspect(room => {
@@ -440,7 +459,7 @@ export class Engine extends EventEmitter {
     return this.controlPlayback({ kind: 'host' }, turnId, playbackId, action);
   }
   private async controlPlayback(actor: Exclude<Role, { kind: 'display' }>, turnId: string, playbackId: string, action: 'pause' | 'resume' | 'stop'): Promise<void> {
-    return maOperation(action, () => this.audio(async () => {
+    return operation(action, () => this.audio(async () => {
       const check = (room: Room) => {
         if (actor.kind === 'participant') this.current(actor.credential, turnId, room);
         else {
@@ -478,9 +497,8 @@ export class Engine extends EventEmitter {
       await this.serial(async () => {
         if (!eligible()) return;
         const state = structuredClone(this.state); this.rotate(state.room!); state.room!.revision++;
-        try { await this.store.save(state); }
-        catch { this.storageHealthy = false; this.emit('change'); throw new AppError(503, 'Completion state could not be saved.'); }
-        this.state = state; this.emit('change');
+        // The song was already stopped above.
+        if (!await this.commit(state, { stopOnFailure: false })) throw new AppError(503, 'Completion state could not be saved.');
       });
     });
   }

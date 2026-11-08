@@ -6,7 +6,8 @@ import type { IntegrationManager } from './integrations.js';
 import { MusicAssistantClient } from './music-assistant.js';
 import { MusicAssistantTransport, musicAssistantUrl, maToken } from './music-assistant-transport.js';
 import { readServerInfo } from './ma-discovery.js';
-import { body, rawCookie } from './http-utils.js';
+import { body } from './http-utils.js';
+import { readCookie } from './http-guards.js';
 import { browserOrigin, ingressContext, requestBase } from './ingress.js';
 import { productName } from './product.js';
 
@@ -36,7 +37,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     if (browserUrl !== input.url && (await readInfo(browserUrl)).server_id !== info.server_id) throw new AppError(422, 'The login address points to a different Music Assistant server.');
     integrations.assertSetupRevision(input.revision);
     const state = random(); const browser = random(); const origin = browserOrigin(req, integrations.guestOrigin); const base = requestBase(req);
-    const oldBrowser = rawCookie(req, cookieName);
+    const oldBrowser = readCookie(req, cookieName);
     if (oldBrowser) for (const [key, tx] of transactions) if (tx.browserHash === digest(oldBrowser)) transactions.delete(key);
     if (transactions.size >= 32) throw new AppError(429, 'Too many pending connections. Try again later.');
     const expiresAt = now() + 10 * 60_000; const attemptId = randomUUID();
@@ -48,7 +49,7 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     res.json({ loginUrl: login.href, expiresAt, attemptId });
   });
   app.post('/api/host/auth/cancel', (req, res) => {
-    body(req, z.object({}).strict()); const browser = rawCookie(req, cookieName);
+    body(req, z.object({}).strict()); const browser = readCookie(req, cookieName);
     if (browser) for (const [key, tx] of transactions) if (tx.browserHash === digest(browser)) transactions.delete(key);
     res.clearCookie(cookieName, { path: `${requestBase(req)}/api/host/auth`, httpOnly: true, sameSite: 'lax', secure: browserOrigin(req, integrations.guestOrigin).startsWith('https:') });
     res.json({ cancelled: true });
@@ -58,10 +59,10 @@ export function mountAuthorization(app: Express, integrations: IntegrationManage
     const base = requestBase(req); let result = 'failed'; let attemptId: string | undefined; let minted: string | undefined; let transport: MusicAssistantTransport | undefined;
     try {
       prune(); const state = z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(req.query.state);
-      const tx = transactions.get(state); const browser = rawCookie(req, cookieName);
+      const tx = transactions.get(state); const browser = readCookie(req, cookieName);
       if (!tx) { result = 'expired'; throw new Error(); }
       const context = ingressContext(req);
-      if (!tx || !browser || digest(browser) !== tx.browserHash || tx.base !== base || tx.userId !== context?.userId ||
+      if (!browser || digest(browser) !== tx.browserHash || tx.base !== base || tx.userId !== context?.userId ||
         (context ? context.origin !== tx.origin : req.headers.host !== new URL(tx.origin).host)) throw new Error();
       transactions.delete(state); // Consume before network I/O: callbacks cannot race/replay.
       attemptId = tx.attemptId;

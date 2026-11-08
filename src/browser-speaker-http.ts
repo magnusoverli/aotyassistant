@@ -8,6 +8,7 @@ import { publicContext, onlineCookie } from './public-listener.js';
 import type { OnlineAccess } from './online-access.js';
 import { AppError } from './model.js';
 import { body } from './http-utils.js';
+import { directHosts, isLoopbackPeer } from './http-guards.js';
 import { browserAudioHealth } from './browser-audio-health.js';
 
 export function speakerContext(req: IncomingMessage, kind: SpeakerContext['kind'], guestOrigin: string, port: number, online?: OnlineAccess): SpeakerContext | undefined {
@@ -18,12 +19,11 @@ export function speakerContext(req: IncomingMessage, kind: SpeakerContext['kind'
   }
   if (kind === 'public') {
     const origin = online?.origin; const grant = onlineCookie(req);
-    const peer = req.socket.remoteAddress?.replace(/^::ffff:/, '');
-    if (!online || !origin || !['127.0.0.1', '::1'].includes(peer ?? '') || req.headers.host !== new URL(origin).host || !online.authorized(grant)) return;
+    if (!online || !origin || !isLoopbackPeer(req) || req.headers.host !== new URL(origin).host || !online.authorized(grant)) return;
     return { kind, origin, base: '', valid: () => online.origin === origin && online.authorized(grant) };
   }
   const host = req.headers.host;
-  if (![new URL(guestOrigin).host, `localhost:${port}`, `127.0.0.1:${port}`].includes(host ?? '')) return;
+  if (!directHosts(guestOrigin, port).includes(host ?? '')) return;
   const origin = host === new URL(guestOrigin).host ? guestOrigin : `http://${host}`;
   return { kind, origin, base: '', valid: () => true };
 }

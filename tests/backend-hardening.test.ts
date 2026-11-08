@@ -46,7 +46,7 @@ async function live(t: TestContext, afterSave = () => {}) {
 test('playback recovery leaves the watchdog live, membership/catalogue available, and audio ownership guarded', async t => {
   const f = await live(t); const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const http = createApp(f.engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: f.directory, mode: 'demo', demoSeconds: 30 }, 'web', f.manager);
+  const http = createApp(f.engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: f.directory, demoSeconds: 30 }, 'web', f.manager);
   server.on('request', http.app); t.after(() => { http.close(); server.closeAllConnections(); server.close(); });
   f.remote.failNextPlaybackVerification(); await assert.rejects(f.engine.play(f.credential, f.turn, null, f.track.id));
   f.remote.fail(false); await f.manager.check(f.manager.view().revision);

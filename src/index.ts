@@ -11,7 +11,7 @@ import { SetupManager } from './setup.js';
 import { SupervisorClient } from './supervisor.js';
 import { ingressListener } from './ingress.js';
 import { startBackupControl } from './backup.js';
-import { PreparationFileStore, PreparationManager } from './preparations.js';
+import { PreparationFileStore, PreparationManager, savedSourceAvailable } from './preparations.js';
 import { UploadAssets } from './uploads.js';
 import { drainOperations } from './operation.js';
 import { diagnostics } from './diagnostics.js';
@@ -34,8 +34,7 @@ try {
   const setup = new SetupManager(config, integrations, origin => engine.setGuestOrigin(origin),
     config.addon && process.env.SUPERVISOR_TOKEN ? new SupervisorClient(process.env.SUPERVISOR_TOKEN) : undefined);
   const preparationStore = new PreparationFileStore(config.dataDir);
-  const preparations = new PreparationManager(preparationStore, Date.now, selection => selection.source === 'demo' ? !integrations.configured
-    : selection.source === 'upload' ? integrations.uploadPlaybackAvailable : selection.sourceBindingId === integrations.sourceBindingId);
+  const preparations = new PreparationManager(preparationStore, Date.now, savedSourceAvailable(integrations));
   const uploads = new UploadAssets(config.dataDir, undefined, undefined, preparationStore);
   const connector = config.addon && process.env.TAILSCALE_BUNDLED === '1' ? new TailscaleConnector(config.dataDir) : undefined;
   const online = new OnlineAccess(config.dataDir, connector); await online.init();

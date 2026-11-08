@@ -8,7 +8,8 @@ import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './m
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 import { UpstreamError } from './upstream-error.js';
-import { maBudget } from './ma-operation.js';
+import { budget } from './operation.js';
+import { BoundedCache } from './bounded-cache.js';
 import { reportedStreamInfoSchema } from './stream-info.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
@@ -48,8 +49,9 @@ const searchTrackSchema = z.object({
 const mediaSchema = z.object({ item_id: z.string().min(1).max(2048), provider: z.string().min(1).max(200),
   name: z.string().min(1).max(1000), uri: z.string().max(4096).nullable().optional(), version: z.string().max(500).default(''), artist_type: z.string().max(100).optional(), ...imageFields, ...identityFields });
 const albumSchema = mediaSchema.extend({ year: z.number().int().nullable().optional(), artists: searchTrackSchema.shape.artists, album_type: z.string().max(100).optional() });
-type MediaRef = { kind: 'artist' | 'album' | 'track'; itemId: string; provider: string; sourceLabel: string; uri: string; version: string; expires: number; artwork?: string; artistArtwork?: string; available?: boolean; identity?: z.infer<typeof recordingEvidenceSchema> };
-type BrowseGroup = { kind: MediaRef['kind']; sources: string[]; expires: number };
+type MediaRef = { kind: 'artist' | 'album' | 'track'; itemId: string; provider: string; sourceLabel: string; uri: string; version: string; artwork?: string; artistArtwork?: string; available?: boolean; identity?: z.infer<typeof recordingEvidenceSchema> };
+type BrowseGroup = { kind: MediaRef['kind']; sources: string[] };
+const referenceLifetime = 12 * 60 * 60_000;
 type Media = z.infer<typeof mediaSchema>;
 const maxVariants = 1000;
 const maxBrowseSources = 8;
@@ -78,12 +80,12 @@ const volumePlayerSchema = z.object({ player_id: z.string(), available: z.boolea
 /** Music Assistant domain mapping. Network policy is owned by the transport. */
 export class MusicAssistantClient implements MusicAssistantReader {
   private events: MusicAssistantEvents;
-  private references = new Map<string, MediaRef>();
-  private groups = new Map<string, BrowseGroup>();
-  private groupedReferences = 0;
-  private imageCache = new Map<string, { data: ArtworkData; expires: number }>();
+  private references = new BoundedCache<MediaRef>(5000);
+  /** Sized by member count: at most 5000 grouped references in 1000 groups. */
+  private groups = new BoundedCache<BrowseGroup>(1000, 5000);
+  private imageCache = new BoundedCache<ArtworkData>(512, 20 * 1024 * 1024);
   private imageRequests = new Map<string, Promise<ArtworkData>>();
-  private browseImages = new Map<string, { image?: z.infer<typeof imageSchema>; expires: number }>();
+  private browseImages = new BoundedCache<{ image?: z.infer<typeof imageSchema> }>(128);
   constructor(origin: string, private token: string, timeoutMs = 8000,
     private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs)) {
     this.events = new MusicAssistantEvents(origin, token);
@@ -103,18 +105,13 @@ export class MusicAssistantClient implements MusicAssistantReader {
   async artwork(id: string, size: ArtworkSize = 512): Promise<ArtworkData> {
     if (!/^image:[a-f0-9]{64}$/.test(id)) throw new AppError(404, 'Artwork unavailable.');
     const key = `${id}:${size}`;
-    const cached = this.imageCache.get(key);
-    if (cached && cached.expires > Date.now()) { this.imageCache.delete(key); this.imageCache.set(key, cached); return cached.data; }
+    const cached = this.imageCache.get(key); if (cached) return cached;
     const pending = this.imageRequests.get(key); if (pending) return pending;
     if (this.imageRequests.size >= 16) throw new AppError(503, 'Artwork is busy.');
     const request = (async () => {
       // Photographic artwork is much smaller as JPEG, including list thumbnails.
       const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=jpeg`, undefined, {}, true) as ArtworkData;
-      this.imageCache.set(key, { data, expires: Date.now() + 5 * 60_000 });
-      let bytes = [...this.imageCache.values()].reduce((sum, item) => sum + item.data.body.length, 0);
-      while (this.imageCache.size > 512 || bytes > 20 * 1024 * 1024) {
-        const key = this.imageCache.keys().next().value!; bytes -= this.imageCache.get(key)!.data.body.length; this.imageCache.delete(key);
-      }
+      this.imageCache.set(key, data, { expires: Date.now() + 5 * 60_000, size: data.body.length });
       return data;
     })();
     this.imageRequests.set(key, request); try { return await request; } finally { this.imageRequests.delete(key); }
@@ -122,35 +119,32 @@ export class MusicAssistantClient implements MusicAssistantReader {
   private remember(kind: MediaRef['kind'], media: z.infer<typeof mediaSchema>, artistArtwork?: string): string {
     const uri = media.uri || `${media.provider}://${kind}/${media.item_id}`;
     const id = `ma:${createHash('sha256').update(JSON.stringify([kind, media.provider, media.item_id, uri, media.version])).digest('hex')}`;
-    const previous = this.references.get(id); this.references.delete(id);
-    this.references.set(id, { kind, itemId: media.item_id, provider: media.provider, sourceLabel: this.sourceName(media), uri, version: media.version, expires: Date.now() + 12 * 60 * 60_000,
+    const previous = this.references.get(id);
+    this.references.set(id, { kind, itemId: media.item_id, provider: media.provider, sourceLabel: this.sourceName(media), uri, version: media.version,
       artwork: this.image(media) ?? previous?.artwork, artistArtwork: artistArtwork ?? previous?.artistArtwork,
-      ...(kind === 'track' ? { identity: recordingEvidenceSchema.parse(media) } : {}) });
-    while (this.references.size > 5000) this.references.delete(this.references.keys().next().value!);
+      ...(kind === 'track' ? { identity: recordingEvidenceSchema.parse(media) } : {}) }, { expires: Date.now() + referenceLifetime });
     return id;
   }
   private reference(id: string, kind: MediaRef['kind']): MediaRef {
     if (kind === 'track' && (id.startsWith('group:') || id.startsWith('display:'))) throw new AppError(422, 'Choose an exact music source before saving or playing this track.');
     const ref = this.references.get(id);
-    if (!ref || ref.kind !== kind || ref.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search or browse again.');
+    if (!ref || ref.kind !== kind) throw new AppError(409, 'This catalogue result expired. Search or browse again.');
     return ref;
   }
   private rememberGroup(kind: MediaRef['kind'], sourceIds: string[]): string {
     const id = `group:${createHash('sha256').update(JSON.stringify([kind, [...sourceIds].sort()])).digest('hex')}`;
-    this.groupedReferences -= this.groups.get(id)?.sources.length ?? 0;
-    this.groups.delete(id); this.groups.set(id, { kind, sources: sourceIds, expires: Date.now() + 12 * 60 * 60_000 });
-    this.groupedReferences += sourceIds.length;
-    while (this.groups.size > 1000 || this.groupedReferences > 5000) {
-      const first = this.groups.keys().next().value!; this.groupedReferences -= this.groups.get(first)!.sources.length; this.groups.delete(first);
-    }
+    this.groups.set(id, { kind, sources: sourceIds }, { expires: Date.now() + referenceLifetime, size: sourceIds.length });
     return id;
+  }
+  private group(id: string, kind: MediaRef['kind'], expired: string): MediaRef[] {
+    const group = this.groups.get(id);
+    if (!group || group.kind !== kind) throw new AppError(409, expired);
+    return group.sources.map(source => this.reference(source, kind));
   }
   private browseSources(id: string, kind: 'artist' | 'album'): MediaRef[] {
     if (id.startsWith('display:')) throw new AppError(422, 'These results may represent different versions. Choose a source before browsing.');
     if (!id.startsWith('group:')) return [this.reference(id, kind)];
-    const group = this.groups.get(id);
-    if (!group || group.kind !== kind || group.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search or browse again.');
-    return group.sources.map(source => this.reference(source, kind));
+    return this.group(id, kind, 'This catalogue result expired. Search or browse again.');
   }
   private sourceName(media: Media): string {
     const mapped = media.provider_mappings.find(p => p.item_id === media.item_id &&
@@ -185,12 +179,12 @@ export class MusicAssistantClient implements MusicAssistantReader {
         for (const item of group) {
           const uri = item.uri || `${item.provider}://${kind}/${item.item_id}`;
           let cached = this.browseImages.get(uri);
-          if (!cached || cached.expires <= Date.now()) {
+          if (!cached) {
             if (reads >= 8 || Date.now() >= deadline) break;
             reads++;
             let image: z.infer<typeof imageSchema> | undefined;
             try {
-              const raw = await maBudget(deadline - Date.now(), () => this.read('/api', 'music/item_by_uri', { uri, allow_update_metadata: false }));
+              const raw = await budget(deadline - Date.now(), () => this.read('/api', 'music/item_by_uri', { uri, allow_update_metadata: false }));
               const full = kind === 'artist' ? mediaSchema.extend({ media_type: z.literal('artist') }).parse(raw)
                 : albumSchema.extend({ media_type: z.literal('album') }).parse(raw);
               if (sameCatalogueItem(kind, item, full)) {
@@ -198,9 +192,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
                 if (id) image = { proxy_id: id.slice(6), type: 'thumb' };
               }
             } catch { /* Optional metadata must not hide usable search results. */ }
-            cached = { image, expires: Date.now() + 60_000 };
-            this.browseImages.delete(uri); this.browseImages.set(uri, cached);
-            while (this.browseImages.size > 128) this.browseImages.delete(this.browseImages.keys().next().value!);
+            cached = { image }; this.browseImages.set(uri, cached, { expires: Date.now() + 60_000 });
           }
           if (cached.image) { item.image = cached.image; break; }
         }
@@ -281,8 +273,13 @@ export class MusicAssistantClient implements MusicAssistantReader {
       duration: media.duration && media.duration > 0 ? media.duration : null,
       available: ref.available, artwork: ref.artwork, artistArtwork: ref.artistArtwork };
   }
+  /** Unexpected response shapes become one sanitized, version-compatibility error. */
+  private async compatible<T>(message: string, work: () => Promise<T>): Promise<T> {
+    try { return await work(); }
+    catch (error) { throw error instanceof AppError ? error : new AppError(502, message); }
+  }
   async inspect(options: { documentation?: boolean } = {}): Promise<ConnectionReport> {
-    try {
+    return this.compatible('Music Assistant returned an incompatible response. Check for app updates; if the problem persists, report the app and Music Assistant versions.', async () => {
       const info = z.object({ server_id: z.string().min(1).max(200).optional(), server_version: z.string().max(80), schema_version: z.number().int(), min_supported_schema_version: z.number().int() }).parse(await this.read('/info'));
       if (!supportsReadOnlySchema(info.schema_version, info.min_supported_schema_version)) throw new AppError(422, 'This Music Assistant API schema is not supported by the read-only setup check. Update the app or server.');
       // HTTP /api returns the command result directly, not the WebSocket result envelope.
@@ -290,56 +287,47 @@ export class MusicAssistantClient implements MusicAssistantReader {
         .parse(await this.read('/api', 'players/all'))
         .map(p => {
           if (p.player_id.includes(this.token)) throw new AppError(502, 'Music Assistant returned an invalid destination identifier.');
-          return { id: p.player_id, name: p.name.replaceAll(this.token, '[redacted]'), available: p.available };
+          return { id: p.player_id, name: this.redact(p.name), available: p.available };
         });
       let docsAvailable = false;
       if (options.documentation !== false) {
         try { await this.read('/api-docs'); docsAvailable = true; } catch { /* Read-only authentication still succeeded. */ }
       }
-      return { checkedAt: Date.now(), serverVersion: info.server_version.replaceAll(this.token, '[redacted]'), schemaVersion: info.schema_version, docsAvailable, players,
+      return { checkedAt: Date.now(), serverVersion: this.redact(info.server_version), schemaVersion: info.schema_version, docsAvailable, players,
         ...(info.server_id && !info.server_id.includes(this.token) ? { serverId: info.server_id } : {}) };
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError(502, 'Music Assistant returned an incompatible response. Check for app updates; if the problem persists, report the app and Music Assistant versions.');
-    }
+    });
   }
   async activeQueue(playerId: string): Promise<string> {
-    try {
+    return this.compatible('The speaker’s queue could not be read. Check Music Assistant and the app’s version compatibility.', async () => {
       const result = await this.read('/api', 'player_queues/get_active_queue', { player_id: playerId });
       if (!result) throw new AppError(422, 'This destination has no active Music Assistant queue. Configure it in Music Assistant and check again.');
       const queue = z.object({ queue_id: z.string().min(1).max(500), available: z.boolean().optional() }).parse(result);
       if (queue.available === false) throw new AppError(422, 'The speaker’s Music Assistant queue is unavailable. Check that speaker and try again.');
       return queue.queue_id;
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError(502, 'The speaker’s queue could not be read. Check Music Assistant and the app’s version compatibility.');
-    }
+    });
   }
   async search(query: string): Promise<CatalogueTrack[]> {
-    try {
+    return this.compatible('Music Assistant returned an incompatible search response. Check its music sources and version compatibility.', async () => {
       // Verified against the deployment's generated music/search documentation.
       // Omitting providers searches the library and all connected sources, not playlists.
       const result = z.object({ tracks: z.array(searchTrackSchema).max(500) }).parse(await this.read('/api', 'music/search', {
         search_query: query, media_types: ['track'], limit: 20,
       }));
-      return await this.grouped('track', result.tracks, track => this.track(track));
-    } catch (error) {
-      if (error instanceof AppError) throw error;
-      throw new AppError(502, 'Music Assistant returned an incompatible search response. Check its music sources and version compatibility.');
-    }
+      return this.grouped('track', result.tracks, track => this.track(track));
+    });
   }
   async artists(query: string): Promise<CataloguePage<CatalogueArtist>> {
-    try {
+    return this.compatible('Music Assistant returned an incompatible artist response.', async () => {
       const result = z.object({ artists: z.array(mediaSchema).max(500) }).parse(await this.read('/api', 'music/search', {
         search_query: query, media_types: ['artist'], limit: 20,
       }));
       return { items: await this.grouped('artist', result.artists, a => ({
         id: this.remember('artist', a), name: this.redact(a.name), provider: this.sourceName(a), artwork: this.image(a),
       })) };
-    } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible artist response.'); }
+    });
   }
   async albums(artistId: string): Promise<CataloguePage<CatalogueAlbum>> {
-    try {
+    return this.compatible('Music Assistant returned an incompatible album response.', async () => {
       let possiblyLimited = false;
       const page = await this.browseMany(artistId, 'artist', async ref => {
         const items = z.array(albumSchema).max(500).parse(await this.read('/api', 'music/artists/artist_albums', {
@@ -357,10 +345,10 @@ export class MusicAssistantClient implements MusicAssistantReader {
       for (const item of items) item.year = [item, ...(item.sources ?? [])].find(source => source.year !== null && source.year > 0)?.year ?? null;
       items.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
       return { ...page, items };
-    } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible album response.'); }
+    });
   }
   async tracks(albumId: string): Promise<CataloguePage<CatalogueTrack>> {
-    try {
+    return this.compatible('Music Assistant returned an incompatible album-track response.', async () => {
       const page = await this.browseMany(albumId, 'album', async ref => {
         const result = z.array(searchTrackSchema).max(500).parse(await this.read('/api', 'music/albums/album_tracks', {
         item_id: ref.itemId, provider_instance_id_or_domain: ref.provider, in_library_only: false,
@@ -373,7 +361,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
       });
       if (page.items.length > 2000) throw new AppError(502, 'Too many tracks returned. Try a more specific search.');
       return { ...page, items: await this.grouped('track', page.items, t => this.track(t)) }; // First source order, including discs; unmatched tracks follow.
-    } catch (error) { throw error instanceof AppError ? error : new AppError(502, 'Music Assistant returned an incompatible album-track response.'); }
+    });
   }
   async resolveTrack(id: string) {
     const ref = this.recording(id);
@@ -381,9 +369,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
   private recording(id: string): RecordingDescriptor & { artwork?: string; artistArtwork?: string } {
     if (!id.startsWith('group:')) return this.reference(id, 'track');
-    const group = this.groups.get(id);
-    if (!group || group.kind !== 'track' || group.expires < Date.now()) throw new AppError(409, 'This catalogue result expired. Search again.');
-    const refs = group.sources.map(id => this.reference(id, 'track')).sort((a, b) => Number(b.available) - Number(a.available));
+    const refs = this.group(id, 'track', 'This catalogue result expired. Search again.').sort((a, b) => Number(b.available) - Number(a.available));
     const first = refs[0]!;
     return { ...first, equivalents: refs.slice(1, 9).map(({ itemId, provider, uri, version }) => ({ itemId, provider, uri, version })) };
   }
@@ -495,9 +481,9 @@ export class MusicAssistantClient implements MusicAssistantReader {
     if (!result.success || result.data.player_id !== playerId || !result.data.available) throw new AppError(502, 'Destination volume is unavailable.');
     return result.data;
   }
+  private isGroup(player: z.infer<typeof volumePlayerSchema>) { return player.type === 'group' || player.group_members.length > 1; }
   private volumeState(player: z.infer<typeof volumePlayerSchema>): VolumeState {
-    const group = player.type === 'group' || player.group_members.length > 1;
-    const level = group ? player.group_volume : player.volume_level;
+    const level = this.isGroup(player) ? player.group_volume : player.volume_level;
     return { available: level !== null && (player.supported_features.includes('volume_set') || player.volume_control !== 'none'), level };
   }
   async volume(playerId: string): Promise<VolumeState> { return this.volumeState(await this.volumePlayer(playerId)); }
@@ -515,7 +501,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     if (!Number.isInteger(level) || level < 0 || level > 100) throw new AppError(400, 'Choose a volume from 0 to 100.');
     const player = await this.volumePlayer(playerId);
     if (!this.volumeState(player).available) throw new AppError(422, 'This destination does not support volume control.');
-    await this.read('/api', player.type === 'group' || player.group_members.length > 1 ? 'players/cmd/group_volume' : 'players/cmd/volume_set', { player_id: playerId, volume_level: level });
+    await this.read('/api', this.isGroup(player) ? 'players/cmd/group_volume' : 'players/cmd/volume_set', { player_id: playerId, volume_level: level });
     return readBack ? this.volume(playerId) : { available: true, level, pending: true };
   }
 }

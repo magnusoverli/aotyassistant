@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import { z } from 'zod';
-import { musicAssistantUrl, resolveLanAddresses } from './lan-network.js';
+import { lanWebSocket } from './lan-network.js';
 import { supportsPlaybackSchema } from './music-assistant-policy.js';
 
 export type PlaybackEvent = { connected: boolean; objectId?: string; kind?: string; available?: boolean; name?: string };
@@ -44,13 +44,8 @@ export class MusicAssistantEvents {
   }
   private async connect(generation: number) {
     try {
-      const url = new URL('/ws', musicAssistantUrl.parse(this.origin));
-      const hostname = url.hostname.replace(/^\[|\]$/g, '');
-      const addresses = await resolveLanAddresses(hostname, 8000);
-      if (generation !== this.generation || this.closed || !this.listeners.size) return;
-      url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(url, { agent: false, followRedirects: false, handshakeTimeout: 8000, maxPayload: 2 * 1024 * 1024, perMessageDeflate: false,
-        lookup: (_hostname, options, callback) => options.all ? callback(null, addresses) : callback(null, addresses[0]!.address, addresses[0]!.family) });
+      const socket = await lanWebSocket(this.origin, '/ws');
+      if (generation !== this.generation || this.closed || !this.listeners.size) { socket.on('error', () => {}); socket.terminate(); return; }
       this.socket = socket;
       const current = () => generation === this.generation && this.socket === socket && !this.closed;
       const authId = randomUUID(); let authenticating = false; let alive = true;

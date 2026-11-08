@@ -30,6 +30,11 @@ type PlaybackState = {
   view: View; projected: View; online: boolean; busy: boolean; starting: boolean;
   firstSelection?: PreparedEntryView; selectionReady: boolean; error?: string;
 };
+/** Room-level status copy shared by the page notice and the player details. */
+export const roomMessages = {
+  connectionLost: 'Connection lost. Your saved songs are kept. Controls return when the room reconnects.',
+  unavailable: 'The room cannot confirm playback or save changes. Ask the host to check Settings.',
+};
 
 /** One persistent playback UI. Roles select presentation/actions, never broaden server permissions. */
 export class Playback {
@@ -40,8 +45,15 @@ export class Playback {
   private details?: ParticipantPlayerDetails;
   private cover?: ArtworkView;
   private portrait?: ArtworkView;
+  /** Host-only: the playback the card last showed, and a stop the host is waiting on. */
+  private hostUi = { identity: '', pending: '' };
 
   constructor(private options: HostOptions | ParticipantOptions) {}
+
+  /** The song this role may see: the host's status-only view, or the participant's own while it is their turn. */
+  private playbackOf({ view, projected }: PlaybackState) {
+    return this.options.role === 'host' ? projected.hostPlayback : view.myTurn ? projected.ownPlayback : undefined;
+  }
 
   get element() {
     return this.nodes.get('card', () => {
@@ -69,7 +81,7 @@ export class Playback {
 
   clear() {
     this.details?.destroy(); this.details = undefined; this.cover?.clear(); this.portrait?.clear(); this.cover = this.portrait = undefined;
-    this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear();
+    this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear(); this.hostUi = { identity: '', pending: '' };
   }
 
   updateVolume(volume?: VolumeState) {
@@ -126,7 +138,7 @@ export class Playback {
     this.state = state;
     const { view, projected, online, starting } = state;
     const host = this.options.role === 'host';
-    const playback = host ? projected.hostPlayback : view.myTurn ? projected.ownPlayback : undefined;
+    const playback = this.playbackOf(state);
     const songActive = Boolean(online && playback && (playback.status === 'playing' || playback.status === 'paused'));
     const progress = this.progress;
     const status = progress.querySelector<HTMLElement>('.playback-status')!;
@@ -151,8 +163,8 @@ export class Playback {
   }
 
   private transport(state: PlaybackState) {
-    const host = this.options.role === 'host'; const { view, projected, online, starting } = state;
-    const playback = host ? projected.hostPlayback : view.myTurn ? projected.ownPlayback : undefined;
+    const host = this.options.role === 'host'; const { view, online, starting } = state;
+    const playback = this.playbackOf(state);
     const permitted = online && view.connected && (host || view.myTurn);
     const transport = this.button(host ? 'host-transport' : 'player-transport', 'Pause', () => {
       const current = this.state; if (!current) return;
@@ -166,7 +178,7 @@ export class Playback {
       const options = this.options; const current = this.state; const target = current?.view; const song = target?.hostPlayback;
       if (!current || current.busy || !current.online || !target?.connected || !song || song.status === 'stopped') return;
       if (!confirm(`Stop ${target.current?.nickname ?? 'the participant'}’s song and keep their turn?`)) return;
-      const ui = this.nodes.get('host-ui', () => ({ identity: '', pending: '' })); ui.pending = song.id;
+      const ui = this.hostUi; ui.pending = song.id;
       void options.run(async () => { try { await options.stop(target.turnId, song.id); } finally { ui.pending = ''; } }).then(() => {
         const next = this.element.querySelector<HTMLButtonElement>('#host-skip-turn');
         if ((document.activeElement === stop || document.activeElement === document.body) && next && !next.disabled) next.focus({ preventScroll: true });
@@ -178,7 +190,7 @@ export class Playback {
     prop(stop, 'disabled', !permitted || !playback || playback.status === 'stopped' || (host && state.busy));
     const controls = this.nodes.el('transport', 'div', undefined, 'playback-transport');
     attr(controls, 'role', 'group'); attr(controls, 'aria-label', 'Playback controls');
-    const play = !host && this.options.role === 'participant' ? this.button('player-play-next', 'Play first selection', () => {
+    const play = this.options.role === 'participant' ? this.button('player-play-next', 'Play first selection', () => {
       if (this.options.role === 'participant') this.options.playFirst();
     }, true) : undefined;
     if (play) {
@@ -206,7 +218,7 @@ export class Playback {
   private renderHost(state: PlaybackState, options: HostOptions, songActive: boolean) {
     const v = this.nodes; const { view, online, busy } = state;
     const livePerson = v.el('person', 'div', undefined, 'private-now-playing');
-    const ui = v.get('host-ui', () => ({ identity: '', pending: '' }));
+    const ui = this.hostUi;
     const playback = state.projected.hostPlayback;
     const identity = JSON.stringify([view.roomId, view.turnId, playback?.id]);
     const changedPlayback = ui.identity !== identity;
@@ -259,8 +271,7 @@ export class Playback {
     const card = this.element;
     const details = this.details ??= new ParticipantPlayerDetails();
     details.update({ title: preview?.title, artist: preview?.artist, album: preview?.album,
-      next: next?.title, error: state.error || (!online ? 'Connection lost. Your saved songs are kept. Controls return when the room reconnects.'
-        : !view.connected ? 'The room cannot confirm playback or save changes. Ask the host to check Settings.' : undefined) });
+      next: next?.title, error: state.error || (!online ? roomMessages.connectionLost : !view.connected ? roomMessages.unavailable : undefined) });
     const now = v.el('now', 'div', undefined, 'private-now-playing');
     const track = v.el('track', 'div'); const title = v.el('title', 'h2', preview?.title ?? (view.myTurn ? 'Choose a song' : 'Waiting for your turn'));
     prop(title, 'title', title.textContent!);

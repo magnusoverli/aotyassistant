@@ -21,7 +21,7 @@ test('only hashed public assets are immutable, negotiate precompression and reta
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as { port: number }).port; const origin = `http://127.0.0.1:${port}`;
   const demo = new DemoAdapter(); const engine = new Engine(new FileStore(`${dir}/data`), demo, origin); await engine.init();
-  const app = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: `${dir}/data`, mode: 'demo', demoSeconds: 30 }, dir); server.on('request', app.app);
+  const app = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: `${dir}/data`, demoSeconds: 30 }, dir); server.on('request', app.app);
   t.after(() => { app.close(); demo.close(); server.closeAllConnections(); server.close(); });
   for (const encoding of ['br', 'gzip', 'identity']) {
     const response = await fetch(`${origin}/assets/index-abcd1234.js`, { headers: { 'Accept-Encoding': encoding } });

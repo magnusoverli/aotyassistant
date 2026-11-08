@@ -193,7 +193,7 @@ test('HTTP integration endpoints use explicit open-host routes with sanitization
   const mock = await mockMusicAssistant(); t.after(mock.close);
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config: Config = { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: await mkdtemp('/tmp/opencode/aoty-integration-http-'), mode: 'demo', demoSeconds: 30 };
+  const config: Config = { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: await mkdtemp('/tmp/opencode/aoty-integration-http-'), demoSeconds: 30 };
   const manager = new IntegrationManager(new IntegrationFileStore(config.dataDir)); await manager.init();
   const adapter = new DemoAdapter(); const engine = new Engine(new FileStore(config.dataDir), adapter, origin, manager); await engine.init();
   const { app, close } = createApp(engine, config, 'web', manager); server.on('request', app);

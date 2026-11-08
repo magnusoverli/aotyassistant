@@ -9,7 +9,7 @@ import { DemoAdapter } from '../src/playback.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
 import { AppError } from '../src/model.js';
-import { maOperation } from '../src/ma-operation.js';
+import { operation } from '../src/operation.js';
 
 async function fixture(pollMs = 15) {
   const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-live-');
@@ -277,7 +277,7 @@ test('an unreceived replacement Play cannot mistake the old identical recording 
   await f.engine.play(f.alex, turn, null, track.id);
   const previous = f.participant(f.alex).ownPlayback!.id;
   f.remote.loseAcknowledgement('player_queues/play_media', false);
-  await assert.rejects(maOperation('lost-replacement', () => f.engine.play(f.alex, turn, previous, track.id), 300));
+  await assert.rejects(operation('lost-replacement', () => f.engine.play(f.alex, turn, previous, track.id), 300));
   assert.equal(f.adapter.problem?.code, 'play-unconfirmed'); assert.equal(f.engine.ready, false);
   assert.equal(f.host().turnId, turn); assert.equal(f.display().nowPlaying?.revealed, false);
   assert.equal(writes(f).filter(call => call.command === 'player_queues/play_media').length, 2);
@@ -289,7 +289,7 @@ test('a lost unreceived Play cannot claim or stop a pre-existing external item w
   Object.assign(f.remote.queue, { items: 1, state: 'playing', autoplay_enabled: false, repeat_mode: 'off', shuffle_enabled: false,
     current_item: { queue_item_id: 'external-before-play', media_item: { ...f.remote.track } } });
   f.remote.loseAcknowledgement('player_queues/play_media', false);
-  await assert.rejects(maOperation('lost-initial-play', () => f.engine.play(f.alex, turn, null, track.id), 300));
+  await assert.rejects(operation('lost-initial-play', () => f.engine.play(f.alex, turn, null, track.id), 300));
   assert.equal(f.adapter.problem?.code, 'play-unconfirmed');
   assert.equal(writes(f).filter(call => call.command === 'player_queues/stop').length, 0);
   await f.manager.recoverPlayback(f.manager.view().revision);
@@ -334,7 +334,7 @@ for (const outcome of ['old-playing', 'old-failure', 'old-ended', 'old-unsafe'] 
     const polling = (f.adapter as unknown as { poll(): Promise<void> }).poll(); await gate.entered;
     Object.assign(f.remote.queue, { state: 'playing', ended: false, autoplay_enabled: false });
     // A real deadline makes the old blocking implementation fail instead of hanging.
-    await maOperation('test-pause', () => f.engine.control(f.alex, turn, id, 'pause'), 1000);
+    await operation('test-pause', () => f.engine.control(f.alex, turn, id, 'pause'), 1000);
     assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused');
     gate.release(outcome === 'old-failure'); await polling;
     assert.equal(f.engine.ready, true); assert.equal(f.host().turnId, turn);
@@ -349,7 +349,7 @@ test('an elapsed confirmation budget retains uncertain playback and never retrie
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   const id = f.participant(f.alex).ownPlayback!.id;
   f.remote.ignoreControl('pause');
-  await assert.rejects(maOperation('test-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 150), /Pause could not be confirmed/);
+  await assert.rejects(operation('test-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 150), /Pause could not be confirmed/);
   assert.equal(f.adapter.problem?.code, 'pause-unconfirmed');
   assert.equal(f.engine.ready, false); assert.equal(f.adapter.ownsPlayback, true);
   assert.equal(writes(f).filter(c => c.command === 'player_queues/pause').length, 1);
@@ -364,7 +364,7 @@ test('an expired queued Play is rejected before resolving or writing to Music As
   const entered = new Promise<void>(resolve => { enter = resolve; });
   const blocked = (f.engine as unknown as { serial(work: () => Promise<void>): Promise<void> }).serial(async () => { enter(); await gate; });
   await entered; f.remote.calls.length = 0;
-  const rejected = assert.rejects(maOperation('queued-play', () => f.engine.play(f.alex, f.host().turnId!, null, track.id), 30), /timed out/);
+  const rejected = assert.rejects(operation('queued-play', () => f.engine.play(f.alex, f.host().turnId!, null, track.id), 30), /timed out/);
   await delay(50); release(); await blocked; await rejected;
   assert.equal(f.remote.calls.some(c => c.command === 'music/item_by_uri'), false);
   assert.equal(writes(f).length, 0); assert.equal(f.adapter.ownsPlayback, false);
@@ -388,7 +388,7 @@ test('queue events wake confirmation early but only an HTTP ownership read confi
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   const id = f.participant(f.alex).ownPlayback!.id;
   f.remote.ignoreControl('pause');
-  const paused = maOperation('event-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 220);
+  const paused = operation('event-pause', () => f.engine.control(f.alex, f.host().turnId!, id, 'pause'), 220);
   await eventually(() => (f.adapter as unknown as { eventWaiters: Set<unknown> }).eventWaiters.size > 0);
   f.remote.queue.state = 'paused'; f.remote.notify(); await paused;
   assert.equal(f.participant(f.alex).ownPlayback!.status, 'paused');

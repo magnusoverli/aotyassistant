@@ -8,11 +8,12 @@ import { AppError, type Role, type ListeningOrderView } from './model.js';
 import type { Engine, EngineChange } from './engine.js';
 import type { Config } from './config.js';
 import type { IntegrationManager } from './integrations.js';
-import { PreparationManager, PreparationFileStore } from './preparations.js';
+import { PreparationManager, PreparationFileStore, savedSourceAvailable } from './preparations.js';
 import { mountPreparations } from './preparation-http.js';
 import { UploadAssets } from './uploads.js';
 import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
-import { artworkSize, body, rawCookie, setParticipantCookie } from './http-utils.js';
+import { artworkSize, body, setParticipantCookie } from './http-utils.js';
+import { RateLimiter, directHosts, loopbackHosts, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
 import { DisplayArtwork } from './display-artwork.js';
 import { mountIntegrations } from './integration-http.js';
@@ -21,7 +22,7 @@ import { mountAuthorization } from './ma-authorization.js';
 import type { SetupManager } from './setup.js';
 import { durability } from './backup.js';
 import { errorPage, escapeHtml } from './error-page.js';
-import { maOperation } from './ma-operation.js';
+import { operation } from './operation.js';
 import { mountStaticAssets } from './static-assets.js';
 import { diagnostics } from './diagnostics.js';
 import { UserManager, pinSchema } from './users.js';
@@ -31,7 +32,7 @@ import { mountBrowserSpeakers } from './browser-speaker-http.js';
 const turn = z.string().uuid();
 const revision = z.number().int().nonnegative();
 const cookie = (request: Request, name: string): string => {
-  const value = rawCookie(request, name);
+  const value = readCookie(request, name);
   return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : '';
 };
 
@@ -40,7 +41,7 @@ async function catalogueRead(res: Response, action: string, work: () => Promise<
   const controller = new AbortController();
   const close = () => { if (!res.writableFinished) controller.abort(); };
   res.once('close', close);
-  try { await maOperation(action, work, 16_000, controller.signal); }
+  try { await operation(action, work, 16_000, controller.signal); }
   finally { res.off('close', close); }
 }
 
@@ -52,23 +53,20 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const defaults = config;
   config = { ...defaults, get guestUrl() { return integrations?.guestOrigin || defaults.guestUrl; } };
   engine.setGuestOrigin(config.guestUrl);
-  preparations ??= new PreparationManager(new PreparationFileStore(config.dataDir), Date.now, selection => selection.source === 'demo' ? !integrations?.configured
-    : selection.source === 'upload' ? Boolean(integrations?.uploadPlaybackAvailable) : selection.sourceBindingId === integrations?.sourceBindingId);
+  preparations ??= new PreparationManager(new PreparationFileStore(config.dataDir), Date.now, savedSourceAvailable(integrations));
   const users = new UserManager(config.dataDir, preparations, engine);
   uploads.setOwnerPolicy(ownerId => users.ownerAvailable(ownerId));
   const app = express();
   app.disable('x-powered-by');
-  const rates = new Map<string, { count: number; start: number }>();
-  const cleanup = setInterval(() => {
-    for (const [key, value] of rates) if (Date.now() - value.start >= 60_000) rates.delete(key);
-  }, 60_000);
+  const rates = new RateLimiter();
+  const cleanup = setInterval(() => rates.prune(), 60_000);
   cleanup.unref();
 
   app.use((req, res, next) => {
     const ingress = ingressContext(req);
     const remote = publicContext(req);
     const browserAudioOrigin = new URL(ingress?.origin ?? remote?.origin ??
-      ([`localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(req.headers.host ?? '') ? `http://${req.headers.host}` : config.guestUrl));
+      (loopbackHosts(config.port).includes(req.headers.host ?? '') ? `http://${req.headers.host}` : config.guestUrl));
     browserAudioOrigin.protocol = browserAudioOrigin.protocol === 'https:' ? 'wss:' : 'ws:';
     res.set({
       'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
@@ -93,7 +91,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const mediaRead = ['GET', 'HEAD'].includes(req.method) && /^\/api\/media\/uploads\/[^/]+\/[^/]+\/track\.[a-z0-9]+$/.test(req.path);
     const host = req.headers.host ?? '';
     const setup = integrations && setupHostAllowed(host, req.socket.remoteAddress ?? '');
-    const known = Boolean(ingress || remote) || [new URL(config.guestUrl).host, `localhost:${config.port}`, `127.0.0.1:${config.port}`].includes(host) ||
+    const known = Boolean(ingress || remote) || directHosts(config.guestUrl, config.port).includes(host) ||
       Boolean(setup && setupManager?.allowsGuestHost(host));
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
@@ -122,10 +120,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     if (req.method === 'GET') return next();
     const join = req.path.endsWith('/join');
     const key = `${publicContext(req)?.session ?? req.socket.remoteAddress}:${join ? 'join' : 'commands'}`;
-    const entry = rates.get(key) ?? { count: 0, start: Date.now() };
-    if (Date.now() - entry.start > 60_000) { entry.start = Date.now(); entry.count = 0; }
-    entry.count++; rates.set(key, entry);
-    next(entry.count > (join ? 20 : 180) ? new AppError(429, 'Too many requests. Wait a minute and try again.') : undefined);
+    next(rates.hit(key, join ? 20 : 180) === 'limited' ? new AppError(429, 'Too many requests. Wait a minute and try again.') : undefined);
   });
   app.use(express.json({ limit: '16kb' }));
   app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
@@ -204,7 +199,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const login = await users.login(input.userId, input.pin); credential = login.token; user = login.user;
     } else if (!user) {
       if (!input.nickname || !input.pin) throw new AppError(400, 'Enter your name and choose a four-digit PIN.');
-      const registered = await users.register(input.nickname, input.pin, input.operation, rawCookie(req, 'aoty_preparation')); credential = registered.token; user = registered.user;
+      const registered = await users.register(input.nickname, input.pin, input.operation, readCookie(req, 'aoty_preparation')); credential = registered.token; user = registered.user;
     }
     await engine.joinUser(user.id, credential);
     if (credential !== participantCredential(req)) await users.logout(participantCredential(req));
@@ -217,7 +212,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.post('/api/participant/preparations/pin', async (req, res) => {
     const input = body(req, z.object({ pin: pinSchema }).strict()); const token = participantCredential(req);
     const user = users.current(token); if (!user) throw new AppError(401, 'Select your name to continue.');
-    await users.ensureList(token, rawCookie(req, 'aoty_preparation'));
+    await users.ensureList(token, readCookie(req, 'aoty_preparation'));
     await users.setPin(user.id, input.pin, token); res.json(users.directoryView(token));
   });
   app.post('/api/participant/logout', async (req, res) => {
@@ -322,7 +317,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     engine.on('change', send);
     stream.onClose(() => engine.off('change', send));
     // Periodic filtered snapshots keep idle displays and reconnecting browsers in sync.
-    stream.every(() => { invalidatePublic(); send(); }, 15_000);
+    stream.every(() => { if (role.kind !== 'participant') publicSnapshots.delete(role.kind); send(); }, 15_000);
   };
   app.get('/api/host/events', (_req, res) => events(res, { kind: 'host' }));
   app.get('/api/participant/events', (req, res) => events(res, participant(req)));
@@ -331,12 +326,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'Unknown API endpoint.')));
   mountStaticAssets(app, webDirectory);
   app.use(express.static(webDirectory, { index: false, etag: false, lastModified: false }));
+  // The built shell never changes while the process runs; a failed read is retried on the next request.
+  let shell: Promise<string> | undefined;
+  const pageShell = () => shell ??= readFile(resolve(webDirectory, 'index.html'), 'utf8').catch(error => { shell = undefined; throw error; });
   for (const path of ['/', '/join', '/participant', '/display', '/host', '/host/settings']) {
     app.get(path, async (req, res) => {
       const base = requestBase(req);
-      const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-      let html = await readFile(resolve(webDirectory, 'index.html'), 'utf8');
-      html = html.replace('</head>', `<meta name="aoty-base" content="${escape(base)}"><meta name="aoty-guest" content="${escape(publicContext(req)?.origin ?? config.guestUrl)}"><meta name="aoty-public" content="${publicContext(req) ? '1' : '0'}"></head>`);
+      let html = await pageShell();
+      html = html.replace('</head>', `<meta name="aoty-base" content="${escapeHtml(base)}"><meta name="aoty-guest" content="${escapeHtml(publicContext(req)?.origin ?? config.guestUrl)}"><meta name="aoty-public" content="${publicContext(req) ? '1' : '0'}"></head>`);
       html = html.replace(/(src|href)="(?:\.\/|\/)(?!\/)/g, `$1="${base}/`);
       res.type('html').send(html);
     });
@@ -360,5 +357,5 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, drain: async () => { await users.drain(); await preparations!.drain(); }, close: () => { engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, close: () => { engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
 }

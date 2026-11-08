@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AppError } from '../src/model.js';
-import { maOperation, maRemaining } from '../src/ma-operation.js';
+import { operation, remaining } from '../src/operation.js';
 import { playbackRead, StalePlaybackRead } from '../src/playback-read.js';
 import { UpstreamError } from '../src/upstream-error.js';
 import { playbackFailure, playbackProblem } from '../src/playback-problem.js';
@@ -35,8 +35,8 @@ test('stale observations stop before another read and read retries cannot extend
   }, () => current), StalePlaybackRead);
   assert.equal(reads, 1);
   reads = 0;
-  await assert.rejects(maOperation('short-read', () => playbackRead(async () => {
-    maRemaining(Infinity); reads++; throw new UpstreamError('timeout', 504, 'Synthetic timeout');
+  await assert.rejects(operation('short-read', () => playbackRead(async () => {
+    remaining(Infinity); reads++; throw new UpstreamError('timeout', 504, 'Synthetic timeout');
   }), 20));
   assert.equal(reads, 1);
 });

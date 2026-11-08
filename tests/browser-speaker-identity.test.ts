@@ -20,7 +20,7 @@ for (const ingress of [false, true]) test(`speaker names receive path-scoped par
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const base = ingress ? '/api/hassio_ingress/fixture' : '';
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: origin,
-    dataDir: await mkdtemp(join(tmpdir(), 'aoty-speaker-identity-')), mode: 'demo', demoSeconds: 3600 };
+    dataDir: await mkdtemp(join(tmpdir(), 'aoty-speaker-identity-')), demoSeconds: 3600 };
   const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, origin); await engine.init();
   const speakers = new BrowserSpeakers(() => ({ origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: '1', scope: 'fixture', version: '2.10.9', serverId: 'fixture' }));
   const { app, close } = createApp(engine, config, 'web', undefined, undefined, undefined, undefined, undefined, speakers);

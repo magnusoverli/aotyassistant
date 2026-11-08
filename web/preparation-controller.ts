@@ -36,6 +36,8 @@ export class PreparationController {
   private loadSequence = 0;
   private saveSequence = 0;
   constructor(private changed: () => void, private isMember: () => boolean, private request = preparationRequest) {}
+  /** List edits wait for an in-flight save, a retained draft, a play review, or connectivity. */
+  get locked() { return this.saving || !navigator.onLine || Boolean(this.pending || this.view?.reviewEntryId); }
   private storageKey(ownerId: string) { return storageKey(`aoty.preparation-pending.v1.${ownerId}`); }
   private persist() {
     if (!this.pending) return;

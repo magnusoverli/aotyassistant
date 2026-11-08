@@ -1,17 +1,25 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
+import WebSocket from 'ws';
 import { z } from 'zod';
 import { AppError } from './model.js';
 
-export const musicAssistantUrl = z.string().trim().max(2048).url().transform((value, context) => {
-  const url = new URL(value);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash || url.hostname.toLowerCase() === 'supervisor') {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Use the Music Assistant HTTP(S) origin, without credentials, paths, query, or fragment.' });
-    return z.NEVER;
-  }
-  return url.origin;
-});
+/** A URL hostname without IPv6 brackets. */
+export const bareHostname = (hostname: string) => hostname.replace(/^\[|\]$/g, '');
+/** An HTTP(S) origin without credentials, path, query or fragment, normalized to `URL.origin`. */
+export const httpOrigin = (message: string, allowed: (hostname: string) => boolean = () => true) =>
+  z.string().trim().max(2048).url().transform((value, context) => {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash || !allowed(bareHostname(url.hostname))) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message });
+      return z.NEVER;
+    }
+    return url.origin;
+  });
+export const notSupervisor = (hostname: string) => hostname.toLowerCase() !== 'supervisor';
+
+export const musicAssistantUrl = httpOrigin('Use the Music Assistant HTTP(S) origin, without credentials, paths, query, or fragment.', notSupervisor);
 export const maToken = z.string().trim().min(1).max(8192).regex(/^[\x21-\x7e]+$/);
 export function isAllowedAddress(value: string): boolean {
   if (!ipaddr.isValid(value)) return false;
@@ -38,4 +46,13 @@ export async function resolveLanAddresses(hostname: string, timeout: number, res
     if (error instanceof AppError) throw error;
     throw new AppError(502, 'Cannot resolve the Music Assistant hostname. Check its LAN address.');
   } finally { clearTimeout(timer); if (aborted) signal?.removeEventListener('abort', aborted); }
+}
+
+/** A WebSocket to a Music Assistant path whose socket uses only the checked LAN addresses. */
+export async function lanWebSocket(origin: string, path: string): Promise<WebSocket> {
+  const url = new URL(path, musicAssistantUrl.parse(origin));
+  const addresses = await resolveLanAddresses(bareHostname(url.hostname), 8000);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return new WebSocket(url, { agent: false, followRedirects: false, handshakeTimeout: 8000, maxPayload: 2 * 1024 * 1024, perMessageDeflate: false,
+    lookup: (_hostname, options, callback) => options.all ? callback(null, addresses) : callback(null, addresses[0]!.address, addresses[0]!.family) });
 }

@@ -3,9 +3,8 @@ import { Agent as HttpAgent, request as httpRequest } from 'node:http';
 import { Agent as HttpsAgent, request as httpsRequest } from 'node:https';
 import { performance } from 'node:perf_hooks';
 import { AppError } from './model.js';
-import { maRemaining, maSignal, maStage, maTiming } from './ma-operation.js';
-import { requestPriority } from './operation.js';
-import { musicAssistantUrl, lookupAll, resolveLanAddresses } from './lan-network.js';
+import { operationSignal, remaining, requestPriority, stage, timing } from './operation.js';
+import { bareHostname, musicAssistantUrl, lookupAll, resolveLanAddresses } from './lan-network.js';
 import { UpstreamError, type UpstreamFailure } from './upstream-error.js';
 export { musicAssistantUrl, maToken, isAllowedAddress } from './lan-network.js';
 
@@ -39,7 +38,7 @@ export class MusicAssistantTransport {
   }
 
   async read(path: Path, command?: string, args = {}, binary = false): Promise<unknown> {
-    return maStage(command ?? (binary ? 'artwork' : path), () => this.request(path, command, args, binary));
+    return stage(command ?? (binary ? 'artwork' : path), () => this.request(path, command, args, binary));
   }
 
   private async request(path: Path, command: string | undefined, args: object, binary: boolean): Promise<unknown> {
@@ -48,25 +47,25 @@ export class MusicAssistantTransport {
     // MA awaits provider/player startup inside Play/Resume. Reads retain a shorter budget.
     const timeout = command === 'player_queues/play_media' || command === 'player_queues/resume' ? this.playbackTimeoutMs
       : command === 'music/search' ? Math.max(this.timeoutMs, 12_000) : this.timeoutMs;
-    const deadline = start + maRemaining(timeout);
+    const deadline = start + remaining(timeout);
     const url = new URL(path, musicAssistantUrl.parse(this.origin));
-    const hostname = url.hostname.replace(/^\[|\]$/g, '');
+    const hostname = bareHostname(url.hostname);
     let addresses: { address: string; family: number }[];
     try {
-      addresses = await resolveLanAddresses(hostname, deadline - performance.now(), this.resolveHost, maSignal());
+      addresses = await resolveLanAddresses(hostname, deadline - performance.now(), this.resolveHost, operationSignal());
     } catch (error) {
       if (error instanceof AppError && [502, 504].includes(error.status)) throw new UpstreamError(error.status === 504 ? 'timeout' : 'connection', error.status, error.message);
       throw error;
-    } finally { maTiming('dns', start); }
+    } finally { timing('dns', start); }
     if (this.closed) throw new UpstreamError('closed', 503, 'Music Assistant connection was closed. Refresh before trying again.');
-    const remaining = Math.min(maRemaining(timeout), deadline - performance.now());
-    if (remaining <= 0) throw new UpstreamError('timeout', 504, 'Music Assistant did not respond in time. Check LAN connectivity.');
+    const timeLeft = Math.min(remaining(timeout), deadline - performance.now());
+    if (timeLeft <= 0) throw new UpstreamError('timeout', 504, 'Music Assistant did not respond in time. Check LAN connectivity.');
     const target = addresses[0]!;
     const payload = command ? JSON.stringify({ message_id: randomUUID(), command, args }) : undefined;
     return new Promise((resolve, reject) => {
       const fail = (kind: UpstreamFailure, status: number, message: string) => reject(new UpstreamError(kind, status, message));
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
-        signal: maSignal(),
+        signal: operationSignal(),
         method: command ? 'POST' : 'GET', agent: this.agent(url.protocol, binary ? 'artwork' : command?.startsWith('music/')
           ? requestPriority() === 'playback' ? 'resolution' : 'catalogue' : path === '/api-docs' ? 'catalogue' : 'control'),
         ...{ pinnedAddresses: addresses.map(a => `${a.family}:${a.address}`).sort().join(',') },
@@ -107,16 +106,16 @@ export class MusicAssistantTransport {
         });
       });
       // Absolute request deadline, including the response body; activity cannot extend it.
-      const timer = setTimeout(() => { request.destroy(); fail('timeout', 504, 'Music Assistant did not respond in time. Check LAN connectivity.'); }, remaining);
+      const timer = setTimeout(() => { request.destroy(); fail('timeout', 504, 'Music Assistant did not respond in time. Check LAN connectivity.'); }, timeLeft);
       timer.unref(); request.on('close', () => clearTimeout(timer));
       request.on('socket', socket => {
-        maTiming(request.reusedSocket ? 'connection-reused' : 'socket-wait', start);
+        timing(request.reusedSocket ? 'connection-reused' : 'socket-wait', start);
         if (socket.connecting) {
-          socket.once('connect', () => maTiming('connect', start));
-          if (url.protocol === 'https:') socket.once('secureConnect', () => maTiming('tls', start));
+          socket.once('connect', () => timing('connect', start));
+          if (url.protocol === 'https:') socket.once('secureConnect', () => timing('tls', start));
         }
       });
-      request.on('error', () => maSignal()?.aborted ? reject(new AppError(499, 'Request cancelled.'))
+      request.on('error', () => operationSignal()?.aborted ? reject(new AppError(499, 'Request cancelled.'))
         : fail('connection', 502, 'Cannot connect to Music Assistant. Check its LAN URL and trusted TLS certificate.'));
       if (payload) request.write(payload); request.end();
     });

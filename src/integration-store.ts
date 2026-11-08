@@ -1,9 +1,8 @@
-import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { applicationOrigin } from './addressing.js';
-import { musicAssistantUrl, maToken } from './music-assistant-transport.js';
-import { writePrivateJson } from './store.js';
+import { musicAssistantUrl, maToken } from './lan-network.js';
+import { readPrivateJson, writePrivateJson } from './store.js';
 
 export const integrationSchema = z.object({
   schema: z.literal(1), revision: z.number().int().nonnegative(),
@@ -22,11 +21,10 @@ export interface IntegrationStore { load(): Promise<IntegrationState>; save(stat
 export class IntegrationFileStore implements IntegrationStore {
   constructor(private directory: string) {}
   async load(): Promise<IntegrationState> {
-    try { return integrationSchema.parse(JSON.parse(await readFile(join(this.directory, 'integrations.json'), 'utf8'))); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { schema: 1, revision: 0, musicAssistant: null };
-      throw new Error('Integration settings could not be loaded. Check the application data directory; nothing was overwritten.');
-    }
+    let state: IntegrationState | undefined;
+    try { state = await readPrivateJson(join(this.directory, 'integrations.json'), integrationSchema, 1024 * 1024); }
+    catch { throw new Error('Integration settings could not be loaded. Check the application data directory; nothing was overwritten.'); }
+    return state ?? { schema: 1, revision: 0, musicAssistant: null };
   }
   async save(state: IntegrationState): Promise<void> { await writePrivateJson(this.directory, 'integrations.json', integrationSchema.parse(state)); }
 }

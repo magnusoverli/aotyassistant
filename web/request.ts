@@ -1,3 +1,5 @@
+import { appPath } from './paths';
+
 export class RequestError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) { super(message); }
 }
@@ -14,4 +16,3 @@ export async function requestJson<T>(path: string, data?: unknown, timeoutMs = 1
   if (!response.ok) throw new RequestError(typeof payload?.error === 'string' ? payload.error : 'The request could not be completed.', response.status, payload?.code);
   return payload as T;
 }
-import { appPath } from './paths';

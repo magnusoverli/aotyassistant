@@ -21,7 +21,7 @@ async function fixture(t: TestContext) {
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`; const alternate = `http://127.0.0.2:${port}`;
   const store = new IntegrationFileStore(directory); const manager = new IntegrationManager(store); await manager.init();
   const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(directory), adapter, 'http://obsolete.local:3000', manager); await engine.init();
-  const http = createApp(engine, { port, guestUrl: 'http://obsolete.local:3000', listenHost: '0.0.0.0', dataDir: directory, mode: 'demo', demoSeconds: 3600 }, 'dist/web', manager);
+  const http = createApp(engine, { port, guestUrl: 'http://obsolete.local:3000', listenHost: '0.0.0.0', dataDir: directory, demoSeconds: 3600 }, 'dist/web', manager);
   server.on('request', http.app); t.after(() => { http.close(); adapter.close(); remote.close(); server.closeAllConnections(); server.close(); });
   const request = (path: string, data?: unknown, base = origin, headers: Record<string, string> = {}) => fetch(base + path, { method: data === undefined ? 'GET' : 'POST',
     headers: { ...(data === undefined ? {} : { Origin: base, 'Content-Type': 'application/json' }), ...headers }, ...(data === undefined ? {} : { body: JSON.stringify(data) }), signal: AbortSignal.timeout(5000) });

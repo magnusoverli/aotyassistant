@@ -9,9 +9,6 @@ export const artworkSize = z.enum(['128', '160', '512', '1024']).default('512')
 
 export const body = <T extends z.ZodTypeAny>(request: Request, schema: T): z.infer<T> => schema.parse(request.body);
 
-export const rawCookie = (request: Request, name: string): string =>
-  request.headers.cookie?.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`))?.slice(name.length + 1) ?? '';
-
 export function setPrivateCookie(response: Response, name: string, value: string, path: string, origin: string) {
   response.cookie(name, value, { path, httpOnly: true, sameSite: 'strict', secure: origin.startsWith('https:'), maxAge: 365 * 24 * 60 * 60_000 });
 }

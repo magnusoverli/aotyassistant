@@ -90,7 +90,7 @@ async function recoveryFixture(t: TestContext) {
     if (path === '/addons/official_music_assistant/info') return { state: 'started', discovery: ['music_assistant'], host_network: true };
     return {};
   } };
-  const config = { port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', guestOverride: true, addon: true, dataDir: dir, mode: 'demo' as const, demoSeconds: 30 };
+  const config = { port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', guestOverride: true, addon: true, dataDir: dir, demoSeconds: 30 };
   const setup = new SetupManager(config, manager, () => assert.fail('Saved guest origin changed'), supervisor, async () => mdns,
     async origins => { scans++; return discoverServers(origins, readInfo); }, { retryMs: 10, maxRetryMs: 20, refreshMs: 60, minimumMs: 1, jitter: () => 1 });
   t.after(() => setup.close());
@@ -133,7 +133,7 @@ test('concurrent discovery requests share one scan and closing during discovery 
   const manager = new IntegrationManager(new IntegrationFileStore(await directory(t))); await manager.init(); t.after(() => manager.close());
   let release!: () => void; let enter!: () => void; let scans = 0;
   const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
-  const setup = new SetupManager({ port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', dataDir: '', mode: 'demo', demoSeconds: 30 }, manager,
+  const setup = new SetupManager({ port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', dataDir: '', demoSeconds: 30 }, manager,
     () => assert.fail('Unexpected guest change'), undefined, async () => [], async () => { scans++; enter(); await gate; return []; },
     { retryMs: 10, maxRetryMs: 20, refreshMs: 60, minimumMs: 1 });
   t.after(() => { release(); setup.close(); });

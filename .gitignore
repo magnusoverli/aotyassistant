@@ -13,3 +13,4 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 config.prebuilt.yaml
+.vscode/settings.json

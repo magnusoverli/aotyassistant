@@ -25,7 +25,7 @@ async function fixture() {
   await adapter.refresh();
   const host = () => engine.view({ kind: 'host' });
   const alex = await engine.join('Alex'); const sam = await engine.join('Sam');
-  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, mode: 'demo', demoSeconds: 30 }, 'web', manager); server.on('request', http.app);
+  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, demoSeconds: 30 }, 'web', manager); server.on('request', http.app);
   const participant = (credential: string) => engine.view({ kind: 'participant', credential });
   const context = (credential: string) => engine.catalogueContext(credential);
   const request = (path: string, credential?: string, data?: unknown) => fetch(origin + path, {

@@ -2,14 +2,15 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
 import { PersistenceError } from './store.js';
-import { MusicAssistantClient, musicAssistantUrl, maToken, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
+import { MusicAssistantClient, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
+import { bareHostname, musicAssistantUrl, maToken } from './lan-network.js';
 import type { SavedSelection } from './preparations.js';
 import type { UploadAssets, UploadSelection } from './uploads.js';
 import { applicationOrigin, shareableOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
 import type { SupervisorHints } from './supervisor.js';
 import { SerialQueue } from './serial.js';
-import { maOperation } from './ma-operation.js';
-import { CatalogueReferences } from './catalogue-references.js';
+import { operation } from './operation.js';
+import { CatalogueReferences, artworkPath } from './catalogue-references.js';
 import { OutputMonitor } from './output-monitor.js';
 import { playbackCompatibility, supportsPlaybackSchema } from './music-assistant-policy.js';
 import type { PlaybackProblem } from './playback-problem.js';
@@ -36,6 +37,8 @@ export type IntegrationView = {
   authorization?: { attemptId: string; revision: number };
   compatibility?: ReturnType<typeof playbackCompatibility> | null;
 };
+/** Only a definitely-not-written save leaves the previous settings authoritative. */
+const uncertainSave = (error: unknown) => !(error instanceof PersistenceError) || error.outcome === 'uncertain';
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
   readonly problem?: PlaybackProblem;
@@ -151,7 +154,7 @@ export class IntegrationManager implements CatalogueProvider {
   get guestAccess(): GuestAccess {
     const source = this.state.guestOrigin ? this.state.guestSelection === 'manual' ? 'manual' : 'legacy' : this.guestOverride || !this.addon ? 'configured' : 'automatic';
     const hints = this.guestHints;
-    if (hints?.internalHosts?.includes(new URL(this.guestOrigin).hostname.replace(/^\[|\]$/g, '')) && !hints.guestOrigins.includes(this.guestOrigin)) return { source, status: 'unavailable', message: 'The saved address belongs to the app’s internal network. Use automatic addressing in Advanced guest settings.' };
+    if (hints?.internalHosts?.includes(bareHostname(new URL(this.guestOrigin).hostname)) && !hints.guestOrigins.includes(this.guestOrigin)) return { source, status: 'unavailable', message: 'The saved address belongs to the app’s internal network. Use automatic addressing in Advanced guest settings.' };
     if (source === 'automatic') {
       if (!hints?.available || !hints.networkAvailable) return { source, status: 'checking', message: 'Preparing guest link. Home Assistant network discovery will retry automatically.' };
       if (!hints.guestPort) return { source, status: 'unavailable', message: 'Guest access is disabled. Enable the guest port in the app’s Home Assistant Network settings.' };
@@ -208,7 +211,7 @@ export class IntegrationManager implements CatalogueProvider {
   }
   /** Separate diagnostic lane: never holds the player/volume serializer during network I/O. */
   async checkMediaOrigins(origins: string[], revision: number, automatic = false): Promise<AddressingView> {
-    return maOperation('media-check', () => this.inspectMediaOrigins(origins, revision, automatic));
+    return operation('media-check', () => this.inspectMediaOrigins(origins, revision, automatic));
   }
   private async inspectMediaOrigins(origins: string[], revision: number, automatic: boolean): Promise<AddressingView> {
     this.expected(revision);
@@ -265,7 +268,7 @@ export class IntegrationManager implements CatalogueProvider {
     return this.references.unseal(value, kind, context);
   }
   private withArtwork<T extends { artwork?: string; artistArtwork?: string }>(item: T, context: string): T {
-    const url = (id?: string) => id && /^image:[a-f0-9]{64}$/.test(id) ? `/api/participant/artwork/${encodeURIComponent(this.seal(id, 'image', context))}` : undefined;
+    const url = (id?: string) => id && /^image:[a-f0-9]{64}$/.test(id) ? `${artworkPath}${encodeURIComponent(this.seal(id, 'image', context))}` : undefined;
     return { ...item, artwork: url(item.artwork), artistArtwork: url(item.artistArtwork) };
   }
   private catalogueItem<T extends { id: string; artwork?: string; artistArtwork?: string; sources?: T[] }>(item: T, kind: string, context: string): T {
@@ -346,7 +349,7 @@ export class IntegrationManager implements CatalogueProvider {
   savedArtworkUrl(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', context: string) {
     if (selection.source === 'upload') {
       return kind === 'artwork' && selection.artworkAssetId
-        ? `/api/participant/artwork/upload:${this.seal(selection.assetId, 'upload-image', context)}` : undefined;
+        ? `${artworkPath}upload:${this.seal(selection.assetId, 'upload-image', context)}` : undefined;
     }
     const saved = this.savedSource(selection);
     return this.withArtwork({ artwork: saved.metadata.artworkId, artistArtwork: saved.metadata.artistArtworkId }, context)[kind];
@@ -373,7 +376,7 @@ export class IntegrationManager implements CatalogueProvider {
       if (!lease.observed) throw new AppError(422, 'Music Assistant did not reach this application’s uploaded file. Check the uploaded-file playback address. No audio was started.');
       return { ...resolved, revision, uploaded: true, release: lease.revoke, suspend: lease.suspend,
         track: { id: trackId, title: selection.metadata.title, artist: selection.metadata.artist, album: selection.metadata.album, duration: selection.metadata.duration ?? 0,
-          ...(selection.artworkAssetId ? { artwork: `/api/participant/artwork/upload:${this.seal(selection.assetId, 'upload-image', context)}`,
+          ...(selection.artworkAssetId ? { artwork: `${artworkPath}upload:${this.seal(selection.assetId, 'upload-image', context)}`,
             artworkIdentity: this.savedImageIdentity(trackId, 'artwork') } : {}) } };
     } catch (error) { lease.revoke(); throw error; }
   }
@@ -407,7 +410,7 @@ export class IntegrationManager implements CatalogueProvider {
     });
   }
   async recoverPlayback(revision: number): Promise<IntegrationView> {
-    return maOperation('recover', async () => {
+    return operation('recover', async () => {
       await this.withPlayback(async () => { this.expected(revision); await this.playback?.recover(); });
       // Recovery may outlive a failed background inventory read. Publish a fresh
       // observation, not that cached failure, before promising the UI it can play again.
@@ -427,14 +430,20 @@ export class IntegrationManager implements CatalogueProvider {
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
     try { await this.store.save(next); }
     catch (error) {
-      if (!(error instanceof PersistenceError) || error.outcome === 'uncertain') {
-        this.settingsUncertain = true; this.observation++; this.report = null; this.lastInventoryReport = null; this.destinationCheckedAt = null;
-        this.failure = 'The settings save could not be confirmed. Refresh speakers to reconcile saved settings before playback.';
-        this.playback?.configurationChanged(); this.changed(); this.refreshOutputSoon();
+      if (uncertainSave(error)) {
+        this.markSettingsUncertain('The settings save could not be confirmed. Refresh speakers to reconcile saved settings before playback.', true);
+        this.refreshOutputSoon();
       }
       throw new AppError(503, 'Integration settings could not be saved. Check the application data directory.');
     }
     this.installConfiguration(next);
+  }
+  /** An ambiguous save: playback stays blocked until a durable rewrite reconciles the settings. */
+  private markSettingsUncertain(message: string, configurationChanged = false) {
+    this.settingsUncertain = true; if (configurationChanged) this.observation++;
+    this.report = null; this.lastInventoryReport = null; this.destinationCheckedAt = null; this.failure = message;
+    if (configurationChanged) this.playback?.configurationChanged();
+    this.changed();
   }
   private installConfiguration(next: IntegrationState) {
     const connectionChanged = this.state.musicAssistant?.url !== next.musicAssistant?.url || this.state.musicAssistant?.accessToken !== next.musicAssistant?.accessToken;
@@ -522,7 +531,7 @@ export class IntegrationManager implements CatalogueProvider {
   }
   /** Only trusted Supervisor-derived candidates matching a persisted server ID reach here. */
   async relocate(url: string, serverId: string, revision: number, browserUrl?: string | null) {
-    return maOperation('server-relocation', () => this.relocateServer(url, serverId, revision, browserUrl));
+    return operation('server-relocation', () => this.relocateServer(url, serverId, revision, browserUrl));
   }
   private async relocateServer(url: string, serverId: string, revision: number, browserUrl?: string | null) {
     this.assertSetupRevision(revision); const previous = this.state.musicAssistant;
@@ -558,7 +567,7 @@ export class IntegrationManager implements CatalogueProvider {
     this.expected(revision);
     if (this.inspection?.revision === revision) return this.inspection.pending;
     // Register coalescing before publishing Loading/Refreshing to subscribers.
-    const pending = Promise.resolve().then(() => maOperation('settings-discovery', () => this.inspectSettings(revision)));
+    const pending = Promise.resolve().then(() => operation('settings-discovery', () => this.inspectSettings(revision)));
     this.inspection = { revision, pending };
     try { return await pending; }
     finally { if (this.inspection?.pending === pending) this.inspection = undefined; }
@@ -610,10 +619,7 @@ export class IntegrationManager implements CatalogueProvider {
         const next = { ...this.state, musicAssistant: { ...ma, serverId: report.serverId } };
         try { await this.store.save(next); this.state = next; }
         catch (error) {
-          if (!(error instanceof PersistenceError) || error.outcome === 'uncertain') {
-            this.settingsUncertain = true; this.report = null; this.lastInventoryReport = null; this.destinationCheckedAt = null;
-            this.failure = 'Saved settings could not be confirmed. Refresh speakers to reconcile them.'; this.changed();
-          }
+          if (uncertainSave(error)) this.markSettingsUncertain('Saved settings could not be confirmed. Refresh speakers to reconcile them.');
           throw new AppError(503, 'Integration identity could not be saved. Check the data directory.');
         }
       }
@@ -623,7 +629,7 @@ export class IntegrationManager implements CatalogueProvider {
     });
   }
   async selectDestination(id: string, revision: number): Promise<IntegrationView> {
-    return maOperation('speaker-selection', () => this.withInventoryCheck(revision, () => this.validateDestination(id, revision)));
+    return operation('speaker-selection', () => this.withInventoryCheck(revision, () => this.validateDestination(id, revision)));
   }
   private async validateDestination(id: string, revision: number): Promise<IntegrationView> {
     this.expected(revision); const ma = this.state.musicAssistant;

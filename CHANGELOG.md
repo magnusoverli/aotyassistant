@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.15] — 2026-11-08
+
+- Allow the host to delete a user who is not taking their turn while playback controls need recovery or Music Assistant is unreachable.
+- Signing in again as an existing room member no longer changes the room revision, so it cannot make a concurrent host reorder or removal fail with "The room changed".
+- Share one implementation for bounded caches, rate limits, origin checks and size-limited private record reads, and remove unused modules and duplicated browser view code. Behaviour is otherwise unchanged.
+
 ## [1.1.14] — 2026-11-07
 
 - Reuse 160-pixel JPEG thumbnails across catalogue results, saved lists/history and the participant player. Authorized saved-artwork routes share the catalogue cache target; private-list-only reads support conditional caching.

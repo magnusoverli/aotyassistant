@@ -27,7 +27,7 @@ export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantO
     const preparations = new PreparationManager(new PreparationFileStore(dir), Date.now, selection => selection.source === 'demo' ? !manager.configured
       : selection.source === 'upload' ? manager.uploadPlaybackAvailable : selection.sourceBindingId === manager.sourceBindingId);
     const uploads = new UploadAssets(dir, fixtureUploadAnalysis);
-    const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, mode: 'demo', demoSeconds: 60 }, 'dist/web', manager, preparations, uploads);
+    const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, demoSeconds: 60 }, 'dist/web', manager, preparations, uploads);
     server.on('request', http.app);
     try { await use({ origin, musicAssistantOrigin: remote.origin, dataDirectory: dir, demo, engine, app: http.app, manager, remote, calls: remote.calls, setSpeakers: remote.setSpeakers,
       setSchema(schema) { remote.info.schema_version = schema; } }); }

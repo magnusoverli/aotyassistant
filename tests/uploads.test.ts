@@ -29,7 +29,7 @@ async function fixture(t: TestContext, analyze = fixtureUploadAnalysis) {
   const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/aoty-uploads-');
   const server = createServer(); server.listen(0, '0.0.0.0'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: directory, mode: 'demo' as const, demoSeconds: 3600 };
+  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: directory, demoSeconds: 3600 };
   const integrations = new IntegrationManager(new IntegrationFileStore(directory)); await integrations.init();
   const adapter = new ManagedPlayback(new DemoAdapter(3600), integrations, 20);
   const engine = new Engine(new FileStore(directory), adapter, origin, integrations); await engine.init();

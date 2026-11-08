@@ -2,6 +2,7 @@ import { panel as createPanel, fieldControl } from './ui-components';
 import { ViewNodes, children, attr, prop } from './view-nodes';
 import type { UserDirectory } from '../src/model';
 import { avatar } from './visuals';
+import { pinInput } from './user-pin';
 
 /** Shared by /join and the unjoined participant entry screen; never submits on mount. */
 export function joinPanel(options: { nickname: string; pin: string; directory?: UserDirectory; selected?: string;
@@ -39,8 +40,8 @@ export function joinPanel(options: { nickname: string; pin: string; directory?: 
   };
   if (error.parentElement !== field) field.append(error);
   const needsPin = !remembered || selected?.pinRequired;
-  const pinField = v.get('pin-field', () => { const field = fieldControl('4-digit PIN', 'join-pin'); field.input.type = 'password'; return field; });
-  const pin = pinField.input; pin.inputMode = 'numeric'; pin.name = 'pin'; pin.maxLength = 4; pin.pattern = '[0-9]{4}'; pin.required = true;
+  const pinField = pinInput(v, 'join-pin', '4-digit PIN');
+  const pin = pinField.input; pin.name = 'pin';
   pin.autocomplete = !selected || selected.pinRequired ? 'new-password' : 'current-password';
   attr(pin, 'aria-describedby', error.id); attr(pin, 'aria-invalid', String(Boolean(options.error)));
   prop(pin, 'value', options.pin); prop(pin, 'disabled', options.busy); pin.oninput = () => options.pinChanged(pin.value);
@@ -57,5 +58,5 @@ export function joinPanel(options: { nickname: string; pin: string; directory?: 
     }
     options.submit(input.value.trim());
   };
-  children(panel, ...content, form, panel.querySelector('.entry-library-access')); return panel;
+  children(panel, ...content, form); return panel;
 }

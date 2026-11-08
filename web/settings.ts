@@ -12,6 +12,9 @@ import { PlaybackSettingsPanel } from './playback-settings';
 import { UserSettingsPanel } from './user-pin';
 import { SettingsSections, type SettingsSection } from './settings-sections';
 import { OnlinePanel } from './online-panel';
+import { outputStatus } from './output';
+
+const signInNotices = { cancelled: 'Sign-in cancelled. Your saved connection was kept.', expired: 'Sign-in expired. Try connecting again.' };
 
 /** Host-only setup. MA handles login; callback credentials are consumed by the backend. */
 export async function mountSettings(container: HTMLElement, signal: AbortSignal) {
@@ -55,8 +58,8 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     history.replaceState(null, '', location.pathname + location.hash);
     try { localStorage.setItem(storageKey('aoty.ma-auth-result'), JSON.stringify({ result: authResult, attemptId, at: Date.now() })); } catch { /* The integration stream also confirms successful attempts. */ }
     if (authResult === 'connected') notice = 'Music Assistant connected. Open Playback to choose a speaker.';
-    else if (authResult === 'cancelled') notice = 'Sign-in cancelled. Your saved connection was kept.';
-    else if (authResult === 'expired') notice = 'Sign-in expired. Try connecting again.';
+    else if (authResult === 'cancelled') notice = signInNotices.cancelled;
+    else if (authResult === 'expired') notice = signInNotices.expired;
     else error = 'Music Assistant sign-in could not finish. It may have expired, settings changed, or this browser blocked the return. Try Connect again or use advanced token setup.';
   }
   const addresses = new AddressingPanel(() => render(), revision => {
@@ -114,8 +117,9 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     }
     return changed;
   }
+  const connectDisabled = () => busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked);
   function connectButton(text: string) {
-    const button = nodes.el(`connect-${text}`, 'button', text, settings?.tokenConfigured ? 'secondary' : ''); prop(button, 'type', 'button'); prop(button, 'disabled', busy || !online || !urlDraft.trim() || authPending || Boolean(settings?.settingsChangesBlocked));
+    const button = nodes.el(`connect-${text}`, 'button', text, settings?.tokenConfigured ? 'secondary' : ''); prop(button, 'type', 'button'); prop(button, 'disabled', connectDisabled());
     button.onclick = () => {
       const popup = window.open('about:blank', '_blank'); if (popup) popup.opener = null;
       void run(async () => {
@@ -196,12 +200,13 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       prop(change, 'disabled', change.disabled || Boolean(settings.settingsChangesBlocked)); connectionNodes.push(change);
       if (editConnection) connectionNodes.push(action('Find Music Assistant', async () => { await loadSetup(true); apply(await request('')); }, true));
       const actions = v.get('connection-actions', () => { const node = actionGroup(); node.classList.add('settings-connection-actions'); return node; });
-      children(actions, connectButton('Reconnect Music Assistant'), action('Disconnect', async () => {
+      const disconnect = action('Disconnect', async () => {
         if (!confirm('Disconnect Music Assistant and remove the saved token and destination? This does not revoke the token in Music Assistant.')) return;
         apply(await request('/clear', { revision: settings!.revision }), true); editConnection = false; authPending = false; loginUrl = '';
         notice = 'Music Assistant disconnected.';
-      }, true));
-      actions.querySelectorAll('button').forEach(button => { if (button.textContent === 'Disconnect') button.classList.add('danger'); });
+      }, true);
+      disconnect.classList.add('danger');
+      children(actions, connectButton('Reconnect Music Assistant'), disconnect);
       if (editConnection || settings.status === 'error') connectionNodes.push(actions);
       for (const control of actions.querySelectorAll('button')) prop(control, 'disabled', control.disabled || Boolean(settings.settingsChangesBlocked));
       if (settings.tokenExpiresAt) connectionNodes.push(v.el('expiry', 'p', `Authorization expires ${new Date(settings.tokenExpiresAt).toLocaleDateString()}.`, 'muted small'));
@@ -228,7 +233,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
         const detected = v.el('detected-field', 'div', undefined, 'field'); children(detected, label, select); setupNodes.push(detected);
       }
       const form = v.el('connection-form', 'form', undefined, 'form-stack integration-form');
-      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = !value.trim() || busy || !online || authPending || Boolean(settings?.settingsChangesBlocked); });
+      const url = field('Music Assistant URL', 'ma-url', 'url', urlDraft, value => { urlDraft = value; browserDraft = ''; const b = document.getElementById('ma-connect') as HTMLButtonElement | null; if (b) b.disabled = connectDisabled(); });
       prop(url.input, 'required', true); prop(url.input, 'maxLength', 2048); prop(url.input, 'placeholder', 'http://homeassistant.local:8095');
       setupNodes.push(url.group);
       if (!settings.tokenConfigured) { const connect = connectButton('Connect Music Assistant'); prop(connect, 'id', 'ma-connect'); setupNodes.push(connect); }
@@ -265,7 +270,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     if (loginUrl) {
       const pending = v.el('auth-pending', 'p', 'Waiting for sign-in…', 'muted'); attr(pending, 'role', 'status'); connectionNodes.push(pending);
       const login = v.el('auth-link', 'a', 'Open Music Assistant sign-in', 'button secondary'); attr(login, 'href', loginUrl); prop(login, 'target', '_blank'); prop(login, 'rel', 'noopener noreferrer'); connectionNodes.push(login);
-      connectionNodes.push(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = 'Sign-in cancelled. Your saved connection was kept.'; }, true));
+      connectionNodes.push(action('Cancel sign-in', async () => { await requestJson('/api/host/auth/cancel', {}); authPending = false; loginUrl = ''; notice = signInNotices.cancelled; }, true));
     }
     if (settings?.settingsChangesBlocked) connectionNodes.push(v.get('connection-blocked', () => { const node = el('p', undefined, 'muted small'); node.append('Finish the current song before changing setup. ', link('Return to host', '/host', 'inline-link')); return node; }));
     if (settings?.compatibility && !settings.compatibility.supported) connectionNodes.push(v.el('compatibility', 'p', settings.compatibility.message, 'warning small'));
@@ -275,10 +280,11 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     const inventoryState = speakerFreshness.state;
     const updatingSpeakers = refreshingSpeakers || refreshing || inventoryState === 'loading' || inventoryState === 'refreshing';
     const activeOutput = settings?.output.state === 'ready' && !speakerFreshness.ready ? { ...settings.output, state: 'checking' as const } : settings?.output;
-    const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? 'Checking…' : !settings ? 'Loading…' : !online ? 'Connection lost'
+    const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? outputStatus.checking : !settings ? 'Loading…' : !online ? 'Connection lost'
       : inventoryState === 'loading' && activeOutput?.state !== 'recovery' ? 'Loading…'
-      : activeOutput?.state === 'ready' ? updatingSpeakers ? 'Updating…' : 'Ready' : activeOutput?.state === 'checking' ? 'Checking…' : activeOutput?.state === 'recovery' ? 'Recovery needed'
-      : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : activeOutput?.state === 'incompatible' ? 'Playback unsupported' : 'No active speaker';
+      : activeOutput?.state === 'ready' ? updatingSpeakers ? 'Updating…' : 'Ready'
+      : activeOutput?.state === 'checking' || activeOutput?.state === 'recovery' || activeOutput?.state === 'incompatible' ? outputStatus[activeOutput.state]
+      : activeOutput?.state === 'unconfirmed' ? 'Unconfirmed' : outputStatus.none;
     const destination = panel('destination', 'Active speaker', speakerState);
     attr(destination, 'data-inventory-state', inventoryState);
     const destinationNodes: Node[] = [destination.firstElementChild!];
@@ -387,7 +393,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   }, 2000);
   window.addEventListener('pagehide', () => clearInterval(poll), { once: true, signal });
   const authTimer = setInterval(() => {
-    if (authPending && Date.now() >= authExpiresAt) { authPending = false; loginUrl = ''; feedbackSection = 'music-assistant'; notice = 'Sign-in expired. Try connecting again.'; render(); }
+    if (authPending && Date.now() >= authExpiresAt) { authPending = false; loginUrl = ''; feedbackSection = 'music-assistant'; notice = signInNotices.expired; render(); }
   }, 1000);
   window.addEventListener('pagehide', () => clearInterval(authTimer), { once: true, signal });
   window.addEventListener('storage', event => {
@@ -396,7 +402,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       const result = JSON.parse(event.newValue);
       if (result.attemptId !== authAttempt || typeof result.at !== 'number' || Date.now() - result.at > 60_000) return;
       if (result.result === 'connected') void refreshSnapshot();
-      else { authPending = false; loginUrl = ''; feedbackSection = 'music-assistant'; notice = result.result === 'cancelled' ? 'Sign-in cancelled. Your saved connection was kept.' : result.result === 'expired' ? 'Sign-in expired. Try connecting again.' : 'Sign-in could not finish. Try connecting again.'; render(); }
+      else { authPending = false; loginUrl = ''; feedbackSection = 'music-assistant'; notice = result.result === 'cancelled' ? signInNotices.cancelled : result.result === 'expired' ? signInNotices.expired : 'Sign-in could not finish. Try connecting again.'; render(); }
     } catch { /* Ignore unrelated/malformed browser storage. */ }
   }, { signal });
   async function refreshSnapshot(discoverSpeakers = true) {
@@ -439,5 +445,6 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   window.addEventListener('online', () => { void refreshSnapshot(); }, { signal });
   window.addEventListener('pagehide', () => { live?.close(); clearTimeout(freshnessTimer); }, { signal });
   window.addEventListener('pageshow', event => { if (event.persisted) { render(); scheduleSpeakerExpiry(); connectLive(); void refreshSnapshot(); } }, { signal });
-  signal.addEventListener('abort', () => { live?.close(); clearTimeout(freshnessTimer); clearInterval(poll); clearInterval(authTimer); }, { once: true });
+  // The stream and speaker-expiry timer are already released by the abort handler registered at mount.
+  signal.addEventListener('abort', () => { clearInterval(poll); clearInterval(authTimer); }, { once: true });
 }

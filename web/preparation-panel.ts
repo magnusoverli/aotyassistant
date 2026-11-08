@@ -64,16 +64,13 @@ export class PreparationPanel {
     this.disclosures.set(key, details); return details;
   }
   addButton(track: CatalogueTrack) {
-    const added = this.library.added.has(track.id);
-    const button = this.button(added ? 'Added ✓' : 'Add to list', async () => {
+    const button = this.button('Add to list', async () => {
       if (this.library.added.has(track.id)) return;
       await this.library.add(track);
       if (this.library.added.has(track.id)) this.feedback.textContent = `Added ${track.title} to your list.`;
     }, true, `save-${track.id}`);
-    // Keep the acknowledgement focusable, so saving does not strand keyboard users on the page body.
-    if (added) button.setAttribute('aria-disabled', 'true');
     button.dataset.preparationTrack = track.id;
-    button.disabled ||= Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading || !this.library.view;
+    this.updateAddButton(button);
     return button;
   }
   render(search?: HTMLElement, player?: HTMLElement) {
@@ -119,12 +116,12 @@ export class PreparationPanel {
     }
   }
   updateAddButton(button: HTMLButtonElement) {
-      const added = this.library.added.has(button.dataset.preparationTrack!);
-      text(button, added ? 'Added ✓' : 'Add to list');
-      attr(button, 'aria-disabled', added ? 'true' : undefined);
-      prop(button, 'disabled', this.library.saving || !navigator.onLine || Boolean(this.library.pending || this.library.view?.reviewEntryId) || this.library.loading ||
-        !this.library.view || button.dataset.sourceSelectable === 'false');
-      button.closest('.track-row')?.classList.toggle('is-prepared', added);
+    const added = this.library.added.has(button.dataset.preparationTrack!);
+    text(button, added ? 'Added ✓' : 'Add to list');
+    // Keep the acknowledgement focusable, so saving does not strand keyboard users on the page body.
+    attr(button, 'aria-disabled', added ? 'true' : undefined);
+    prop(button, 'disabled', this.library.locked || this.library.loading || !this.library.view || button.dataset.sourceSelectable === 'false');
+    button.closest('.track-row')?.classList.toggle('is-prepared', added);
   }
   private renderList() {
     const library = this.library; const snapshot = library.view;
@@ -198,7 +195,7 @@ export class PreparationPanel {
           }, true, `purge-${entry.id}`));
           cached = { key, element: row }; this.historyRows.set(entry.id, cached);
         }
-        for (const control of cached.element.querySelectorAll('button')) prop(control, 'disabled', library.saving || !navigator.onLine || Boolean(library.pending || snapshot?.reviewEntryId));
+        for (const control of cached.element.querySelectorAll('button')) prop(control, 'disabled', library.locked);
         historyEntries.push(cached.element);
       } children(rows, ...historyEntries); historyNodes.push(rows);
     }
@@ -251,7 +248,7 @@ export class PreparationPanel {
     const hide = (selector: string, hidden: boolean) => { const node = row.querySelector<HTMLElement>(selector)!; if (node.hidden !== hidden) node.hidden = hidden; };
     hide('.saved-next-label', index !== 0); hide('.drag-handle', !this.editing);
     hide(`[data-focus-key="up-${entry.id}"]`, !this.editing || index === 0); hide(`[data-focus-key="down-${entry.id}"]`, !this.editing || index === count - 1); hide('[data-make-next]', index === 0);
-    const disabled = library.saving || !navigator.onLine || Boolean(library.pending || library.view?.reviewEntryId);
+    const disabled = library.locked;
     for (const button of row.querySelectorAll('button')) if (button.disabled !== disabled) button.disabled = disabled;
     return row;
   }

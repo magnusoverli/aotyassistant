@@ -29,7 +29,7 @@ async function fixture() {
   await adapter.refresh();
   const host = () => engine.view({ kind: 'host' });
   const alex = await engine.join('Alex'); const sam = await engine.join('Sam');
-  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, mode: 'demo', demoSeconds: 30 }, 'web', manager);
+  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, demoSeconds: 30 }, 'web', manager);
   server.on('request', http.app);
   const request = (path: string, credential?: string, role = 'participant', data?: unknown) => fetch(`${origin}${path}`, {
     method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `aoty_${role}=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },

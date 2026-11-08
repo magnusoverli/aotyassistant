@@ -2,22 +2,14 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { isIP } from 'node:net';
 import ipaddr from 'ipaddr.js';
 import type { Request, Response } from 'express';
-import { z } from 'zod';
 import { errorPage, escapeHtml as escape } from './error-page.js';
 import { AppError, type GuestAccess } from './model.js';
-import { isAllowedAddress } from './music-assistant-transport.js';
+import { bareHostname, httpOrigin, isAllowedAddress, notSupervisor } from './lan-network.js';
 import { mediaRange } from './http-utils.js';
 
-export const applicationOrigin = z.string().trim().max(2048).url().transform((value, context) => {
-  const url = new URL(value); const hostname = url.hostname.replace(/^\[|\]$/g, '');
-  const address = isIP(hostname) ? ipaddr.process(hostname) : undefined;
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
-    hostname.toLowerCase() === 'supervisor' || (address && !['unicast', 'private', 'loopback', 'uniqueLocal', 'carrierGradeNat'].includes(address.range()))) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Use an application HTTP(S) origin without credentials, paths, query or fragment; unspecified, metadata and multicast addresses are not allowed.' });
-    return z.NEVER;
-  }
-  return url.origin;
-});
+const applicationAddress = (hostname: string) => !isIP(hostname) || ['unicast', 'private', 'loopback', 'uniqueLocal', 'carrierGradeNat'].includes(ipaddr.process(hostname).range());
+export const applicationOrigin = httpOrigin('Use an application HTTP(S) origin without credentials, paths, query or fragment; unspecified, metadata and multicast addresses are not allowed.',
+  hostname => notSupervisor(hostname) && applicationAddress(hostname));
 
 export type MediaCheck = { status: 'unchecked' | 'checking' | 'verified' | 'failed' | 'expired'; origin: string | null; checkedAt: number | null; message: string };
 export type AddressingView = { revision: number; guestOrigin: string; mediaOrigin: string | null; automaticMediaOrigin: string | null;
@@ -32,7 +24,7 @@ export function shareableOrigin(origin: string) {
 /** Recovery/setup only. Never authorize ordinary APIs by trusting an arbitrary Host or forwarded header. */
 export function setupHostAllowed(host: string, remote: string) {
   try {
-    const url = new URL(`http://${host}`); const hostname = url.hostname.replace(/^\[|\]$/g, '');
+    const url = new URL(`http://${host}`); const hostname = bareHostname(url.hostname);
     if (url.host !== host || !applicationOrigin.safeParse(url.origin).success || !isAllowedAddress(remote)) return false;
     return isIP(hostname) ? isAllowedAddress(hostname) : /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.local$/i.test(hostname);
   } catch { return false; }

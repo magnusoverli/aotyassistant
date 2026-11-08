@@ -1,9 +1,8 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { z } from 'zod';
-import { writePrivateJson } from './store.js';
+import { readPrivateJson, writePrivateJson } from './store.js';
 import { SerialQueue } from './serial.js';
 import { durability } from './backup.js';
 import { AppError, type GuestAccess } from './model.js';
@@ -32,12 +31,8 @@ export class OnlineAccess extends EventEmitter {
     super(); this.state = { available: Boolean(connector), enabled: false, revision: 0, status: 'disabled', message: 'Enable online invitations to let friends join without your Wi-Fi.' };
   }
   async init() {
-    try {
-      const file = await open(join(this.directory, 'online-access.json'), 'r');
-      try { if ((await file.stat()).size > 4096) throw new Error(); this.saved = schema.parse(JSON.parse(await file.readFile('utf8'))); }
-      finally { await file.close(); }
-    }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') { this.blocked = true; this.update('error', 'Online settings could not be read. Restore a valid backup; local access is still available.'); return; } }
+    try { this.saved = await readPrivateJson(join(this.directory, 'online-access.json'), schema, 4096) ?? this.saved; }
+    catch { this.blocked = true; this.update('error', 'Online settings could not be read. Restore a valid backup; local access is still available.'); return; }
     if (this.saved.enabled) this.update('connecting', 'Reconnecting online invitations…');
   }
   get enabled() { return this.saved.enabled && !this.blocked && !this.closed; }

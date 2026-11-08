@@ -5,7 +5,8 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { z } from 'zod';
 import { AppError } from './model.js';
 import { MusicAssistantTransport } from './music-assistant-transport.js';
-import { resolveLanAddresses, musicAssistantUrl } from './lan-network.js';
+import { lanWebSocket } from './lan-network.js';
+import { readCookie } from './http-guards.js';
 import { supportsPlaybackSchema } from './music-assistant-policy.js';
 import { browserDevices, browserSpeakerName, type BrowserDevice } from './browser-speaker-name.js';
 import { SpeakerRelay } from './speaker-relay.js';
@@ -22,7 +23,7 @@ export const speakerPath = '/api/browser-speaker';
 export const speakerId = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 export const speakerRegistration = z.object({ id: z.string().uuid(), clientId: speakerId, name: z.string().trim().min(1).max(60), device: z.enum(browserDevices).optional() }).strict();
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
-export const requestSpeakerCookie = (req: IncomingMessage) => req.headers.cookie?.split(';').map(v => v.trim()).find(v => v.startsWith(`${speakerCookie}=`))?.slice(speakerCookie.length + 1) ?? '';
+export const requestSpeakerCookie = (req: IncomingMessage) => readCookie(req, speakerCookie);
 
 /** Version-0 pairing token: base32(client public key || PSK), with 9 replacing 2. */
 export function pairingClientId(token: string): string | undefined {
@@ -46,12 +47,8 @@ export async function openSpeakerSocket(connection: SpeakerConnection, clientId:
     if (info.server_id !== connection.serverId || !supportsPlaybackSchema(info.schema_version)) throw new Error();
   } catch { throw new AppError(502, 'Music Assistant identity or browser-audio compatibility could not be confirmed. Refresh its connection in Settings.'); }
   finally { transport.close(); }
-  const url = new URL('/sendspin', musicAssistantUrl.parse(connection.origin));
-  const addresses = await resolveLanAddresses(url.hostname.replace(/^\[|\]$/g, ''), 8000);
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = await lanWebSocket(connection.origin, '/sendspin');
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url, { agent: false, followRedirects: false, handshakeTimeout: 8000, maxPayload: 2 * 1024 * 1024, perMessageDeflate: false,
-      lookup: (_name, options, callback) => options.all ? callback(null, addresses) : callback(null, addresses[0]!.address, addresses[0]!.family) });
     const timer = setTimeout(fail, 10_000); timer.unref();
     function fail() { clearTimeout(timer); socket.terminate(); reject(new AppError(502, 'The Music Assistant browser audio connection could not be established.')); }
     socket.once('open', () => socket.send(JSON.stringify({ type: 'auth', token: connection.token, client_id: clientId })));
@@ -206,7 +203,7 @@ export class BrowserSpeakers {
       s.close = close; // Reserve before awaiting DNS/auth; racing upgrades cannot acquire the same lease.
       socket.once('close', close);
       upstream = await this.open(this.connection(), s.clientId);
-      if (!this.usable(s) || socket.destroyed || upstream.readyState !== WebSocket.OPEN) { close(); if (s.close === close) s.close = undefined; return; }
+      if (!this.usable(s) || socket.destroyed || upstream.readyState !== WebSocket.OPEN) { close(); return; }
       const remote = upstream;
       this.upgrades.handleUpgrade(req, socket, head, client => {
         socket.off('close', close);

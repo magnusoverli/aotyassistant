@@ -25,7 +25,7 @@ async function fixture(t: TestContext) {
   const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-preparation-http-');
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: dir, mode: 'demo' as const, demoSeconds: 3600 };
+  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: dir, demoSeconds: 3600 };
   async function boot() {
     const integrations = new IntegrationManager(new IntegrationFileStore(dir)); await integrations.init();
     const adapter = new ManagedPlayback(new DemoAdapter(3600), integrations, 30);
