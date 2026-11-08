@@ -1,6 +1,7 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, request as httpRequest, type RequestListener } from 'node:http';
@@ -118,6 +119,14 @@ test('connector contracts reject unsafe proxy configurations, non-Tailscale host
   assert.equal(tailscaleApproval('https://login.tailscale.com/f/funnel?node=123'), 'https://login.tailscale.com/f/funnel?node=123');
   assert.equal(tailscaleApproval('https://login.tailscale.com.evil.test/a/test'), undefined); assert.equal(tailscaleApproval('https://evil@login.tailscale.com/a/test'), undefined);
   for (const path of ['/host', '/api/host/state', '/api/media/uploads/id/key/track.mp3', '/api/participant/../host/state', '/api/participant/%2e%2e/host/state', '/API/host/state', '/assets/app.js.map', '/api/health']) assert.equal(publicRoute('GET', path), false, path);
+});
+
+test('every participant action is reachable through an online invitation', () => {
+  // A new participant route that is missing here works at home but answers "Page not found" online.
+  const source = readFileSync(new URL('../src/http.ts', import.meta.url), 'utf8');
+  const paths = [...source.matchAll(/app\.post\('(\/api\/participant\/[^':]+)'/g)].map(match => match[1]!);
+  assert.ok(paths.includes('/api/participant/import/read') && paths.includes('/api/participant/search'), 'routes were found');
+  for (const path of paths) assert.equal(publicRoute('POST', path), true, path);
 });
 
 async function listen(t: TestContext, handler?: RequestListener) {

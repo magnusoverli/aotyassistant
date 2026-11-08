@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.1] — 2026-11-09
+
+- Fix importing a list through an online invitation, which answered "Page not found": the invitation address did not allow the two import requests. A new test checks that every participant action is reachable online.
+
 ## [1.2.0] — 2026-11-09
 
 - Import a list shared from SuShe Online: choose **Import** beside Your playlist and paste the list's one-week share link. Its songs, one per album, are added last album first; each is found in Music Assistant on its linked album or by searching, with checks on title, artist and length. The summary lists songs that weren't found, each with a Search button, and albums SuShe left out. The server opens only public `https` share links, never addresses on the home network. Needs Music Assistant; there is no demo version.
