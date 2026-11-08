@@ -120,7 +120,15 @@ const player = new PlayerController({
 const library = new PreparationController(() => {
   if (page === 'participant' && view?.me && root.querySelector('.preparation-list')) { music.refresh(); renderParticipantPlayer(); } else render();
 }, () => Boolean(view?.me));
-const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting, changed: render });
+const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting, changed: render, search: searchFor });
+/** Runs a catalogue search as if typed, for example for a song an import didn't find. */
+function searchFor(query: string) {
+  const input = document.getElementById('catalogue-search') as HTMLInputElement | null;
+  const form = input?.form; if (!input || !form) return;
+  input.value = searchText = query.slice(0, input.maxLength > 0 ? input.maxLength : 200);
+  document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+  form.requestSubmit(); input.focus({ preventScroll: true });
+}
 const playbackOptions = { run, volume: (level: number, commit: boolean) => player.volume(level, commit) };
 const playback = page === 'host' ? new Playback({ ...playbackOptions, role: 'host',
   control: action => { error = ''; player.control(action); },

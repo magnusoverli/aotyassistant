@@ -22,6 +22,7 @@ Open **Your music** after joining:
 2. If several services provide a result, select the intended source/version. The app does not silently substitute a different recording.
 3. Use **Add to list** to save a choice for later. Preparation remains available while another participant is playing.
 4. Use **Upload a song** for an audio file on the device. Review its details and add it to the private list.
+5. Use **Import** beside **Your playlist** to add a list shared from SuShe Online, one song per album. See [importing a list](private-lists.md#import-a-list-from-sushe-online).
 
 **Your playlist** and search share one card: stacked on phones, or side by side on desktop with search on the left and a wider playlist pane on the right. The number of upcoming tracks appears beneath the playlist title. The list has its own scrolling area with compact rows, followed by **Previously played** and **Removed**. On phones, while you browse results below the list, a one-line playlist bar at the top shows the track count and your next pick, confirms each added song, and **View list** returns to the list. Drag a song’s row to a new place to reorder the list: with a mouse, press and move; on a touch screen, press and hold the song, then drag (a plain swipe scrolls the list). The other songs slide aside to show where it will land. The **✕** at the end of a row removes the song. There is no separate edit mode or list screen.
 

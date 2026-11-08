@@ -1,9 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile } from './model.js';
+import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type FoundSong, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
+import type { SharedSong } from './shared-list.js';
 import { SerialQueue } from './serial.js';
 import { background, operation, playbackResolution, remaining, stage } from './operation.js';
 import { artworkPath, artworkReference } from './catalogue-references.js';
@@ -400,6 +401,18 @@ export class Engine extends EventEmitter {
     if (`${latest.id}:${currentMember.id}` !== context) throw new AppError(401, 'Room membership changed. Join again.');
     if (catalogue.source !== this.catalogueState.source || catalogue.revision !== this.catalogueState.revision) throw new AppError(409, 'The catalogue connection changed. Browse again.');
     return { ...result, playbackAvailable: this.catalogueState.playbackAvailable };
+  }
+  /** Matches songs from an imported list. Like search, the results are sealed to this member. */
+  async findSongs(credential: string, songs: SharedSong[]): Promise<FoundSong[]> {
+    if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');
+    const room = this.room(); const member = this.participant(credential, room); const context = `${room.id}:${member.id}`;
+    const catalogue = this.catalogueState;
+    if (!this.catalogue?.configured || !this.catalogue.findSongs) throw new AppError(422, 'Importing a list needs a Music Assistant connection.');
+    const results = await this.catalogue.findSongs(songs, context);
+    const latest = this.room(); const currentMember = this.participant(credential, latest);
+    if (`${latest.id}:${currentMember.id}` !== context) throw new AppError(401, 'Room membership changed. Join again.');
+    if (catalogue.source !== this.catalogueState.source || catalogue.revision !== this.catalogueState.revision) throw new AppError(409, 'The catalogue connection changed. Import the list again.');
+    return results;
   }
   async play(credential: string, turnId: string, previousPlaybackId: string | null, trackId: string): Promise<void> {
     await operation('play', () => this.playSelection(credential, turnId, previousPlaybackId, context => this.adapter.resolve(trackId, context)));

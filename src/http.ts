@@ -26,10 +26,15 @@ import { mountStaticAssets } from './static-assets.js';
 import { diagnostics } from './diagnostics.js';
 import { UserManager, pinSchema } from './users.js';
 import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
+import { fetchSharedList, sharedListLink, sharedSongSchema } from './shared-list.js';
+import { albumReference } from './list-import.js';
+import { operation } from './operation.js';
 import { mountBrowserSpeakers } from './browser-speaker-http.js';
 
 const turn = z.uuid();
 const revision = z.number().int().nonnegative();
+/** A shared song sent back for matching. Request bodies are small, so only a few usable album links. */
+const importSong = sharedSongSchema.extend({ albumLinks: z.array(z.object({ service: z.string().max(40), url: z.string().max(300) })).max(5) });
 const cookie = (request: Request, name: string): string => {
   const value = readCookie(request, name);
   return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : '';
@@ -49,7 +54,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const app = express();
   app.disable('x-powered-by');
   const rates = new RateLimiter();
-  const cleanup = setInterval(() => rates.prune(), 60_000);
+  // Reading a shared link contacts another server; a person rarely needs more than a few a minute.
+  const imports = new RateLimiter(1000);
+  const cleanup = setInterval(() => { rates.prune(); imports.prune(); }, 60_000);
   cleanup.unref();
 
   app.use((req, res, next) => {
@@ -239,6 +246,21 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   }));
   app.post('/api/participant/browse', jsonBody(z.strictObject({ kind: z.enum(['artists', 'albums', 'tracks']), value: z.string().trim().min(1).max(1000) }), async (input, req, res) => {
     await catalogueRead(req, 'browse', async () => res.json(await engine.browse(participantCredential(req), input.kind, input.value)));
+  }));
+  // Importing a list shared from SuShe Online: read the link once, then match its songs a few at a time.
+  app.post('/api/participant/import/read', jsonBody(z.strictObject({ link: z.string().trim().min(1).max(2000) }), async (input, req, res) => {
+    const member = engine.catalogueContext(participantCredential(req));
+    if (!integrations?.configured) throw new AppError(422, 'Importing a list needs a Music Assistant connection.');
+    if (imports.hit(member, 10) !== 'ok') throw new AppError(429, 'Too many imports. Wait a minute and try again.');
+    const link = sharedListLink(input.link);
+    const shared = await operation('list-import', () => fetchSharedList(link), 15_000, req.signal);
+    // Last album first. Only album links Listening Room can use travel on to matching.
+    const songs = [...shared.songs].sort((a, b) => b.rank - a.rank).map(song => ({ ...song,
+      albumLinks: song.albumLinks.filter(item => item.url.length <= 300 && albumReference(item)).slice(0, 5) }));
+    res.json({ list: shared.list, leftOut: shared.leftOut, unreadable: shared.skipped, songs });
+  }));
+  app.post('/api/participant/import/match', jsonBody(z.strictObject({ songs: z.array(importSong).min(1).max(4) }), async (input, req, res) => {
+    res.json({ results: await operation('import-match', () => engine.findSongs(participantCredential(req), input.songs), 30_000, req.signal) });
   }));
   app.post('/api/participant/play', jsonBody(z.strictObject({ turnId: turn, previousPlaybackId: turn.nullable(), trackId: z.string().min(1).max(1000) }), async (input, req, res) => {
     await engine.play(participantCredential(req), input.turnId, input.previousPlaybackId, input.trackId); res.json(engine.view(participant(req)));

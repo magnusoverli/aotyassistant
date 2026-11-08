@@ -14,7 +14,7 @@ import { ManagedPlayback } from '../src/live-playback.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { PreparationFileStore, PreparationManager } from '../src/preparations.js';
 import type { PreparationView, PreparationResult } from '../src/preparations.js';
-import type { CatalogueSearch, View, UserDirectory } from '../src/model.js';
+import type { CatalogueSearch, FoundSong, View, UserDirectory } from '../src/model.js';
 import { createApp } from '../src/http.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
@@ -380,4 +380,30 @@ test('legacy connection files gain a durable source binding once without changin
   const first = new IntegrationManager(new IntegrationFileStore(dir)); await first.init(); assert.ok(first.sourceBindingId);
   const second = new IntegrationManager(new IntegrationFileStore(dir)); await second.init(); assert.equal(second.sourceBindingId, first.sourceBindingId);
   assert.equal(second.view().revision, 7); assert.deepEqual(second.view().destination, legacy.musicAssistant.destination); assert.equal(remote.calls.length, 0);
+});
+
+test('songs from a shared list are matched for the member only, then added like search results', async t => {
+  const f = await fixture(t);
+  const songs = [
+    { rank: 2, artist: 'Fixture artist', title: 'Real catalogue fixture', album: 'Fixture album', trackNumber: 1, duration: 180,
+      albumLinks: [{ service: 'spotify', url: 'https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy' }] },
+    { rank: 1, artist: 'Someone else', title: 'Real catalogue fixture', album: '', trackNumber: null, duration: null, albumLinks: [] },
+  ];
+  assert.equal((await f.request('/api/participant/import/match', { songs })).status, 401);
+  const { results } = await f.json<{ results: FoundSong[] }>('/api/participant/import/match', { songs }, f.first.membership);
+  assert.equal(results[0]!.track?.title, 'Real catalogue fixture');
+  assert.deepEqual(results[1], { track: null }, 'a different artist is not a match');
+  assert.ok(f.remote.calls.some(call => call.command === 'music/albums/album_tracks' && call.args.provider_instance_id_or_domain === 'spotify' && call.args.item_id === '4aawyAB9vmqN3uQ7FjRGTy'));
+  const list = await f.json<PreparationView>(prefix + '/state', undefined, f.first.privateCookie);
+  const added = await f.json<PreparationResult>(prefix + '/add', { operation: operation(list.revision), trackId: results[0]!.track!.id }, f.first.credentials);
+  assert.equal(added.view.upcoming.length, 1);
+  // Like a search result, a match belongs to the member it was found for.
+  const other = await f.json<PreparationView>(prefix + '/state', undefined, f.second.privateCookie);
+  assert.equal((await f.request(prefix + '/add', { operation: operation(other.revision), trackId: results[0]!.track!.id }, f.second.credentials)).status, 409);
+  // Links are checked before anything is contacted.
+  for (const link of ['not a link', 'https://127.0.0.1/lr/AbCdEfGhIjKlMnOpQrStUv']) assert.equal((await f.request('/api/participant/import/read', { link }, f.first.membership)).status, 422, link);
+  // There is no demo version: without Music Assistant, importing is refused.
+  await f.running.integrations.clear(f.running.integrations.view().revision);
+  assert.equal((await f.request('/api/participant/import/match', { songs }, f.first.membership)).status, 422);
+  assert.equal((await f.request('/api/participant/import/read', { link: 'https://sushe.example/lr/AbCdEfGhIjKlMnOpQrStUv' }, f.first.membership)).status, 422);
 });

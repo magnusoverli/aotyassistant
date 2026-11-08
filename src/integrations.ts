@@ -1,6 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
+import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type FoundSong, type OutputState, type GuestAccess } from './model.js';
+import { findSong } from './list-import.js';
+import type { SharedSong } from './shared-list.js';
 import { PersistenceError } from './store.js';
 import { MusicAssistantClient, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
 import { bareHostname, musicAssistantUrl, maToken } from './lan-network.js';
@@ -297,6 +299,23 @@ export class IntegrationManager implements CatalogueProvider {
     const tracks = await this.getReader().search(query);
     if (this.catalogueRevision !== revision) throw new AppError(409, 'The catalogue connection changed during search. Search again.');
     return tracks.map(t => this.catalogueItem(t, 'track', context));
+  }
+  /** Finds songs from a shared list, two at a time. A song whose lookup failed is marked, not guessed. */
+  async findSongs(songs: SharedSong[], context: string): Promise<FoundSong[]> {
+    const revision = this.catalogueRevision; const api = this.getApi();
+    const results: FoundSong[] = new Array(songs.length); let next = 0;
+    await Promise.all([0, 1].map(async () => {
+      while (next < songs.length) {
+        const index = next++;
+        try { const track = await findSong(api, songs[index]!); results[index] = { track: track ? this.catalogueItem(track, 'track', context) : null }; }
+        catch (error) {
+          if (error instanceof AppError && error.status === 499) throw error;
+          results[index] = { track: null, failed: true };
+        }
+      }
+    }));
+    if (revision !== this.catalogueRevision) throw new AppError(409, 'The catalogue connection changed during the import. Import the list again.');
+    return results;
   }
   async browse(kind: 'artists' | 'albums' | 'tracks', value: string, context: string): Promise<CatalogueBrowse> {
     const revision = this.catalogueRevision; const api = this.getApi();

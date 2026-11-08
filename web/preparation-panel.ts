@@ -7,9 +7,10 @@ import { UploadPanel } from './upload-panel';
 import { workspaceGrid, slot } from './page-layout';
 import { ListBar } from './list-bar';
 import { ListDrag } from './list-drag';
+import { ListImport } from './list-import';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
-type Options = { getView(): View | undefined; starting(): boolean; changed(): void };
+type Options = { getView(): View | undefined; starting(): boolean; changed(): void; search(query: string): void };
 export class PreparationPanel {
   /** Drag-and-drop reordering of the upcoming songs, always available. */
   private drag?: ListDrag;
@@ -31,8 +32,11 @@ export class PreparationPanel {
   private collection?: HTMLElement;
   /** Phones: the playlist's one-line summary while browsing below it. */
   readonly bar = new ListBar(() => this.focusList());
+  /** Imports a list shared from SuShe Online. Needs Music Assistant; there is no demo version. */
+  private importer: ListImport;
   constructor(private library: PreparationController, private options: Options) {
     this.feedback.setAttribute('role', 'status'); this.feedback.setAttribute('aria-live', 'polite');
+    this.importer = new ListImport(library, { search: query => options.search(query) });
     this.uploads = new UploadPanel(library, () => Boolean(options.getView()?.me), () => {
       this.uploads.render(Boolean(options.getView()?.me));
       if (this.uploadDisclosure?.isConnected) { if (this.uploads.hasWork) this.uploadDisclosure.open = true; }
@@ -130,8 +134,9 @@ export class PreparationPanel {
   private renderList() {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
+    const canImport = this.options.getView()?.catalogue?.source === 'music-assistant';
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      this.moving, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
+      this.moving, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
@@ -149,7 +154,15 @@ export class PreparationPanel {
     const preview = v.el('preview', 'p', attention ? 'Needs attention' : snapshot?.upcoming[0] ? `Your next pick: ${snapshot.upcoming[0].title}` : 'Save songs for your turn', 'list-preview');
     prop(preview, 'hidden', !attention && !snapshot?.upcoming.length);
     const meta = v.el('meta', 'div', undefined, 'list-meta');
-    prop(preview, 'title', preview.textContent ?? ''); children(meta, countLabel, preview); children(summary, title, meta); children(heading, summary);
+    prop(preview, 'title', preview.textContent ?? ''); children(meta, countLabel, preview); children(summary, title, meta);
+    const importButton = v.get('import', () => {
+      const node = el('button', 'Import', 'secondary list-import-open'); node.type = 'button'; node.title = 'Import a list from SuShe Online';
+      node.setAttribute('aria-label', 'Import a list'); node.setAttribute('aria-haspopup', 'dialog'); node.setAttribute('aria-controls', 'list-import');
+      node.onclick = () => this.importer.open(); return node;
+    });
+    // During an import its own saves lock the list; the button then reopens its progress.
+    prop(importButton, 'disabled', !snapshot || library.loading || !navigator.onLine || (library.locked && !this.importer.busy));
+    children(heading, summary, canImport && importButton);
     this.bar.update(count, snapshot?.upcoming[0]?.title, attention);
     const status = v.el('status', 'p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Selections unavailable', 'list-save-status'); attr(status, 'role', 'status');
     const body = v.get('body', () => { const node = el('div', undefined, 'list-body'); node.id = 'music-list-body'; node.dataset.scrollKey = 'private-list'; return node; });
@@ -168,7 +181,7 @@ export class PreparationPanel {
       const review = v.el('review', 'div', undefined, 'list-notice'); children(review, v.el('review-message', 'p', 'A previous play attempt needs review. The track is still saved; check the player before trying again.'),
         this.control('review', 'Keep in list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
     }
-    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', 'No songs yet. Search to add one.', 'muted list-empty'));
+    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', canImport ? 'No songs yet. Search to add one, or import a list.' : 'No songs yet. Search to add one.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
     const drag = this.drag ??= new ListDrag(ordered, body, {
       enabled: () => !this.library.locked && !this.library.loading && !this.moving && (this.library.view?.upcoming.length ?? 0) > 1,

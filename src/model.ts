@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PlaybackProblem } from './playback-problem.js';
+import type { SharedSong } from './shared-list.js';
 
 export const trackSchema = z.object({
   id: z.string(), title: z.string(), artist: z.string(), album: z.string(),
@@ -23,6 +24,8 @@ export type CatalogueArtist = { id: string; name: string; provider: string; desc
 export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[]; matchKind?: CatalogueMatchKind };
 export type CataloguePage<T> = { items: T[]; notices?: string[] };
 export type CatalogueBrowse = { artists?: CatalogueArtist[]; albums?: CatalogueAlbum[]; tracks?: CatalogueTrack[]; notices?: string[]; playbackAvailable: boolean };
+/** One song from an imported list: the matching track, or null when none was found (`failed`: the lookup itself failed). */
+export type FoundSong = { track: CatalogueTrack | null; failed?: true };
 export interface CatalogueProvider {
   readonly guestOrigin?: string;
   readonly guestAccess?: GuestAccess;
@@ -33,6 +36,7 @@ export interface CatalogueProvider {
   readonly configurationRevision?: string | number;
   search(query: string, context?: string): Promise<CatalogueTrack[]>;
   browse?(kind: 'artists' | 'albums' | 'tracks', value: string, turnId: string): Promise<CatalogueBrowse>;
+  findSongs?(songs: SharedSong[], context: string): Promise<FoundSong[]>;
 }
 
 const participantSchema = z.object({

@@ -415,6 +415,16 @@ export class MusicAssistantClient implements MusicAssistantReader {
       return { ...page, items: await this.grouped('track', page.items, t => this.track(t)) }; // First source order, including discs; unmatched tracks follow.
     });
   }
+  /** One album's tracks in album order, addressed by a streaming service's own album ID (for
+   * example from a shared album link). Fails when that service isn't connected in Music Assistant. */
+  async serviceAlbumTracks(provider: string, itemId: string): Promise<CatalogueTrack[]> {
+    return this.compatible('Music Assistant returned an incompatible album-track response.', async () => {
+      const result = z.array(searchTrackSchema).max(500).parse(await this.read('/api', 'music/albums/album_tracks', {
+        item_id: itemId, provider_instance_id_or_domain: provider, in_library_only: false,
+      }));
+      return result.map(track => this.track(track));
+    });
+  }
   async resolveTrack(id: string) {
     const ref = this.recording(id);
     return this.resolveRecording(ref);
@@ -558,7 +568,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
 }
 
-const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'albums', 'tracks', 'resolveTrack',
+const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'albums', 'tracks', 'serviceAlbumTracks', 'resolveTrack',
   'captureTrack', 'resolveRecording', 'resolveUploaded', 'playbackCapability', 'queue', 'queueItems', 'configureSingle',
   'playSingle', 'controlQueue', 'volume', 'pausedDestination', 'setVolume', 'subscribePlayback'] as const satisfies readonly (keyof MusicAssistantClient)[];
 

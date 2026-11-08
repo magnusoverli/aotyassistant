@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-11-09
+
+- Import a list shared from SuShe Online: choose **Import** beside Your playlist and paste the list's one-week share link. Its songs, one per album, are added last album first; each is found in Music Assistant on its linked album or by searching, with checks on title, artist and length. The summary lists songs that weren't found, each with a Search button, and albums SuShe left out. The server opens only public `https` share links, never addresses on the home network. Needs Music Assistant; there is no demo version.
+
 ## [1.1.22] — 2026-11-08
 
 - Refresh the application foundation to Node.js 26 LTS, TypeScript 7 and Vite 8 with native Rolldown/Oxc and Lightning CSS. Update npm dependencies and CI actions, pin runtime images/actions, and add reviewed dependency-update automation, runtime-alignment checks and emitted-asset/compression validation. Browser testing remains opt-in.
