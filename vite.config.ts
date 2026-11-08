@@ -1,4 +1,6 @@
 import { defineConfig } from 'vite';
+import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { brotliCompressSync, gzipSync, constants } from 'node:zlib';
 
 export default defineConfig({
@@ -7,13 +9,15 @@ export default defineConfig({
   build: { outDir: '../dist/web', emptyOutDir: true },
   plugins: [{
     name: 'compressed-assets',
-    generateBundle(_options, bundle) {
+    // Compress the files as written. Vite fills in lazy-import placeholders after
+    // generateBundle, so compressing earlier would serve unfinished code.
+    async writeBundle(options, bundle) {
       for (const item of Object.values(bundle)) {
         if (!/\.(js|css)$/.test(item.fileName)) continue;
-        const source = item.type === 'chunk' ? item.code : item.source;
-        const bytes = typeof source === 'string' ? Buffer.from(source) : source;
-        this.emitFile({ type: 'asset', fileName: `${item.fileName}.gz`, source: gzipSync(bytes) });
-        this.emitFile({ type: 'asset', fileName: `${item.fileName}.br`, source: brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } }) });
+        const path = resolve(options.dir!, item.fileName); const bytes = await readFile(path);
+        if (bytes.includes('__VITE_PRELOAD__')) this.error(`${item.fileName} still contains a Vite preload placeholder.`);
+        await writeFile(`${path}.gz`, gzipSync(bytes));
+        await writeFile(`${path}.br`, brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } }));
       }
     },
   }],

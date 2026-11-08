@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.18] — 2026-11-08
+
+- Fix pages failing with "__VITE_PRELOAD__ is not defined" in 1.1.17. The compressed copies of the JavaScript, which browsers receive, were made before the build finished, so every lazily loaded part (QR codes, Settings, the browser speaker) failed. The room display and host desk broke and browsers stopped registering as speakers. The build now compresses the finished files and fails if any placeholder remains.
+- This also fixes the bundled software Opus decoder, which never loaded in production builds. Browsers without built-in Opus decoding, such as older iPhones, fell back to PCM (about 1.4 Mbit/s) instead of Opus.
+
 ## [1.1.17] — 2026-11-08
 
 - Load pages with 60% less JavaScript (47 KB instead of 121 KB compressed). The browser-speaker audio code and its format checks load in the background after the page is shown; Settings and the QR-code encoder load only on the pages that use them, and the host desk prefetches Settings.
