@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.1.20] — 2026-11-08
+
+- Fix pages opened through Home Assistant still failing with "__VITE_PRELOAD__ is not defined" after 1.1.18. Browsers kept the broken 1.1.17 copy of the main script, because 1.1.18 left its content, and therefore its file name, unchanged; such files are cached for a year without asking again. Script and style file names now include the version, so every release is fetched fresh.
+
 ## [1.1.19] — 2026-11-08
 
 - Publish releases in about half the time. The ARM image builds on a native ARM runner instead of under emulation, and the application checks run alongside the image builds instead of before them.
