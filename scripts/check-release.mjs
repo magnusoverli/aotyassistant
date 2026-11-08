@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { productName, productDescription } from '../src/product.ts';
 
 const root = process.cwd();
-const read = path => readFileSync(resolve(root, path), 'utf8');
+// Windows checkouts may use CRLF; the committed files (and these checks) use LF.
+const read = path => readFileSync(resolve(root, path), 'utf8').replace(/\r\n/g, '\n');
 const pkg = JSON.parse(read('package.json'));
 const lock = JSON.parse(read('package-lock.json'));
 const manifest = read('config.yaml');

@@ -1,7 +1,10 @@
 name: Publish Home Assistant images
 
+# Pushing a v<version> tag publishes that version. Nothing becomes visible until the
+# application checks and both images pass: then the multi-architecture image is
+# published and verified, `main` (which the Home Assistant store follows) moves to
+# the tag, and the GitHub release is written from the changelog.
 on:
-  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -15,12 +18,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs alongside the image builds instead of before them.
   validation:
     uses: ./.github/workflows/ci.yaml
     permissions:
       contents: read
   checks:
-    needs: validation
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -31,31 +34,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
       - id: version
         run: node scripts/check-release.mjs
   build:
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        arch: [amd64, aarch64]
         include:
           - arch: amd64
+            runner: ubuntu-latest
             platform: linux/amd64
+          # A native ARM runner: emulating ARM on an x86 runner took about 2.5 minutes.
           - arch: aarch64
+            runner: ubuntu-24.04-arm
             platform: linux/arm64
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # No layer cache: GitHub shares Actions caches within one tag only, so a
+      # cache written by the previous release can never be read by the next.
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -65,10 +70,8 @@ jobs:
           build-args: |
             BUILD_VERSION=${{ needs.checks.outputs.version }}
             BUILD_ARCH=${{ matrix.arch }}
-          cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
   publish:
-    needs: [checks, build]
+    needs: [validation, checks, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -86,24 +89,32 @@ jobs:
         run: |
           docker buildx imagetools create --tag "$IMAGE:$VERSION" "$IMAGE:$VERSION-amd64" "$IMAGE:$VERSION-aarch64"
           docker buildx imagetools inspect "$IMAGE:$VERSION"
-      - name: Prepare store manifest after image publication
-        env:
-          IMAGE: ${{ needs.checks.outputs.image }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { readFileSync, writeFileSync } from 'node:fs';
-          const config = readFileSync('config.yaml', 'utf8').replace(/^image:.*\n/gm, '');
-          writeFileSync('config.prebuilt.yaml', `${config}\nimage: ${process.env.IMAGE}\n`);
-          NODE
       - uses: actions/setup-node@v4
         with:
           node-version: 24
       - name: Verify public release images
         run: node scripts/verify-release-image.mjs '${{ needs.checks.outputs.image }}' '${{ needs.checks.outputs.version }}'
-      - uses: actions/upload-artifact@v4
+  release:
+    needs: [checks, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: published-store-manifest
-          path: config.prebuilt.yaml
-      - name: Release instructions
-        run: |
-          echo 'Public amd64/aarch64 images verified. Download the published-store-manifest artifact and compare config.prebuilt.yaml with the release branch manifest. Apply any required difference before updating the store branch. The store version must reference the verified image.' >> "$GITHUB_STEP_SUMMARY"
+          fetch-depth: 0
+      # config.yaml on main names this image (check-release asserts it), so the store
+      # offers the version only now that its image is verified. Fast-forward only.
+      - name: Show the version in the Home Assistant store
+        run: git push origin HEAD:refs/heads/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Write the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.checks.outputs.version }}
+          IMAGE: ${{ needs.checks.outputs.image }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/github-release.mjs

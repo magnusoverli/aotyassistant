@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.19] — 2026-11-08
+
+- Publish releases in about half the time. The ARM image builds on a native ARM runner instead of under emulation, and the application checks run alongside the image builds instead of before them.
+- The store shows a new version only after its images are published and verified: the publish workflow moves `main` itself. It also writes the GitHub release from the changelog, filling in releases missing for 1.1.15–1.1.18. `npm run release -- <version> "<summary>"` runs the whole release, and the manual store-manifest comparison is gone.
+
 ## [1.1.18] — 2026-11-08
 
 - Fix pages failing with "__VITE_PRELOAD__ is not defined" in 1.1.17. The compressed copies of the JavaScript, which browsers receive, were made before the build finished, so every lazily loaded part (QR codes, Settings, the browser speaker) failed. The room display and host desk broke and browsers stopped registering as speakers. The build now compresses the finished files and fails if any placeholder remains.

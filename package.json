@@ -1,6 +1,6 @@
 {
   "name": "albums-of-the-year",
-  "version": "1.1.18",
+  "version": "1.1.19",
   "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {
@@ -19,6 +19,7 @@
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "check:release": "node scripts/check-release.mjs",
+    "release": "tsx scripts/release.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "npm run build && playwright test",
     "test:container": "docker build -t aotyassistant:smoke . && npm run test:container:built",

@@ -2,25 +2,31 @@
 
 The store follows `main`. The published app is `ghcr.io/magnusoverli/aotyassistant`, with a versioned multi-architecture image for **amd64** and **aarch64**. GitHub Actions uses its short-lived package token; no long-lived registry credential is needed.
 
-## Prepare
+## Release
 
-1. Complete the intended changes and their **Unreleased** changelog entries. Review [testing and validation](testing.md), including upgrade compatibility and physical-device coverage.
-2. Create `release/<version>`. Set the same version in `config.yaml`, `package.json`, the lockfile, and `Dockerfile`.
-3. When publication is scheduled, move the completed changelog entries under a dated release heading. Keep an empty **Unreleased** section.
-4. Run the [contributor checks](../CONTRIBUTING.md#verify-a-change), including `npm run check:release`. Commit and push the release branch.
+Complete the intended changes and their **Unreleased** changelog entries. Review [testing and validation](testing.md), including upgrade compatibility and physical-device coverage. Then, from `main`:
 
-Use semantic versions: patches for compatible fixes, minor versions for compatible features, major versions for incompatible contracts. Describe required user action and data migrations explicitly. Never overwrite a released Git tag or image version.
+```sh
+npm run release -- <version> "<short summary>"
+```
 
-## Publish and verify
+The command:
 
-1. Push the matching annotated `v<version>` tag. **Publish Home Assistant images** runs the shared application checks and native amd64/aarch64 packaged-app tests before building/pushing release images. Playwright is opt-in and is skipped by default, including for releases.
-2. Wait for both architecture builds and the combined manifest. The workflow verifies anonymous manifest/configuration/layer access, architecture labels, and version metadata before emitting **published-store-manifest**.
-3. For first publication, the GHCR package must be public. The anonymous check intentionally fails while it is private; make it public and rerun the failed publication job.
-4. Download **published-store-manifest**, compare `config.prebuilt.yaml` with the release branch’s manifest, and apply any required difference. The image reference and version must match the published image.
-5. Only after successful publication and verification, fast-forward or merge the release branch into `main` and push. This makes the new store version visible after its image is available.
-6. Create a GitHub release from the existing tag with the current display name, user-facing highlights, upgrade notes, supported architectures, and accurate verification results. Mark it latest when it is the current stable version. Keep the repository’s GitHub About description aligned with the short description in `package.json`.
+1. Typechecks and builds, then creates `release/<version>`. It sets the version in `config.yaml`, `package.json`, the lockfile and `Dockerfile`, and moves the **Unreleased** entries under a dated heading.
+2. Runs `npm run check:release`, commits as `Release <version>: <summary>`, pushes the branch and waits for **Application checks**. These include the unit/integration suite and native amd64/aarch64 packaged-app tests.
+3. If the checks pass, pushes the annotated `v<version>` tag and waits for **Publish Home Assistant images**. If they fail, fix the problem on the release branch, commit, and run the same command again: it continues from the branch, and no version number is used up.
 
-If publication fails, leave the store on the previous version and repair/rerun the workflow. If a published image needs code changes, use a new version rather than replacing its contents.
+The publish workflow runs the application checks again, alongside native amd64 and aarch64 image builds. Only when both pass does it do the following:
+
+- publish and verify the multi-architecture image (anonymous manifest, configuration and layer access, architecture labels, version metadata);
+- fast-forward `main` to the tag, so the store offers the version only once its image is available;
+- write the GitHub release from the changelog section and mark it latest. Missing releases for earlier versions are filled in.
+
+Playwright is opt-in and skipped, including for releases. Keep the repository’s GitHub About description aligned with the short description in `package.json`.
+
+Use semantic versions: patches for compatible fixes, minor versions for compatible features, major versions for incompatible contracts. Describe required user action and data migrations explicitly in the changelog; it becomes the release notes. Never overwrite a released Git tag or image version.
+
+For first publication, the GHCR package must be public. The anonymous check intentionally fails while it is private; make it public and rerun the failed publication job. If publication fails, the store stays on the previous version; repair and rerun the workflow. If a published image needs code changes, use a new version rather than replacing its contents.
 
 ## Installed-app acceptance
 
