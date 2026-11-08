@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { CatalogueReferences } from '../src/catalogue-references.js';
 
 test('stable artwork references remain scoped to owner, kind and catalogue lifetime', () => {
@@ -12,6 +13,15 @@ test('stable artwork references remain scoped to owner, kind and catalogue lifet
   assert.throws(() => references.unseal(image, 'track', 'owner-a'));
   assert.throws(() => new CatalogueReferences().unseal(image, 'image', 'owner-a'));
   assert.notEqual(references.seal('track', 'track', 'owner-a'), references.seal('track', 'track', 'owner-a'));
+});
+
+test('references carry only the id and expiry, so catalogue responses stay small', () => {
+  const references = new CatalogueReferences(); const context = `${randomUUID()}:${randomUUID()}`;
+  const reference = references.seal(`ma:${'a'.repeat(64)}`, 'track', context);
+  assert.ok(reference.length < 200, `${reference.length} characters`);
+  assert.equal(references.unseal(reference, 'track', context), `ma:${'a'.repeat(64)}`);
+  const tampered = `${reference.slice(0, -2)}${reference.endsWith('AA') ? 'BA' : 'AA'}`;
+  assert.throws(() => references.unseal(tampered, 'track', context));
 });
 
 test('artwork reference reuse is bounded and refreshes capabilities before they expire', t => {

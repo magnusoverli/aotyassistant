@@ -4,6 +4,12 @@ import { inIngress } from './paths';
 import { requestJson } from './request';
 import { ViewNodes, children, prop, attr } from './view-nodes';
 
+export function onlineConnection(network: NonNullable<OnlineView['network']>) {
+  const path = network.udp === false ? ' Relayed by Tailscale: this network blocks the UDP traffic direct connections need, so online guests may be slower.'
+    : network.udp ? ' Direct connections are available.' : '';
+  return `Online round trip from this server: ${network.roundTripMs} ms.${path}`;
+}
+
 export class OnlinePanel {
   readonly element = el('section', undefined, 'panel stack');
   private nodes = new ViewNodes();
@@ -73,6 +79,7 @@ export class OnlinePanel {
           content.push(label, input, copy, open, v.el('qr', 'p', 'Host desk and Room display now use this online invitation automatically. Test it on a phone with Wi-Fi turned off.', 'muted small'));
         }
         if (view.origin) content.push(v.el('origin', 'p', `Your stable address: ${view.origin}`, 'muted small'));
+        if (view.status === 'ready' && view.network) content.push(v.el('network', 'p', onlineConnection(view.network), 'muted small'));
         if (view.keyExpiry && Number.isFinite(Date.parse(view.keyExpiry)) && Date.parse(view.keyExpiry) > 0) content.push(v.el('expiry', 'p', `Tailscale device authorization expires ${new Date(view.keyExpiry).toLocaleDateString()}. Renew it in Tailscale, or disable key expiry for this trusted device in its device settings.`, 'muted small'));
         const admin = v.el('admin', 'a', 'Tailscale device settings', 'inline-link'); attr(admin, 'href', 'https://login.tailscale.com/admin/machines'); prop(admin, 'target', '_blank'); prop(admin, 'rel', 'noopener noreferrer'); content.push(admin);
         content.push(button('rotate', 'Replace invitation', 'rotate'), button('disable', 'Turn off online invitations', 'disable'));

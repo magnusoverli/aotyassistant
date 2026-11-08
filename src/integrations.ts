@@ -275,6 +275,12 @@ export class IntegrationManager implements CatalogueProvider {
     return this.withArtwork({ ...item, id: this.seal(item.id, kind, context),
       ...(item.sources ? { sources: item.sources.map(source => this.catalogueItem(source, kind, context)) } : {}) }, context);
   }
+  /** Names the pixels a reference shows, after the same checks as artwork(), without reading the image. */
+  async artworkKey(reference: string, context: string, size: ArtworkSize = 512): Promise<string> {
+    return reference.startsWith('upload:') && this.uploads
+      ? `upload:${await this.uploads.artworkKey(this.unseal(reference.slice(7), 'upload-image', context), undefined, size)}`
+      : `ma:${this.catalogueRevision}:${this.unseal(reference, 'image', context)}:${size}`;
+  }
   async artwork(reference: string, context: string, size: ArtworkSize = 512) {
     const revision = this.catalogueRevision;
     try {
@@ -353,6 +359,13 @@ export class IntegrationManager implements CatalogueProvider {
     }
     const saved = this.savedSource(selection);
     return this.withArtwork({ artwork: saved.metadata.artworkId, artistArtwork: saved.metadata.artistArtworkId }, context)[kind];
+  }
+  /** The same pixel name as the catalogue route, so both URLs revalidate against one tag. */
+  savedArtworkKey(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: ArtworkSize = 512) {
+    const saved = this.savedSource(selection);
+    const image = kind === 'artwork' ? saved.metadata.artworkId : saved.metadata.artistArtworkId;
+    if (!image) throw new AppError(404, 'Artwork unavailable.');
+    return `ma:${this.catalogueRevision}:${image}:${size}`;
   }
   async savedArtwork(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: ArtworkSize = 512) {
     const saved = this.savedSource(selection); const epoch = this.catalogueRevision;

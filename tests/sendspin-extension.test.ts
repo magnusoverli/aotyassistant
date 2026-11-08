@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import type { StreamFormat, SendspinDecoder, DecodedAudioChunk } from '@sendspin/sendspin-js';
 import { AutomaticAudioPlayer } from '../web/sendspin-extension.js';
-import { AudioPolicy, type AudioCodec, type DecoderMode } from '../web/audio-policy.js';
+import { AudioPolicy, lanAudio, onlineAudio, type AudioCodec, type DecoderMode } from '../web/audio-policy.js';
 import { probeFrame } from '../web/audio-probe.js';
 
 // Exercise the real pinned SDK. Only the browser output and network boundary
@@ -23,11 +23,11 @@ type Internals = {
     handleDecodedChunk(chunk: DecodedAudioChunk): void; close(): void;
   };
 };
-async function fixture(t: TestContext, probe: (codec: AudioCodec, mode?: DecoderMode, rate?: number) => Promise<boolean> = async () => true, ua = 'Chrome/130 Safari/537') {
+async function fixture(t: TestContext, probe: (codec: AudioCodec, mode?: DecoderMode, rate?: number) => Promise<boolean> = async () => true, ua = 'Chrome/130 Safari/537', network = lanAudio) {
   const store = new Map<string, string>(); let retries = 0; let output = 0; let closes = 0;
   const player = new AutomaticAudioPlayer({ clientName: 'Fixture', url: 'ws://localhost/sendspin', storage: {
     getItem: key => store.get(key) ?? null, setItem: (key, value) => { store.set(key, value); },
-  } }, () => { retries++; }, { userAgent: ua, nativeOpus: true, probe });
+  } }, () => { retries++; }, { userAgent: ua, nativeOpus: true, probe }, network);
   const internals = player as unknown as Internals;
   const core = internals.core; const scheduler = internals.scheduler; const messages: unknown[] = [];
   core.connect = async () => {};
@@ -52,11 +52,20 @@ test('SDK extension contract is pinned and real client hello advertises only ver
   const pkg = JSON.parse(await readFile(new URL('../node_modules/@sendspin/sendspin-js/package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.version, '6.0.0', 'Revalidate this scoped extension before upgrading the SDK.');
   const f = await fixture(t); f.core.protocolHandler.sendClientHello();
-  const hello = f.messages.at(-1) as { payload: { 'player@v1_support': { supported_formats: StreamFormat[] } } };
+  const hello = f.messages.at(-1) as { payload: { 'player@v1_support': { supported_formats: StreamFormat[]; buffer_capacity: number } } };
   // Node lacks WebCodecs: the actual SDK applies its own compatibility filter.
   assert.deepEqual([...new Set(hello.payload['player@v1_support'].supported_formats.map(format => format.codec))], ['flac', 'pcm']);
   assert.deepEqual(f.core.protocolHandler.codecs, ['opus', 'flac', 'pcm']);
   assert.equal(f.core.protocolHandler.requiredLeadTimeMs, 250); assert.equal(f.core.protocolHandler.minBufferMs, 500);
+  assert.ok(hello.payload['player@v1_support'].buffer_capacity > 5_000_000, 'LAN keeps the SDK default stream-ahead bytes.');
+});
+
+test('online (Funnel) speakers start later, buffer more and cap stream-ahead bytes at Opus maximum for 30 s', async t => {
+  const f = await fixture(t, undefined, undefined, onlineAudio); f.core.protocolHandler.sendClientHello();
+  const hello = f.messages.at(-1) as { payload: { 'player@v1_support': { buffer_capacity: number } } };
+  assert.equal(hello.payload['player@v1_support'].buffer_capacity, 1_920_000);
+  assert.equal(f.core.protocolHandler.requiredLeadTimeMs, 1000); assert.equal(f.core.protocolHandler.minBufferMs, 1500);
+  assert.equal(f.player.diagnostics().minBufferMs, 1500);
 });
 
 test('failed capability probes automatically select PCM; denied probes cannot prevent connection', async t => {

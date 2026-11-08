@@ -1,6 +1,6 @@
 import { SendspinPlayer, type SendspinPlayerConfig, type SendspinCore, type SendspinDecoder,
   type AudioScheduler, type DecodedAudioChunk, type StreamFormat } from '@sendspin/sendspin-js';
-import { AudioPolicy, browserCodecs, type AudioCodec, type AudioHealth } from './audio-policy';
+import { AudioPolicy, browserCodecs, lanAudio, type AudioCodec, type AudioHealth, type AudioNetwork } from './audio-policy';
 import { probeCodec, softwareDecoder } from './audio-probe';
 
 /** Instance-scoped extension for @sendspin/sendspin-js 6.0.0. The SDK does not yet
@@ -31,11 +31,12 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
   private revision = 0;
   constructor(config: SendspinPlayerConfig, private retry: () => void, capabilities: Capabilities = {
     userAgent: navigator.userAgent, nativeOpus: typeof (globalThis as { AudioDecoder?: unknown }).AudioDecoder !== 'undefined', probe: probeCodec,
-  }) {
-    super({ ...config, codecs: ['pcm'], requiredLeadTimeMs: 250, minBufferMs: 500, correctionMode: 'sync' });
+  }, network: AudioNetwork = lanAudio) {
+    super({ ...config, codecs: ['pcm'], requiredLeadTimeMs: network.leadTimeMs, minBufferMs: network.minBufferMs, correctionMode: 'sync',
+      ...(network.bufferCapacity ? { bufferCapacity: network.bufferCapacity } : {}) });
     this.bridge = this as unknown as Bridge;
     const { core, scheduler } = this.bridge;
-    this.policy = new AudioPolicy(() => this.recover(), ms => this.setMinBufferMs(ms));
+    this.policy = new AudioPolicy(() => this.recover(), ms => this.setMinBufferMs(ms), network);
     const decode = core.decoder.handleBinaryMessage.bind(core.decoder);
     core.decoder.handleBinaryMessage = async (data, format, generation) => {
       if (new Uint8Array(data)[0] === 4 && data.byteLength >= 13) {

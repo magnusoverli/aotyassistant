@@ -14,6 +14,12 @@ The connector is bundled. There is no separate HA add-on, API key to paste, doma
 
 Tailscale can expire a device's authorization. Settings shows the reported expiration date. For a dedicated trusted installation, **Tailscale device settings → this device → Disable key expiry** avoids periodic sign-in; otherwise renew authorization when prompted. The host must have permission to change this setting. Keep the account secured and remove this device from Tailscale when decommissioning it.
 
+## Speed
+
+Online guests' requests travel through Tailscale's Funnel relay servers, so each one takes longer than on local Wi-Fi. The app keeps the number and size of requests small: large responses are compressed, artwork is fetched a few images at a time and revalidated without being sent again, and a phone playing room audio buffers more and starts about a second after Play.
+
+When online invitations are ready, Settings shows the **online round trip from this server**: one request from Home Assistant out through Funnel and back. Settings also shows whether direct connections are available. If the network blocks UDP, Tailscale relays all traffic through its own servers and online guests are slower; allowing outgoing UDP on that network fixes it. Router port forwarding does not help when UDP is blocked. The check repeats after every reconnection, so moving to another venue is detected.
+
 ## Moving between venues
 
 Connect the HA machine to internet access, complete any venue captive-portal login, and ensure Music Assistant can reach the speaker. The tunnel reconnects automatically. No venue router access is needed. Bringing a travel router and your own speaker keeps the local network predictable.

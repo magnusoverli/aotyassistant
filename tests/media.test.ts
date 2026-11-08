@@ -11,6 +11,7 @@ import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js
 import { ManagedPlayback } from '../src/live-playback.js';
 import { DemoAdapter } from '../src/playback.js';
 import { MusicAssistantClient } from '../src/music-assistant.js';
+import { operation } from '../src/operation.js';
 import { createApp } from '../src/http.js';
 import { AppError, type View } from '../src/model.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
@@ -127,6 +128,37 @@ test('a full album page retains its small thumbnails and simultaneous copies sha
   remote.delayImages(40);
   await Promise.all(Array.from({ length: 10 }, () => api.artwork(`image:${'f'.repeat(64)}`, 160)));
   assert.equal(remote.imageCalls.length, 81);
+});
+
+function slowImages() {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]); const calls: string[] = []; let active = 0; let peak = 0;
+  const api = new MusicAssistantClient('http://127.0.0.1:1', 'fixture-token', 8000, { async read(path: string) {
+    calls.push(path); active++; peak = Math.max(peak, active);
+    try { await delay(15); return { body: jpeg, contentType: 'image/jpeg' }; } finally { active--; }
+  } } as never);
+  return { api, calls, peak: () => peak };
+}
+const image = (index: number) => `image:${index.toString(16).padStart(64, '0')}`;
+
+test('a page of thumbnails requested at once (HTTP/2 over Funnel) all load, four upstream fetches at a time', async t => {
+  const f = slowImages(); t.after(() => f.api.close());
+  const results = await Promise.all(Array.from({ length: 30 }, (_, index) => f.api.artwork(image(index), 160)));
+  assert.equal(results.length, 30); assert.ok(results.every(result => result.contentType === 'image/jpeg'));
+  assert.equal(f.calls.length, 30); assert.equal(f.peak(), 4);
+});
+
+test('a thumbnail still waiting is dropped when its viewer leaves, but a viewer sharing it still gets it', async t => {
+  const f = slowImages(); t.after(() => f.api.close());
+  const busy = Promise.all([0, 1, 2, 3].map(index => f.api.artwork(image(index), 160)));
+  const leaving = new AbortController();
+  const left = operation('left', () => f.api.artwork(image(10), 160), 5000, leaving.signal);
+  const shared = operation('shared', () => f.api.artwork(image(11), 160), 5000, leaving.signal);
+  const staying = operation('staying', () => f.api.artwork(image(11), 160), 5000, new AbortController().signal);
+  await delay(1); leaving.abort();
+  await assert.rejects(left, (error: AppError) => error.status === 499); await assert.rejects(shared, (error: AppError) => error.status === 499);
+  assert.equal((await staying).contentType, 'image/jpeg'); await busy;
+  assert.ok(!f.calls.some(path => path.includes(image(10).slice(6))), 'The abandoned thumbnail was never fetched.');
+  assert.equal(f.calls.filter(path => path.includes(image(11).slice(6))).length, 1);
 });
 
 test('artwork is same-origin, participant-bound, reveal-gated, and revoked when turns or membership change', async t => {

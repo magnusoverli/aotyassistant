@@ -8,8 +8,9 @@ import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './m
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 import { UpstreamError } from './upstream-error.js';
-import { budget } from './operation.js';
+import { background, budget, operationSignal } from './operation.js';
 import { BoundedCache } from './bounded-cache.js';
+import { WorkQueue } from './serial.js';
 import { reportedStreamInfoSchema } from './stream-info.js';
 export { musicAssistantUrl, maToken, isAllowedAddress, type ArtworkData, type ArtworkSize } from './music-assistant-transport.js';
 
@@ -85,6 +86,8 @@ export class MusicAssistantClient implements MusicAssistantReader {
   private groups = new BoundedCache<BrowseGroup>(1000, 5000);
   private imageCache = new BoundedCache<ArtworkData>(512, 20 * 1024 * 1024);
   private imageRequests = new Map<string, Promise<ArtworkData>>();
+  /** Matches the transport's four artwork sockets, so a fetch's deadline starts when it is sent. */
+  private imageLine = new WorkQueue(256, 4);
   private browseImages = new BoundedCache<{ image?: z.infer<typeof imageSchema> }>(128);
   constructor(origin: string, private token: string, timeoutMs = 8000,
     private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs)) {
@@ -105,16 +108,30 @@ export class MusicAssistantClient implements MusicAssistantReader {
   async artwork(id: string, size: ArtworkSize = 512): Promise<ArtworkData> {
     if (!/^image:[a-f0-9]{64}$/.test(id)) throw new AppError(404, 'Artwork unavailable.');
     const key = `${id}:${size}`;
-    const cached = this.imageCache.get(key); if (cached) return cached;
-    const pending = this.imageRequests.get(key); if (pending) return pending;
-    if (this.imageRequests.size >= 16) throw new AppError(503, 'Artwork is busy.');
-    const request = (async () => {
-      // Photographic artwork is much smaller as JPEG, including list thumbnails.
-      const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=jpeg`, undefined, {}, true) as ArtworkData;
-      this.imageCache.set(key, data, { expires: Date.now() + 5 * 60_000, size: data.body.length });
-      return data;
-    })();
-    this.imageRequests.set(key, request); try { return await request; } finally { this.imageRequests.delete(key); }
+    for (;;) {
+      const cached = this.imageCache.get(key); if (cached) return cached;
+      let request = this.imageRequests.get(key);
+      if (!request) {
+        // HTTP/2 browsers ask for a whole page of thumbnails at once. They wait in
+        // line; a waiting fetch is dropped when the browser that queued it leaves.
+        // A started fetch finishes outside that request, so its result is shared and cached.
+        const queued = this.imageLine.run(() => background(async () => {
+          // Photographic artwork is much smaller as JPEG, including list thumbnails.
+          const data = await this.read(`/imageproxy/${id.slice(6)}?size=${size}&fmt=jpeg`, undefined, {}, true) as ArtworkData;
+          this.imageCache.set(key, data, { expires: Date.now() + 60 * 60_000, size: data.body.length });
+          return data;
+        }), 'artwork');
+        request = queued; this.imageRequests.set(key, queued);
+        const clear = () => { if (this.imageRequests.get(key) === queued) this.imageRequests.delete(key); };
+        void queued.then(clear, clear);
+      }
+      try { return await request; }
+      catch (error) {
+        // Another viewer left before this shared fetch started; queue it again for this one.
+        if (error instanceof AppError && error.status === 499 && !operationSignal()?.aborted) continue;
+        throw error;
+      }
+    }
   }
   private remember(kind: MediaRef['kind'], media: z.infer<typeof mediaSchema>, artistArtwork?: string): string {
     const uri = media.uri || `${media.provider}://${kind}/${media.item_id}`;

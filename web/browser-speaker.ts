@@ -1,6 +1,7 @@
 import { type SendspinStorage } from '@sendspin/sendspin-js';
 import { AutomaticAudioPlayer } from './sendspin-extension';
-import { appPath } from './paths';
+import { appPath, isPublic } from './paths';
+import { lanAudio, onlineAudio } from './audio-policy';
 import { requestJson } from './request';
 import { operationId } from './preparation-controller';
 import { BrowserSpeakerRuntime } from './browser-speaker-runtime';
@@ -20,7 +21,8 @@ export function initializeBrowserSpeaker() {
       const name = browserSpeakerName(device);
       const url = new URL(appPath(`/api/browser-speaker/socket?id=${id}`), location.origin); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       return new AutomaticAudioPlayer({ url: url.href, clientName: name, productName: 'Web Player', manufacturer: 'Listening Room', storage,
-        unpairedAccess: false, reconnect: { maxAttempts: 6, onReconnected: reconnected, onExhausted: exhausted } }, exhausted);
+        unpairedAccess: false, reconnect: { maxAttempts: 6, onReconnected: reconnected, onExhausted: exhausted } }, exhausted,
+        undefined, isPublic() ? onlineAudio : lanAudio);
     },
   });
   const runtime = speaker;

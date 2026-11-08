@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { createServer, type RequestListener, type IncomingMessage } from 'node:http';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket, { WebSocketServer } from 'ws';
 import express from 'express';
 import { BrowserSpeakers, configureBrowserPlayer, openSpeakerSocket, pairingClientId, type SpeakerConnection, type SpeakerContext } from '../src/browser-speakers.js';
@@ -144,6 +145,20 @@ test('relay authenticates server-side, preserves binary/text framing, binds pair
   await assert.rejects(once(f.connect(), 'open'), /403/); assert.equal(f.auth.length, 1);
   const closed = once(socket, 'close'); f.speakers.remove(f.input.id); await closed;
   assert.deepEqual(f.speakers.list(), []);
+});
+
+test('a browser whose pongs are stuck behind queued audio stays connected while it keeps sending', async t => {
+  const f = await fixture(t);
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  // autoPong off models a Funnel link where the ping waits behind megabytes of audio.
+  const socket = new WebSocket(f.local.url.replace('http:', 'ws:') + `/api/browser-speaker/socket?id=${f.input.id}`,
+    { headers: { Origin: f.local.url, Cookie: `aoty_browser_speaker=${owner}` }, autoPong: false });
+  t.after(() => socket.terminate()); await once(socket, 'open');
+  let closed = false; socket.once('close', () => { closed = true; });
+  const timeSync = async () => { const echoed = once(socket, 'message'); socket.send('{"type":"client/time"}'); await echoed; };
+  for (let beat = 0; beat < 3; beat++) { t.mock.timers.tick(20_000); await timeSync(); }
+  t.mock.timers.tick(20_000); await delay(50); assert.equal(closed, false, 'Messages prove the browser is alive.');
+  t.mock.timers.tick(20_000); await once(socket, 'close'); assert.equal(closed, true, 'A silent browser without pongs is still dropped.');
 });
 
 test('server/account replacement revokes a connected relay without issuing queue commands', async t => {

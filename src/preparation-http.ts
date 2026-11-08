@@ -7,7 +7,8 @@ import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
 import { PreparationManager, preparationOperationSchema } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
-import { artworkSize, body, setParticipantCookie } from './http-utils.js';
+import { artworkSize, body, sendArtwork, setParticipantCookie } from './http-utils.js';
+import type { ArtworkData } from './music-assistant-transport.js';
 import { RateLimiter, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
 import { operation } from './operation.js';
@@ -84,8 +85,9 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       metadata: { title: preview.title, artist: preview.artist, album: preview.album, duration: preview.duration, version: '', provider: 'Uploaded file' } };
     await manager.read(credential(req));
     if (redirectArtwork(req, res, selection, 'artwork')) return;
-    const image = await uploads.artwork(assetId, owner.ownerId, artworkSize.parse(req.query.size));
-    await manager.read(credential(req)); res.set('Cache-Control', 'private, no-cache').vary('Cookie'); res.type(image.contentType).send(image.body);
+    const size = artworkSize.parse(req.query.size);
+    await sendArtwork(req, res, `upload:${await uploads.artworkKey(assetId, owner.ownerId, size)}`,
+      () => uploads.artwork(assetId, owner.ownerId, size), () => manager.read(credential(req)));
   });
   app.post(`${prefix}/uploads/:uploadId/discard`, async (req, res) => {
     body(req, empty); const discarded = await manager.discardUpload(credential(req), uuid.parse(req.params.uploadId), (ownerId, assetId) => uploads.remove(ownerId, assetId));
@@ -132,16 +134,19 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     const entryId = uuid.parse(req.params.entryId); const kind = z.enum(['artwork', 'artistArtwork']).parse(req.params.kind);
     const selection = await manager.selection(credential(req), entryId);
     if (redirectArtwork(req, res, selection, kind)) return;
-    let image;
+    const size = artworkSize.parse(req.query.size);
+    let key: string; let read: () => Promise<ArtworkData>;
     if (selection.source === 'upload' && kind === 'artwork' && selection.artworkAssetId) {
-      const owner = await manager.read(credential(req)); image = await uploads.artwork(selection.assetId, owner.ownerId, artworkSize.parse(req.query.size));
+      const owner = await manager.read(credential(req));
+      key = `upload:${await uploads.artworkKey(selection.assetId, owner.ownerId, size)}`; read = () => uploads.artwork(selection.assetId, owner.ownerId, size);
     } else if (integrations && selection.source === 'music-assistant') {
-      image = await integrations.savedArtwork(selection, kind, artworkSize.parse(req.query.size));
+      key = integrations.savedArtworkKey(selection, kind, size); read = () => integrations.savedArtwork(selection, kind, size);
     }
     else throw new AppError(404, 'Artwork unavailable.');
-    const latest = await manager.selection(credential(req), entryId);
-    if (JSON.stringify(selection) !== JSON.stringify(latest)) throw new AppError(403, 'Saved artwork access changed.');
-    res.set('Cache-Control', 'private, no-cache').vary('Cookie'); res.type(image.contentType).send(image.body);
+    await sendArtwork(req, res, key, read, async () => {
+      const latest = await manager.selection(credential(req), entryId);
+      if (JSON.stringify(selection) !== JSON.stringify(latest)) throw new AppError(403, 'Saved artwork access changed.');
+    });
   });
   function redirectArtwork(req: Request, res: Response, selection: import('./preparations.js').SavedSelection, kind: 'artwork' | 'artistArtwork') {
     const size = artworkSize.parse(req.query.size);

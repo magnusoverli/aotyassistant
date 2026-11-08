@@ -1,13 +1,45 @@
-import type { Request, Response } from 'express';
+import { createHash } from 'node:crypto';
+import { gzip } from 'node:zlib';
+import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import { ingressContext, requestBase } from './ingress.js';
 import { publicContext } from './public-listener.js';
+import type { ArtworkData } from './music-assistant-transport.js';
 
 /** Old open tabs may still ask for 128; normalize it before reaching MA or the image cache. */
 export const artworkSize = z.enum(['128', '160', '512', '1024']).default('512')
   .transform(size => size === '128' || size === '160' ? 160 : size === '1024' ? 1024 : 512);
 
 export const body = <T extends z.ZodTypeAny>(request: Request, schema: T): z.infer<T> => schema.parse(request.body);
+
+// Change when resizing or encoding changes, so browsers fetch the new pixels.
+const artworkFormat = 'jpeg-1';
+/** Stored artwork revalidates on every reuse. Callers authorize and resolve `key`
+ * (the pixels' identity) first, so a matching browser copy needs no image read. */
+export async function sendArtwork(req: Request, res: Response, key: string, read: () => Promise<ArtworkData>, recheck: () => unknown = () => {}) {
+  res.set('Cache-Control', 'private, no-cache').vary('Cookie');
+  res.set('ETag', `W/"${createHash('sha256').update(`${artworkFormat}:${key}`).digest('base64url').slice(0, 27)}"`);
+  if (req.fresh) { await recheck(); res.status(304).end(); return; }
+  const image = await read(); await recheck();
+  res.type(image.contentType).send(image.body);
+}
+
+/** Large JSON crosses Funnel's limited bandwidth gzipped. Cross-site requests are
+ * already refused, so responses cannot be used as a compression oracle. */
+export function compressJson(req: Request, res: Response, next: NextFunction) {
+  const json = res.json.bind(res);
+  res.json = (value: unknown) => {
+    const text = JSON.stringify(value);
+    if (text === undefined || text.length < 1024 || !req.acceptsEncodings('gzip')) return json(value);
+    gzip(text, (error, data) => {
+      if (res.headersSent || res.destroyed) return;
+      if (error) { json(value); return; }
+      res.vary('Accept-Encoding').set('Content-Encoding', 'gzip').type('json').send(data);
+    });
+    return res;
+  };
+  next();
+}
 
 export function setPrivateCookie(response: Response, name: string, value: string, path: string, origin: string) {
   response.cookie(name, value, { path, httpOnly: true, sameSite: 'strict', secure: origin.startsWith('https:'), maxAge: 365 * 24 * 60 * 60_000 });

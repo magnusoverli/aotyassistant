@@ -14,7 +14,7 @@ import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
 import { createApp } from '../src/http.js';
 import { PreparationFileStore, PreparationManager, type SavedSelection } from '../src/preparations.js';
-import { SerialQueue } from '../src/serial.js';
+import { SerialQueue, WorkQueue } from '../src/serial.js';
 import { operation, playbackResolution } from '../src/operation.js';
 import { MusicAssistantTransport } from '../src/music-assistant-transport.js';
 import { presentCatalogueItems } from '../src/catalogue-grouping.js';
@@ -108,6 +108,19 @@ test('queue deadlines/cancellation remove waiting work immediately, bound admiss
   const running = gate(); t.after(running.release); const controller = new AbortController();
   const command = operation('dispatched', () => queue.run(async () => { running.enter(); await running.pending; return 'confirmed'; }), 1000, controller.signal);
   await running.entered; controller.abort(); running.release(); assert.equal(await command, 'confirmed');
+});
+
+test('work queues run a bounded number of jobs at once and drop waiting work whose request left', async () => {
+  const queue = new WorkQueue(8, 2); let running = 0; let peak = 0; const releases: (() => void)[] = [];
+  const job = () => queue.run(async () => { running++; peak = Math.max(peak, running); await new Promise<void>(resolve => releases.push(resolve)); running--; });
+  const jobs = [job(), job(), job()]; await delay(5);
+  assert.equal(peak, 2); assert.equal(releases.length, 2, 'The third job waits for a slot.');
+  const abort = new AbortController(); let abandoned = false;
+  const leaving = assert.rejects(operation('left', () => queue.run(async () => { abandoned = true; }), 1000, abort.signal), /cancelled/);
+  abort.abort(); await leaving;
+  releases.shift()!(); await delay(5); assert.equal(releases.length, 2, 'A freed slot starts the next waiting job.');
+  releases.splice(0).forEach(release => release()); await Promise.all(jobs); await queue.drain();
+  assert.equal(peak, 2); assert.equal(abandoned, false);
 });
 
 test('private capture releases the owner lane, coalesces retries and drains the eventual commit', async t => {

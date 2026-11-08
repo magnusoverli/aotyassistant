@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AudioPolicy, browserCodecs } from '../web/audio-policy.js';
+import { AudioPolicy, browserCodecs, onlineAudio } from '../web/audio-policy.js';
 import { probeFrame, probeCodec } from '../web/audio-probe.js';
 
 test('codec preference preserves browser-specific exclusions and a PCM fallback', () => {
@@ -43,6 +43,17 @@ test('buffer changes are bounded, gradual, and require sustained late decoded au
   assert.equal(policy.health.minBufferMs, 1750);
   for (let n = 0; n < 100; n++) { policy.received(++timestamp, 1, 160_100); policy.decoded(timestamp, 1, 160_100, false); }
   assert.equal(policy.health.minBufferMs, 1750, 'Recovery is not per-frame buffer oscillation.');
+});
+
+test('online buffering starts higher and may grow further, but never drops below its own floor', () => {
+  const buffers: number[] = []; const policy = new AudioPolicy(() => assert.fail('Do not change codec for late audio'), ms => buffers.push(ms), onlineAudio);
+  assert.equal(policy.health.minBufferMs, 1500); let timestamp = 0;
+  for (let time = 10_000; time <= 200_000; time += 10_000) {
+    for (let n = 0; n < 5; n++) { timestamp++; policy.received(timestamp, 1, time); policy.decoded(timestamp, 1, time, true); }
+  }
+  assert.equal(buffers.at(-1), 4000); assert.equal(Math.max(...buffers), 4000);
+  for (let time = 300_000; time <= 2_000_000; time += 60_000) { policy.received(++timestamp, 1, time); policy.decoded(timestamp, 1, time, false); }
+  assert.equal(policy.health.minBufferMs, 1500);
 });
 
 test('bundled Opus probe actually decodes using the shipping software decoder', async () => {

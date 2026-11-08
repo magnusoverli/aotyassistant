@@ -229,8 +229,11 @@ export class BrowserSpeakers {
           peakQueuedBytes: Math.max(previousTransfer?.peakQueuedBytes ?? 0, toBrowser.peakBytes), connections: (previousTransfer?.connections ?? 0) + 1 });
         const flowTimer = setInterval(() => { toMa.check(); toBrowser.check(); }, 1000); flowTimer.unref();
         s.close = finish;
+        // Any frame proves a peer is alive. Over Funnel a ping can wait behind queued
+        // audio in the relays, while the browser's own time-sync messages still arrive.
         client.on('pong', () => { clientAlive = true; }); remote.on('pong', () => { remoteAlive = true; });
-        client.on('message', (data, binary) => toMa.forward(data, binary)); remote.on('message', (data, binary) => toBrowser.forward(data, binary));
+        client.on('message', (data, binary) => { clientAlive = true; toMa.forward(data, binary); });
+        remote.on('message', (data, binary) => { remoteAlive = true; toBrowser.forward(data, binary); });
         client.on('close', finish); remote.on('close', finish); client.on('error', finish); remote.on('error', finish);
       });
     } catch { if (session && !session.connected) session.close = undefined; reject(); }

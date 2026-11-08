@@ -3,6 +3,14 @@ export type DecoderMode = 'native' | 'software';
 import type { AudioHealth } from '../src/browser-audio-health';
 export type { AudioHealth } from '../src/browser-audio-health';
 
+/** Buffering for the connection the browser speaker uses. */
+export type AudioNetwork = { leadTimeMs: number; minBufferMs: number; maxBufferMs: number; bufferCapacity?: number };
+export const lanAudio: AudioNetwork = { leadTimeMs: 250, minBufferMs: 500, maxBufferMs: 2000 };
+/** Funnel adds relay latency and limited bandwidth: start later and keep more buffered.
+ * The server sends up to 30 s ahead; capping that at Opus's 512 kbps maximum never
+ * limits Opus, but stops a FLAC/PCM burst (up to 6 MB) flooding the link at each track start. */
+export const onlineAudio: AudioNetwork = { leadTimeMs: 1000, minBufferMs: 1500, maxBufferMs: 4000, bufferCapacity: 64_000 * 30 };
+
 /** Match the pinned SDK's compatibility exclusions, not just MIME support. */
 export function browserCodecs(userAgent: string, nativeOpus: boolean): AudioCodec[] {
   const safari = /^((?!chrome|android).)*safari/i.test(userAgent);
@@ -13,14 +21,16 @@ export function browserCodecs(userAgent: string, nativeOpus: boolean): AudioCode
 /** Only received-but-undecoded chunks trigger codec recovery. Silence, suspension,
  * network gaps and an idle/paused player cannot be mistaken for decoder failure. */
 export class AudioPolicy {
-  readonly health: AudioHealth = { decodedChunks: 0, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 500 };
+  readonly health: AudioHealth;
   private pending = new Map<number, number>();
   private failures = 0;
   private late = 0;
   private lastAdjustment = 0;
   private lastLate = 0;
   private generation = -1;
-  constructor(private recover: () => void, private buffer: (ms: number) => void) {}
+  constructor(private recover: () => void, private buffer: (ms: number) => void, private network = lanAudio) {
+    this.health = { decodedChunks: 0, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: network.minBufferMs };
+  }
   reset(generation: number) { this.generation = generation; this.pending.clear(); this.failures = 0; this.late = 0; }
   received(timestamp: number, generation: number, now: number) {
     if (generation !== this.generation) this.reset(generation);
@@ -36,9 +46,9 @@ export class AudioPolicy {
     if (late) { this.health.lateChunks++; this.late++; this.lastLate = now; }
     else this.late = Math.max(0, this.late - 1);
     if (this.late >= 5 && now - this.lastAdjustment >= 10_000) {
-      this.adjust(Math.min(2000, this.health.minBufferMs + 250), now); this.late = 0;
+      this.adjust(Math.min(this.network.maxBufferMs, this.health.minBufferMs + 250), now); this.late = 0;
     } else if (!late && now - Math.max(this.lastLate, this.lastAdjustment) >= 60_000) {
-      this.adjust(Math.max(500, this.health.minBufferMs - 250), now);
+      this.adjust(Math.max(this.network.minBufferMs, this.health.minBufferMs - 250), now);
     }
   }
   check(now: number) {

@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdir, open, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
+import { mkdir, open, readFile, readdir, rename, rm, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Transform, Writable, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -11,7 +11,8 @@ import { AppError } from './model.js';
 import { listDirectory, readPrivateJson, syncDirectory, writePrivateJson } from './store.js';
 import { BoundedCache } from './bounded-cache.js';
 import { PreparationFileStore, type PreparationStore, type SavedSelection } from './preparations.js';
-import { KeyedSerialQueue } from './serial.js';
+import { KeyedSerialQueue, WorkQueue } from './serial.js';
+import { background } from './operation.js';
 import { mediaRange } from './http-utils.js';
 import { durability } from './backup.js';
 import { analyzeUpload, analysisSchema } from './upload-analysis.js';
@@ -25,6 +26,7 @@ const manifestSchema = analysisSchema.extend({ schema: z.literal(1), id, ownerId
   sha256: z.string().regex(/^[a-f0-9]{64}$/), bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), createdAt: z.number().int().nonnegative(), retained: z.boolean() }).strict();
 type Manifest = z.infer<typeof manifestSchema>;
 const recordBytes = 32 * 1024;
+const maxCoverBytes = 2 * 1024 * 1024;
 const stagedOwner = z.object({ id, ownerId: id });
 const receivingSchema = z.object({ id, ownerId: id, createdAt: z.number().int().nonnegative() }).strict();
 export type UploadPreview = { id: string; filename: string; title: string; artist: string; album: string; duration: number; artwork?: string };
@@ -41,6 +43,7 @@ export class UploadAssets {
   private closed = false;
   private artworkCache: BoundedCache<ArtworkData>;
   private artworkRequests = new Map<string, Promise<ArtworkData>>();
+  private artworkLine = new WorkQueue(256, 2);
   private ownerAllowed: (ownerId: string) => boolean = () => true;
   setOwnerPolicy(policy: (ownerId: string) => boolean) { this.ownerAllowed = policy; }
   private shutdown = new AbortController();
@@ -151,28 +154,31 @@ export class UploadAssets {
     }
     finally { await file.close(); }
   }
-  async artwork(assetId: string, ownerId?: string, size: ArtworkSize = 512): Promise<ArtworkData> {
+  /** Identity of one resized cover, after the owner checks. Equal keys mean equal pixels. */
+  async artworkKey(assetId: string, ownerId?: string, size: ArtworkSize = 512) {
     const value = await this.load(assetId, ownerId); if (!value.artwork) throw new AppError(404, 'Artwork unavailable.');
     if (!this.ownerAllowed(value.ownerId)) throw new AppError(401, 'This user is no longer available.');
-    const file = await open(join(this.path(assetId), 'cover.png'), 'r');
-    try {
-      const info = await file.stat();
-      if (info.size > 2 * 1024 * 1024) throw new AppError(404, 'Artwork unavailable.');
-      const key = `${assetId}:${size}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
-      const cached = this.artworkCache.get(key); if (cached) return cached;
-      const pending = this.artworkRequests.get(key); if (pending) return await pending;
-      if (this.artworkRequests.size >= 8) throw new AppError(503, 'Artwork is busy.');
-      const request = (async () => {
-        const body = await sharp(await file.readFile(), { limitInputPixels: 16 * 1024 * 1024, animated: false })
-          .rotate().resize(size, size, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
-        const data = { body, contentType: 'image/jpeg' as const };
-        this.artworkCache.set(key, data, { expires: this.now() + 5 * 60_000, size: body.length });
-        return data;
-      })();
-      this.artworkRequests.set(key, request);
-      try { return await request; } finally { this.artworkRequests.delete(key); }
-    }
-    finally { await file.close(); }
+    const info = await stat(join(this.path(assetId), 'cover.png')).catch(() => { throw new AppError(404, 'Artwork unavailable.'); });
+    if (!info.isFile() || info.size > maxCoverBytes) throw new AppError(404, 'Artwork unavailable.');
+    return `${assetId}:${size}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+  }
+  async artwork(assetId: string, ownerId?: string, size: ArtworkSize = 512): Promise<ArtworkData> {
+    const key = await this.artworkKey(assetId, ownerId, size);
+    const cached = this.artworkCache.get(key); if (cached) return cached;
+    const pending = this.artworkRequests.get(key); if (pending) return pending;
+    // A saved list can ask for many covers at once; they wait for a resize slot.
+    // Detached from the asking request, so a shared resize is never cancelled.
+    const request = background(() => this.artworkLine.run(async () => {
+      const input = await readFile(join(this.path(assetId), 'cover.png'));
+      if (input.length > maxCoverBytes) throw new AppError(404, 'Artwork unavailable.');
+      const body = await sharp(input, { limitInputPixels: 16 * 1024 * 1024, animated: false })
+        .rotate().resize(size, size, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
+      const data = { body, contentType: 'image/jpeg' as const };
+      this.artworkCache.set(key, data, { expires: this.now() + 60 * 60_000, size: body.length });
+      return data;
+    }, 'artwork'));
+    this.artworkRequests.set(key, request);
+    try { return await request; } finally { if (this.artworkRequests.get(key) === request) this.artworkRequests.delete(key); }
   }
   busy(assetId: string) { return [...this.leases].some(lease => lease.assetId === assetId); }
   async removeOwner(ownerId: string) {

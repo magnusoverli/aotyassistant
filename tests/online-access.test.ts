@@ -21,6 +21,7 @@ import { fixtureUploadAnalysis, uploadBytes } from './fixtures/uploads.js';
 import { randomUUID } from 'node:crypto';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
+import { onlineConnection } from '../web/online-panel.js';
 
 const host = 'listening-room.tail123.ts.net';
 class Connector implements TunnelConnector {
@@ -64,6 +65,22 @@ test('online setup requires account and Funnel approval, verified reachability, 
   try { await f.online.pause(); const starts = f.connector.starts; await f.online.refresh(); assert.equal(f.connector.starts, starts); assert.equal(f.online.origin, undefined); }
   finally { durability.thaw(); }
   await f.online.refresh(); assert.equal(f.online.view().joinUrl, url);
+});
+
+test('ready online access reports its Funnel round trip and rechecks UDP on a new connection', async t => {
+  const f = await fixture(t); let netchecks = 0; let udp = true;
+  (f.connector as TunnelConnector).netcheck = async () => { netchecks++; return { udp }; };
+  const changes: unknown[] = []; f.online.on('change', () => changes.push(f.online.view()));
+  await enable(f.online);
+  const network = f.online.view().network!;
+  assert.ok(Number.isInteger(network.roundTripMs) && network.roundTripMs >= 0); assert.equal(network.udp, true); assert.equal(netchecks, 1);
+  const before = changes.length; await f.online.refresh(); f.clock(60_000); await f.online.refresh();
+  assert.equal(netchecks, 1, 'UDP is checked at most every 30 minutes on one connection.');
+  assert.ok(changes.length - before <= 2, 'Measurements do not add room change events.');
+  udp = false; f.reachable(false); await f.online.refresh(); assert.equal(f.online.view().network, undefined);
+  f.reachable(true); await f.online.refresh(); assert.equal(netchecks, 2); assert.equal(f.online.view().network?.udp, false);
+  assert.match(onlineConnection(f.online.view().network!), /Relayed by Tailscale/);
+  assert.match(onlineConnection({ roundTripMs: 140, udp: true }), /^Online round trip from this server: 140 ms\. Direct connections are available\.$/);
 });
 
 test('invitations survive restart; signed grants expire and rotate/disable revokes all previous online access', async t => {

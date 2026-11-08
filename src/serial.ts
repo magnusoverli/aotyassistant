@@ -4,17 +4,18 @@ import { timing, operationWait } from './operation.js';
 import { AppError } from './model.js';
 import { diagnostics } from './diagnostics.js';
 
-/** Bounded FIFO lanes. Only waiting work expires; dispatched mutations always finish. */
-export class SerialQueue {
+/** Bounded FIFO lanes running up to `concurrency` jobs. Only waiting work expires;
+ * dispatched work always finishes. */
+export class WorkQueue {
   private waiting: Array<() => void> = [];
-  private running = false;
+  private running = 0;
   private drained = new Set<() => void>();
-  constructor(private limit = 256) {}
-  get busy() { return this.running || this.waiting.length > 0; }
+  constructor(private limit = 256, private concurrency = 1) {}
+  get busy() { return this.running > 0 || this.waiting.length > 0; }
   drain(): Promise<void> { return this.busy ? new Promise(resolve => this.drained.add(resolve)) : Promise.resolve(); }
 
   run<T>(work: () => Promise<T>, lane = 'serial'): Promise<T> {
-    diagnostics.record('queue-depth', this.waiting.length + Number(this.running));
+    diagnostics.record('queue-depth', this.waiting.length + this.running);
     if (this.waiting.length >= this.limit) return Promise.reject(new AppError(429, 'Too many pending operations. Wait for the current work to finish.'));
     const queued = performance.now();
     const context = AsyncLocalStorage.snapshot();
@@ -32,16 +33,16 @@ export class SerialQueue {
       const start = () => {
         if (signal?.aborted) { aborted(); this.next(); return; }
         if (deadline !== undefined && deadline <= performance.now()) { expired(); this.next(); return; }
-        started = true; cleanup(); this.running = true;
+        started = true; cleanup(); this.running++;
         void context(async () => {
           timing(`${lane}-wait`, queued);
           try { resolve(await work()); } catch (error) { reject(error); }
-          finally { this.running = false; this.next(); }
+          finally { this.running--; this.next(); }
         });
       };
       if (signal?.aborted) { aborted(); return; }
       if (deadline !== undefined && deadline <= performance.now()) { expired(); return; }
-      if (this.running) {
+      if (this.running >= this.concurrency) {
         this.waiting.push(start);
         signal?.addEventListener('abort', aborted, { once: true });
         if (deadline !== undefined) timer = setTimeout(expired, Math.max(1, deadline - performance.now()));
@@ -50,6 +51,11 @@ export class SerialQueue {
   }
   private next() { const start = this.waiting.shift(); if (start) start(); else this.notifyDrain(); }
   private notifyDrain() { if (!this.busy) { for (const resolve of this.drained) resolve(); this.drained.clear(); } }
+}
+
+/** One job at a time. */
+export class SerialQueue extends WorkQueue {
+  constructor(limit = 256) { super(limit, 1); }
 }
 
 /** Independent lanes for owners/assets; idle keys are released rather than retained forever. */

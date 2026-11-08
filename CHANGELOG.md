@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.1.16] — 2026-11-08
+
+- Load every thumbnail over online invitations. HTTP/2 browsers request a whole page at once; artwork beyond 16 simultaneous images failed and stayed blank. Images now wait for one of four Music Assistant fetches (two resizes for uploaded covers), and a waiting image is dropped when the browser leaves the page.
+- Answer artwork revalidation without reading the image again, after the usual access checks, and keep thumbnails cached for an hour instead of five minutes.
+- Compress JSON responses over 1 KiB, and shorten catalogue references from about 360 to 175 characters. A 60-album artist page drops from about 148 KiB to 32 KiB.
+- Phones playing room audio over an online invitation request a 1 s start lead and a 1.5–4 s buffer, and cap Music Assistant's 30-second send-ahead at 1.92 MB, so FLAC/PCM bursts no longer flood the Funnel link. Any message from a browser speaker now counts as a heartbeat, so a ping waiting behind queued audio cannot disconnect it.
+- Settings shows the online round trip through Funnel and whether direct (UDP) connections are available.
+
 ## [1.1.15] — 2026-11-08
 
 - Allow the host to delete a user who is not taking their turn while playback controls need recovery or Music Assistant is unreachable.

@@ -12,7 +12,7 @@ import { PreparationManager, PreparationFileStore, savedSourceAvailable } from '
 import { mountPreparations } from './preparation-http.js';
 import { UploadAssets } from './uploads.js';
 import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
-import { artworkSize, body, setParticipantCookie } from './http-utils.js';
+import { artworkSize, body, compressJson, sendArtwork, setParticipantCookie } from './http-utils.js';
 import { RateLimiter, directHosts, loopbackHosts, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
 import { DisplayArtwork } from './display-artwork.js';
@@ -123,6 +123,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     next(rates.hit(key, join ? 20 : 180) === 'limited' ? new AppError(429, 'Too many requests. Wait a minute and try again.') : undefined);
   });
   app.use(express.json({ limit: '16kb' }));
+  app.use(compressJson);
   app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
   if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess,
     req => users.directoryView(participantCredential(req)).current?.nickname);
@@ -173,14 +174,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     app.get('/api/participant/artwork/:reference', async (req, res) => {
       const started = performance.now();
       const context = engine.catalogueContext(participantCredential(req));
-      const reference = z.string().max(1500).parse(req.params.reference);
-      const image = await integrations.artwork(reference, context, artworkSize.parse(req.query.size));
-      if (engine.catalogueContext(participantCredential(req)) !== context) throw new AppError(403, 'Artwork access expired.');
-      // A stored image must revalidate on every reuse. Authorization, reference
-      // expiry and catalogue checks above run before Express can return a 304.
-      res.set('Cache-Control', 'private, no-cache').vary('Cookie');
-      res.set('Server-Timing', `artwork;dur=${(performance.now() - started).toFixed(1)}`);
-      res.type(image.contentType).send(image.body);
+      const reference = z.string().max(1500).parse(req.params.reference); const size = artworkSize.parse(req.query.size);
+      // Membership and reference checks run before any 304. A thumbnail still
+      // waiting for a fetch slot is dropped when the browser stops asking for it.
+      await catalogueRead(res, 'artwork', async () => sendArtwork(req, res, await integrations.artworkKey(reference, context, size), async () => {
+        const image = await integrations.artwork(reference, context, size);
+        res.set('Server-Timing', `artwork;dur=${(performance.now() - started).toFixed(1)}`);
+        return image;
+      }, () => { if (engine.catalogueContext(participantCredential(req)) !== context) throw new AppError(403, 'Artwork access expired.'); }));
     });
     app.get('/api/display/artwork/:id/:kind', async (req, res) => {
       const id = turn.parse(req.params.id); const kind = z.enum(['artwork', 'artistArtwork']).parse(req.params.kind);

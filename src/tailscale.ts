@@ -6,11 +6,14 @@ import { z } from 'zod';
 export const onlinePort = 8098;
 export const funnelTarget = `http://127.0.0.1:${onlinePort}`;
 export type TailStatus = { BackendState?: string; AuthURL?: string; Self?: { DNSName?: string; Online?: boolean; KeyExpiry?: string } };
+/** Without UDP, Tailscale relays Funnel traffic through its DERP servers: slower. */
+export type TailNetwork = { udp: boolean };
 export interface TunnelConnector {
   start(): Promise<void>;
   stop(): Promise<void>;
   status(): Promise<TailStatus>;
   configured(host: string): Promise<boolean>;
+  netcheck?(): Promise<TailNetwork>;
   connect(url: (value: string) => void): void;
   publish(url: (value: string) => void): void;
   readonly busy: boolean;
@@ -92,6 +95,7 @@ export class TailscaleConnector implements TunnelConnector {
   }
   async status(): Promise<TailStatus> { return JSON.parse(await this.run(['status', '--json', '--peers=false'])); }
   async configured(host: string) { return exactFunnel(JSON.parse(await this.run(['funnel', 'status', '--json'])), host); }
+  async netcheck(): Promise<TailNetwork> { return { udp: z.object({ UDP: z.boolean() }).parse(JSON.parse(await this.run(['netcheck', '--format=json']))).UDP }; }
   connect(url: (value: string) => void) {
     if (!this.busy) void this.run(['up', '--hostname=listening-room', '--accept-dns=false', '--accept-routes=false', '--advertise-tags=', '--ssh=false', '--timeout=10m'], url).catch(() => {});
   }
