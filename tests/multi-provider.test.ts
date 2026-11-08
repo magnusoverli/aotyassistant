@@ -4,6 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { MusicAssistantClient } from '../src/music-assistant.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { AppError } from '../src/model.js';
+import { playbackResolution } from '../src/operation.js';
 import { browseCatalogueItems, groupCatalogueItems, presentCatalogueItems, sameCatalogueItem, sameMetadataPresentation, type IdentityMedia } from '../src/catalogue-grouping.js';
 import { metadataOnly } from './fixtures/music-assistant.js';
 
@@ -66,10 +67,33 @@ function fixture() {
       if (command === 'music/albums/album_tracks') return [track(provider)];
       throw new Error('Unexpected command');
     } finally { pending--; }
-  } });
+  } }, { cacheListings: false }); // These tests count upstream reads per browse.
   return { client, calls, fail(providers: string[]) { failed = new Set(providers); }, empty() { empty = true; },
     sources(providers: string[]) { sources = providers; }, current(item: typeof current) { current = item; }, get maxPending() { return maxPending; } };
 }
+
+test('recent listings are shared, an exact artist match loads its albums ahead, and playback reads stay fresh', async () => {
+  const calls: string[] = []; const image = { proxy_id: 'a'.repeat(64) };
+  const client = new MusicAssistantClient('http://localhost:8095', 'PRIVATE', 8000, { async read(_path, command, args = {}) {
+    calls.push(command!); await new Promise(resolve => setImmediate(resolve));
+    if (command === 'music/search') return (args as { media_types: string[] }).media_types[0] === 'artist'
+      ? { artists: [{ ...artist('spotify'), image }] } : { tracks: [{ ...track('spotify'), image }] };
+    if (command === 'music/artists/artist_albums') return [{ ...album('spotify'), image }];
+    throw new Error('Unexpected command');
+  } });
+  const count = (command: string) => calls.filter(call => call === command).length;
+  const found = (await client.artists('metallica')).items[0]!;
+  assert.equal(count('music/artists/artist_albums'), 1, 'A case-insensitive exact match starts loading its albums before the tap.');
+  const albums = await client.albums(found.id);
+  assert.equal(albums.items[0]!.name, 'Black album'); assert.equal(count('music/artists/artist_albums'), 1, 'The tap shares the prefetched read.');
+  assert.equal((await client.artists('metallica')).items[0]!.id, found.id);
+  assert.equal(count('music/search'), 1, 'A repeated query reuses the recent listing.');
+  await client.artists('Metal'); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(count('music/artists/artist_albums'), 1, 'A partial name match does not prefetch.');
+  const searches = count('music/search');
+  await playbackResolution(() => client.search('Enter Sandman')); await playbackResolution(() => client.search('Enter Sandman'));
+  assert.equal(count('music/search'), searches + 2, 'Playback resolution always reads fresh availability.');
+});
 
 test('strong identities group artists across sources, not names or malformed/unsupported IDs', () => {
   const a = artist('spotify'); const b = artist('tidal');
@@ -230,7 +254,7 @@ test('raw/result bounds fail explicitly instead of silently discarding provider 
     if (oversized) return { tracks: Array.from({ length: 501 }, () => track('spotify')) };
     return { tracks: Array.from({ length: 11 }, (_, i) => ({ ...track('spotify'), item_id: `library-${i}`, provider: 'library', uri: `library://track/${i}`, external_ids: [],
       provider_mappings: Array.from({ length: 100 }, (_, j) => ({ item_id: `${i}-${j}`, provider_instance: `source-${j}`, provider_domain: 'spotify', available: true })) })) };
-  } });
+  } }, { cacheListings: false }); // The same query returns different responses.
   await assert.rejects(client.search('query'), /too many source choices/);
   oversized = true; await assert.rejects(client.search('query'), /incompatible search response/);
 });
@@ -266,7 +290,7 @@ test('one artist unions provider albums [1,2,3] and [1,3,4] into [1,2,3,4] witho
     }));
     assert.equal(command, 'music/albums/album_tracks');
     return [];
-  } });
+  } }, { cacheListings: false }); // The repeated search returns a reordered response.
   const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-union-')), () => client);
   await manager.init(); await manager.save('http://localhost:8095', 'PRIVATE', 0);
   const search = await manager.browse('artists', 'Metallica', 'alice');
@@ -387,7 +411,7 @@ test('ID-less same-name artists merge and browse both providers without corrobor
     const calls: string[] = [];
     const client = new MusicAssistantClient('http://localhost:8095', 'token', 8000, { async read(_path, command) {
       calls.push(command!); return command === 'music/search' ? { artists } : [];
-    } });
+    } }, { cacheListings: false }); // Grouping must not depend on any album read, background or not.
     const page = await client.artists(name); assert.equal(page.items.length, 1);
     assert.equal(page.notices, undefined);
     assert.ok(!calls.includes('music/artists/artist_albums'), 'Searching must not require catalogue corroboration.');

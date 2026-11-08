@@ -13,7 +13,6 @@ import { RateLimiter, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
 import { operation } from './operation.js';
 import type { UserManager } from './users.js';
-import { requestBase } from './ingress.js';
 
 const prefix = '/api/participant/preparations';
 const uuid = z.string().uuid();
@@ -80,11 +79,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   });
   app.get(`${prefix}/uploads/:uploadId/artwork`, async (req, res) => {
     const owner = await manager.read(credential(req)); const assetId = uuid.parse(req.params.uploadId);
-    const preview = await uploads.inspect(owner.ownerId, assetId);
-    const selection = { source: 'upload' as const, assetId, ...(preview.artwork ? { artworkAssetId: assetId } : {}),
-      metadata: { title: preview.title, artist: preview.artist, album: preview.album, duration: preview.duration, version: '', provider: 'Uploaded file' } };
-    await manager.read(credential(req));
-    if (redirectArtwork(req, res, selection, 'artwork')) return;
+    await uploads.inspect(owner.ownerId, assetId); await manager.read(credential(req));
     const size = artworkSize.parse(req.query.size);
     await sendArtwork(req, res, `upload:${await uploads.artworkKey(assetId, owner.ownerId, size)}`,
       () => uploads.artwork(assetId, owner.ownerId, size), () => manager.read(credential(req)));
@@ -133,7 +128,8 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.get(`${prefix}/artwork/:entryId/:kind`, async (req, res) => {
     const entryId = uuid.parse(req.params.entryId); const kind = z.enum(['artwork', 'artistArtwork']).parse(req.params.kind);
     const selection = await manager.selection(credential(req), entryId);
-    if (redirectArtwork(req, res, selection, kind)) return;
+    // Served here rather than redirected to the catalogue URL: one request per cover
+    // instead of two. The pixel tag is shared, so either URL revalidates without a read.
     const size = artworkSize.parse(req.query.size);
     let key: string; let read: () => Promise<ArtworkData>;
     if (selection.source === 'upload' && kind === 'artwork' && selection.artworkAssetId) {
@@ -148,20 +144,6 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       if (JSON.stringify(selection) !== JSON.stringify(latest)) throw new AppError(403, 'Saved artwork access changed.');
     });
   });
-  function redirectArtwork(req: Request, res: Response, selection: import('./preparations.js').SavedSelection, kind: 'artwork' | 'artistArtwork') {
-    const size = artworkSize.parse(req.query.size);
-    if (!integrations || selection.source === 'demo') return false;
-    // A retained private list can be read without room membership. In that case
-    // keep its independently authorized route instead of issuing a broken URL.
-    let context: string;
-    try { context = engine.catalogueContext(member(req)); }
-    catch (error) { if (error instanceof AppError && error.status === 401) return false; throw error; }
-    const url = integrations.savedArtworkUrl(selection, kind, context);
-    if (!url) throw new AppError(404, 'Artwork unavailable.');
-    // Do not cache the redirect: list authorization and Ingress base are current
-    // on every use. Only its canonical, Cookie-varying image target is cached.
-    res.redirect(302, `${requestBase(req)}${url}?size=${size}`); return true;
-  }
   // This path receives both HttpOnly cookies. One connection carries independently filtered feeds.
   app.get(`${prefix}/live`, async (req, res) => {
     const role = { kind: 'participant' as const, credential: member(req) };

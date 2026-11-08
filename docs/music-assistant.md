@@ -28,7 +28,13 @@ Results, saved playlists/history and the small participant player use the same 1
 
 Participant artwork URLs stay stable within their catalogue context. Browsers can retain the image and revalidate access before reuse; unchanged images return a body-free `304` response without the app reading the image again. Invitation, participant and catalogue checks still apply. The `Server-Timing` artwork duration reports server-side retrieval time to help distinguish Music Assistant delays from browser or internet-transfer delays.
 
-Authorized saved-artwork routes redirect joined participants to that same image URL, so moving a track from results to the playlist, player and history can reuse the browser's downloaded pixels. The small authorization/redirect and revalidation requests still occur; redirects are not cached. Private-list access without room membership uses its own authorized, revalidating image response. Browser caches are local to each browser/origin and can be evicted; another device still needs its own download.
+Saved playlist and history covers are served directly from their own authorized URL, one request per cover, with no redirect. They carry the same revalidation tag as the catalogue image, so once a browser has the pixels, every URL for that image revalidates with a body-free `304`. A cover first seen in results is downloaded once more the first time it appears in the list. Access with or without room membership uses the same response. Browser caches are local to each browser/origin and can be evicted; another device still needs its own download.
+
+## Browsing speed
+
+Artist searches, artist album lists and album track lists are kept for five minutes and shared by everyone in the room. Browsing back, or a second guest opening the same artist, is answered without waiting for Music Assistant and its streaming services. Identical requests in progress share one Music Assistant read. New library additions appear within five minutes. Playback never uses this cache: the app always checks current availability before Play.
+
+When an artist search returns an exact name match first, its albums are loaded in the background before anyone taps it. Only one such prefetch runs at a time, it uses only the local network, and a failure is ignored. Pressing a **View albums** or **View tracks** button starts the request as the finger or mouse button goes down; the click reuses it, and a scroll cancels it.
 
 Uploaded artwork also uses size-specific JPEG responses and stable authorized URLs, with up to 128 variants/8 MiB cached for an hour and at most two resized at a time. New uploads retain covers up to 1024 pixels for `/display` (512 if needed to fit the stored-artwork limit); older covers keep their existing resolution. Original audio and existing stored cover files are unchanged.
 

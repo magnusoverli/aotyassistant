@@ -58,7 +58,7 @@ test('lightweight artist and album items obtain cached full-item artwork without
     const { uri, allow_update_metadata } = args as { uri: string; allow_update_metadata: boolean };
     assert.equal(allow_update_metadata, false);
     return { ...(uri.includes('/artist/') ? artist('spotify') : album('spotify')), metadata: { images: [image] } };
-  } });
+  } }, { cacheListings: false }); // Counts the artwork reads of repeated browses.
   const found = (await client.artists('Metallica')).items[0]!;
   const release = (await client.albums(found.id)).items[0]!;
   assert.equal(found.artwork, `image:${imageId}`);

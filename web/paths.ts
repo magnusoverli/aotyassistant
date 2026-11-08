@@ -3,6 +3,8 @@ const meta = (name: string) => typeof document === 'undefined' ? '' : document.q
 export const ingressBase = () => meta('aoty-base');
 export const inIngress = () => Boolean(ingressBase());
 export const isPublic = () => meta('aoty-public') === '1';
+/** The server saw a valid invitation cookie when it sent this page. */
+export const hasOnlineSession = () => meta('aoty-online-session') === '1';
 export function setGuestOrigin(origin: string) {
   const tag = document.querySelector<HTMLMetaElement>('meta[name="aoty-guest"]');
   if (tag && tag.content !== origin) { tag.content = origin; document.dispatchEvent(new Event('aoty-address-changed')); }

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [1.1.17] — 2026-11-08
+
+- Load pages with 60% less JavaScript (47 KB instead of 121 KB compressed). The browser-speaker audio code and its format checks load in the background after the page is shown; Settings and the QR-code encoder load only on the pages that use them, and the host desk prefetches Settings.
+- Online pages skip the separate invitation session check when the page shows the invitation cookie is valid, saving one round trip on every load.
+- Participant and join pages open their live connection once, after membership is known, instead of opening and replacing streams. Room pages no longer open the public listening-order feed while waiting for their own first view.
+- Share artist searches, album lists and track lists between everyone for five minutes, and combine identical requests in progress. Playback always reads fresh availability.
+- Load the albums of an exact-name artist match in the background, and start a browse request when the button is pressed down.
+- Serve saved-list and history covers directly instead of redirecting, one request per cover, with the same revalidation tag as the catalogue image.
+
 ## [1.1.16] — 2026-11-08
 
 - Load every thumbnail over online invitations. HTTP/2 browsers request a whole page at once; artwork beyond 16 simultaneous images failed and stayed blank. Images now wait for one of four Music Assistant fetches (two resizes for uploaded covers), and a waiting image is dropped when the browser leaves the page.

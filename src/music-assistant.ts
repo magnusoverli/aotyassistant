@@ -8,7 +8,7 @@ import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './m
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 import { UpstreamError } from './upstream-error.js';
-import { background, budget, operationSignal } from './operation.js';
+import { background, budget, operationSignal, requestPriority } from './operation.js';
 import { BoundedCache } from './bounded-cache.js';
 import { WorkQueue } from './serial.js';
 import { reportedStreamInfoSchema } from './stream-info.js';
@@ -56,6 +56,9 @@ const referenceLifetime = 12 * 60 * 60_000;
 type Media = z.infer<typeof mediaSchema>;
 const maxVariants = 1000;
 const maxBrowseSources = 8;
+/** Read-only listings shared briefly by everyone; new library additions appear within this time. */
+const listingCommands = new Set<string>(['music/search', 'music/artists/artist_albums', 'music/albums/album_tracks']);
+const listingLifetime = 5 * 60_000;
 const queueItemSchema = z.object({ queue_item_id: z.string(), media_item: z.union([searchTrackSchema,
   z.object({ media_type: z.enum(['radio', 'podcast_episode', 'audiobook', 'audio_source', 'sound_effect']) }).transform(() => null)]).nullable().optional(),
   streamdetails: z.object({ provider: z.string(), item_id: z.string(), audio_format: reportedStreamInfoSchema }).nullish() });
@@ -89,15 +92,38 @@ export class MusicAssistantClient implements MusicAssistantReader {
   /** Matches the transport's four artwork sockets, so a fetch's deadline starts when it is sent. */
   private imageLine = new WorkQueue(256, 4);
   private browseImages = new BoundedCache<{ image?: z.infer<typeof imageSchema> }>(128);
+  /** Listings are the same for everyone in the room. Kept as JSON text: exact size, no shared objects. */
+  private listings = new BoundedCache<string>(64, 16 * 1024 * 1024);
+  private listingReads = new Map<string, Promise<string>>();
+  private prefetching = false;
+  /** `cacheListings: false` reads every listing upstream and never prefetches (tests that count reads). */
   constructor(origin: string, private token: string, timeoutMs = 8000,
-    private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs)) {
+    private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs),
+    private options: { cacheListings?: boolean } = {}) {
     this.events = new MusicAssistantEvents(origin, token);
   }
 
   close() { this.events.close(); this.transport.close?.(); }
   subscribePlayback(listener: (event: PlaybackEvent) => void) { return this.events.subscribe(listener); }
   private read(path: Parameters<MusicAssistantTransport['read']>[0], command?: Command, args = {}, binary = false) {
-    return this.transport.read(path, command, args, binary);
+    // Browsing back, or a second guest opening the same artist, reuses a recent listing.
+    // Playback resolution always reads fresh availability.
+    if (!command || !listingCommands.has(command) || requestPriority() === 'playback' || this.options.cacheListings === false) return this.transport.read(path, command, args, binary);
+    const key = JSON.stringify([command, args]); const cached = this.listings.get(key);
+    if (cached !== undefined) return Promise.resolve(JSON.parse(cached) as unknown);
+    let shared = this.listingReads.get(key);
+    if (!shared) {
+      // A tap during the prefetch, or two guests at once, share one upstream read. It runs
+      // detached from the asking request, so one browser leaving never cancels it for others.
+      const read = background(() => this.transport.read(path, command, args, binary)).then(value => {
+        const text = JSON.stringify(value); this.listings.set(key, text, { expires: Date.now() + listingLifetime, size: text.length });
+        return text;
+      });
+      shared = read; this.listingReads.set(key, read);
+      const clear = () => { if (this.listingReads.get(key) === read) this.listingReads.delete(key); };
+      void read.then(clear, clear);
+    }
+    return shared.then(text => JSON.parse(text) as unknown);
   }
   private redact(value: string): string { return value.replaceAll(this.token, '[redacted]'); }
   private image(media: { image?: z.infer<typeof imageSchema> | null; metadata?: { images: z.infer<typeof imageSchema>[] } } | null | undefined): string | undefined {
@@ -338,10 +364,19 @@ export class MusicAssistantClient implements MusicAssistantReader {
       const result = z.object({ artists: z.array(mediaSchema).max(500) }).parse(await this.read('/api', 'music/search', {
         search_query: query, media_types: ['artist'], limit: 20,
       }));
-      return { items: await this.grouped('artist', result.artists, a => ({
+      const items = await this.grouped('artist', result.artists, a => ({
         id: this.remember('artist', a), name: this.redact(a.name), provider: this.sourceName(a), artwork: this.image(a),
-      })) };
+      }));
+      this.prefetchAlbums(query, items[0]);
+      return { items };
     });
+  }
+  /** An exact-name top result is the likely next tap: load its albums into the listing
+   * cache in the background. One at a time, local network only, failures ignored. */
+  private prefetchAlbums(query: string, top?: CatalogueArtist) {
+    if (!top || this.prefetching || this.options.cacheListings === false || top.name.trim().localeCompare(query.trim(), undefined, { sensitivity: 'base' }) !== 0) return;
+    this.prefetching = true;
+    void background(() => this.albums(top.id)).catch(() => {}).finally(() => { this.prefetching = false; });
   }
   async albums(artistId: string): Promise<CataloguePage<CatalogueAlbum>> {
     return this.compatible('Music Assistant returned an incompatible album response.', async () => {

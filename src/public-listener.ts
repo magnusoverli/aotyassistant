@@ -3,7 +3,8 @@ import type { IncomingMessage, RequestListener } from 'node:http';
 import { grantLifetime, type OnlineAccess } from './online-access.js';
 import { RateLimiter, isLoopbackPeer, readCookie } from './http-guards.js';
 
-const contexts = new WeakMap<IncomingMessage, { origin: string; session: string }>();
+/** `authorized`: the invitation cookie is valid. The page shell exposes only this yes/no. */
+const contexts = new WeakMap<IncomingMessage, { origin: string; session: string; authorized: boolean }>();
 export const publicContext = (request: IncomingMessage) => contexts.get(request);
 const cookieName = '__Host-aoty_online';
 export const onlineCookie = (req: IncomingMessage) => readCookie(req, cookieName);
@@ -82,7 +83,7 @@ export function publicListener(handler: RequestListener, online: OnlineAccess) {
       if (Number(length) > 256 * 1024 * 1024) { res.status(413).json({ error: 'Online uploads support files up to 256 MiB. Use local Wi-Fi for larger files.' }); return; }
     }
     if (!shell && limited(`session:${grant}`, req.method === 'POST' ? 240 : 1200)) { res.status(429).set('Retry-After', '60').json({ error: 'Too many requests. Wait a minute.' }); return; }
-    contexts.set(req, { origin, session: grant });
+    contexts.set(req, { origin, session: grant, authorized });
     if (path === '/') { res.redirect('/join'); return; }
     handler(req, res);
   });

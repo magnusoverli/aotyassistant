@@ -350,16 +350,6 @@ export class IntegrationManager implements CatalogueProvider {
     const entry = /^prepared:([a-f0-9-]{36})$/.exec(trackId);
     return entry ? `/api/participant/preparations/artwork/${entry[1]}/${kind}` : undefined;
   }
-  /** Called only after private-list authorization. Share the catalogue browser
-   * cache key; the target still checks membership and catalogue on every read. */
-  savedArtworkUrl(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', context: string) {
-    if (selection.source === 'upload') {
-      return kind === 'artwork' && selection.artworkAssetId
-        ? `${artworkPath}upload:${this.seal(selection.assetId, 'upload-image', context)}` : undefined;
-    }
-    const saved = this.savedSource(selection);
-    return this.withArtwork({ artwork: saved.metadata.artworkId, artistArtwork: saved.metadata.artistArtworkId }, context)[kind];
-  }
   /** The same pixel name as the catalogue route, so both URLs revalidate against one tag. */
   savedArtworkKey(selection: SavedSelection, kind: 'artwork' | 'artistArtwork', size: ArtworkSize = 512) {
     const saved = this.savedSource(selection);

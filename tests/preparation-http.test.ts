@@ -134,7 +134,7 @@ test('saved artwork reuse requires exact image identity independently for cover 
   assert.equal(originalCover.artistArtworkIdentity, undefined);
 });
 
-test('search, saved lists, history and playback reuse one authorized thumbnail cache target', async t => {
+test('search, saved lists, history and playback share one authorized thumbnail tag, one request per cover', async t => {
   const f = await fixture(t); const added = await f.add();
   const selected = added.search.tracks[0]!; const entry = added.view.upcoming[0]!;
   const cached = new Map<string, string>();
@@ -142,9 +142,10 @@ test('search, saved lists, history and playback reuse one authorized thumbnail c
     const canonical = `${selected[kind]}?size=160`;
     const first = await f.request(canonical, undefined, f.first.membership);
     assert.equal(first.status, 200); cached.set(kind, first.headers.get('etag')!); await first.arrayBuffer();
+    // Served directly rather than redirected to the catalogue URL, with the same pixel tag.
     const saved = await fetch(`${f.origin}${entry[kind]}?size=160`, { headers: { Cookie: f.first.credentials }, redirect: 'manual' });
-    assert.equal(saved.status, 302); assert.equal(saved.headers.get('location'), canonical);
-    assert.equal(saved.headers.get('cache-control'), 'no-store');
+    assert.equal(saved.status, 200); assert.equal(saved.headers.get('etag'), cached.get(kind));
+    assert.equal(saved.headers.get('cache-control'), 'private, no-cache'); await saved.arrayBuffer();
   }
   const conditional = (path: string, credential: string, etag: string) => new Promise<{ status: number; bytes: number }>((resolve, reject) => {
     const req = httpRequest(f.origin + path, { headers: { Cookie: credential, 'If-None-Match': etag } }, res => {
@@ -159,8 +160,8 @@ test('search, saved lists, history and playback reuse one authorized thumbnail c
     const canonical = `${selected[kind]}?size=160`;
     assert.equal(played.view.ownPlayback!.track[kind], selected[kind]);
     assert.deepEqual(await conditional(canonical, f.first.membership, cached.get(kind)!), { status: 304, bytes: 0 });
-    const history = await f.request(`${played.preparation.played[0]![kind]}?size=160`, undefined, f.first.credentials);
-    assert.equal(history.url, f.origin + canonical); await history.arrayBuffer();
+    assert.deepEqual(await conditional(`${played.preparation.played[0]![kind]}?size=160`, f.first.credentials, cached.get(kind)!), { status: 304, bytes: 0 },
+      'History revalidates against the catalogue tag without sending pixels.');
     assert.equal((await conditional(canonical, f.second.membership, cached.get(kind)!)).status, 409);
     assert.equal((await f.request(`${entry[kind]}?size=160`, undefined, f.second.credentials)).status, 404);
     // Private-list-only clients still get safe conditional caching.

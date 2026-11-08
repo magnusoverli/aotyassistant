@@ -5,14 +5,18 @@ import { pageForPath, spaDestination } from './navigation';
 import { pagePath, ingressBase } from './paths';
 import './style.css';
 import { enterOnline } from './online-entry';
-import { initializeBrowserSpeaker } from './browser-speaker';
+import { whenIdle } from './idle';
 
 // The shell survives route changes. Page lifetimes own their requests, listeners,
 // subscriptions and controls; late responses cannot update a replacement page.
 const root = document.querySelector<HTMLDivElement>('#app')!;
 void enterOnline(root).then(ready => { if (ready) mountApplication(); });
 function mountApplication() {
-initializeBrowserSpeaker();
+// Browser audio (the speaker SDK and its codec checks) is needed only once the host picks
+// this browser. Load it after the first screen, so it never delays the page.
+const loadAudio = () => { void import('./browser-speaker').then(audio => { audio.initializeBrowserSpeaker(); })
+  .catch(() => { window.addEventListener('online', loadAudio, { once: true }); }); };
+whenIdle(loadAudio);
 const header = new AppHeader(pageForPath(pagePath(location.pathname)), message => {
   const notice = document.createElement('p'); notice.setAttribute('role', 'alert'); notice.textContent = message;
   content.prepend(notice);

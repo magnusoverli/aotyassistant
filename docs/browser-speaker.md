@@ -1,6 +1,6 @@
 # Browser playback
 
-Opening Listening Room automatically registers its browser as a Music Assistant speaker. This applies to Home Assistant, local access and invited internet browsers. There are no separate enable/disable buttons, approval codes, setup panels or persistent indicators.
+Opening Listening Room automatically registers its browser as a Music Assistant speaker. This applies to Home Assistant, local access and invited internet browsers. The audio code and its format checks load in the background once the page is shown, so registration happens shortly after a page opens (within three seconds) rather than delaying it. There are no separate enable/disable buttons, approval codes, setup panels or persistent indicators.
 
 Choose your **Listening Room** browser in the existing **Settings → Playback** speaker selector. Refresh the speaker list if necessary. Registration does not select a destination or start a track; playback uses the existing controls.
 

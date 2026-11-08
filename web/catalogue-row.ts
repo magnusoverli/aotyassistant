@@ -8,6 +8,8 @@ type Options = {
   music: PreparationPanel;
   online: boolean; canPlay: boolean; playbackAvailable: boolean; starting: boolean;
   browse(item: CatalogueArtist | CatalogueAlbum): void; play(track: CatalogueTrack): void;
+  /** Start the browse request when the pointer goes down; `unprepare` when no click follows. */
+  prepare(item: CatalogueArtist | CatalogueAlbum): void; unprepare(): void;
 };
 
 /** The backend resolves equivalent providers; listeners choose music, not services. */
@@ -32,6 +34,11 @@ export class CatalogueRow {
       const browse = v.el('browse', 'button', kind === 'artist' ? 'View albums' : 'View tracks', 'secondary'); prop(browse, 'type', 'button');
       prop(browse, 'disabled', !options.online);
       browse.onclick = () => options.browse(shown as CatalogueAlbum);
+      browse.onpointerdown = event => { if (event.button === 0 && !browse.disabled) options.prepare(shown as CatalogueAlbum); };
+      // A scroll takes over (cancel), or a held mouse button leaves. Touch also
+      // fires pointerleave after lifting the finger; that must not cancel.
+      browse.onpointercancel = () => options.unprepare();
+      browse.onpointerleave = event => { if (event.buttons) options.unprepare(); };
       children(row, info, browse);
     } else {
       const controls = v.el('controls', 'div', undefined, 'row-actions');

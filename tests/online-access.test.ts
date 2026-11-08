@@ -218,6 +218,10 @@ test('public listener gates profiles, supports PIN join/private library, rejects
   const redeemed = await request('/api/online/redeem', { invitation: invitation(f.online) }); assert.equal(redeemed.status, 200);
   const set = redeemed.headers.get('set-cookie')!; assert.match(set, /^__Host-aoty_online=/); assert.match(set, /Secure/); assert.match(set, /HttpOnly/); assert.match(set, /SameSite=Strict/);
   const access = set.split(';')[0]!;
+  // The shell tells a returning guest their invitation cookie is valid: no session round trip.
+  assert.doesNotMatch(await (await request('/join')).text(), /aoty-online-session/);
+  assert.match(await (await request('/participant', undefined, access)).text(), /<meta name="aoty-online-session" content="1">/);
+  assert.doesNotMatch(await (await request('/participant', undefined, '__Host-aoty_online=1.forged.cookie')).text(), /aoty-online-session/);
   for (const path of ['/host', '/host/settings', '/api/host/state', '/api/host/events', '/api/host/online', '/api/health', '/api/media/check/not-a-key/track.wav', '/api/host%2fstate']) {
     assert.equal((await request(path, undefined, access, { 'X-Ingress-Path': '/fake', 'X-Remote-User-Id': 'owner', 'X-Forwarded-Host': 'localhost', 'X-Forwarded-Proto': 'https' })).status, 404, path);
   }

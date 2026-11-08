@@ -41,3 +41,21 @@ test('starting a new browse aborts the old request and ignores its late failure'
   f.calls[0]!.reject(new Error('Aborted')); f.calls[1]!.resolve({ artists: [] });
   assert.equal(await old, undefined); assert.deepEqual(await current, { artists: [] });
 });
+
+test('a browse started on pointer down is reused by its click, and dropped when no click follows', async () => {
+  const f = fixture();
+  f.controller.prepare('albums', 'artist'); f.controller.prepare('albums', 'artist');
+  assert.equal(f.calls.length, 1, 'Repeated pointer downs on one button send one request.');
+  const albums = { albums: [], playbackAvailable: true }; f.calls[0]!.resolve(albums);
+  assert.deepEqual(await f.controller.browse('albums', 'artist'), albums);
+  assert.equal(f.calls.length, 1, 'The click adopts the early request.');
+  f.controller.prepare('albums', 'scrolled-past'); f.controller.unprepare();
+  assert.equal(f.calls[1]!.signal?.aborted, true, 'A scroll that takes over cancels the early request.');
+  f.controller.prepare('tracks', 'one'); const other = f.controller.browse('tracks', 'two');
+  assert.equal(f.calls[2]!.signal?.aborted, true); assert.equal(f.calls.length, 4, 'A click elsewhere does its own request.');
+  f.calls[3]!.resolve({ tracks: [], playbackAvailable: true }); await other;
+  f.controller.prepare('albums', 'artist'); f.view = { ...f.view, catalogue: { ...f.view.catalogue!, revision: 'catalogue-b' } };
+  const fresh = f.controller.browse('albums', 'artist');
+  assert.equal(f.calls[4]!.signal?.aborted, true); assert.equal(f.calls.length, 6, 'An early request from another catalogue is not reused.');
+  f.calls[5]!.resolve(albums); assert.deepEqual(await fresh, albums);
+});

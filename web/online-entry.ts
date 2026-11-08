@@ -1,11 +1,13 @@
 import { el } from './dom';
-import { isPublic } from './paths';
+import { hasOnlineSession, isPublic } from './paths';
 
 /** Redeem a fragment before mounting anything that subscribes to private room state. */
 export async function enterOnline(root: HTMLElement): Promise<boolean> {
   if (!isPublic()) return true;
   let invitation = new URLSearchParams(location.hash.slice(1)).get('online');
   if (invitation !== null) history.replaceState(null, '', location.pathname + location.search);
+  // The page itself says the invitation cookie is valid: no session check needed.
+  else if (hasOnlineSession()) return true;
   const main = el('main', undefined, 'page stack'); main.id = 'main-content';
   const status = el('p', 'Opening your invitation…'); status.setAttribute('role', 'status');
   main.append(el('h1', 'Join Listening Room'), status); root.replaceChildren(main);

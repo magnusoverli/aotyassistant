@@ -334,7 +334,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     app.get(path, async (req, res) => {
       const base = requestBase(req);
       let html = await pageShell();
-      html = html.replace('</head>', `<meta name="aoty-base" content="${escapeHtml(base)}"><meta name="aoty-guest" content="${escapeHtml(publicContext(req)?.origin ?? config.guestUrl)}"><meta name="aoty-public" content="${publicContext(req) ? '1' : '0'}"></head>`);
+      const remote = publicContext(req);
+      // Online pages learn whether their invitation cookie is valid without a separate round trip.
+      html = html.replace('</head>', `<meta name="aoty-base" content="${escapeHtml(base)}"><meta name="aoty-guest" content="${escapeHtml(remote?.origin ?? config.guestUrl)}"><meta name="aoty-public" content="${remote ? '1' : '0'}">${remote?.authorized ? '<meta name="aoty-online-session" content="1">' : ''}</head>`);
       html = html.replace(/(src|href)="(?:\.\/|\/)(?!\/)/g, `$1="${base}/`);
       res.type('html').send(html);
     });

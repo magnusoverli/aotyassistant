@@ -1,7 +1,6 @@
-import QRCode from 'qrcode';
 import type { CatalogueTrack, CatalogueArtist, CatalogueAlbum, View } from '../src/model';
-import { mountSettings } from './settings';
 import { el, link } from './dom';
+import { whenIdle } from './idle';
 import { vinyl } from './visuals';
 import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
@@ -77,6 +76,7 @@ const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot,
   render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
 }) : undefined;
 let stream: { close(): void } | undefined;
+let releaseEvents = () => {};
 let qrUrl = '';
 let qrImage = '';
 let nicknameDraft = '';
@@ -148,7 +148,11 @@ const updateHeader = () => {
   if (signal.aborted) return;
   progressConnected(realtime && Boolean(view?.connected));
   if (view) appHeader.update({ view });
-  listeningOrder.update(view, realtime && navigator.onLine);
+  // Room pages deliver the order with their first view. Opening the public order
+  // feed while that view (or membership) is pending would only close it again.
+  const awaitingView = !view && (page === 'host' || page === 'display' ? !error
+    : (page === 'participant' || page === 'join') && participantAccess.state === 'checking');
+  if (!awaitingView) listeningOrder.update(view, realtime && navigator.onLine);
 };
 const participantAccess = new ParticipantAccess(
   () => api<View>('/api/participant/state'), () => navigator.onLine,
@@ -308,7 +312,8 @@ function accept(next: View) {
   if (next.joinUrl && next.joinUrl !== qrUrl) {
     qrUrl = next.joinUrl; qrImage = '';
     const url = qrUrl;
-    void QRCode.toDataURL(url, { width: 360, margin: 3 }).then(image => {
+    // Only the host desk and display draw QR codes; guests never load the encoder.
+    void import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(url, { width: 360, margin: 3 })).then(image => {
       if (qrUrl === url) { qrImage = image; render(); }
     }).catch(() => {});
   }
@@ -513,7 +518,9 @@ function participant() {
     let renderer = catalogueRows.get(key); if (!renderer) { renderer = new CatalogueRow(); catalogueRows.set(key, renderer); }
     return renderer.update(kind, item, { music, online: realtime && view!.connected,
       canPlay: Boolean(view!.myTurn), playbackAvailable: Boolean(view!.catalogue?.playbackAvailable), starting: player.starting,
-      play: track => { error = ''; playTrack(track); }, browse: selected => { void runCatalogue(async () => {
+      play: track => { error = ''; playTrack(track); },
+      prepare: selected => catalogue.prepare(kind === 'artist' ? 'albums' : 'tracks', selected.id), unprepare: () => catalogue.unprepare(),
+      browse: selected => { void runCatalogue(async () => {
         browseHistory?.remember();
         const response = await catalogue.browse(kind === 'artist' ? 'albums' : 'tracks', selected.id);
         if (!response) return;
@@ -666,7 +673,11 @@ function render() {
 async function init() {
   render();
   if (page === 'settings') {
-    if (!settingsMounted) { settingsMounted = true; await mountSettings(pageContent, signal); }
+    if (!settingsMounted) {
+      settingsMounted = true;
+      try { const { mountSettings } = await import('./settings'); await mountSettings(pageContent, signal); }
+      catch { settingsMounted = false; pageContent.replaceChildren(el('p', 'Settings could not be loaded. Check the connection and reload.', 'error')); }
+    }
     return;
   }
   if (page === 'home') return;
@@ -678,11 +689,16 @@ async function init() {
   } else if (page === 'host') {
     try { accept(await api<View>('/api/host/state')); subscribe('host'); }
     catch { error = 'Cannot connect to the app. Check the connection and reload.'; render(); }
+    // The host desk links to Settings; fetch that code in the background so it opens at once.
+    whenIdle(() => { void import('./settings').catch(() => {}); });
   } else {
     if (page === 'join') history.replaceState(null, '', appPath('/join'));
+    // Learn membership and load the list before the live connection opens, so it opens
+    // once with both feeds instead of opening for the room and reopening for the list.
+    releaseEvents(); releaseEvents = participantEvents.hold();
     void library.start();
     void loadUsers();
-    await participantAccess.check();
+    try { await participantAccess.check(); if (!signal.aborted) await library.start(); } finally { releaseEvents(); }
   }
 }
 void init();
@@ -709,7 +725,7 @@ document.addEventListener('visibilitychange', () => {
 return () => {
   lifecycle.abort();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
-  stream?.close(); stream = undefined; library.stop(); music.uploads.stop();
+  stream?.close(); stream = undefined; library.stop(); music.uploads.stop(); releaseEvents();
   playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); browseHistory?.destroy();
   turnAnnouncement.remove(); searchAnnouncement.remove();
   root.replaceChildren();
