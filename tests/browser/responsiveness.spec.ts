@@ -48,12 +48,7 @@ test('large lists keep search/result/row nodes, and history is shown by default 
       new MutationObserver(records => { if (records.some(record => [...record.removedNodes].includes(state.retained[1]!))) state.detachedRow = true; })
         .observe(document.body, { childList: true, subtree: true });
     });
-    await page.getByRole('button', { name: 'Edit order', exact: true }).click();
-    expect(await page.evaluate(() => (window as unknown as { retained: Element[] }).retained.every(node => node.isConnected))).toBe(true);
-    expect(await page.evaluate(() => (window as unknown as { detachedRow: boolean }).detachedRow)).toBe(false);
-    await page.getByRole('button', { name: 'Done', exact: true }).click();
-    await page.getByLabel('Options for Saved 0', { exact: true }).click();
-    await page.locator('.saved-track').first().getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.getByRole('button', { name: 'Remove Saved 0', exact: true }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] > li')).toHaveCount(199);
     expect(await page.evaluate(() => (window as unknown as { retained: Element[] }).retained.every(node => node.isConnected))).toBe(true);
     expect(await page.evaluate(() => (window as unknown as { detachedRow: boolean }).detachedRow)).toBe(false);

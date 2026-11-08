@@ -4,14 +4,17 @@ import { el } from './dom';
 import { artwork } from './media';
 import { PreparationController } from './preparation-controller';
 import { UploadPanel } from './upload-panel';
-import { workspaceGrid, slot, stackedLayout } from './page-layout';
+import { workspaceGrid, slot } from './page-layout';
 import { ListBar } from './list-bar';
+import { ListDrag } from './list-drag';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
 type Options = { getView(): View | undefined; starting(): boolean; changed(): void };
 export class PreparationPanel {
-  private editing = false;
-  private dragging?: string;
+  /** Drag-and-drop reordering of the upcoming songs, always available. */
+  private drag?: ListDrag;
+  /** The order shown while a dropped move is being saved, so the song does not jump back. */
+  private moving?: string[];
   private open = new Set<string>();
   private feedback = el('span', undefined, 'sr-only');
   private list?: HTMLElement;
@@ -45,9 +48,7 @@ export class PreparationPanel {
         // afterwards, but never steal it from a player control the listener moved to.
         if (!key || document.activeElement !== document.body) return;
         const controls = [...document.querySelectorAll<HTMLButtonElement>('[data-focus-key]')];
-        const target = controls.find(node => node.dataset.focusKey === key && !node.disabled && !node.hidden)
-          ?? controls.find(node => node.dataset.focusKey === key.replace(/^(up|down)-/, 'drag-') && !node.disabled && !node.hidden);
-        target?.focus({ preventScroll: true });
+        controls.find(node => node.dataset.focusKey === key && !node.disabled && !node.hidden)?.focus({ preventScroll: true });
       });
     }; return button;
   }
@@ -63,12 +64,7 @@ export class PreparationPanel {
     if (cached) { text(cached.querySelector('summary')!, caption); return cached; }
     const details = el('details', undefined, 'list-disclosure'); details.open = this.open.has(key);
     const summary = el('summary', caption); summary.id = `list-${key}`; details.append(summary);
-    details.addEventListener('toggle', () => {
-      if (!details.isConnected) return;
-      if (details.open) this.open.add(key); else this.open.delete(key);
-      // A row's options open inside the list's own scroll area; keep them in view.
-      if (details.open && key.startsWith('entry-')) requestAnimationFrame(() => details.scrollIntoView({ block: 'nearest', behavior: 'instant' }));
-    });
+    details.addEventListener('toggle', () => { if (details.isConnected) { if (details.open) this.open.add(key); else this.open.delete(key); } });
     this.disclosures.set(key, details); return details;
   }
   addButton(track: CatalogueTrack) {
@@ -135,12 +131,12 @@ export class PreparationPanel {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      this.editing, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
+      this.moving, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
     this.bar.observe(list);
-    list.classList.add('is-expanded'); list.classList.toggle('is-editing', this.editing); prop(list, 'tabIndex', -1); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
+    list.classList.add('is-expanded'); prop(list, 'tabIndex', -1); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
     const heading = v.el('heading', 'div', undefined, 'list-heading');
     const title = v.get('title', () => { const node = el('h2', 'Your playlist'); node.id = 'music-list-title'; return node; });
     const count = snapshot?.upcoming.length;
@@ -174,22 +170,16 @@ export class PreparationPanel {
     }
     if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', 'No songs yet. Search to add one.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
-    const upcomingRows: HTMLElement[] = [];
-    snapshot?.upcoming.forEach((entry, index) => {
-      upcomingRows.push(this.savedRow(entry, index, snapshot.upcoming.length));
+    const drag = this.drag ??= new ListDrag(ordered, body, {
+      enabled: () => !this.library.locked && !this.library.loading && !this.moving && (this.library.view?.upcoming.length ?? 0) > 1,
+      commit: (id, ids) => { void this.move(id, ids); },
     });
-    const actions = v.el('actions', 'div', undefined, 'list-actions'); const actionNodes: Node[] = [];
-    const next = snapshot?.upcoming[0];
-    if (next) {
-      const edit = v.get('edit', () => { const node = this.button('Edit order', () => {
-        this.editing = !this.editing; this.refresh();
-        // Phones: editing enlarges the list; bring all of it into view.
-        const box = this.list?.getBoundingClientRect();
-        if (this.editing && stackedLayout() && box && (box.top < 0 || box.bottom > innerHeight)) this.list!.scrollIntoView({ block: 'start', behavior: 'instant' });
-      }, true, 'list-edit'); node.classList.add('list-edit'); return node; });
-      text(edit, this.editing ? 'Done' : 'Edit order'); prop(edit, 'disabled', library.saving || !navigator.onLine); attr(edit, 'aria-pressed', String(this.editing)); actionNodes.push(edit);
-    }
-    children(actions, ...actionNodes); children(ordered, ...upcomingRows); bodyNodes.push(actions, ordered);
+    const upcoming = this.displayed(snapshot?.upcoming ?? []);
+    const upcomingRows = upcoming.map(entry => this.savedRow(entry, upcoming.indexOf(entry)));
+    // A song being dragged keeps its place only while the rows stay the same.
+    drag.retain(upcomingRows);
+    ordered.classList.toggle('is-reorderable', upcoming.length > 1 && !library.locked);
+    children(ordered, ...upcomingRows); bodyNodes.push(ordered);
     const tools = v.el('tools', 'div', undefined, 'list-tools'); const toolNodes: Node[] = [];
     const history = v.el('history', 'div', undefined, 'list-history'); prop(history, 'id', 'list-history');
     const historyNodes: Node[] = [];
@@ -226,48 +216,42 @@ export class PreparationPanel {
     // History scrolls with the list inside its own area, so it never grows the card.
     children(tools, ...toolNodes); if (toolNodes.length) bodyNodes.push(tools);
     children(body, ...bodyNodes); listNodes.push(body); children(list, ...listNodes);
-    for (const id of this.rows.keys()) if (!snapshot?.upcoming.some(entry => entry.id === id)) { this.rows.delete(id); this.disclosures.delete(`entry-${id}`); }
+    for (const id of this.rows.keys()) if (!snapshot?.upcoming.some(entry => entry.id === id)) this.rows.delete(id);
     return list;
   }
 
-  private savedRow(entry: PreparedEntryView, index: number, count: number) {
+  /** The saved order, or the dropped order while that move is being saved. */
+  private displayed(upcoming: PreparedEntryView[]) {
+    const order = this.moving;
+    if (!order || order.length !== upcoming.length || upcoming.some(entry => !order.includes(entry.id))) return upcoming;
+    return [...upcoming].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  }
+
+  /** Saves a dropped song's new place: before the song that now follows it. */
+  private async move(id: string, ids: string[]) {
+    this.moving = ids; this.refresh();
+    try { await this.library.edit('move', { entryId: id, beforeId: ids[ids.indexOf(id) + 1] ?? null }); }
+    finally { this.moving = undefined; this.refresh(); }
+  }
+
+  private savedRow(entry: PreparedEntryView, index: number) {
     const library = this.library; const key = JSON.stringify(entry);
     let cached = this.rows.get(entry.id);
     if (!cached || cached.key !== key) {
       const row = this.row(entry); row.dataset.entryId = entry.id; row.prepend(el('span', '', 'saved-number'));
       row.querySelector('.result-identity > div:last-child')!.prepend(el('span', 'Your next pick', 'saved-next-label'));
+      // Reordering is by dragging the row itself; the row's only button removes the song.
       const controls = el('div', undefined, 'saved-actions');
-      const handle = this.button('⋮⋮', () => {}, true, `drag-${entry.id}`); handle.classList.add('drag-handle'); handle.draggable = true; handle.setAttribute('aria-label', `Drag ${entry.title} to reorder`);
-      handle.ondragstart = event => { this.dragging = entry.id; event.dataTransfer?.setData('text/plain', entry.id); }; handle.ondragend = () => { this.dragging = undefined; };
-      const move = (shift: number) => {
-        const upcoming = library.view?.upcoming ?? []; const position = upcoming.findIndex(item => item.id === entry.id);
-        if (position < 0 || position + shift < 0 || position + shift >= upcoming.length) return;
-        return library.edit('move', { entryId: entry.id, beforeId: upcoming[position + (shift < 0 ? -1 : 2)]?.id ?? null });
-      };
-      const up = this.button('↑', () => move(-1), true, `up-${entry.id}`); up.setAttribute('aria-label', `Move ${entry.title} up`);
-      const down = this.button('↓', () => move(1), true, `down-${entry.id}`); down.setAttribute('aria-label', `Move ${entry.title} down`);
-      controls.append(handle, up, down);
-      row.ondragover = event => { if (this.dragging) event.preventDefault(); };
-      row.ondrop = event => {
-        event.preventDefault(); const moving = this.dragging; this.dragging = undefined;
-        const upcoming = library.view?.upcoming ?? []; const position = upcoming.findIndex(item => item.id === entry.id);
-        if (moving && moving !== entry.id && position >= 0) {
-          const after = event.clientY > row.getBoundingClientRect().top + row.clientHeight / 2;
-          void library.edit('move', { entryId: moving, beforeId: after ? upcoming[position + 1]?.id ?? null : entry.id });
-        }
-      };
-      const menu = this.details(`entry-${entry.id}`, '⋯'); menu.classList.add('saved-menu'); menu.querySelector('summary')!.setAttribute('aria-label', `Options for ${entry.title}`);
-      const next = this.button('Move to top', () => library.edit('move', { entryId: entry.id, beforeId: library.view?.upcoming[0]?.id ?? null })); next.dataset.makeNext = 'true';
-      children(menu, menu.firstElementChild!, next, this.button('Remove', () => library.edit('remove', { entryId: entry.id }, entry.title))); controls.append(menu); row.append(controls);
+      const remove = this.button('✕', () => library.edit('remove', { entryId: entry.id }, entry.title), true, `remove-${entry.id}`);
+      remove.classList.add('saved-remove'); remove.setAttribute('aria-label', `Remove ${entry.title}`); remove.title = 'Remove from playlist';
+      controls.append(remove); row.append(controls);
       cached = { key, element: row }; this.rows.set(entry.id, cached);
     }
     const row = cached.element;
     row.classList.toggle('is-unavailable', entry.sourceAvailable === false);
     row.classList.toggle('is-next', index === 0);
     const number = row.querySelector('.saved-number')!; const text = String(index + 1).padStart(2, '0'); if (number.textContent !== text) number.textContent = text;
-    const hide = (selector: string, hidden: boolean) => { const node = row.querySelector<HTMLElement>(selector)!; if (node.hidden !== hidden) node.hidden = hidden; };
-    hide('.saved-next-label', index !== 0); hide('.drag-handle', !this.editing);
-    hide(`[data-focus-key="up-${entry.id}"]`, !this.editing || index === 0); hide(`[data-focus-key="down-${entry.id}"]`, !this.editing || index === count - 1); hide('[data-make-next]', index === 0);
+    const label = row.querySelector<HTMLElement>('.saved-next-label')!; if (label.hidden !== (index !== 0)) label.hidden = index !== 0;
     const disabled = library.locked;
     for (const button of row.querySelectorAll('button')) if (button.disabled !== disabled) button.disabled = disabled;
     return row;

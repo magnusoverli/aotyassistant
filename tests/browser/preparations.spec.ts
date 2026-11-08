@@ -1,6 +1,6 @@
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { test } from './app-fixture';
-import { showFind, showList } from './preparation-helpers';
+import { showFind, showList, dragSong } from './preparation-helpers';
 
 async function room(browser: Browser, host: Page, origin: string) {
   const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: origin } });
@@ -52,16 +52,11 @@ test('one automatic list reorders, restores entries from history, survives remov
     for (const query of ['Northern', 'Summer', 'Night']) await add(second, query);
     await showList(second); await expect(titles(second)).toHaveText(['Northern Lights', 'Late Summer', 'Night Bus Home']);
     await expect(second.getByRole('button', { name: 'Play pick', exact: true })).toBeDisabled();
-    await second.getByRole('button', { name: 'Edit order', exact: true }).click();
-    await second.getByRole('button', { name: 'Move Night Bus Home up', exact: true }).click();
+    await dragSong(second, 'Night Bus Home', 'Late Summer');
     await expect(titles(second)).toHaveText(['Northern Lights', 'Night Bus Home', 'Late Summer']);
-    await expect(second.getByRole('button', { name: 'Move Night Bus Home up', exact: true })).toBeFocused();
-    await second.getByRole('button', { name: 'Move Night Bus Home up', exact: true }).press('Enter');
+    await dragSong(second, 'Night Bus Home', 'Northern Lights');
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Northern Lights', 'Late Summer']);
-    await expect(second.getByRole('button', { name: 'Drag Night Bus Home to reorder', exact: true })).toBeFocused();
-    await second.getByRole('button', { name: 'Done', exact: true }).click();
-    await second.getByLabel('Options for Northern Lights', { exact: true }).click();
-    await second.locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Remove', exact: true }).click();
+    await second.getByRole('button', { name: 'Remove Northern Lights', exact: true }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer']);
     await expect(second.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await expect(second.locator('.preparation-list > .list-notice')).toHaveCount(0);
@@ -102,10 +97,10 @@ test('lost save replies retain a reload-safe draft and conflicts require explici
     expect(calls).toBe(1); await page.unroute('**/api/participant/preparations/add');
     await page.getByRole('button', { name: 'Retry save', exact: true }).click(); await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     expect((await state(page)).upcoming).toHaveLength(1);
-    await add(page, 'Summer'); await showList(page); await page.getByRole('button', { name: 'Edit order', exact: true }).click();
+    await add(page, 'Summer'); await showList(page);
     let release!: () => void; let entered!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); const routed = new Promise<void>(resolve => { entered = resolve; });
     await page.route('**/api/participant/preparations/move', async route => { entered(); await gate; await route.continue(); });
-    await page.getByRole('button', { name: 'Move Late Summer up', exact: true }).click(); await routed;
+    await dragSong(page, 'Late Summer', 'Northern Lights'); await routed;
     const before = await state(page);
     await page.request.post('/api/participant/preparations/add', { headers: { Origin: isolatedApp.origin }, data: { trackId: 'demo:night', operation: { id: '1390efbb-f9a9-44bb-a376-fefb8f1d342c', issuedAt: Date.now(), revision: before.revision } } });
     release(); await expect(page.getByRole('button', { name: 'Apply this change', exact: true })).toBeVisible();

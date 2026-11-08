@@ -12,7 +12,7 @@ import { PreparationManager, PreparationFileStore, savedSourceAvailable } from '
 import { mountPreparations } from './preparation-http.js';
 import { UploadAssets } from './uploads.js';
 import { MediaChecks, setupHostAllowed, guestAddressHelp } from './addressing.js';
-import { artworkSize, body, compressJson, sendArtwork, setParticipantCookie } from './http-utils.js';
+import { artworkSize, catalogueRead, jsonBody, compressJson, sendArtwork, setParticipantCookie } from './http-utils.js';
 import { RateLimiter, directHosts, loopbackHosts, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
 import { DisplayArtwork } from './display-artwork.js';
@@ -22,28 +22,18 @@ import { mountAuthorization } from './ma-authorization.js';
 import type { SetupManager } from './setup.js';
 import { durability } from './backup.js';
 import { errorPage, escapeHtml } from './error-page.js';
-import { operation } from './operation.js';
 import { mountStaticAssets } from './static-assets.js';
 import { diagnostics } from './diagnostics.js';
 import { UserManager, pinSchema } from './users.js';
 import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
 import { mountBrowserSpeakers } from './browser-speaker-http.js';
 
-const turn = z.string().uuid();
+const turn = z.uuid();
 const revision = z.number().int().nonnegative();
 const cookie = (request: Request, name: string): string => {
   const value = readCookie(request, name);
   return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : '';
 };
-
-/** Only read-only catalogue work follows browser cancellation; audio mutations finish independently. */
-async function catalogueRead(res: Response, action: string, work: () => Promise<unknown>) {
-  const controller = new AbortController();
-  const close = () => { if (!res.writableFinished) controller.abort(); };
-  res.once('close', close);
-  try { await operation(action, work, 16_000, controller.signal); }
-  finally { res.off('close', close); }
-}
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
   preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager, onlineAccess?: OnlineAccess, browserSpeakers?: BrowserSpeakers) {
@@ -139,15 +129,13 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   // Connector account approval and invitations are administered only through HA authentication.
   app.use('/api/host/online', (req, _res, next) => next(ingressContext(req) && onlineAccess ? undefined : new AppError(403, 'Open Settings through Home Assistant to manage online invitations.')));
   app.get('/api/host/online', (_req, res) => res.json(onlineAccess!.view()));
-  app.post('/api/host/online', async (req, res) => {
-    const input = body(req, z.object({ action: z.enum(['enable', 'disable', 'rotate']), revision: z.number().int().nonnegative() }).strict());
+  app.post('/api/host/online', jsonBody(z.strictObject({ action: z.enum(['enable', 'disable', 'rotate']), revision }), async (input, _req, res) => {
     res.json(await onlineAccess!.change(input.action, input.revision));
-  });
+  }));
   app.get('/api/host/playback-settings', (_req, res) => res.json(engine.playbackSettings()));
-  app.post('/api/host/playback-settings', async (req, res) => {
-    const input = body(req, z.object({ enabled: z.boolean(), revision }).strict());
+  app.post('/api/host/playback-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
     res.json(await engine.setAutoReveal(input.enabled, input.revision));
-  });
+  }));
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
   let closeAuthorization = () => {};
   let closeIntegrations = () => {};
@@ -155,10 +143,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     closeIntegrations = mountIntegrations(app, engine, integrations, setupManager);
     closeAuthorization = mountAuthorization(app, integrations, () => { engine.emit('change'); });
   }
-  app.post('/api/host/volume', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn.nullable(), level: z.number().int().min(0).max(100), volumeRevision: z.string().min(1).max(200) }).strict());
+  app.post('/api/host/volume', jsonBody(z.strictObject({ turnId: turn.nullable(), level: z.number().int().min(0).max(100), volumeRevision: z.string().min(1).max(200) }), async (input, _req, res) => {
     await engine.setVolume(input.level, input.turnId, undefined, undefined, input.volumeRevision); res.json(engine.view({ kind: 'host' }));
-  });
+  }));
   app.get('/api/participant/state', (req, res) => res.json(engine.view(participant(req))));
   const displayArtwork = integrations ? new DisplayArtwork(() => engine.displayArtworkTarget(), (reference, context, size) => integrations.artwork(reference, context, size)) : undefined;
   const readView = (role: Role) => {
@@ -177,7 +164,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const reference = z.string().max(1500).parse(req.params.reference); const size = artworkSize.parse(req.query.size);
       // Membership and reference checks run before any 304. A thumbnail still
       // waiting for a fetch slot is dropped when the browser stops asking for it.
-      await catalogueRead(res, 'artwork', async () => sendArtwork(req, res, await integrations.artworkKey(reference, context, size), async () => {
+      await catalogueRead(req, 'artwork', async () => sendArtwork(req, res, await integrations.artworkKey(reference, context, size), async () => {
         const image = await integrations.artwork(reference, context, size);
         res.set('Server-Timing', `artwork;dur=${(performance.now() - started).toFixed(1)}`);
         return image;
@@ -191,9 +178,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       res.type(image.contentType).send(image.body);
     });
   }
-  app.post(['/api/participant/join', '/api/participant/preparations/join'], async (req, res) => {
-    const input = body(req, z.object({ nickname: z.string().trim().min(1).max(40).optional(), pin: pinSchema.optional(),
-      userId: z.string().uuid().optional(), operation: z.string().uuid().optional() }).strict());
+  app.post(['/api/participant/join', '/api/participant/preparations/join'], jsonBody(z.strictObject({ nickname: z.string().trim().min(1).max(40).optional(), pin: pinSchema.optional(),
+    userId: turn.optional(), operation: turn.optional() }), async (input, req, res) => {
     let credential = participantCredential(req); let user = users.current(credential);
     if (input.userId) {
       if (!input.pin) throw new AppError(400, 'Enter your four-digit PIN.');
@@ -208,78 +194,64 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     // A different identity must never inherit the previous browser user's list cookie.
     if (credential !== participantCredential(req)) res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` });
     res.json(engine.view({ kind: 'participant', credential }));
-  });
+  }));
   app.get('/api/participant/identity', (req, res) => res.json(users.directoryView(participantCredential(req))));
-  app.post('/api/participant/preparations/pin', async (req, res) => {
-    const input = body(req, z.object({ pin: pinSchema }).strict()); const token = participantCredential(req);
+  app.post('/api/participant/preparations/pin', jsonBody(z.strictObject({ pin: pinSchema }), async (input, req, res) => {
+    const token = participantCredential(req);
     const user = users.current(token); if (!user) throw new AppError(401, 'Select your name to continue.');
     await users.ensureList(token, readCookie(req, 'aoty_preparation'));
     await users.setPin(user.id, input.pin, token); res.json(users.directoryView(token));
-  });
-  app.post('/api/participant/logout', async (req, res) => {
-    body(req, z.object({}).strict()); await users.logout(participantCredential(req));
+  }));
+  app.post('/api/participant/logout', jsonBody(z.strictObject({}), async (_input, req, res) => {
+    await users.logout(participantCredential(req));
     browserSpeakers?.revokeOwner(requestSpeakerCookie(req));
     res.clearCookie('aoty_participant', { path: `${requestBase(req)}/api/participant` });
     res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` }); res.json({ ok: true });
-  });
+  }));
   app.get('/api/host/users', (_req, res) => res.json(users.directoryView('', true)));
-  app.post('/api/host/users/pin', async (req, res) => {
-    const input = body(req, z.object({ userId: z.string().uuid(), pin: pinSchema }).strict());
+  app.post('/api/host/users/pin', jsonBody(z.strictObject({ userId: turn, pin: pinSchema }), async (input, _req, res) => {
     await users.setPin(input.userId, input.pin); res.json(users.directoryView('', true));
-  });
-  app.post('/api/host/users/delete', async (req, res) => {
-    const input = body(req, z.object({ userId: z.string().uuid(), confirm: z.literal(true) }).strict());
+  }));
+  app.post('/api/host/users/delete', jsonBody(z.strictObject({ userId: turn, confirm: z.literal(true) }), async (input, _req, res) => {
     await users.deleteUser(input.userId, ownerId => uploads.removeOwner(ownerId)); res.json(users.directoryView('', true));
-  });
+  }));
   // Deliberately unauthenticated, per the owner's explicit LAN-only exception.
-  app.post('/api/host/reorder', async (req, res) => {
-    const input = body(req, z.object({ ids: z.array(turn).max(100), revision }).strict());
+  app.post('/api/host/reorder', jsonBody(z.strictObject({ ids: z.array(turn).max(100), revision }), async (input, _req, res) => {
     await engine.reorder(input.ids, input.revision); res.json(engine.view({ kind: 'host' }));
-  });
-  app.post('/api/host/remove', async (req, res) => {
-    const input = body(req, z.object({ id: turn, revision }).strict());
+  }));
+  app.post('/api/host/remove', jsonBody(z.strictObject({ id: turn, revision }), async (input, _req, res) => {
     await engine.remove(input.id, input.revision); res.json(engine.view({ kind: 'host' }));
-  });
-  app.post('/api/host/advance', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn }).strict());
+  }));
+  app.post('/api/host/advance', jsonBody(z.strictObject({ turnId: turn }), async (input, _req, res) => {
     await engine.advance(input.turnId); res.json(engine.view({ kind: 'host' }));
-  });
-  app.post('/api/host/stop', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, playbackId: turn }).strict());
+  }));
+  app.post('/api/host/stop', jsonBody(z.strictObject({ turnId: turn, playbackId: turn }), async (input, _req, res) => {
     await engine.stopForHost(input.turnId, input.playbackId); res.json(engine.view({ kind: 'host' }));
-  });
-  app.post('/api/host/control', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, playbackId: turn, action: z.enum(['pause', 'resume']) }).strict());
+  }));
+  app.post('/api/host/control', jsonBody(z.strictObject({ turnId: turn, playbackId: turn, action: z.enum(['pause', 'resume']) }), async (input, _req, res) => {
     await engine.controlForHost(input.turnId, input.playbackId, input.action); res.json(engine.view({ kind: 'host' }));
-  });
-  app.post('/api/participant/finish', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn }).strict());
+  }));
+  app.post('/api/participant/finish', jsonBody(z.strictObject({ turnId: turn }), async (input, req, res) => {
     await engine.advance(input.turnId, participantCredential(req)); res.json(engine.view(participant(req)));
-  });
-  app.post('/api/participant/search', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, query: z.string().trim().min(1).max(200) }).strict());
-    await catalogueRead(res, 'search', async () => res.json(await engine.search(participantCredential(req), input.turnId, input.query)));
-  });
-  app.post('/api/participant/browse', async (req, res) => {
-    const input = body(req, z.object({ kind: z.enum(['artists', 'albums', 'tracks']), value: z.string().trim().min(1).max(1000) }).strict());
-    await catalogueRead(res, 'browse', async () => res.json(await engine.browse(participantCredential(req), input.kind, input.value)));
-  });
-  app.post('/api/participant/play', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, previousPlaybackId: turn.nullable(), trackId: z.string().min(1).max(1000) }).strict());
+  }));
+  app.post('/api/participant/search', jsonBody(z.strictObject({ turnId: turn, query: z.string().trim().min(1).max(200) }), async (input, req, res) => {
+    await catalogueRead(req, 'search', async () => res.json(await engine.search(participantCredential(req), input.turnId, input.query)));
+  }));
+  app.post('/api/participant/browse', jsonBody(z.strictObject({ kind: z.enum(['artists', 'albums', 'tracks']), value: z.string().trim().min(1).max(1000) }), async (input, req, res) => {
+    await catalogueRead(req, 'browse', async () => res.json(await engine.browse(participantCredential(req), input.kind, input.value)));
+  }));
+  app.post('/api/participant/play', jsonBody(z.strictObject({ turnId: turn, previousPlaybackId: turn.nullable(), trackId: z.string().min(1).max(1000) }), async (input, req, res) => {
     await engine.play(participantCredential(req), input.turnId, input.previousPlaybackId, input.trackId); res.json(engine.view(participant(req)));
-  });
-  app.post('/api/participant/control', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, playbackId: turn, action: z.enum(['pause', 'resume', 'stop']) }).strict());
+  }));
+  app.post('/api/participant/control', jsonBody(z.strictObject({ turnId: turn, playbackId: turn, action: z.enum(['pause', 'resume', 'stop']) }), async (input, req, res) => {
     await engine.control(participantCredential(req), input.turnId, input.playbackId, input.action); res.json(engine.view(participant(req)));
-  });
-  app.post('/api/participant/volume', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, playbackId: turn, level: z.number().int().min(0).max(100), volumeRevision: z.string().min(1).max(200) }).strict());
+  }));
+  app.post('/api/participant/volume', jsonBody(z.strictObject({ turnId: turn, playbackId: turn, level: z.number().int().min(0).max(100), volumeRevision: z.string().min(1).max(200) }), async (input, req, res) => {
     await engine.setVolume(input.level, input.turnId, participantCredential(req), input.playbackId, input.volumeRevision); res.json(engine.view(participant(req)));
-  });
-  app.post('/api/participant/reveal', async (req, res) => {
-    const input = body(req, z.object({ turnId: turn, playbackId: turn }).strict());
+  }));
+  app.post('/api/participant/reveal', jsonBody(z.strictObject({ turnId: turn, playbackId: turn }), async (input, req, res) => {
     await engine.reveal(participantCredential(req), input.turnId, input.playbackId); res.json(engine.view(participant(req)));
-  });
+  }));
 
   const streams = new EventStreams(500, 'Too many live connections. Close unused tabs and try again.');
   app.get('/api/listening-order/events', (_req, res) => {

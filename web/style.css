@@ -231,20 +231,21 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .saved-unavailable { color:var(--accent); }
 .saved-actions { display:flex; align-items:center; flex-wrap:wrap; gap:7px; margin-left:auto; }
 .saved-actions button,.saved-track > button { min-height:36px; padding:8px 11px; font-size:11px; }
-.saved-menu { position:relative; }
-.saved-menu > summary { list-style:none; cursor:pointer; padding:7px 12px; font-size:20px; }
-.saved-menu > summary::-webkit-details-marker { display:none; }
-.saved-menu[open] { flex-basis:100%; }
-.saved-menu button { margin:5px 4px 0 0; }
 .list-disclosure { border-top:1px solid var(--line); margin-top:15px; }
 .list-disclosure > summary { cursor:pointer; font-size:11px; color:var(--muted); padding:15px 0; min-height:44px; }
-.saved-menu.list-disclosure { border:0; margin:0; }
-.saved-menu.list-disclosure > summary { padding:7px 12px; min-height:36px; }
 .list-disclosure > button,.list-notice button { font-size:11px; min-height:38px; padding:8px 11px; margin:6px 5px 0 0; }
 .list-notice { padding:14px; border:1px solid #655335; border-radius:8px; margin:12px 0; }
 .list-notice p { font-size:12px; margin:0 0 8px; }
 .list-note { margin:10px 0; }
-.drag-handle { cursor:grab; }
+/* Drag a song's row to reorder it: a mouse after a short move, touch after a press-and-hold
+   (a plain swipe still scrolls). Other songs slide aside to show where it will land. */
+.saved-tracks.is-reorderable > .saved-track { cursor:grab; touch-action:pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.saved-tracks.is-reorderable img { -webkit-user-drag:none; }
+.saved-tracks.is-sorting > .saved-track { transition:transform .18s cubic-bezier(.2,.8,.2,1); }
+.saved-tracks.is-sorting > .saved-track.is-drag-source { position:relative; z-index:2; transition:none; cursor:grabbing; border-radius:8px; background:var(--panel); box-shadow:0 10px 28px #0008,0 0 0 1px var(--accent); }
+body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
+.preparation-list .saved-remove { padding:0; border-color:transparent; background:transparent; color:var(--muted); font-size:1rem; font-weight:500; }
+.preparation-list .saved-remove:hover:not(:disabled) { color:var(--text); border-color:var(--line); }
 .join-panel > form { margin-top:24px; }
 .join-panel > .link-button { margin-top:12px; }
 .link-button { min-height:44px; padding-inline:0; border-color:transparent; background:transparent; color:var(--accent); }
@@ -328,7 +329,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .music-upload > summary { padding:8px 0; color:var(--accent); font-size:.875rem; }
 .list-tools h3 { font-size:1rem; margin:16px 0 8px; }
 .list-history { width:100%; min-width:0; }
-.list-tools button,.list-disclosure > button,.list-notice button,.list-actions button { font-size:.875rem; min-height:44px; }
+.list-tools button,.list-disclosure > button,.list-notice button { font-size:.875rem; min-height:44px; }
 .saved-source,.saved-unavailable,.list-save-status { font-size:.8125rem; }
 .saved-next-label { display:block; color:var(--muted); font-size:.8125rem; }
 .music-workspace .preparation-list { position:sticky; top:calc(var(--app-header-height,72px) + 12px); display:flex; flex-direction:column; }
@@ -341,16 +342,13 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .list-count { flex-shrink:0; color:var(--muted); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:12px; letter-spacing:0; white-space:nowrap; }
 .list-heading .list-expand { display:none; font-size:11px; min-height:44px; padding:8px 10px; }
 .list-body { min-height:0; max-height:55vh; overflow-y:auto; scrollbar-width:thin; padding:0 4px 4px; margin:0 -4px; }
-.list-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 12px; }
-.list-actions:empty { display:none; }
-.list-actions button { font-size:11px; min-height:44px; padding:9px 12px; }
 .preparation-list .saved-track { gap:8px; padding:12px 0; }
 .preparation-list .saved-track .result-identity { flex:1 1 150px; gap:9px; }
 .preparation-list .saved-track .result-artwork { width:34px; height:34px; flex-basis:34px; }
 .preparation-list .saved-number { width:22px; }
 .preparation-list .saved-track strong { font-size:13px; line-height:1.5; }
 .preparation-list .saved-actions { justify-content:flex-end; }
-.preparation-list .saved-actions button,.preparation-list .saved-menu > summary { min-width:44px; min-height:44px; }
+.preparation-list .saved-actions button { min-width:44px; min-height:44px; }
 .music-workspace.is-list-only { display:block; }
 .music-workspace.is-list-only .preparation-list { position:static; max-height:none; margin-bottom:18px; }
 .music-workspace.is-list-only .list-body { overflow:visible; }
@@ -462,7 +460,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
   .catalogue-match-note,.catalogue-results .result-identity p,.list-disclosure > summary,
   .saved-track p,.saved-source,.saved-unavailable,.saved-next-label,.list-save-status { font-size:14px; }
   .preparation-list .saved-track strong { font-size:15px; }
-  .list-heading .list-expand,.list-actions button,.saved-actions button { font-size:13px; }
+  .list-heading .list-expand,.saved-actions button { font-size:13px; }
   .connection-fields > button { justify-self:stretch; }
   .host-invitations .qr-card { display:flex; flex-direction:column; }
   .host-invitations .invitation-sharing { order:-1; margin-bottom:20px; }

@@ -4,7 +4,7 @@ import type { Engine } from './engine.js';
 import type { IntegrationManager } from './integrations.js';
 import { musicAssistantUrl, maToken } from './music-assistant.js';
 import { applicationOrigin } from './addressing.js';
-import { body } from './http-utils.js';
+import { jsonBody } from './http-utils.js';
 import type { SetupManager } from './setup.js';
 import { emptyHints } from './supervisor.js';
 import { EventStreams } from './event-streams.js';
@@ -34,42 +34,35 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
     integrations.refreshOutputSoon();
   });
   app.get('/api/host/setup', (_req, res) => res.json(setup?.view() ?? idleSetup()));
-  app.post('/api/host/setup/refresh', async (req, res) => {
-    body(req, z.object({}).strict());
+  app.post('/api/host/setup/refresh', jsonBody(z.strictObject({}), async (_input, _req, res) => {
     res.json(setup ? await setup.refresh() : idleSetup());
-  });
+  }));
   app.get('/api/host/addressing', (_req, res) => res.json(integrations.addressing()));
-  app.post('/api/host/addressing/guest', async (req, res) => {
-    const input = body(req, z.object({ origin: applicationOrigin.nullable(), revision }).strict());
+  app.post('/api/host/addressing/guest', jsonBody(z.strictObject({ origin: applicationOrigin.nullable(), revision }), async (input, _req, res) => {
     const view = await integrations.saveGuestOrigin(input.origin, input.revision);
     engine.setGuestOrigin(view.guestOrigin); res.json(view);
-  });
-  app.post('/api/host/addressing/test', async (req, res) => {
-    const input = body(req, z.object({ origins: z.array(applicationOrigin).min(1).max(6), revision, automatic: z.boolean().default(false) }).strict());
+  }));
+  app.post('/api/host/addressing/test', jsonBody(z.strictObject({ origins: z.array(applicationOrigin).min(1).max(6), revision, automatic: z.boolean().default(false) }), async (input, _req, res) => {
     res.json(await integrations.checkMediaOrigins(input.origins, input.revision, input.automatic));
-  });
+  }));
   app.get('/api/host/integrations', (_req, res) => res.json(integrations.view()));
   app.get('/api/host/integrations/destinations', async (_req, res) => res.json(await integrations.check(integrations.view().revision)));
-  app.post('/api/host/integrations/save', async (req, res) => {
-    const input = body(req, z.object({ url: musicAssistantUrl, accessToken: maToken.optional(), revision }).strict());
+  app.post('/api/host/integrations/save', jsonBody(z.strictObject({ url: musicAssistantUrl, accessToken: maToken.optional(), revision }), async (input, _req, res) => {
     res.json(await integrations.save(input.url, input.accessToken, input.revision));
-  });
-  app.post('/api/host/integrations/media-origin', async (req, res) => {
-    const input = body(req, z.object({ origin: applicationOrigin.nullable(), revision }).strict());
+  }));
+  app.post('/api/host/integrations/media-origin', jsonBody(z.strictObject({ origin: applicationOrigin.nullable(), revision }), async (input, _req, res) => {
     res.json(await integrations.saveMediaOrigin(input.origin, input.revision));
-  });
-  app.post('/api/host/integrations/check', async (req, res) => {
-    const input = body(req, z.object({ revision }).strict()); res.json(await integrations.check(input.revision));
-  });
-  app.post('/api/host/integrations/destination', async (req, res) => {
-    const input = body(req, z.object({ id: z.string().min(1).max(500), revision }).strict());
+  }));
+  app.post('/api/host/integrations/check', jsonBody(z.strictObject({ revision }), async (input, _req, res) => {
+    res.json(await integrations.check(input.revision));
+  }));
+  app.post('/api/host/integrations/destination', jsonBody(z.strictObject({ id: z.string().min(1).max(500), revision }), async (input, _req, res) => {
     res.json(await integrations.selectDestination(input.id, input.revision));
-  });
+  }));
   for (const action of ['clear', 'recover'] as const) {
-    app.post(`/api/host/integrations/${action}`, async (req, res) => {
-      const input = body(req, z.object({ revision }).strict());
+    app.post(`/api/host/integrations/${action}`, jsonBody(z.strictObject({ revision }), async (input, _req, res) => {
       res.json(action === 'clear' ? await integrations.clear(input.revision) : await integrations.recoverPlayback(input.revision));
-    });
+    }));
   }
   return () => { unsubscribe(); integrations.stopMonitoring(); streams.close(); };
 }

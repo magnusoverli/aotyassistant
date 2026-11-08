@@ -88,7 +88,7 @@ export async function supervisorHints(client: Pick<SupervisorClient, 'read'>, co
     if (app.ip_address && privateIP(app.ip_address)) result.maOrigins.push(origin(app.ip_address, app.ingress_port ?? 8095));
     if (!app.host_network && app.hostname) result.maOrigins.push(origin(app.hostname, 8095));
   }
-  result.maOrigins = [...new Set(result.maOrigins)].filter(value => musicAssistantUrl.safeParse(value).success).slice(0, 8);
+  result.maOrigins = [...new Set(result.maOrigins)].filter(value => musicAssistantUrl.validate(value)).slice(0, 8);
   result.message = !result.available ? 'Supervisor information is unavailable. Manual setup is available.'
     : !result.guestPort ? 'Guest access needs a published port in the app’s Network settings.'
       : !result.guestOrigins.length ? 'Choose a LAN guest address; no suitable host interface was detected.'

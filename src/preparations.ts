@@ -44,7 +44,7 @@ export type PreparationOperation = z.infer<typeof preparationOperationSchema>;
 const receipt = z.object({ id, intent: digest, issuedAt: timestamp, revision: z.number().int().nonnegative(), entryId: id }).strict();
 export const preparationStateSchema = z.preprocess(value => {
   if (value && typeof value === 'object' && 'schema' in value && value.schema === 1 && 'recoveryHash' in value &&
-    (value.recoveryHash === null || digest.safeParse(value.recoveryHash).success)) {
+    (value.recoveryHash === null || digest.validate(value.recoveryHash))) {
     const { recoveryHash: _obsolete, ...state } = value;
     return { ...state, schema: 2 };
   }
@@ -159,7 +159,7 @@ function input<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
 function identity(credential: string) {
   if (typeof credential !== 'string' || credential.length > 100) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
   const [ownerId, secret, extra] = credential.split('.');
-  if (extra !== undefined || !id.safeParse(ownerId).success || !secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
+  if (extra !== undefined || !id.validate(ownerId) || !secret || !/^[A-Za-z0-9_-]{43}$/.test(secret)) throw new AppError(401, 'Your selections are unavailable. Reload the participant page.');
   return { ownerId: ownerId!, secretHash: hash(credential) };
 }
 const newCredential = (ownerId: string) => `${ownerId}.${randomBytes(32).toString('base64url')}`;

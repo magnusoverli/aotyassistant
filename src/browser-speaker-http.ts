@@ -7,7 +7,7 @@ import { ingressContext, validateIngress } from './ingress.js';
 import { publicContext, onlineCookie } from './public-listener.js';
 import type { OnlineAccess } from './online-access.js';
 import { AppError } from './model.js';
-import { body } from './http-utils.js';
+import { jsonBody } from './http-utils.js';
 import { directHosts, isLoopbackPeer } from './http-guards.js';
 import { browserAudioHealth } from './browser-audio-health.js';
 
@@ -34,7 +34,7 @@ export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, gu
     if (!result) throw new AppError(403, 'Browser speaker access is unavailable.');
     return result;
   };
-  const id = z.string().uuid();
+  const id = z.uuid();
   const refreshCookie = (req: Request, res: Response, c: SpeakerContext) => {
     const existing = requestSpeakerCookie(req);
     res.cookie(speakerCookie, /^[A-Za-z0-9_-]{43}$/.test(existing) ? existing : randomBytes(32).toString('base64url'), {
@@ -48,21 +48,18 @@ export function mountBrowserSpeakers(app: Express, speakers: BrowserSpeakers, gu
   // Identity-aware requests must sit inside the participant cookie's Path.
   // Retain the old routes for already-open clients; new clients use the scoped routes.
   const participantPath = '/api/participant/browser-speaker';
-  app.post(`${participantPath}/telemetry`, (req, res) => {
-    const input = body(req, z.object({ id, audio: browserAudioHealth }).strict());
+  app.post(`${participantPath}/telemetry`, jsonBody(z.strictObject({ id, audio: browserAudioHealth }), (input, req, res) => {
     speakers.report(input.id, requestSpeakerCookie(req), context(req), input.audio); res.json({ ok: true });
-  });
-  app.post([`${participantPath}/register`, `${speakerPath}/register`], (req, res) => res.json(speakers.register(body(req, speakerRegistration), requestSpeakerCookie(req), context(req), username(req))));
+  }));
+  app.post([`${participantPath}/register`, `${speakerPath}/register`], jsonBody(speakerRegistration, (input, req, res) => res.json(speakers.register(input, requestSpeakerCookie(req), context(req), username(req)))));
   app.get([`${participantPath}/session/:id`, `${speakerPath}/session/:id`], (req, res) => {
     const c = context(req); const session = speakers.status(id.parse(req.params.id), requestSpeakerCookie(req), c, username(req));
     refreshCookie(req, res, c); res.json(session);
   });
-  app.post(`${speakerPath}/pair`, async (req, res) => {
-    const input = body(req, z.object({ id, token: z.string().max(110) }).strict());
+  app.post(`${speakerPath}/pair`, jsonBody(z.strictObject({ id, token: z.string().max(110) }), async (input, req, res) => {
     res.json(await speakers.pair(input.id, requestSpeakerCookie(req), context(req), input.token));
-  });
-  app.post(`${speakerPath}/stop`, (req, res) => {
-    const input = body(req, z.object({ id }).strict());
+  }));
+  app.post(`${speakerPath}/stop`, jsonBody(z.strictObject({ id }), (input, req, res) => {
     speakers.owned(input.id, requestSpeakerCookie(req), context(req)); speakers.remove(input.id); res.json({ ok: true });
-  });
+  }));
 }

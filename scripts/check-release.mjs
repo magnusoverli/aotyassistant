@@ -36,6 +36,28 @@ assert.match(manifest, /^stage: stable$/m);
 assert.match(manifest, /^slug: albums_of_the_year$/m);
 assert.match(manifest, /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);
 assert.match(manifest, /^arch:\n  - amd64\n  - aarch64\n/m);
+
+// The same tested LTS runtime must build, type-check and run the packaged app.
+const nodeVersion = read('.node-version').trim();
+assert.match(nodeVersion, /^\d+\.\d+\.\d+$/, 'Exact Node version');
+const nodeMajor = Number(nodeVersion.split('.')[0]);
+assert.equal(pkg.engines.node, `>=${nodeVersion} <${nodeMajor + 1}`, 'Supported Node LTS range');
+assert.equal(Number(/^\^(\d+)\./.exec(pkg.devDependencies['@types/node'])?.[1]), nodeMajor, 'Node declarations must match the runtime');
+const baseImages = [...dockerfile.matchAll(/^FROM (\S+)/gm)].map(match => match[1]);
+for (const image of baseImages) assert.match(image, /@sha256:[a-f0-9]{64}$/, `Image must be digest-pinned: ${image}`);
+const nodeImages = baseImages.filter(image => image.startsWith('node:'));
+assert.equal(nodeImages.length, 2, 'Build and runtime Node images');
+assert.equal(nodeImages[0], nodeImages[1], 'Build and runtime must use identical Node images');
+assert.ok(nodeImages[0].startsWith(`node:${nodeVersion}-`), 'Image must use the CI/development Node version');
+for (const file of readdirSync(resolve(root, '.github/workflows')).filter(file => /\.ya?ml$/.test(file))) {
+  const workflow = read(`.github/workflows/${file}`);
+  for (const match of workflow.matchAll(/\buses: (\S+)/g)) {
+    if (match[1].startsWith('./')) continue;
+    assert.match(match[1], /^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/, `${file}: external actions must be commit-pinned`);
+  }
+  assert.doesNotMatch(workflow, /\bnode-version:/, `${file}: use the shared .node-version file`);
+  if (workflow.includes('actions/setup-node@')) assert.match(workflow, /node-version-file: \.node-version/, `${file}: shared Node runtime`);
+}
 const shutdownMs = Number(/deadline = setTimeout\([^\n]*, ([\d_]+)\)/.exec(read('src/index.ts'))?.[1]?.replaceAll('_', ''));
 const supervisorSeconds = Number(/^timeout: (\d+)$/m.exec(manifest)?.[1]);
 assert.ok(shutdownMs > 0 && supervisorSeconds * 1000 > shutdownMs, 'Supervisor must allow graceful shutdown to finish');

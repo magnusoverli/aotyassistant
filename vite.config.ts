@@ -12,10 +12,12 @@ export default defineConfig({
   base: './',
   build: {
     outDir: '../dist/web', emptyOutDir: true,
+    target: 'baseline-widely-available',
+    manifest: true,
     // Browsers keep hashed assets for a year without asking again. The version in every
     // name means no release can reuse a cached file from an earlier one (1.1.17 served
     // broken copies under names that 1.1.18 kept, because their content was unchanged).
-    rollupOptions: { output: {
+    rolldownOptions: { output: {
       entryFileNames: `assets/[name]-${release}-[hash].js`, chunkFileNames: `assets/[name]-${release}-[hash].js`,
       assetFileNames: `assets/[name]-${release}-[hash][extname]`,
     } },

@@ -82,8 +82,7 @@ test('upload review and inline history restoration keep saved music intact witho
   await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Keep this draft');
   await page.locator('.upload-preview').getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.locator('.list-count')).toHaveText('1 track');
-  await page.getByLabel('Options for Keep this draft', { exact: true }).click();
-  await page.getByRole('button', { name: 'Remove', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove Keep this draft', exact: true }).click();
   await page.locator('#list-history').getByRole('button', { name: 'Add back', exact: true }).click();
   await expect(page.locator('.saved-track.is-next')).toContainText('Keep this draft');
   await expect(page.getByText('List access', { exact: true })).toHaveCount(0);

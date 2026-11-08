@@ -1,16 +1,29 @@
 import { createHash } from 'node:crypto';
 import { gzip } from 'node:zlib';
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { z } from 'zod';
 import { ingressContext, requestBase } from './ingress.js';
 import { publicContext } from './public-listener.js';
 import type { ArtworkData } from './music-assistant-transport.js';
+import { operation } from './operation.js';
 
 /** Old open tabs may still ask for 128; normalize it before reaching MA or the image cache. */
 export const artworkSize = z.enum(['128', '160', '512', '1024']).default('512')
   .transform(size => size === '128' || size === '160' ? 160 : size === '1024' ? 1024 : 512);
 
-export const body = <T extends z.ZodTypeAny>(request: Request, schema: T): z.infer<T> => schema.parse(request.body);
+export const body = <T extends z.ZodType>(request: Request, schema: T): z.output<T> => schema.parse(request.body);
+
+/** Register once, not once per request: retain Zod's compiled fast path and typed output.
+ * Return the handler's promise unchanged so Express 5 owns asynchronous error forwarding.
+ * Keep transforms/refinements pure: compilation can evaluate them again on invalid input. */
+export function jsonBody<T extends z.ZodType>(schema: T, handle: (input: z.output<T>, req: Request, res: Response) => unknown): RequestHandler {
+  const compiled = z.compile(schema);
+  return (req, res) => handle(compiled.parse(req.body), req, res);
+}
+
+/** Only read-only catalogue work follows disconnection; audio writes finish independently. */
+export const catalogueRead = <T>(req: Pick<Request, 'signal'>, action: string, work: () => Promise<T>): Promise<T> =>
+  operation(action, work, 16_000, req.signal);
 
 // Change when resizing or encoding changes, so browsers fetch the new pixels.
 const artworkFormat = 'jpeg-1';

@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
+import { dragSong } from './preparation-helpers';
 
 async function plainCopy(page: Page) {
   await expect(page.locator('.host-warning, .setup-steps, .session-navigation')).toHaveCount(0);
@@ -74,7 +75,7 @@ test('silent demo playback is explicit on every playback page and disappears aft
   expect(isolatedApp.calls.some(call => /play_media|cmd\/play|cmd\/volume/.test(call.command))).toBe(false);
 });
 
-test('Move to top only changes the first selection and Play first selection starts it explicitly', async ({ page }) => {
+test('dragging a song to the top only changes the first selection and Play first selection starts it explicitly', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/join'); await page.getByLabel('Display name').fill('Selections listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
   await page.getByRole('button', { name: 'Join room', exact: true }).click(); await expect(page).toHaveURL('/participant');
@@ -86,8 +87,9 @@ test('Move to top only changes the first selection and Play first selection star
   }
   const list = page.getByRole('complementary', { name: 'Your playlist', exact: true });
   await expect(list.locator('.saved-track')).toHaveCount(2);
-  await list.locator('.saved-track').nth(1).locator('.saved-menu summary').click();
-  await list.getByRole('button', { name: 'Move to top', exact: true }).click();
+  // No edit mode, handle or menu: the row itself is dragged.
+  await expect(page.getByRole('button', { name: 'Edit order' })).toHaveCount(0);
+  await dragSong(page, 'Night Bus Home', 'Northern Lights');
   await expect(list.locator('.saved-track').first().locator('strong')).toHaveText('Night Bus Home');
   const before = await (await page.request.get('/api/participant/state')).json();
   expect(before.ownPlayback).toBeNull(); expect(before.playbackStatus).toBe('idle');

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { setTimeout } from 'node:timers/promises';
 import type { View } from '../src/model.js';
@@ -28,6 +29,8 @@ try {
     throw new Error(`Container did not become healthy. ${logs}\nSaved record shapes: ${shape}`);
   };
   await waitReady();
+  const runtime = (await readFile(new URL('../.node-version', import.meta.url), 'utf8')).trim();
+  assert.equal(await docker('exec', container, 'node', '--version'), `v${runtime}`);
   const process = await docker('exec', container, 'cat', '/proc/1/status');
   assert.match(process, /Uid:\s+1000\s+1000\s+1000\s+1000/);
   assert.equal(await docker('exec', container, 'stat', '-c', '%a', '/data'), '700');

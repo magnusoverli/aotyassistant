@@ -3,7 +3,7 @@ import { expect, type Browser, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 import type { DemoAdapter } from '../../src/playback';
 import { uploadBytes } from '../fixtures/uploads';
-import { showList } from './preparation-helpers';
+import { showList, dragSong } from './preparation-helpers';
 
 async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, count = 8) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -204,10 +204,9 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 3);
   try {
     await r.page.goto(isolatedApp.origin + '/participant'); await showList(r.page);
-    await r.page.getByRole('button', { name: 'Edit order', exact: true }).click();
     let moves = 0;
     await r.page.route('**/api/participant/preparations/move', async route => { moves++; await route.fetch(); await route.abort('failed'); });
-    await r.page.getByRole('button', { name: 'Move Saved selection 2 up', exact: true }).click();
+    await dragSong(r.page, 'Saved selection 2', 'Saved selection 1');
     await expect(r.page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
     await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.reload();
     await expect(r.page.getByText('Recover a saved list', { exact: true })).toHaveCount(0);

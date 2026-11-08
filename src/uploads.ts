@@ -184,7 +184,7 @@ export class UploadAssets {
   async removeOwner(ownerId: string) {
     ownerId = id.parse(ownerId);
     if (this.receiving.has(ownerId)) throw new AppError(409, 'An upload is finishing. The user is signed out; retry Delete user when it finishes.');
-    for (const assetId of (await listDirectory(this.directory)).filter(name => id.safeParse(name).success)) {
+    for (const assetId of (await listDirectory(this.directory)).filter(name => id.validate(name))) {
       let manifest: Manifest;
       try { manifest = await this.load(assetId); }
       catch (error) {
@@ -194,7 +194,7 @@ export class UploadAssets {
       if (manifest.ownerId === ownerId) await this.remove(ownerId, assetId);
     }
     // Interrupted transfers can leave private staging bytes even before a saved entry exists.
-    for (const assetId of (await listDirectory(this.staging)).filter(name => id.safeParse(name).success)) {
+    for (const assetId of (await listDirectory(this.staging)).filter(name => id.validate(name))) {
       const directory = join(this.staging, assetId);
       let owner: z.infer<typeof stagedOwner> | undefined;
       try { owner = await readPrivateJson(join(directory, 'manifest.json'), stagedOwner, recordBytes) ?? await readPrivateJson(join(directory, 'receiving.json'), stagedOwner, recordBytes); }
@@ -263,12 +263,12 @@ export class UploadAssets {
     const staged = await readdir(this.staging).catch(() => [] as string[]);
     for (const name of staged) {
       if (this.closed) return;
-      if (id.safeParse(name).success && !this.queue.has(name)) await this.serial(name, () => rm(join(this.staging, name), { recursive: true, force: true })).catch(() => {});
+      if (id.validate(name) && !this.queue.has(name)) await this.serial(name, () => rm(join(this.staging, name), { recursive: true, force: true })).catch(() => {});
     }
     let names: string[]; try { names = await readdir(this.directory); } catch { return; }
     for (const name of names) {
       if (this.closed) return;
-      if (!id.safeParse(name).success || this.queue.has(name)) continue;
+      if (!id.validate(name) || this.queue.has(name)) continue;
       await this.serial(name, async () => {
         try {
           let manifest;

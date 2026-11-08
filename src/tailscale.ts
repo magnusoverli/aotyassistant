@@ -38,7 +38,7 @@ export function exactFunnel(config: unknown, host: string): boolean {
     Web: z.object({ [hp]: z.object({ Handlers: z.object({ '/': z.object({ Proxy: z.literal(funnelTarget) }).strict() }).strict() }).strict() }).strict(),
     AllowFunnel: z.object({ [hp]: z.literal(true) }).strict(),
     Services: z.object({}).strict().optional(), Foreground: z.object({}).strict().optional(),
-  }).strict().safeParse(config).success;
+  }).strict().validate(config);
 }
 
 /** Pinned bundled binaries; no shell, auth keys, root, TUN, routes, DNS changes, or host networking. */

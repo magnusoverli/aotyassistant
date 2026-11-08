@@ -15,7 +15,7 @@ For a bug, use the [issue form](https://github.com/magnusoverli/aotyassistant/is
 
 ## Verify a change
 
-These commands run build and test tooling in a source checkout; they are not an installation guide. Use Node.js 24. Browser fixtures create isolated synthetic apps and Music Assistant servers; they require no installed MA instance, speaker, or credentials.
+These commands run build and test tooling in a source checkout; they are not an installation guide. Use Node.js 26 LTS (the exact version is in `.node-version`). Run the full persistence suite on Linux: it checks directory synchronization and Unix permissions, which native Windows cannot establish. Browser fixtures create isolated synthetic apps and Music Assistant servers; they require no installed MA instance, speaker, or credentials.
 
 ```sh
 npm ci
@@ -24,6 +24,7 @@ npm run check:release
 npm run typecheck
 npm test
 npm run build
+npm run check:build
 ```
 
 Playwright is opt-in, not part of default local or CI checks. Run it only when explicitly requested. To opt in locally:
@@ -43,6 +44,16 @@ npm run test:container
 
 CI runs both suites on native amd64 and aarch64 runners. They exercise actual packaged audio analysis, storage permissions, restart persistence, and backup/restore. They do not contact installed services or establish physical-speaker acceptance.
 
+## Dependency maintenance
+
+`renovate.json` covers npm, Docker image tags/digests, GitHub Actions and `.node-version`. Enable the Renovate GitHub app for this repository to receive update pull requests; configuration alone does not activate the service. Updates are not automatically merged. Node.js and its declarations stay on the tested LTS major until an explicit migration is reviewed.
+
+Keep `.node-version`, both Node image references in `Dockerfile`, `package.json` engines and `@types/node` aligned. `check:release` rejects runtime drift and unpinned images/actions. Review upstream migration notes for major releases, regenerate the lockfile with npm, and run all default checks plus both native package suites. `npm outdated` checks direct versions; `npm audit` also covers build/test dependencies. Do not force incompatible transitive versions just to make every indirect dependency report as latest.
+
+Vite 8 uses Rolldown/Oxc and Lightning CSS without compatibility fallbacks. Its Baseline browser target is independent of the server's Node runtime. `check:build` verifies the emitted manifest and lazy chunks, JavaScript syntax, immutable-route-compatible filenames and byte-exact gzip/Brotli copies without launching a browser. Retain the post-write compression hook and release-specific filenames when changing the build.
+
+For JSON routes, build schemas at registration with `jsonBody`, not inside a request callback. Keep schema transforms/refinements pure and preserve strictness and normalization. Use `.validate()` only when the parsed output/error is not needed. Only read-only catalogue work follows native HTTP disconnect signals; do not attach those signals to audio writes. The [modern implementation choices](docs/architecture.md#modern-implementation-choices) explain the applicable APIs and intentional exceptions.
+
 ## Change expectations
 
 - Keep changes focused and use the surrounding TypeScript patterns.
@@ -56,7 +67,7 @@ CI runs both suites on native amd64 and aarch64 runners. They exercise actual pa
 
 - Describe product behaviour in the present tense. Use neutral language and direct instructions, such as “Select a speaker”.
 - Use exact interface labels in procedures. Distinguish participant, host, and public-display access.
-- Use **listening room**, **display name**, **Your music**, **Your playlist**, **Play first selection**, **Move to top**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
+- Use **listening room**, **display name**, **Your music**, **Your playlist**, **Play first selection**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
 - Describe music discovery and turn-taking, not annual awards, voting, continuous playlist playback, or remote synchronized listening. Scope privacy claims to this app.
 - Keep display copy in `src/product.ts` aligned with app/package/image metadata and the GitHub About description. Preserve installation IDs, API paths, cookies, and storage keys during wording changes.
 - Keep internal discussions, personal accounts, and temporary progress reports out of product documentation.

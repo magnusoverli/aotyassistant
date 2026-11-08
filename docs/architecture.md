@@ -2,7 +2,9 @@
 
 ## Runtime
 
-The Home Assistant image runs Node.js 24, a TypeScript/Express backend, and Vite-built browser assets. Startup prepares private storage and drops to the unprivileged `node` user. Supervisor provides `/data`, options, discovery information, Ingress, watchdog monitoring, and backup coordination.
+The Home Assistant image runs Node.js 26 LTS, a TypeScript/Express 5 backend, and Vite 8-built browser assets. The native TypeScript 7 compiler checks both browser/bundler and server/NodeNext resolution. Vite uses Rolldown/Oxc and Lightning CSS with its Baseline Widely Available browser target; browser audio still probes capabilities independently. Startup prepares private storage and drops to the unprivileged `node` user. Supervisor provides `/data`, options, discovery information, Ingress, watchdog monitoring, and backup coordination.
+
+Node and Tailscale images and CI actions are digest-pinned. `.node-version` supplies the CI runtime; release validation checks it against both image stages, package engines and Node declarations. Renovate configuration tracks dependency updates for review rather than automatically deploying them. See [dependency maintenance](../CONTRIBUTING.md#dependency-maintenance).
 
 The app has a guest/display/host LAN listener on port 3000, an authenticated Ingress listener on 8099 supporting all browser pages, and a guest-only loopback listener on 8098 in the bundled HA image. Untrusted headers cannot impersonate either trusted listener context. Participant cookies, uploads, artwork, and event streams use the trusted Ingress base path. It needs no privileged mode, host networking, Docker socket, Core database, or shared media mount.
 
@@ -15,6 +17,25 @@ Shared display ──────── LAN listener ───┘     └─ pri
 ```
 
 Only one process may own a data directory. JSON stores serialize mutations and use private temporary files, atomic replacement, and filesystem synchronization before acknowledging saves. Unknown or corrupt records stop startup without replacing saved data. Storage-format changes require a documented migration or recovery path that preserves acknowledged data.
+
+## Modern implementation choices
+
+Modernization means using applicable capabilities without weakening the application's contracts. These choices are implementation-level, not just dependency version requirements.
+
+| Area | Implementation and rationale |
+| --- | --- |
+| Node 26 request cancellation | Catalogue operations and upload transfer/analysis use native `IncomingMessage.signal`. It handles disconnects even after the request body finishes. Playback writes deliberately do not inherit this signal: a disconnected browser is not proof that an audio command did not commit. |
+| Zod 4.6 parsing | `jsonBody` constructs/compiles a route's schema at registration, instead of rebuilding it on each request. Typed parsed output retains trims, defaults, strict unknown-key rejection and ordinary Zod errors. Compilation is server-only and explicit, not a global setting affecting persistence or browser CSP. Refinements/transforms must be pure because an invalid input can also take the runtime fallback. |
+| Zod boolean checks | Origin, UUID and exact-Funnel checks that only need validity use `.validate()`, avoiding result/error construction. Checks that need normalized output or error details retain `.parse()`/`.safeParse()`. |
+| Express 5 promises | Async route promises are returned directly to Express's native error handling. The compiled-body adapter does not add a separate error-catching framework or change middleware authorization order. |
+| TypeScript 7 | Native compilation, isolated-module checks and explicit type-only imports match Vite's per-file transformation. The server uses ES2025/NodeNext without DOM globals; browser compilation retains its separate compatibility target. |
+| Vite 8 | Native Rolldown/Oxc and Lightning CSS, lazy settings/audio chunks and final-output precompression are used together. The emitted manifest and compressed bytes are checked after the build, not before lazy-import placeholders are resolved. |
+| HTTP and WebSockets | Keep pinned-address HTTP agents and `ws` for validated DNS, redirect rejection, payload bounds, upgrade handling and backpressure. `ws` 8.22 uses Node 26's native frame masking automatically; no optional native addon or unguarded native-client replacement is needed. Node's keep-alive timeout buffers already have protective defaults. |
+| Sendspin 6 | Public timing, minimum-buffer and sync-correction APIs are used, with native/software codec capability probes. Decoder health and codec changes still lack a public `SendspinPlayer` API; the small instance-scoped extension remains version-pinned and contract-tested. Do not bypass application playback ownership through SDK controller commands. |
+| Media and browser crypto | Sharp's bounded resize work, metadata allocation limits and disposable media-analysis processes remain in place. Secure pages use Web Crypto; plain-LAN HTTP keeps the audited AES-GCM fallback. Zod has no runtime browser imports here, so switching to Mini would not reduce this browser payload. New image encodings require separate latency and device-compatibility measurements. |
+| Storage and streaming | Existing `AsyncLocalStorage.snapshot()`, composed abort signals, stream pipelines, bounded queues and fsynced atomic stores already use modern platform capabilities. Native SQLite or a different concurrency framework would require a separate migration case, not an automatic replacement. |
+
+Upstream contracts: [Node HTTP signals](https://nodejs.org/docs/latest-v26.x/api/http.html#messagesignal), [Express 5 migration](https://expressjs.com/en/guide/migrating-5.html), [Zod compilation](https://zod.dev/compile) and [Zod 4.6 validation](https://zod.dev/blog/zod-4-6). `tests/modern-http.test.ts` checks compiled/runtime parity, real registered routes, async error propagation, mid-transfer/post-transfer cancellation and independent audio writes. `npm run bench:validation` measures parser cost only; it is not HTTP throughput or a physical-device benchmark.
 
 ## Main boundaries
 

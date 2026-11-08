@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.1.22] — 2026-11-08
+
+- Refresh the application foundation to Node.js 26 LTS, TypeScript 7 and Vite 8 with native Rolldown/Oxc and Lightning CSS. Update npm dependencies and CI actions, pin runtime images/actions, and add reviewed dependency-update automation, runtime-alignment checks and emitted-asset/compression validation. Browser testing remains opt-in.
+
+- Reuse and compile JSON request schemas with Zod 4.6 instead of rebuilding them for every request, and use boolean-only validation where parsed data is not needed. Adopt Node 26's native disconnect signals for catalogue reads and uploads without cancelling dispatched playback writes. Add regression coverage and separate server ES2025 types from browser DOM types.
+
+- Reorder Your playlist by dragging a song's row, always and on every device: with a mouse, press and move; on a touch screen, press and hold, then drag, so a plain swipe still scrolls. The other songs slide aside to show where it will land, and the list scrolls at its edges. Edit order, the drag handle, the up/down buttons, Move to top and the ⋯ menu are gone; a ✕ on each row removes the song (Add back in Removed undoes it).
+
 ## [1.1.21] — 2026-11-08
 
 - Phones show a compact waiting card while someone else has the turn: whose turn it is, whether they are choosing or playing, how many turns until yours, your next pick and the speaker, instead of a block of disabled controls. Search sits much higher on the first screen.

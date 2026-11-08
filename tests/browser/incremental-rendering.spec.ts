@@ -155,7 +155,6 @@ test('unchanged membership revalidation and list edits retain the workspace and 
   expect(await page.evaluate(() => (window as unknown as { eventConnections: number }).eventConnections)).toBe(connections);
   await expect(page.locator('#catalogue-search')).toBeFocused();
   expect(await page.locator('#catalogue-search').evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd])).toEqual([3, 7]);
-  await page.getByRole('button', { name: 'Edit order', exact: true }).click(); await retained(page);
 });
 
 test('listening-order membership updates retain existing seats', async ({ page, browser, isolatedApp }) => {

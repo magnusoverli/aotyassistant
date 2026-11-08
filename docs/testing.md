@@ -6,15 +6,18 @@ The test suites cover application behaviour with isolated services and disposabl
 
 | Check | Coverage |
 | --- | --- |
-| Release metadata and documentation | Consistent package, image, and manifest versions; changelog entries; local documentation links; shutdown allowance |
-| Typecheck and production build | Backend/browser TypeScript and packaged browser assets |
+| Release metadata and documentation | Consistent package, image, and manifest versions; Node runtime/type alignment; pinned image/action references; changelog entries; local documentation links; shutdown allowance |
+| Typecheck and production build | Backend/browser TypeScript and packaged browser assets; emitted manifest/lazy chunks, JavaScript syntax and byte-exact compressed copies |
 | Backend/controller tests | Turns, private-list access, persistence, uploads, connection identity, playback ownership, recovery, and compatibility handling |
+| Modern HTTP contracts | Compiled/runtime validation parity, strict request handling, Express 5 async errors, native request-signal cancellation before/after body completion, and audio-write independence from disconnects |
 | Chromium workflows | Host, participant, settings, and display interactions against isolated Music Assistant fixtures |
 | Native amd64/aarch64 package tests | Packaged audio analysis, file permissions, automatic list persistence across restarts, backup restore, and bundled non-root Tailscale userspace startup/shutdown |
-| Dependency audit | Known vulnerabilities reported for the locked dependency tree at the time of the check |
+| Dependency audit | Known vulnerabilities in runtime and build/test dependencies reported for the locked dependency tree at the time of the check |
 | Published-image verification | Anonymous registry access, both architectures, content digests, and version/license labels |
 
 Commands are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#verify-a-change). CI results are available in [GitHub Actions](https://github.com/magnusoverli/aotyassistant/actions). The image-publishing workflow requires the shared application checks and package tests to pass before publishing images.
+
+`npm run bench:validation` compares per-request schema construction, a reused runtime schema and a reused compiled JSON route. It reports median local parser cost over five samples. It is opt-in and has no timing assertion in CI; network, storage and speaker latency are outside its measurement.
 
 ## Installed-system validation
 

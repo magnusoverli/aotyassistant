@@ -17,7 +17,7 @@ export type AddressingView = { revision: number; guestOrigin: string; mediaOrigi
   guestAccess: GuestAccess; automaticGuestOrigin: string | null; guestCandidates: string[] };
 
 export function shareableOrigin(origin: string) {
-  try { const host = new URL(origin).hostname.toLowerCase(); return !/^(localhost\.?$|127\.|\[::1\]$)/.test(host) && applicationOrigin.safeParse(origin).success; }
+  try { const host = new URL(origin).hostname.toLowerCase(); return !/^(localhost\.?$|127\.|\[::1\]$)/.test(host) && applicationOrigin.validate(origin); }
   catch { return false; }
 }
 
@@ -25,7 +25,7 @@ export function shareableOrigin(origin: string) {
 export function setupHostAllowed(host: string, remote: string) {
   try {
     const url = new URL(`http://${host}`); const hostname = bareHostname(url.hostname);
-    if (url.host !== host || !applicationOrigin.safeParse(url.origin).success || !isAllowedAddress(remote)) return false;
+    if (url.host !== host || !applicationOrigin.validate(url.origin) || !isAllowedAddress(remote)) return false;
     return isIP(hostname) ? isAllowedAddress(hostname) : /^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.local$/i.test(hostname);
   } catch { return false; }
 }

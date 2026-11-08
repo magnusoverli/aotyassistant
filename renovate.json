@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", "docker:pinDigests"],
+  "enabledManagers": ["npm", "dockerfile", "github-actions", "nodenv"],
+  "rangeStrategy": "bump",
+  "automerge": false,
+  "packageRules": [
+    {
+      "description": "Keep runtime, CI and Node declarations on the tested LTS major; review the next LTS migration explicitly.",
+      "matchPackageNames": ["node", "@types/node"],
+      "allowedVersions": "/^26\\./",
+      "groupName": "Node.js LTS"
+    }
+  ]
+}

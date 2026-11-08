@@ -69,14 +69,11 @@ test('single-file metadata review, private save/reload and reversible/permanent 
     await page.reload(); await showList(page); await expect(page.locator('.saved-track strong')).toHaveText('My private file title');
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
     await page.screenshot({ path: 'test-results/participant-uploaded-file-320.png', fullPage: true });
-    await page.getByLabel('Options for My private file title', { exact: true }).click();
-    await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.getByRole('button', { name: 'Remove My private file title', exact: true }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] .saved-track')).toHaveCount(0);
     await page.locator('#list-history').getByRole('button', { name: 'Add back', exact: true }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] strong')).toHaveText('My private file title');
-    const options = page.getByLabel('Options for My private file title', { exact: true });
-    if (!await options.evaluate(node => (node.parentElement as HTMLDetailsElement).open)) await options.click();
-    await page.getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.getByRole('button', { name: 'Remove My private file title', exact: true }).click();
     page.once('dialog', dialog => dialog.accept());
     await page.getByRole('button', { name: 'Delete file permanently' }).click();
     await expect.poll(async () => (await list(page)).removed.length).toBe(0);

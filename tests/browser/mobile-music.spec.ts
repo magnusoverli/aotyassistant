@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { test } from './app-fixture';
+import { dragSong } from './preparation-helpers';
 
 for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }, { width: 1099, height: 844 }]) {
   test(`combined mobile music edits its list in place and summarises it while browsing at ${viewport.width}×${viewport.height}`, async ({ page, isolatedApp }) => {
@@ -40,10 +41,8 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     const row = await list.locator('.saved-track').first().elementHandle();
     await rows.nth(1).getByRole('button', { name: 'Add to list', exact: true }).click();
     await expect(page.locator('.list-count')).toHaveText('2 tracks'); expect(await formY()).toBe(beforeAdd);
-    await list.getByRole('button', { name: 'Edit order', exact: true }).click();
-    await list.getByRole('button', { name: /^Move Collection song 1 .* up$/ }).click();
+    await dragSong(page, 'Collection song 1 with a deliberately long title', 'Collection song 0 with a deliberately long title');
     await expect(list.locator('.saved-track strong').first()).toContainText('Collection song 1');
-    await list.getByRole('button', { name: 'Done', exact: true }).click();
     expect(await row!.evaluate(node => node.isConnected && node.closest('#music-collection') !== null)).toBe(true);
     await expect(input).toHaveValue('Collection');
     // Browsing below the list: the list card scrolls away and a one-line playlist bar
@@ -95,9 +94,7 @@ test('the unified collection retains its desktop panes and actual row nodes afte
   await expect(page.locator('.preparation-list')).toHaveCSS('border-left-width', '1px');
   expect(before[2]!.x).toBeGreaterThanOrEqual(before[1]!.x + before[1]!.width);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Edit order', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await expect(page.locator('.saved-track').first()).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   expect(await desktop()).toEqual(before);
   expect(await row!.evaluate(node => node === document.querySelector('.saved-track'))).toBe(true);

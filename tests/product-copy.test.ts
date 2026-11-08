@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { productName, productDescription, productTagline } from '../src/product.js';
 import { errorPage } from '../src/error-page.js';
 
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 test('documentation and distribution metadata describe the same music-sharing product', () => {
   assert.equal(productName, 'Listening Room');
