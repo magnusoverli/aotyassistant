@@ -5,7 +5,7 @@ import { participantEvents } from './participant-events';
 import { storageKey } from './paths';
 
 const prefix = '/api/participant/preparations';
-type Path = 'add' | 'add-upload' | 'purge-upload' | 'move' | 'remove' | 'restore' | 'review';
+type Path = 'add' | 'add-upload' | 'purge-upload' | 'clear' | 'move' | 'remove' | 'restore' | 'review';
 type Edit = { trackId?: string; entryId?: string; beforeId?: string | null; uploadId?: string; text?: { title: string; artist: string; album: string } };
 type Pending = { ownerId: string; path: Path; body: Edit & { operation: PreparationOperation }; title: string };
 // randomUUID is secure-context-only; guest phones also join over plain HTTP on a trusted LAN.
@@ -50,7 +50,7 @@ export class PreparationController {
     try {
       const raw = localStorage.getItem(this.storageKey(ownerId)); if (!raw || raw.length > 20_000) return;
       const saved = JSON.parse(raw) as Pending;
-      if (saved.ownerId === ownerId && ['add', 'add-upload', 'purge-upload', 'move', 'remove', 'restore', 'review'].includes(saved.path) && saved.body?.operation?.id && typeof saved.title === 'string') {
+      if (saved.ownerId === ownerId && ['add', 'add-upload', 'purge-upload', 'clear', 'move', 'remove', 'restore', 'review'].includes(saved.path) && saved.body?.operation?.id && typeof saved.title === 'string') {
         this.pending = saved; this.error = 'A previous list change needs confirmation. Retry it to check whether it was saved.';
       }
     } catch { /* The server list is still authoritative if local draft storage is unavailable. */ }

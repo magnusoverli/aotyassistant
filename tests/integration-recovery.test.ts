@@ -10,7 +10,8 @@ import { AppError } from '../src/model.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 async function directory(t: TestContext) {
-  const dir = await mkdtemp('/tmp/opencode/aoty-integration-recovery-'); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
+  // Background discovery can still save a file while the test ends; retrying lets the removal finish.
+  const dir = await mkdtemp('/tmp/opencode/aoty-integration-recovery-'); t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })); return dir;
 }
 async function eventually(check: () => boolean) {
   for (let i = 0; i < 250; i++) { if (check()) return; await delay(10); }

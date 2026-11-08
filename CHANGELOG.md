@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.2.2] — 2026-11-09
+
+- **Clear list** beside Your playlist starts again from scratch: after a confirmation, it removes every upcoming song and the whole history (Previously played and Removed) and permanently deletes your uploaded songs. Your place in the listening order is kept.
+- Releases use the GitHub CLI's login when no token is set, and say so when GitHub's request limit is reached instead of waiting silently.
+- Fix an occasional failure in the automatic checks, where a test removed its temporary folder while a background save was still writing to it.
+
 ## [1.2.1] — 2026-11-09
 
 - Fix importing a list through an online invitation, which answered "Page not found": the invitation address did not allow the two import requests. A new test checks that every participant action is reachable online.

@@ -380,6 +380,26 @@ export class PreparationManager {
     catch { result.warning = 'The list change was saved, but file deletion needs another attempt. Refresh your list to retry cleanup.'; }
     result.view = await this.read(credential); return result;
   }
+  /** Starting from scratch: every upcoming and past entry goes, and uploaded files are deleted
+   * like a permanent purge. Old receipts stay, so a lost acknowledgement replays without harm. */
+  clear(credential: string, operation: PreparationOperation, busy: (assetId: string) => boolean, remove: (ownerId: string, assetId: string) => Promise<void>) {
+    return this.track(this.clearAll(credential, operation, busy, remove));
+  }
+  private async clearAll(credential: string, operation: PreparationOperation, busy: (assetId: string) => boolean, remove: (ownerId: string, assetId: string) => Promise<void>) {
+    const result = await this.mutate(credential, operation, 'clear', {}, state => {
+      const assets = [...new Set(state.entries.flatMap(item => item.selection.source === 'upload' ? [item.selection.assetId] : []))];
+      if (assets.some(busy)) throw new AppError(409, 'Stop or finish your uploaded song before clearing the list.');
+      state.entries = []; state.order = [];
+      if (assets.length) {
+        state.pendingUploadDeletions = [...new Set([...assets, ...(state.pendingUploadDeletions ?? state.deletedUploads ?? [])])];
+        state.deletedUploads = [...new Set([...(state.deletedUploads ?? []), ...assets])];
+      }
+      return randomUUID();
+    });
+    try { await this.cleanupDeletedUploads(credential, remove); }
+    catch { result.warning = 'Your list was cleared, but deleting uploaded files needs another attempt. Refresh your list to retry.'; }
+    result.view = await this.read(credential); return result;
+  }
   cleanupDeletedUploads(credential: string, remove: (ownerId: string, assetId: string) => Promise<void>): Promise<void> {
     const access = identity(credential);
     const existing = this.cleanups.get(access.ownerId); if (existing) return existing;

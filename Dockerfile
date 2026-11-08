@@ -9,7 +9,7 @@ COPY web ./web
 RUN npm run build && npm prune --omit=dev
 
 FROM node:26.13.0-alpine3.24@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
-ARG BUILD_VERSION=1.2.1
+ARG BUILD_VERSION=1.2.2
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="$BUILD_VERSION" io.hass.type="app" io.hass.arch="$BUILD_ARCH" \
       org.opencontainers.image.source="https://github.com/magnusoverli/aotyassistant" \

@@ -8,6 +8,7 @@ import { workspaceGrid, slot } from './page-layout';
 import { ListBar } from './list-bar';
 import { ListDrag } from './list-drag';
 import { ListImport } from './list-import';
+import { ClearList } from './clear-list';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
 type Options = { getView(): View | undefined; starting(): boolean; changed(): void; search(query: string): void };
@@ -34,9 +35,12 @@ export class PreparationPanel {
   readonly bar = new ListBar(() => this.focusList());
   /** Imports a list shared from SuShe Online. Needs Music Assistant; there is no demo version. */
   private importer: ListImport;
+  /** Empties the playlist and its history after a confirmation, to start from scratch. */
+  private clearer: ClearList;
   constructor(private library: PreparationController, private options: Options) {
     this.feedback.setAttribute('role', 'status'); this.feedback.setAttribute('aria-live', 'polite');
     this.importer = new ListImport(library, { search: query => options.search(query) });
+    this.clearer = new ClearList(library, () => { this.feedback.textContent = 'Your playlist and its history were cleared.'; this.focusList(); });
     this.uploads = new UploadPanel(library, () => Boolean(options.getView()?.me), () => {
       this.uploads.render(Boolean(options.getView()?.me));
       if (this.uploadDisclosure?.isConnected) { if (this.uploads.hasWork) this.uploadDisclosure.open = true; }
@@ -162,7 +166,17 @@ export class PreparationPanel {
     });
     // During an import its own saves lock the list; the button then reopens its progress.
     prop(importButton, 'disabled', !snapshot || library.loading || !navigator.onLine || (library.locked && !this.importer.busy));
-    children(heading, summary, canImport && importButton);
+    const clearButton = v.get('clear', () => {
+      const node = el('button', 'Clear list', 'secondary list-clear-open'); node.type = 'button'; node.title = 'Empty your playlist and its history';
+      node.setAttribute('aria-haspopup', 'dialog'); node.setAttribute('aria-controls', 'clear-list');
+      node.onclick = () => this.clearer.open(); return node;
+    });
+    prop(clearButton, 'disabled', library.locked || library.loading || !navigator.onLine || this.importer.busy);
+    // Only offered when there is something to clear.
+    const clearable = Boolean(snapshot && (snapshot.upcoming.length || snapshot.played.length || snapshot.removed.length));
+    const actions = v.el('heading-actions', 'div', undefined, 'list-heading-actions');
+    children(actions, canImport && importButton, clearable && clearButton);
+    children(heading, summary, (canImport || clearable) && actions);
     this.bar.update(count, snapshot?.upcoming[0]?.title, attention);
     const status = v.el('status', 'p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Selections unavailable', 'list-save-status'); attr(status, 'role', 'status');
     const body = v.get('body', () => { const node = el('div', undefined, 'list-body'); node.id = 'music-list-body'; node.dataset.scrollKey = 'private-list'; return node; });

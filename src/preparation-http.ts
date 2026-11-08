@@ -100,6 +100,9 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.post(`${prefix}/purge-upload`, jsonBody(z.strictObject({ operation: preparationOperationSchema, entryId: uuid }), async (input, req, res) => {
     res.json(await manager.purgeUpload(credential(req), input.operation, input.entryId, assetId => uploads.busy(assetId), (ownerId, assetId) => uploads.remove(ownerId, assetId)));
   }));
+  app.post(`${prefix}/clear`, jsonBody(z.strictObject({ operation: preparationOperationSchema }), async (input, req, res) => {
+    res.json(await manager.clear(credential(req), input.operation, assetId => uploads.busy(assetId), (ownerId, assetId) => uploads.remove(ownerId, assetId)));
+  }));
   for (const action of ['move', 'remove', 'restore', 'review'] as const) {
     app.post(`${prefix}/${action}`, jsonBody(z.strictObject({ operation: preparationOperationSchema, entryId: uuid, beforeId: uuid.nullable().optional() }), async (input, req, res) => {
       const result = action === 'move' ? await manager.move(credential(req), input.operation, input.entryId, input.beforeId ?? null)

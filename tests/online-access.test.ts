@@ -123,9 +123,14 @@ test('connector contracts reject unsafe proxy configurations, non-Tailscale host
 
 test('every participant action is reachable through an online invitation', () => {
   // A new participant route that is missing here works at home but answers "Page not found" online.
-  const source = readFileSync(new URL('../src/http.ts', import.meta.url), 'utf8');
-  const paths = [...source.matchAll(/app\.post\('(\/api\/participant\/[^':]+)'/g)].map(match => match[1]!);
-  assert.ok(paths.includes('/api/participant/import/read') && paths.includes('/api/participant/search'), 'routes were found');
+  const source = (file: string) => readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+  const paths = [...source('http.ts').matchAll(/app\.post\('(\/api\/participant\/[^':]+)'/g)].map(match => match[1]!);
+  // Playlist actions: `${prefix}/name` routes and the shared `for (const action of [...])` routes.
+  const playlist = source('preparation-http.ts');
+  const actions = [...playlist.matchAll(/app\.post\(`\$\{prefix\}\/([a-z-]+)`/g)].map(match => match[1]!);
+  for (const list of playlist.matchAll(/for \(const action of \[([^\]]+)\]/g)) actions.push(...[...list[1]!.matchAll(/'([a-z-]+)'/g)].map(match => match[1]!));
+  paths.push(...actions.map(action => `/api/participant/preparations/${action}`));
+  for (const expected of ['/api/participant/import/read', '/api/participant/search', '/api/participant/preparations/clear', '/api/participant/preparations/move']) assert.ok(paths.includes(expected), expected);
   for (const path of paths) assert.equal(publicRoute('POST', path), true, path);
 });
 

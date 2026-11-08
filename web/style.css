@@ -486,32 +486,34 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
 }
 }
 
-/* Importing a list shared from SuShe Online. */
+/* Playlist windows: importing a list shared from SuShe Online, and clearing the list. */
 @layer features {
-.list-heading .list-import-open { flex-shrink:0; min-height:40px; padding:8px 12px; font-size:.8125rem; }
-.import-dialog { width:min(560px,calc(100% - 32px)); max-height:min(85dvh,720px); padding:20px; overflow:auto; border:1px solid var(--line); border-radius:14px; background:var(--panel); color:var(--text); overflow-wrap:anywhere; }
-.import-dialog::backdrop { background:#0009; }
-.import-dialog [hidden] { display:none; }
-.import-dialog > p { margin:0 0 12px; }
-.import-dialog h3 { margin:20px 0 4px; font-size:1rem; }
-.import-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
-.import-header h2 { margin:0; font-size:1.125rem; }
+.list-heading-actions { display:flex; flex-shrink:0; gap:8px; }
+.list-heading-actions button { min-height:40px; padding:8px 12px; font-size:.8125rem; }
+.list-dialog { width:min(560px,calc(100% - 32px)); max-height:min(85dvh,720px); padding:20px; overflow:auto; border:1px solid var(--line); border-radius:14px; background:var(--panel); color:var(--text); overflow-wrap:anywhere; }
+.list-dialog::backdrop { background:#0009; }
+.list-dialog [hidden] { display:none; }
+.list-dialog > p { margin:0 0 12px; }
+.list-dialog h3 { margin:20px 0 4px; font-size:1rem; }
+.list-dialog-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px; }
+.list-dialog-header h2 { margin:0; font-size:1.125rem; }
+.list-dialog-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+.list-dialog-error { color:#ffdad1; }
+.list-dialog .danger { background:transparent; color:#ffc0b5; border-color:#86534a; }
+.list-dialog progress { display:block; width:100%; height:8px; accent-color:var(--accent); }
 .import-form { margin:0 0 12px; }
-.import-form label { display:block; margin-bottom:6px; font-weight:600; }
+.import-form label { display:block; margin-bottom:8px; font-weight:600; }
 .import-field { display:flex; gap:8px; }
 .import-field input { flex:1; }
-.import-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
-.import-error { color:#ffdad1; }
-.import-form .import-error { margin:8px 0 0; }
+.import-form .list-dialog-error { margin:8px 0 0; }
 .import-result { font-weight:600; }
-.import-dialog progress { display:block; width:100%; height:8px; accent-color:var(--accent); }
 .import-missing { display:grid; gap:8px; margin:8px 0 0; padding:0; list-style:none; }
 .import-missing li { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; }
 .import-missing li > div { min-width:0; }
 .import-missing p { margin:2px 0 0; font-size:.875rem; }
 .import-failed { display:block; margin-top:2px; color:var(--muted); font-size:.8125rem; }
 @media(max-width:1099px) {
-  .list-heading .list-import-open { min-height:44px; }
-  .import-dialog { inset:auto 0 0; width:calc(100% - 16px); max-width:600px; margin:0 auto; border-radius:18px 18px 0 0; padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); }
+  .list-heading-actions button { min-height:44px; }
+  .list-dialog { inset:auto 0 0; width:calc(100% - 16px); max-width:600px; margin:0 auto; border-radius:18px 18px 0 0; padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); }
 }
 }

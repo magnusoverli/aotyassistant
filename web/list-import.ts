@@ -17,7 +17,7 @@ const message = (error: unknown, fallback: string) => error instanceof Error && 
 /** Imports a list shared from SuShe Online: paste its link, and its songs are added to
  * the end of the playlist, last album first. */
 export class ListImport {
-  readonly dialog = el('dialog', undefined, 'import-dialog');
+  readonly dialog = el('dialog', undefined, 'list-dialog');
   private running?: AbortController;
   private link = '';
 
@@ -41,7 +41,7 @@ export class ListImport {
   }
 
   private header(title: string, closable = true) {
-    const header = el('div', undefined, 'import-header'); const heading = el('h2', title); heading.id = 'list-import-title';
+    const header = el('div', undefined, 'list-dialog-header'); const heading = el('h2', title); heading.id = 'list-import-title';
     header.append(heading);
     if (closable) header.append(this.action('Close', () => this.dialog.close()));
     return header;
@@ -64,9 +64,9 @@ export class ListImport {
         this.showPaste('Your browser didn’t allow pasting here. Long-press the field, or use the keyboard, to paste.');
       });
     }));
-    const alert = el('p', error, 'import-error'); alert.setAttribute('role', 'alert'); alert.hidden = !error;
+    const alert = el('p', error, 'list-dialog-error'); alert.setAttribute('role', 'alert'); alert.hidden = !error;
     const submit = el('button', 'Import'); submit.type = 'submit';
-    const actions = el('div', undefined, 'import-actions'); actions.append(submit, this.action('Cancel', () => this.dialog.close()));
+    const actions = el('div', undefined, 'list-dialog-actions'); actions.append(submit, this.action('Cancel', () => this.dialog.close()));
     form.append(label, field, alert, actions);
     form.onsubmit = event => { event.preventDefault(); if (input.value.trim()) void this.run(input.value.trim()); };
     this.dialog.replaceChildren(this.header('Import a list'),
@@ -80,7 +80,7 @@ export class ListImport {
     const bar = el('progress'); bar.setAttribute('aria-label', 'Import progress');
     if (total) { bar.max = total; bar.value = done ?? 0; }
     const stop = this.action('Stop', () => this.running?.abort());
-    const actions = el('div', undefined, 'import-actions'); actions.append(stop);
+    const actions = el('div', undefined, 'list-dialog-actions'); actions.append(stop);
     this.dialog.replaceChildren(this.header(title, false), line, bar, actions);
   }
 
@@ -129,7 +129,7 @@ export class ListImport {
     nodes.push(el('p', summary.added ? `Added ${plural(summary.added, 'song')} from ${read.list.name}.` : `No songs were added from ${read.list.name}.`, 'import-result'));
     if (summary.already) nodes.push(el('p', `${plural(summary.already, 'song was', 'songs were')} already in your playlist.`));
     if (summary.stopped) {
-      const stopped = el('p', summary.notImported ? `${summary.stopped} ${plural(summary.notImported, 'song was', 'songs were')} not imported.` : summary.stopped, 'import-error');
+      const stopped = el('p', summary.notImported ? `${summary.stopped} ${plural(summary.notImported, 'song was', 'songs were')} not imported.` : summary.stopped, 'list-dialog-error');
       stopped.setAttribute('role', 'alert'); nodes.push(stopped);
     }
     const leftOut = [read.leftOut.noPick && plural(read.leftOut.noPick, 'album') + ' without a track pick',
@@ -150,7 +150,7 @@ export class ListImport {
       }
       nodes.push(list);
     }
-    const actions = el('div', undefined, 'import-actions'); const done = this.action('Done', () => this.dialog.close(), true);
+    const actions = el('div', undefined, 'list-dialog-actions'); const done = this.action('Done', () => this.dialog.close(), true);
     actions.append(done);
     this.dialog.replaceChildren(this.header(summary.stopped ? 'Import stopped' : 'Import finished', false), ...nodes, actions);
     done.focus();

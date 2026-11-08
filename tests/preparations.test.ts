@@ -325,3 +325,29 @@ test('pre-play durability failures send no audio; post-start bookkeeping failure
     assert.equal(saved.reviewEntryId, failure === 'before' ? first.entryId : undefined);
   }
 });
+
+test('clearing empties upcoming songs and history, deletes uploaded files once, and a retried request is harmless', async () => {
+  const f = await fixture(); const first = await f.add(); const second = await f.add(2);
+  const assetId = randomUUID();
+  const upload: SavedSelection = { source: 'upload', assetId, metadata: { ...selected().metadata, provider: 'Uploaded file' } };
+  await f.manager.add(f.owner.credential, await f.op(), upload);
+  await f.manager.playHead(f.owner.credential, first.entryId, (await f.manager.read(f.owner.credential)).revision, async () => ({ playbackId: randomUUID(), value: null }));
+  await f.manager.remove(f.owner.credential, await f.op(), second.entryId);
+  const before = await f.manager.read(f.owner.credential);
+  assert.deepEqual([before.upcoming.length, before.played.length, before.removed.length], [1, 1, 1]);
+  const removed: string[] = []; const remove = async (_owner: string, asset: string) => { removed.push(asset); };
+  // An uploaded song that is playing is never deleted, so nothing is cleared.
+  await assert.rejects(f.manager.clear(f.owner.credential, await f.op(), asset => asset === assetId, remove), status(409));
+  assert.deepEqual(await f.manager.read(f.owner.credential), before); assert.deepEqual(removed, []);
+  const operation = await f.op();
+  const cleared = await f.manager.clear(f.owner.credential, operation, () => false, remove);
+  assert.deepEqual([cleared.view.upcoming.length, cleared.view.played.length, cleared.view.removed.length], [0, 0, 0]);
+  assert.deepEqual(removed, [assetId]);
+  const replay = await f.manager.clear(f.owner.credential, operation, () => false, remove);
+  assert.equal(replay.replayed, true); assert.deepEqual(removed, [assetId]);
+  // A list changed since the confirmation is not cleared blindly.
+  await assert.rejects(f.manager.clear(f.owner.credential, { ...operation, id: randomUUID(), revision: before.revision }, () => false, remove), status(409));
+  // The deleted file cannot come back, and the list works as new.
+  await assert.rejects(f.manager.add(f.owner.credential, await f.op(), upload), status(410));
+  assert.equal((await f.add(3)).view.upcoming.length, 1);
+});
