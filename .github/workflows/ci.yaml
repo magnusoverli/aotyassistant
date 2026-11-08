@@ -34,7 +34,8 @@ jobs:
       - run: npm run check:release
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
-      - run: npm test
+      # Failing tests also become annotations, which are readable without opening the logs.
+      - run: npx tsx --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=./scripts/github-test-reporter.mjs --test-reporter-destination=stdout tests/*.test.ts
       - run: npm run build
       - run: npx playwright install --with-deps chromium
         if: inputs.run_browser_tests == true
