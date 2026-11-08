@@ -61,7 +61,7 @@ test('QR invitation, direct joining without startup, mobile controls, private re
     await expect(host.getByRole('button', { name: 'Admit', exact: true })).toHaveCount(0);
     await expect(late.locator('.turn-distance')).toHaveText('2 turns away');
     await expect(alex.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
-    await alex.getByRole('button', { name: 'Finish turn' }).click();
+    alex.once('dialog', dialog => dialog.accept()); await alex.getByRole('button', { name: 'Finish turn' }).click();
     await expect(sam.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await expect(alex.getByText('Northern Lights')).toHaveCount(0);

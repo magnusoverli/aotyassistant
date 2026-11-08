@@ -32,7 +32,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
     const start = gate(); const reveal = gate(); const finish = gate();
     try {
       await page.goto('/participant');
-      await expect(page.locator('.player-mobile-notice')).toHaveText('Choose a song');
+      await expect(page.locator('.player-mobile-notice')).toHaveText('Your turn · choose a song');
       await expect(page.getByRole('button', { name: 'Play pick', exact: true })).toBeVisible();
       await expect(page.locator('#player-play-next')).toBeDisabled();
       await expect(page.locator('.private-now-playing .artist-credit')).toBeHidden();
@@ -119,11 +119,15 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
       await page.locator('#participant-player').screenshot({ path: `test-results/mobile-player-fixed-${viewport.width}.png` });
 
       await page.route('**/api/participant/finish', async route => { await finish.promise; await route.continue(); });
-      await click('#finish-my-turn'); await expect(page.locator('#finish-my-turn')).toBeDisabled(); await unchanged();
-      finish.release(); await expect(page.locator('.player-mobile-notice')).toHaveText('Waiting for turn'); await unchanged();
+      page.once('dialog', dialog => dialog.accept()); await click('#finish-my-turn'); await expect(page.locator('#finish-my-turn')).toBeDisabled(); await unchanged();
+      // While someone else has the turn, phones show the room's state instead of disabled controls.
+      finish.release(); await expect(page.locator('.player-waiting-turn')).toHaveText('Next listener’s turn');
+      await expect(page.locator('.player-waiting-distance')).toHaveText('You’re next');
+      await expect(page.locator('#player-play-next')).toBeHidden();
+      expect((await page.locator('#participant-player').boundingBox())!.height).toBeLessThan(272);
       const host = await (await page.request.get('/api/host/state')).json();
       await post('/api/host/advance', { turnId: host.turnId });
-      await expect(page.locator('.player-mobile-notice')).toHaveText('Choose a song'); await unchanged();
+      await expect(page.locator('.player-mobile-notice')).toHaveText('Your turn · choose a song'); await unchanged();
     } finally { start.release(); reveal.release(); finish.release(); await other.close(); }
   });
 }

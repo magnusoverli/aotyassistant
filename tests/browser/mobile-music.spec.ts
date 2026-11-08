@@ -3,7 +3,7 @@ import { expect } from '@playwright/test';
 import { test } from './app-fixture';
 
 for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }, { width: 1099, height: 844 }]) {
-  test(`combined mobile music edits its always-visible list in place at ${viewport.width}×${viewport.height}`, async ({ page, isolatedApp }) => {
+  test(`combined mobile music edits its list in place and summarises it while browsing at ${viewport.width}×${viewport.height}`, async ({ page, isolatedApp }) => {
     await page.setViewportSize(viewport);
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
     await post('/api/participant/join', { pin: '1234', nickname: 'Mobile music' });
@@ -46,13 +46,17 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await list.getByRole('button', { name: 'Done', exact: true }).click();
     expect(await row!.evaluate(node => node.isConnected && node.closest('#music-collection') !== null)).toBe(true);
     await expect(input).toHaveValue('Collection');
+    // Browsing below the list: the list card scrolls away and a one-line playlist bar
+    // summarises it, without covering the focused result.
     const button = rows.last().getByRole('button', { name: 'Add to list', exact: true });
     await button.focus(); await button.scrollIntoViewIfNeeded();
-    await expect(list).toBeInViewport();
     await expect.poll(() => button.evaluate(node => {
-      const box = node.getBoundingClientRect();
-      return box.top >= document.querySelector('.preparation-list')!.getBoundingClientRect().bottom && box.bottom <= innerHeight;
+      const box = node.getBoundingClientRect(); const bar = document.querySelector<HTMLElement>('.mobile-list-bar')!;
+      const listBottom = document.querySelector('.preparation-list')!.getBoundingClientRect().bottom;
+      const cover = bar.hidden ? Math.max(0, listBottom) : bar.getBoundingClientRect().bottom;
+      return (listBottom > 0) !== !bar.hidden && box.top >= cover && box.bottom <= innerHeight;
     })).toBe(true);
+    if (await page.locator('.mobile-list-bar').isVisible()) await expect(page.locator('.mobile-list-bar')).toContainText('2 tracks');
     expect(await player!.evaluate(node => node === document.querySelector('#participant-player'))).toBe(true);
 
     // Save recovery is also inline, without an editor dialog or another list view.

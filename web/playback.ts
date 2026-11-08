@@ -3,7 +3,7 @@ import type { PreparedEntryView } from '../src/preparations';
 import { el } from './dom';
 import { vinyl } from './visuals';
 import { ArtworkView, progressBar, updateProgress, volumeControl, updateVolume } from './media';
-import { outputLabel, updateOutputLabel } from './output';
+import { outputCaption, outputLabel, updateOutputLabel } from './output';
 import { slot } from './page-layout';
 import { panel } from './ui-components';
 import { ViewNodes, attr, children, prop, text } from './view-nodes';
@@ -199,12 +199,8 @@ export class Playback {
       prop(play, 'hidden', !next); prop(play, 'disabled', !ready || starting); attr(play, 'data-player-ready', String(ready));
       prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here'); this.decorate(play, 'Play first selection', 'play', 'Play pick');
     }
-    const hostPlay = host ? this.button('host-play', 'Play pick', () => {}) : undefined;
-    if (hostPlay) {
-      this.decorate(hostPlay, 'Play pick', 'play');
-      prop(hostPlay, 'disabled', true); prop(hostPlay, 'title', 'The current participant chooses and starts their song.');
-    }
-    children(controls, play ?? hostPlay, transport, stop);
+    // The host never starts a song, so its player has no Play button at all.
+    children(controls, play, transport, stop);
     return controls;
   }
 
@@ -251,10 +247,12 @@ export class Playback {
     if (statusLine.parentElement !== this.progress) this.progress.prepend(statusLine);
     const controls = v.el('controls', 'div', undefined, 'player-ending');
     const advance = this.button('host-skip-turn', 'Skip turn', () => { void options.run(() => {
-      const current = this.state?.view;
-      if (!current || (current.playbackStatus !== 'idle' && !confirm('Stop the current song and skip to the next person?'))) return;
+      const current = this.state?.view; if (!current) return;
+      const name = current.current?.nickname ?? 'the participant';
+      if (!confirm(current.playbackStatus === 'idle' ? `Skip ${name}’s turn? They have not played a song yet.`
+        : 'Stop the current song and skip to the next person?')) return;
       return options.advance(current.turnId);
-    }); });
+    }); }, true);
     prop(advance, 'disabled', busy || !online || !view.connected || !view.current);
     this.decorate(advance, 'Skip turn', 'advance'); prop(advance, 'title', 'Skip to the next participant');
     const transport = this.transport(state);
@@ -270,7 +268,7 @@ export class Playback {
     const next = state.firstSelection; const preview = playback?.track ?? next;
     const card = this.element;
     const details = this.details ??= new ParticipantPlayerDetails();
-    details.update({ title: preview?.title, artist: preview?.artist, album: preview?.album,
+    details.update({ title: preview?.title, artist: preview?.artist, album: preview?.album, output: outputCaption(view.output, online),
       next: next?.title, error: state.error || (!online ? roomMessages.connectionLost : !view.connected ? roomMessages.unavailable : undefined) });
     const now = v.el('now', 'div', undefined, 'private-now-playing');
     const track = v.el('track', 'div'); const title = v.el('title', 'h2', preview?.title ?? (view.myTurn ? 'Choose a song' : 'Waiting for your turn'));
@@ -286,8 +284,11 @@ export class Playback {
     const progress = this.progress; const status = progress.querySelector<HTMLElement>('.playback-status')!;
     const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
     const privacy = playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player';
+    const turnReady = Boolean(view.myTurn && !playback && !starting && online && view.connected && !state.error);
     const notice = state.error ? 'Action failed · tap details' : !online ? 'Connection lost' : !view.connected ? 'Player unavailable'
-      : !view.myTurn ? 'Waiting for turn' : !playback && !starting ? next ? 'Ready to play' : 'Choose a song' : '';
+      : !view.myTurn ? 'Waiting for turn' : turnReady ? next ? 'Your turn · play your pick' : 'Your turn · choose a song' : '';
+    card.classList.toggle('is-turn-ready', turnReady);
+    card.classList.toggle('is-waiting', !view.myTurn);
     const mobileNotice = v.el('mobile-notice', 'span', undefined, 'player-mobile-only player-mobile-notice');
     children(mobileNotice, v.el('mobile-notice-caption', 'span', notice),
       state.error ? v.el('mobile-error-detail', 'span', ` ${state.error}`, 'sr-only') : undefined);
@@ -307,11 +308,46 @@ export class Playback {
       : !view.myTurn ? 'Only the current participant can reveal their track' : !playback ? 'Play a track before revealing'
       : revealing ? 'Waiting for reveal confirmation' : playback.revealed ? 'Details are already visible on the room display' : 'Reveal track details on the room display');
     prop(reveal, 'disabled', !online || !view.connected || !view.myTurn || !playback || playback.revealed);
-    const finish = this.button('finish-my-turn', 'Pass turn', () => { void options.run(() => options.finish()); }, true);
+    const finish = this.button('finish-my-turn', 'Pass turn', () => {
+      // Ending a turn cannot be undone, so it is always confirmed.
+      const current = this.state; if (!current?.view.myTurn) return;
+      const song = current.projected.ownPlayback; const following = current.view.next;
+      const after = following && following.id !== current.view.me?.id ? ` ${following.nickname} is up next.` : '';
+      if (!confirm(!song ? `Pass your turn without playing a song?${after}`
+        : song.status === 'stopped' ? `Finish your turn?${after}` : `Finish your turn? Your song stops now.${after}`)) return;
+      void options.run(() => options.finish());
+    }, true);
     this.decorate(finish, playback ? 'Finish turn' : 'Pass turn', 'advance');
     prop(finish, 'title', playback ? 'Finish your turn and pass to the next participant' : 'Pass to the next participant');
     prop(finish, 'disabled', busy || !online || !view.connected || !view.myTurn || starting);
     const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, reveal, finish);
-    children(card, now, this.transport(state), progress, this.footer(ending), details.dialog);
+    children(card, this.waitingSummary(state), now, this.transport(state), progress, this.footer(ending), details.dialog);
+  }
+
+  /** Phones, while someone else has the turn: the room's state and your place instead of disabled controls. */
+  private waitingSummary(state: PlaybackState) {
+    const v = this.nodes; const { view, online, error } = state;
+    const summary = v.el('waiting', 'div', undefined, 'player-waiting player-mobile-only');
+    const room = !online ? 'Connection lost' : !view.connected || view.playbackStatus === 'unavailable' ? 'Player unavailable'
+      : view.playbackStatus === 'playing' ? 'Playing' : view.playbackStatus === 'paused' ? 'Paused' : 'Choosing a song';
+    const head = v.el('waiting-head', 'div', undefined, 'player-waiting-head');
+    const whose = v.el('waiting-turn', 'p', view.current ? `${view.current.nickname}’s turn` : 'Waiting for people to join', 'player-waiting-turn');
+    prop(whose, 'title', whose.textContent!);
+    const status = v.el('waiting-status', 'span', view.current || !online ? room : '', 'player-waiting-status');
+    attr(status, 'data-state', !online || !view.connected ? 'problem' : view.playbackStatus ?? 'idle');
+    children(head, whose, status);
+    const until = view.position?.turnsUntil;
+    const distance = v.el('waiting-distance', 'p', until === 1 ? 'You’re next' : until ? `You’re up in ${until} turns` : '', 'player-waiting-distance');
+    const pick = state.firstSelection;
+    const next = v.el('waiting-pick', 'p', undefined, 'player-waiting-pick');
+    children(next, pick && v.el('waiting-pick-label', 'span', 'Next pick', 'player-waiting-label'),
+      v.el('waiting-pick-title', 'span', pick ? [pick.title, pick.artist].filter(Boolean).join(' · ') : 'No songs yet. Search below to add one.'));
+    prop(next, 'title', next.textContent ?? '');
+    const output = v.get('waiting-output', () => { const node = outputLabel(undefined, false); node.className = 'player-waiting-output'; return node; });
+    updateOutputLabel(output, view.output, online);
+    const failure = v.el('waiting-error', 'p', error ?? '', 'player-waiting-error'); prop(failure, 'hidden', !error);
+    attr(failure, 'role', error ? 'alert' : undefined);
+    children(summary, head, Boolean(distance.textContent) && distance, next, output, failure);
+    return summary;
   }
 }

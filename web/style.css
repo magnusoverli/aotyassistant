@@ -31,7 +31,9 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .header-nav-link { display:flex; align-items:center; min-height:44px; padding:10px 11px; border-radius:7px; color:var(--muted); text-decoration:none; font-size:12px; line-height:1.4; }
 .header-nav-link:hover { background:#253325; color:var(--text); }
 .header-nav-link[aria-current="page"] { background:#293929; color:var(--accent); }
-.header-logout { width:100%; border:0; background:transparent; text-align:left; font-weight:400; }
+.header-logout { width:100%; justify-content:flex-start; border:0; background:transparent; text-align:left; font-weight:400; }
+/* Guest pages first; the host's pages and Log out are separate groups. */
+.primary-links > .nav-group-start { margin-top:4px; padding-top:4px; border-top:1px solid var(--line); }
 .primary-navigation[hidden],.header-menu-toggle[hidden],.header-meta[hidden],.header-meta > [hidden] { display:none; }
 .skip-link { position:absolute; left:16px; top:12px; z-index:50; padding:12px 16px; border:1px solid var(--accent); border-radius:8px; background:var(--bg); transform:translateY(-200%); }
 .skip-link:focus { transform:translateY(0); }
@@ -164,7 +166,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 
 /* Participant: the host desk's typography and surfaces, with private music tools. */
 .participant-hero { display:grid; gap:4px; padding:0; margin-bottom:8px; }
-.music-shortcuts,.mobile-player-return { display:none; }
+.music-shortcuts,.mobile-player-return,.mobile-list-bar { display:none; }
 .participant-hero h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .participant-hero h1 { font-size:1.75rem; letter-spacing:-.035em; margin:0; }
 .turn-distance { color:var(--muted); margin:0; font-size:.875rem; line-height:1.5; min-height:1.5em; }
@@ -244,6 +246,15 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .list-note { margin:10px 0; }
 .drag-handle { cursor:grab; }
 .join-panel > form { margin-top:24px; }
+.join-panel > .link-button { margin-top:12px; }
+.link-button { min-height:44px; padding-inline:0; border-color:transparent; background:transparent; color:var(--accent); }
+.join-existing { margin-top:28px; padding-top:20px; border-top:1px solid var(--line); }
+.join-existing h2 { margin:0; font-size:1.125rem; }
+/* The PIN's Show/Hide toggle sits inside the field. */
+.pin-input { position:relative; min-width:0; }
+.pin-input input { width:100%; padding-right:4.75rem; }
+.pin-toggle { position:absolute; top:1px; right:1px; bottom:1px; min-height:0; padding:0 14px; border:0; border-radius:0 7px 7px 0; background:transparent; color:var(--accent); font-size:.8125rem; font-weight:650; letter-spacing:0; }
+.pin-toggle:focus-visible { outline-offset:-3px; }
 .join-notice { margin:18px 0 0; font-size:13px; }
 
 @media(min-width:1700px) {
@@ -345,7 +356,15 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .music-workspace.is-list-only .list-body { overflow:visible; }
 .catalogue-results .result-artwork { width:48px; height:48px; flex-basis:48px; }
 .catalogue-results .track-row { gap:12px; padding:16px 0; }
-.catalogue-results .track-row.is-prepared { margin:0; padding:16px 0; box-shadow:0 0 0 8px #2b3926; }
+/* A saved result is marked on its button, not with a block that merges into its neighbours. */
+.catalogue-results .track-row.is-prepared { margin:0; padding:16px 0; border-radius:0; background:none; box-shadow:none; }
+.track-row [data-preparation-track][aria-disabled='true'] { color:var(--green); border-color:#4a6040; }
+.catalogue-results .results-heading { margin:20px 0 0; font-size:.8125rem; font-weight:650; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.catalogue-results .results-heading:first-child { margin-top:4px; }
+.catalogue-results .results-more { width:100%; margin:12px 0 4px; }
+/* The whole artist or album row opens it. */
+.catalogue-results .browse-row { cursor:pointer; }
+.catalogue-results .browse-row:hover,.catalogue-results .browse-row:active { background:#ffffff06; }
 .catalogue-results .row-actions { gap:8px; }
 .catalogue-results .result-identity strong { font-size:1rem; }
 .catalogue-results .result-artist { font-size:.9375rem; color:var(--text); }
@@ -452,7 +471,19 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
   .host-invitations .invitation-qr img { width:min(100%,180px); }
   .mobile-player-return:not([hidden]) { display:flex; align-items:center; justify-content:space-between; gap:8px; position:fixed; z-index:20; inset:auto 18px calc(12px + env(safe-area-inset-bottom,0px)); max-width:684px; margin-inline:auto; padding:6px 12px; background:#18251b; border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 24px #0006; }
   .mobile-player-return > span { font-size:13px; min-width:0; }
+  .mobile-player-return.is-your-turn { border-color:var(--accent); background:#2c2b20; }
+  .mobile-player-return.is-your-turn > span { color:var(--accent); font-weight:650; }
+  .mobile-player-return.has-problem > span { color:#ffdad1; }
+  /* The playlist's one-line summary while browsing below the list. */
+  .mobile-list-bar:not([hidden]) { display:flex; align-items:center; justify-content:space-between; gap:12px; position:fixed; z-index:20; inset:calc(8px + env(safe-area-inset-top,0px)) 18px auto; max-width:684px; margin-inline:auto; padding:6px 6px 6px 14px; background:#18251b; border:1px solid var(--line); border-radius:12px; box-shadow:0 4px 24px #0006; }
+  .list-bar-lines { display:grid; min-width:0; }
+  .list-bar-head { display:flex; align-items:baseline; gap:8px; min-width:0; font-size:.875rem; }
+  .list-bar-count { flex-shrink:0; color:var(--muted); font-size:.75rem; }
+  .list-bar-detail { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:.8125rem; }
+  .mobile-list-bar.is-flashing .list-bar-detail { color:var(--green); }
+  .mobile-list-bar.needs-attention .list-bar-detail { color:var(--accent); }
+  .list-bar-view { flex-shrink:0; min-height:44px; padding:8px 12px; font-size:.8125rem; }
   .player-return-link { display:flex; align-items:center; min-height:44px; padding:8px; flex-shrink:0; font-size:14px; }
-  body:has(input:not([type='range']):focus,textarea:focus,select:focus) .mobile-player-return { display:none; }
+  body:has(input:not([type='range']):focus,textarea:focus,select:focus) :is(.mobile-player-return,.mobile-list-bar) { display:none; }
 }
 }

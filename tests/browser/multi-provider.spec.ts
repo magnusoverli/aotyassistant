@@ -148,7 +148,7 @@ test('Play automatically selects the available equivalent once, and reveal remai
     await expect(tv.getByText('The same recording')).toHaveCount(0);
     await page.getByRole('button', { name: 'Reveal details' }).click();
     await expect(tv.getByRole('heading', { name: 'The same recording', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
+    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     expect(isolatedApp.calls.filter(c => c.command === 'player_queues/play_media')).toHaveLength(1);
   } finally { await tvContext.close(); }

@@ -27,7 +27,8 @@ export class PlayerReturn {
     window.visualViewport?.addEventListener('resize', this.resized);
   }
 
-  update(view: View | undefined, starting: boolean, connected: boolean, error: string) {
+  /** Shown while the player is out of view: during your turn, and whenever the room connection has a problem. */
+  update(view: View | undefined, starting: boolean, online: boolean, error: string) {
     this.reviewPlayer = Boolean(error && document.getElementById('participant-player'));
     const target = (error && !this.reviewPlayer ? document.querySelector<HTMLElement>('.app-content > .error') : document.getElementById('participant-player')) ?? undefined;
     if (target !== this.target) {
@@ -35,14 +36,18 @@ export class PlayerReturn {
       if (target) this.observer.observe(target);
     }
     const playback = view?.myTurn ? view.ownPlayback : undefined;
+    const problem = Boolean(view && (!online || !view.connected));
     this.failed = Boolean(error);
     text(this.jump, error ? 'Review status' : 'Go to player');
     attr(this.jump, 'href', error && !this.reviewPlayer ? '#main-content' : '#participant-player');
-    this.available = Boolean(target && view?.myTurn && (starting || playback || error));
+    this.available = Boolean(target && view && (view.myTurn || error || problem));
     // Only authoritative snapshots can say Playing, Paused or Revealed.
-    const caption = error ? 'Check playback' : !connected ? 'Connection lost' : starting ? 'Starting…'
-      : playback ? `${playback.status === 'playing' ? 'Playing' : playback.status === 'paused' ? 'Paused' : 'Stopped'} · ${playback.revealed ? 'Revealed' : 'Hidden'}` : '';
+    const caption = error ? 'Check playback' : !online ? 'Connection lost' : problem ? 'Player unavailable' : starting ? 'Starting…'
+      : playback ? `${playback.status === 'playing' ? 'Playing' : playback.status === 'paused' ? 'Paused' : 'Stopped'} · ${playback.revealed ? 'Revealed' : 'Hidden'}`
+      : 'It’s your turn';
     text(this.status, caption);
+    this.element.classList.toggle('is-your-turn', Boolean(view?.myTurn && !playback && !starting && !error && !problem));
+    this.element.classList.toggle('has-problem', Boolean(error || problem));
     this.visibility();
   }
 

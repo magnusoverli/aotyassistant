@@ -12,7 +12,7 @@
   .rotation-seat strong { grid-column:2; grid-row:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; line-height:18px; }
   .seat-state { grid-column:2; grid-row:2; font-size:11px; line-height:16px; color:var(--muted); font-weight:500; white-space:nowrap; }
   .rotation-seat .seat-state:empty { display:none; }
-  .rotation-seat:not(.is-current):not(.is-next) { opacity:.55; }
+  .rotation-seat:not(.is-current):not(.is-next):not(.is-you) { opacity:.55; }
   .rotation-seat.is-you { border-color:var(--accent); }
   .rotation-seat.is-next { background:#2c2b20; border-color:var(--accent); opacity:.85; }
   .rotation-seat.is-next .seat-state { color:var(--accent); font-weight:700; }
@@ -32,7 +32,8 @@
     .order-trace-light { stroke-width:1px; opacity:.55; filter:none; }
     .order-trace-halo { display:none; }
   }
-  .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:none; user-select:none; -webkit-user-select:none; }
+  /* Touch: swipes scroll the order; a press-and-hold picks a card up (see order-drag.ts). */
+  .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:pan-x pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
   .rotation-list.is-editable .rotation-seat:focus-visible { outline-offset:-3px; }
   .rotation-list.is-dragging,.rotation-list.is-dragging .rotation-seat { cursor:grabbing; }
   .rotation-seat.is-dragging { border:1px dashed #b9d99f88; background:#b9d99f0a; box-shadow:none; }

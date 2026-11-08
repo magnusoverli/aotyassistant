@@ -46,7 +46,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     for (const page of [first, second]) {
       expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(1);
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
-      await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
+      await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
       await expect(page.getByRole('button', { name: '← Albums', exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as unknown as { destinationTestDocument: string }).destinationTestDocument)).toBe('same-document');
     }
@@ -72,12 +72,12 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     expect((await (await first.request.get('/api/participant/state')).json()).ownPlayback.track.id).toBe(`prepared:${firstTrack.entryId}`);
     await expect(second.locator('.saved-track.is-next')).toBeVisible();
     await host.goto('/host');
-    await first.getByRole('button', { name: 'Finish turn' }).click();
+    first.once('dialog', dialog => dialog.accept()); await first.getByRole('button', { name: 'Finish turn' }).click();
     await expect(second.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeEnabled();
     await second.getByRole('button', { name: /^(Play first selection|Play pick)$/ }).click(); await expect(second.locator('.player-pending')).toHaveCount(0);
     expect((await (await second.request.get('/api/participant/state')).json()).ownPlayback.track.id).toBe(`prepared:${secondTrack.entryId}`);
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
-    await second.getByRole('button', { name: 'Finish turn' }).click(); await expect(first.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
+    second.once('dialog', dialog => dialog.accept()); await second.getByRole('button', { name: 'Finish turn' }).click(); await expect(first.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
     for (const page of [first, second]) {
       await showList(page); await page.getByRole('button', { name: 'Add back', exact: true }).click(); await expect(page.locator('.saved-track.is-next')).toBeVisible(); await showFind(page);
     }

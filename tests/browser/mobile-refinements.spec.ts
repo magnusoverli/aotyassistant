@@ -58,7 +58,11 @@ test('off-screen playback offers a read-only return with confirmed status and re
   const play = page.getByRole('button', { name: 'Play', exact: true }).first();
   // Keep focus from starting a browser smooth scroll during the playback-position assertion.
   await play.evaluate(node => (node as HTMLButtonElement).focus({ preventScroll: true }));
-  await expect.poll(() => play.evaluate(node => node.getBoundingClientRect().top >= document.querySelector('.preparation-list')!.getBoundingClientRect().bottom + 11)).toBe(true);
+  await expect.poll(() => play.evaluate(node => {
+    // The playlist bar summarises the list above; it must not cover the result.
+    const bar = document.querySelector<HTMLElement>('.mobile-list-bar')!;
+    return node.getBoundingClientRect().top >= (bar.hidden ? 0 : bar.getBoundingClientRect().bottom);
+  })).toBe(true);
   await expect(page.locator('.playback-card')).not.toBeInViewport();
   const before = await page.evaluate(() => scrollY);
   let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
@@ -82,7 +86,8 @@ test('off-screen playback offers a read-only return with confirmed status and re
     await expect(shortcut).toContainText('Playing · Revealed');
     const state = await (await page.request.get('/api/participant/state')).json();
     await post('/api/participant/finish', { turnId: state.turnId });
-    await expect(shortcut).toBeHidden();
+    // The only listener gets the next turn straight away: the shortcut now says so.
+    await expect(shortcut).toContainText('It’s your turn'); await expect(shortcut).not.toContainText('Playing');
   } finally { release(); }
 });
 

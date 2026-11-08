@@ -9,9 +9,13 @@ export const outputStatus = { checking: 'Checking…', recovery: 'Recovery neede
 export function outputLabel(output?: OutputState, online = true) {
   const label = el('p', undefined, 'output-label'); updateOutputLabel(label, output, online); return label;
 }
-export function updateOutputLabel(label: HTMLElement, output?: OutputState, online = true) {
-  const caption = !online ? 'Output: Connection lost' : !output ? demoPlaybackNotice : output.state === 'ready' ? `Output: ${output.name}`
+/** Which speaker plays the room's music, or that nothing plays at all (demo mode). */
+export function outputCaption(output?: OutputState, online = true) {
+  return !online ? 'Output: Connection lost' : !output ? demoPlaybackNotice : output.state === 'ready' ? `Output: ${output.name}`
     : output.state === 'checking' || output.state === 'recovery' || output.state === 'incompatible' ? `Output: ${output.name} · ${outputStatus[output.state]}`
     : output.state === 'unconfirmed' ? 'Output: Connection unconfirmed' : `Output: ${outputStatus.none}`;
+}
+export function updateOutputLabel(label: HTMLElement, output?: OutputState, online = true) {
+  const caption = outputCaption(output, online);
   text(label, caption); prop(label, 'title', caption);
 }

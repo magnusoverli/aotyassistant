@@ -5,11 +5,24 @@ import type { UserDirectory } from '../src/model';
 import { avatar } from './visuals';
 import { link } from './dom';
 
+/** A four-digit PIN field with its Show/Hide toggle inside the field. */
 export function pinInput(v: ViewNodes, id: string, label: string) {
   return v.get(id, () => {
     const field = fieldControl(label, id); const input = field.input;
     input.type = 'password'; input.inputMode = 'numeric'; input.pattern = '[0-9]{4}'; input.maxLength = 4; input.required = true;
-    input.autocomplete = 'new-password'; return field;
+    input.autocomplete = 'new-password';
+    const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'pin-toggle';
+    toggle.setAttribute('aria-controls', id);
+    const paint = () => {
+      const hidden = input.type === 'password';
+      toggle.textContent = hidden ? 'Show' : 'Hide'; toggle.setAttribute('aria-label', hidden ? 'Show PIN' : 'Hide PIN');
+      toggle.setAttribute('aria-pressed', String(!hidden));
+    };
+    toggle.onclick = () => { input.type = input.type === 'password' ? 'text' : 'password'; paint(); input.focus({ preventScroll: true }); };
+    paint();
+    const wrapper = document.createElement('div'); wrapper.className = 'pin-input';
+    input.replaceWith(wrapper); wrapper.append(input, toggle);
+    return { ...field, toggle };
   });
 }
 

@@ -16,10 +16,10 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     const first = await firstContext.newPage(); await first.goto(join!); await first.getByLabel('Display name').fill('First'); await first.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await first.getByRole('button', { name: 'Join room' }).click();
     const second = await secondContext.newPage(); await second.goto(join!); await second.getByLabel('Display name').fill('Second'); await second.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await second.getByRole('button', { name: 'Join room' }).click();
     await showFind(second);
-    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
+    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
     // Returning to the page retains artist-only search, without an automatic search.
     await second.reload();
-    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
+    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
     await expect(second.locator('.catalogue-results .track-row')).toHaveCount(0);
     await second.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await second.getByRole('button', { name: 'Search', exact: true }).click();
     await second.getByRole('button', { name: 'View albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
@@ -30,14 +30,14 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     const privateState = await (await second.request.get('/api/participant/state')).json();
     const forged = await second.request.post(isolatedApp.origin + '/api/participant/play', { headers: { Origin: isolatedApp.origin }, data: { turnId: privateState.turnId, previousPlaybackId: null, trackId: 'forged' } });
     expect(forged.status()).toBe(403);
-    await host.getByRole('button', { name: 'Skip turn' }).click();
+    host.once('dialog', dialog => dialog.accept()); await host.getByRole('button', { name: 'Skip turn' }).click();
     await expect(second.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeEnabled();
     await second.getByRole('button', { name: /^(Play first selection|Play pick)$/ }).click();
     await expect(second.getByRole('heading', { name: 'Real catalogue fixture (Original recording)', exact: true })).toBeVisible();
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
     await showFind(second);
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
-    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
+    await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
     await expect(second.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
     await second.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toBeVisible();
@@ -48,7 +48,7 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await expect(tv.getByRole('heading', { name: 'Real catalogue fixture (Original recording)', exact: true })).toBeVisible();
     await expect(first.getByText('Real catalogue fixture')).toHaveCount(0);
     await second.getByRole('button', { name: 'Pause', exact: true }).click(); await second.getByRole('button', { name: 'Resume', exact: true }).click();
-    await second.getByRole('button', { name: 'Finish turn' }).click();
+    second.once('dialog', dialog => dialog.accept()); await second.getByRole('button', { name: 'Finish turn' }).click();
     await expect(first.getByRole('heading', { name: 'Your turn.' })).toBeVisible();
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
   } finally {

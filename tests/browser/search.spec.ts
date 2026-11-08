@@ -22,7 +22,7 @@ test('participant searches privately with empty/errors but cannot play until a s
     const responses: string[] = []; const requests: string[] = [];
     alice.on('request', request => requests.push(request.url()));
     alice.on('response', response => {
-      if (response.url().includes('/api/participant/browse')) void response.text().then(text => responses.push(text)).catch(() => {});
+      if (/\/api\/participant\/(browse|search)$/.test(response.url())) void response.text().then(text => responses.push(text)).catch(() => {});
     });
     await showFind(alice);
     await expect(alice.getByText('Your search', { exact: true })).toBeHidden();
@@ -38,8 +38,12 @@ test('participant searches privately with empty/errors but cannot play until a s
     await alice.setViewportSize({ width: 390, height: 844 });
     await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toBeInViewport();
     await alice.screenshot({ path: 'test-results/participant-catalogue.png', fullPage: true });
-    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist name');
+    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('fixture'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
+    // One search lists matching artists to browse and songs by title.
+    await expect(alice.getByRole('heading', { name: 'Artists', exact: true })).toBeVisible();
+    await expect(alice.getByRole('heading', { name: 'Songs', exact: true })).toBeVisible();
+    await expect(alice.locator('.catalogue-results .track-row:not(.browse-row)')).toContainText('Real catalogue fixture');
     await alice.getByRole('button', { name: 'View albums', exact: true }).click();
     await alice.getByRole('button', { name: 'View tracks', exact: true }).click();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toBeVisible();
@@ -53,10 +57,12 @@ test('participant searches privately with empty/errors but cannot play until a s
     expect(responses.join('')).not.toContain('private-fixture-uri');
     expect(responses.join('')).not.toContain('secret-search-art');
     expect(requests.some(url => url.startsWith(isolatedApp.musicAssistantOrigin))).toBe(false);
-    expect(requests.some(url => url.endsWith('/api/participant/search'))).toBe(false);
-    expect(isolatedApp.calls.filter(call => call.command === 'music/search').every(call => JSON.stringify(call.args.media_types) === '["artist"]')).toBe(true);
+    expect(requests.some(url => url.endsWith('/api/participant/search'))).toBe(true);
+    const searches = isolatedApp.calls.filter(call => call.command === 'music/search').map(call => JSON.stringify(call.args.media_types));
+    expect(searches.every(types => types === '["artist"]' || types === '["track"]')).toBe(true);
+    expect(searches).toContain('["track"]');
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('empty'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
-    await expect(alice.getByText('No artists found. Try another artist name.')).toBeVisible();
+    await expect(alice.getByText('No artists or songs found. Try another search.')).toBeVisible();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
     await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('failure'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(alice.getByRole('alert')).toContainText('Music Assistant did not accept');

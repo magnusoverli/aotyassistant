@@ -1,7 +1,7 @@
 import { el } from './dom';
 import { attr, children, prop, ViewNodes } from './view-nodes';
 
-type Details = { title?: string; artist?: string; album?: string; next?: string; error?: string };
+type Details = { title?: string; artist?: string; album?: string; next?: string; error?: string; output?: string };
 
 /** Read-only mobile details: long metadata and errors never expand the player itself. */
 export class ParticipantPlayerDetails {
@@ -38,7 +38,8 @@ export class ParticipantPlayerDetails {
     const artist = v.el('artist', 'p', details.artist ?? 'Search for a song or choose one from your saved selections.');
     const album = v.el('album', 'p', details.album ?? '', 'muted'); prop(album, 'hidden', !details.album);
     const next = v.el('next', 'p', details.next ? `First saved selection: ${details.next}` : 'No saved selections.', 'muted');
-    children(this.dialog, header, error, song, artist, album, next);
+    const output = v.el('output', 'p', details.output ?? '', 'muted'); prop(output, 'hidden', !details.output);
+    children(this.dialog, header, error, song, artist, album, next, output);
     attr(this.button, 'aria-description', details.error ? `Action failed: ${details.error}` : details.title);
   }
 

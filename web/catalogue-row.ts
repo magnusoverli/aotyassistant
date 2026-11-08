@@ -39,6 +39,12 @@ export class CatalogueRow {
       // fires pointerleave after lifting the finger; that must not cancel.
       browse.onpointercancel = () => options.unprepare();
       browse.onpointerleave = event => { if (event.buttons) options.unprepare(); };
+      // The whole row opens the artist or album; the button stays for keyboards and screen readers.
+      const outside = (event: Event) => !(event.target instanceof Element && event.target.closest('button'));
+      row.onclick = event => { if (outside(event) && !browse.disabled) options.browse(shown as CatalogueAlbum); };
+      row.onpointerdown = event => { if (outside(event) && event.button === 0 && !browse.disabled) options.prepare(shown as CatalogueAlbum); };
+      row.onpointercancel = event => { if (outside(event)) options.unprepare(); };
+      row.onpointerleave = event => { if (event.buttons) options.unprepare(); };
       children(row, info, browse);
     } else {
       const controls = v.el('controls', 'div', undefined, 'row-actions');
@@ -51,7 +57,8 @@ export class CatalogueRow {
       const ready = options.online && options.canPlay && track.available && options.playbackAvailable;
       attr(play, 'data-player-ready', String(ready)); prop(play, 'disabled', !ready || options.starting);
       play.onclick = () => options.play(track);
-      children(controls, add, play); children(row, info, controls);
+      // Play exists only during your turn; waiting listeners see just Add to list.
+      children(controls, add, options.canPlay && play); children(row, info, controls);
     }
     return row;
   }

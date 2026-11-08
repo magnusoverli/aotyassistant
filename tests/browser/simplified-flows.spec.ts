@@ -47,7 +47,7 @@ test('one player separates reveal, volume and finish while keeping search availa
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Reveal details' }).click(); await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display');
   await expect(page.getByRole('searchbox')).toHaveValue('Northern');
-  await page.getByRole('button', { name: 'Finish turn', exact: true }).click(); await expect(page.locator('.playback-card')).toContainText('Choose a song');
+  page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Finish turn', exact: true }).click(); await expect(page.locator('.playback-card')).toContainText('Choose a song');
   await expect(page.getByRole('button', { name: 'Pass turn' })).toBeEnabled();
 });
 

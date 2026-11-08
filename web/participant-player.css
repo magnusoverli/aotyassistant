@@ -5,6 +5,12 @@
   #host-player .host-record .vinyl { width:100%; box-shadow:none; }
   #host-player[data-playback='playing'] .room-record { animation-play-state:running; }
   @media(prefers-reduced-motion:reduce) { #host-player .room-record { animation:none; } }
+  /* The host never starts a song: its player has only Pause/Resume and Stop. */
+  #host-player .playback-transport { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  /* Your turn: the player's border lights up, and pulses briefly when the turn arrives. */
+  #participant-player.is-turn-ready { border-color:var(--accent); }
+  #participant-player.turn-arrived { animation:turn-arrived 1.2s ease-out 2; }
+  @keyframes turn-arrived { from { box-shadow:0 0 0 0 #e9bd79aa; } to { box-shadow:0 0 0 14px #e9bd7900; } }
 
   @media(max-width:1099px) {
     /* Fixed tracks, not a min-height or a clipped content-sized card. Rem units
@@ -44,6 +50,7 @@
     :is(#participant-player,#host-player) .track-times:empty::before,:is(#participant-player,#host-player) .track-times:empty::after { content:'—:—'; }
 
     :is(#participant-player,#host-player) .playback-transport { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.375rem; width:100%; }
+    #host-player .playback-transport { grid-template-columns:repeat(2,minmax(0,1fr)); }
     :is(#participant-player,#host-player) .playback-transport button,#participant-player #player-play-next[hidden] {
       display:flex; flex-direction:row; gap:.125rem; width:100%; height:100%; min-width:0; min-height:0; padding:.25rem .0625rem;
       font-size:.8125rem; line-height:1rem;
@@ -69,6 +76,28 @@
     :is(#participant-player,#host-player) .player-ending button > span { position:static; width:auto; height:auto; margin:0; overflow:hidden; clip:auto; white-space:nowrap; text-overflow:ellipsis; }
     :is(#participant-player,#host-player) .player-ending .player-desktop-only { display:none; }
     #participant-player #player-reveal { background:transparent; color:var(--accent); }
+    /* Ending a turn sits apart from Reveal, smaller, and asks before it acts. */
+    #participant-player .player-ending { grid-template-columns:minmax(0,1fr) 8rem; gap:1.25rem; }
+    #participant-player #finish-my-turn { width:100%; padding-inline:.5rem; }
+    #participant-player.is-turn-ready .player-mobile-notice { color:var(--accent); font-weight:650; }
+
+    /* Waiting: the room's state and your place, instead of controls you cannot use yet. */
+    #participant-player.is-waiting { block-size:auto; grid-template-rows:auto; grid-template-areas:'waiting'; padding:.875rem 1rem; }
+    #participant-player.is-waiting > :not(.player-waiting):not(dialog) { display:none; }
+    #participant-player:not(.is-waiting) .player-waiting { display:none; }
+    #participant-player.is-waiting .player-waiting { display:grid; grid-area:waiting; gap:.25rem; min-width:0; }
+    #participant-player .player-waiting-head { display:flex; align-items:baseline; justify-content:space-between; gap:.75rem; min-width:0; }
+    #participant-player .player-waiting-turn { margin:0; min-width:0; font-size:1.125rem; line-height:1.5rem; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #participant-player .player-waiting-status { flex-shrink:0; font-size:.75rem; line-height:1rem; font-weight:600; color:var(--muted); }
+    #participant-player .player-waiting-status[data-state='playing'] { color:var(--accent); }
+    #participant-player .player-waiting-status[data-state='playing']::before { content:'● '; }
+    #participant-player .player-waiting-status[data-state='problem'] { color:#ffdad1; }
+    #participant-player .player-waiting-distance { margin:0; font-size:.875rem; line-height:1.25rem; font-weight:600; color:#c9e8b1; }
+    #participant-player .player-waiting-pick { margin:.375rem 0 0; padding-top:.5rem; border-top:1px solid var(--line); font-size:.875rem; line-height:1.25rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #participant-player .player-waiting-label { margin-right:.375rem; color:var(--muted); }
+    #participant-player .player-waiting-output { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:.75rem; line-height:1rem; }
+    #participant-player .player-waiting-error { margin:0; font-size:.8125rem; line-height:1.25rem; color:#ffdad1; }
+    #participant-player .player-waiting-error[hidden] { display:none; }
 
     #participant-player .player-details-dialog { position:fixed; inset:auto 0 0; width:calc(100% - 16px); max-width:600px; max-height:85dvh; margin:0 auto; padding:20px; padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); overflow:auto; border:1px solid var(--line); border-radius:18px 18px 0 0; background:var(--panel); color:var(--text); overflow-wrap:anywhere; }
     #participant-player .player-details-dialog::backdrop { background:#0009; }

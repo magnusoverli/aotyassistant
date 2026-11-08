@@ -63,13 +63,16 @@ let chosenAlbum: CatalogueAlbum | undefined;
 let artistNotices: string[] = [];
 let albumNotices: string[] = [];
 let trackNotices: string[] = [];
+/** A search that finds both artists and songs shows a few artists first; this lists them all. */
+let allArtists = false;
 const browseSnapshot = () => ({ results, searchText, searchDone, artists, albums, chosenArtist, chosenAlbum,
-  artistNotices, albumNotices, trackNotices, scroll: scrollY });
+  artistNotices, albumNotices, trackNotices, allArtists, scroll: scrollY });
 /** Restores a browse snapshot; without one, clears all results (optionally keeping the typed query). */
 function restoreBrowse(snapshot?: ReturnType<typeof browseSnapshot>, query = snapshot?.searchText ?? '') {
   results = snapshot?.results ?? []; searchText = query; searchDone = snapshot?.searchDone ?? false;
   artists = snapshot?.artists ?? []; albums = snapshot?.albums ?? []; chosenArtist = snapshot?.chosenArtist; chosenAlbum = snapshot?.chosenAlbum;
   artistNotices = snapshot?.artistNotices ?? []; albumNotices = snapshot?.albumNotices ?? []; trackNotices = snapshot?.trackNotices ?? [];
+  allArtists = snapshot?.allArtists ?? false;
 }
 const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
   catalogue.cancel(); resetCatalogueTask(); restoreBrowse(snapshot);
@@ -142,10 +145,33 @@ listeningOrder.setManagement(page === 'host' ? {
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(pageContent);
 const playerReturn = page === 'participant' ? new PlayerReturn() : undefined;
-if (playerReturn) root.append(playerReturn.element);
-const updatePlayerReturn = () => playerReturn?.update(view, player.starting, realtime && Boolean(view?.connected), error);
+if (playerReturn) root.append(playerReturn.element, music.bar.element);
+const updatePlayerReturn = () => playerReturn?.update(view, player.starting, realtime, error);
+/** The tab title says when it is your turn, also from another app's tab switcher. */
+function updateTitle() {
+  const title = `${page === 'participant' && view?.me && view.myTurn ? '● Your turn · ' : ''}${pageTitles[page]} · ${productName}`;
+  if (document.title !== title) document.title = title;
+}
+/** Your turn just started: a short vibration where supported, and a highlight on the player. */
+function turnArrived() {
+  try { navigator.vibrate?.([180, 90, 180]); } catch { /* Vibration is optional and often unavailable. */ }
+  const card = root.querySelector<HTMLElement>('#participant-player'); if (!card) return;
+  card.classList.remove('turn-arrived'); void card.offsetWidth; card.classList.add('turn-arrived');
+  setTimeout(() => card.classList.remove('turn-arrived'), 2600);
+}
+/** The player changes height between waiting and your turn. When it is scrolled out of view
+ * above, keep the content being read in place instead of letting it jump. */
+function holdBelowPlayer(update: () => void) {
+  const card = page === 'participant' ? root.querySelector<HTMLElement>('#participant-player') : null;
+  const before = card?.getBoundingClientRect();
+  update();
+  if (!card?.isConnected || !before || before.bottom > 0) return;
+  const shift = card.getBoundingClientRect().bottom - before.bottom;
+  if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, behavior: 'instant' });
+}
 const updateHeader = () => {
   if (signal.aborted) return;
+  updateTitle();
   progressConnected(realtime && Boolean(view?.connected));
   if (view) appHeader.update({ view });
   // Room pages deliver the order with their first view. Opening the public order
@@ -180,8 +206,9 @@ function keepMusicFocusVisible() {
   const focused = document.activeElement;
   if (!(focused instanceof HTMLElement) || !focused.closest('.music-workspace')) return;
   const headerBottom = Math.max(0, appHeader.element.getBoundingClientRect().bottom) + 12;
-  const list = root.querySelector<HTMLElement>('.preparation-list');
-  const obstruction = stackedLayout() && focused.closest('.catalogue-panel') && list && getComputedStyle(list).position === 'sticky' ? Math.max(headerBottom, list.getBoundingClientRect().bottom + 12) : headerBottom;
+  // Phones: the playlist bar covers the top of the screen while browsing results.
+  const bar = stackedLayout() && focused.closest('.catalogue-panel') && !music.bar.element.hidden ? music.bar.element : undefined;
+  const obstruction = bar ? Math.max(headerBottom, bar.getBoundingClientRect().bottom + 12) : headerBottom;
   const rect = focused.getBoundingClientRect();
   if (rect.top < obstruction) window.scrollBy({ top: rect.top - obstruction, behavior: 'instant' });
 }
@@ -230,15 +257,12 @@ function showCatalogueStart() {
   if (!results) return;
   const header = appHeader.element;
   let top = getComputedStyle(header).position === 'sticky' ? header.getBoundingClientRect().bottom + 12 : 12;
-  const list = root.querySelector<HTMLElement>('.preparation-list');
-  if (stackedLayout() && list && getComputedStyle(list).position === 'sticky') {
-    // Use the companion's eventual sticky position, not its position before scrolling.
-    top = Math.max(top, parseFloat(getComputedStyle(list).top) + list.getBoundingClientRect().height + 12);
-  }
-  const heading = results.querySelector('h2')!.getBoundingClientRect();
+  // Phones: leave room for the playlist bar, which appears once the list scrolls away.
+  if (stackedLayout()) top = Math.max(top, 76);
+  const start = results.getBoundingClientRect();
   const first = (results.querySelector('.track-row') ?? results).getBoundingClientRect();
   const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
-  if (heading.top < top || first.bottom > height) {
+  if (start.top < top || first.bottom > height) {
     const search = root.querySelector('.catalogue-panel')!.getBoundingClientRect();
     const target = first.bottom - search.top <= height - top ? search.top : results.getBoundingClientRect().top;
     window.scrollTo({ top: Math.max(0, scrollY + target - top), behavior: 'instant' });
@@ -292,6 +316,7 @@ function accept(next: View) {
   // Position/volume snapshots do not rebuild browsing forms or reload all artwork.
   const telemetryOnly = view && JSON.stringify({ ...view, progress: undefined, volume: [view.volume?.available, view.volume?.revision] }) === JSON.stringify({ ...next, progress: undefined, volume: [next.volume?.available, next.volume?.revision] });
   const playerOnly = page === 'participant' && view?.me && participantLayoutKey(view) === participantLayoutKey(next);
+  const arrived = page === 'participant' && Boolean(view?.me && next.me?.id === view.me.id && !view.myTurn && next.myTurn);
   view = next;
   updateHeader();
   if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
@@ -318,6 +343,7 @@ function accept(next: View) {
     }).catch(() => {});
   }
   render();
+  if (arrived) turnArrived();
 }
 function subscribe(role: 'host' | 'participant' | 'display') {
   if (signal.aborted) return;
@@ -415,7 +441,7 @@ function renderParticipantPlayer() {
   if (signal.aborted) return;
   const card = root.querySelector('.playback-card');
   if (page !== 'participant' || !view?.me || !card || root.querySelector('.app-content > .error')) { render(); return; }
-  renderPlayback(view);
+  const current = view; holdBelowPlayer(() => renderPlayback(current));
   updatePlayerReturn();
   // Starting a track changes availability, not the search/list layout or their DOM state.
   for (const control of root.querySelectorAll<HTMLButtonElement>('[data-player-ready]')) prop(control, 'disabled', control.dataset.playerReady !== 'true' || player.starting);
@@ -462,19 +488,24 @@ function participant() {
   children(searchHeading, searchTitle);
   const form = v.el('form', 'form', undefined, 'search-form');
   const input = v.get('input', () => { const node = el('input'); node.type = 'search'; node.enterKeyHint = 'search'; node.required = true; node.maxLength = 200; node.id = 'catalogue-search'; node.setAttribute('aria-label', 'Search catalogue'); node.oninput = () => { searchText = node.value; }; return node; });
-  prop(input, 'placeholder', realCatalogue ? 'Artist name' : 'Try Northern or Night'); prop(input, 'value', searchText);
+  prop(input, 'placeholder', realCatalogue ? 'Artist or song' : 'Try Northern or Night'); prop(input, 'value', searchText);
   const submit = v.get('submit', () => { const node = el('button'); node.id = 'catalogue-search-submit'; node.type = 'submit'; return node; }); text(submit, searching ? 'Searching…' : 'Search'); prop(submit, 'disabled', !realtime || !view.connected);
   children(form, input, submit);
   form.onsubmit = event => {
     event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
-    if (!query) { catalogueError = realCatalogue ? 'Enter an artist name to search.' : 'Enter a demo search.'; catalogueRetry = undefined; render(); return; }
+    if (!query) { catalogueError = realCatalogue ? 'Enter an artist or song to search.' : 'Enter a demo search.'; catalogueRetry = undefined; render(); return; }
     browseHistory?.remember();
     restoreBrowse(undefined, searchText); searching = true;
     void runCatalogue(async () => {
       if (realCatalogue) {
-        const response = await catalogue.browse('artists', query);
-        if (response) { artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; return true; }
+        // One query finds artists to browse and songs by title; a failed half is reported, not hidden.
+        const response = await catalogue.searchAll(query);
+        if (response) {
+          artists = response.artists?.artists ?? []; artistNotices = response.artists ? response.artists.notices ?? [] : ['Artists could not be loaded. Search again to retry.'];
+          results = response.songs?.tracks ?? []; trackNotices = response.songs ? response.songs.notices ?? [] : ['Songs could not be loaded. Search again to retry.'];
+          searchDone = true; return true;
+        }
       } else {
         const response = await catalogue.search(query);
         if (response && view?.catalogue?.source === response.source) {
@@ -487,9 +518,12 @@ function participant() {
   attr(found, 'aria-busy', String(catalogueBusy));
   const foundNodes: Node[] = [];
   const resultKind = realCatalogue && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
-  const resultCount = resultKind === 'album' ? albums.length : resultKind === 'artist' ? artists.length : results.length;
-  const resultSummary = `${resultCount} ${resultKind}${resultCount === 1 ? '' : 's'}`;
-  const notices = resultKind === 'artist' ? artistNotices : resultKind === 'album' ? albumNotices : trackNotices;
+  const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+  // Music Assistant search results: matching artists to browse, then songs by title.
+  const topLevel = realCatalogue && !chosenArtist;
+  const resultSummary = topLevel ? `${counted(artists.length, 'artist')} and ${counted(results.length, 'song')}`
+    : counted(resultKind === 'album' ? albums.length : results.length, resultKind);
+  const notices = topLevel ? [...artistNotices, ...trackNotices] : resultKind === 'album' ? albumNotices : trackNotices;
   const announcement = searching ? 'Searching…' : catalogueBusy ? 'Loading music…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (catalogueError) {
@@ -500,7 +534,7 @@ function participant() {
     const retryAction = catalogueRetry; retry.onclick = () => { if (retryAction) void runCatalogue(retryAction); };
     children(notice, message, Boolean(catalogueRetry) && retry); foundNodes.push(notice);
   }
-  if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', realCatalogue ? 'Search for an artist, then choose an album and tracks.' : 'Search for music to add to your private list.', 'muted small'));
+  if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', realCatalogue ? 'Search for an artist or a song title.' : 'Search for music to add to your private list.', 'muted small'));
   if (searching || catalogueBusy) { const status = v.el('status', 'p', searching ? 'Searching…' : 'Loading music…', 'muted'); attr(status, 'role', 'status'); foundNodes.push(status); }
   if (!catalogueBusy) for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
   if (chosenArtist) {
@@ -530,16 +564,24 @@ function participant() {
       }); },
     });
   };
-  for (const artist of !catalogueBusy && !chosenArtist ? artists : []) {
+  const bothKinds = topLevel && !catalogueBusy && artists.length > 0 && results.length > 0;
+  if (bothKinds) foundNodes.push(v.el('artists-heading', 'h3', 'Artists', 'results-heading'));
+  const shownArtists = bothKinds && !allArtists ? artists.slice(0, 4) : artists;
+  for (const artist of !catalogueBusy && topLevel ? shownArtists : []) {
     foundNodes.push(row('artist', artist));
   }
+  if (!catalogueBusy && topLevel && shownArtists.length < artists.length) {
+    const more = v.get('more-artists', () => { const node = el('button', '', 'secondary results-more'); node.type = 'button'; return node; });
+    text(more, `Show all ${artists.length} artists`); more.onclick = () => { allArtists = true; render(); }; foundNodes.push(more);
+  }
+  if (bothKinds) foundNodes.push(v.el('songs-heading', 'h3', 'Songs', 'results-heading'));
   for (const album of !catalogueBusy && chosenArtist && !chosenAlbum ? albums : []) {
     foundNodes.push(row('album', album));
   }
-  const emptyBrowse = searchDone && !catalogueBusy && realCatalogue && ((!chosenArtist && !artists.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
+  const emptyBrowse = searchDone && !catalogueBusy && realCatalogue && ((topLevel && !artists.length && !results.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
   if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', chosenArtist && !chosenAlbum
     ? 'No albums returned for this artist.'
-    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists found. Try another artist name.', 'muted'));
+    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists or songs found. Try another search.', 'muted'));
   if (searchDone && !catalogueBusy && !realCatalogue && !results.length) {
     const empty = v.el('empty-tracks', 'p', 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
     attr(empty, 'role', 'status'); foundNodes.push(empty);
@@ -634,6 +676,8 @@ function render() {
   const selection = focused instanceof HTMLInputElement && ['text', 'search', 'password'].includes(focused.type) ? [focused.selectionStart, focused.selectionEnd] as const : null;
   const scrollRegions = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(node => [node.dataset.scrollKey, node.scrollTop] as const);
   const scrollY = window.scrollY;
+  const playerCard = page === 'participant' ? root.querySelector<HTMLElement>('#participant-player') : null;
+  const playerBefore = playerCard?.getBoundingClientRect();
   const content: Node[] = [];
   if (error) { const message = pageNodes.get('error', () => notice('', 'error')); text(message, error); content.push(message); }
   if (view && !realtime) content.push(pageNodes.get('connection', () => notice(roomMessages.connectionLost, 'connection')));
@@ -669,6 +713,11 @@ function render() {
     restoringFocus = false;
   }
   if (window.scrollY !== scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
+  // Your turn starting or ending resizes the player; keep the content below it still when it is out of view.
+  if (playerCard?.isConnected && playerBefore && playerBefore.bottom <= 0) {
+    const shift = playerCard.getBoundingClientRect().bottom - playerBefore.bottom;
+    if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, behavior: 'instant' });
+  }
 }
 async function init() {
   render();
@@ -726,7 +775,7 @@ return () => {
   lifecycle.abort();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
   stream?.close(); stream = undefined; library.stop(); music.uploads.stop(); releaseEvents();
-  playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); browseHistory?.destroy();
+  playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); music.bar.destroy(); browseHistory?.destroy();
   turnAnnouncement.remove(); searchAnnouncement.remove();
   root.replaceChildren();
 };

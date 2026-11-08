@@ -59,9 +59,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await expect(page.locator('.playback-status')).toHaveText('■ Stopped');
       await expect(page.locator('#player-transport')).toBeDisabled();
       await unchanged(); await sameWorkspace();
-      await click('#finish-my-turn'); await expect(page.locator('.playback-card')).toContainText('Waiting for your turn');
+      page.once('dialog', dialog => dialog.accept()); await click('#finish-my-turn'); await expect(page.locator('.playback-card')).toContainText('Waiting for your turn');
       await expect(page.locator('#finish-my-turn')).toBeDisabled();
-      await unchanged();
+      // Phones replace the controls with a compact waiting card while someone else has the turn.
+      if (viewport.width >= 1100) await unchanged();
+      else { await expect(page.locator('.player-waiting')).toBeVisible(); await expect(page.locator('.player-waiting-turn')).toHaveText('A very long next listener name’s turn'); }
       const next = await (await page.request.get('/api/host/state')).json();
       await post('/api/host/advance', { turnId: next.turnId });
       await expect(page.locator('.playback-card')).toContainText('Choose a song');

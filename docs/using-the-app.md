@@ -10,30 +10,32 @@ The room is always ready. New participants enter a display name and choose a fou
 
 In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
 
-On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. This presentation does not change the saved turn order or desktop layout.
+On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. Your own card stays highlighted. This presentation does not change the saved turn order or desktop layout.
 
-On **Host desk**, drag any participant card into a new position. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. To delete a user, open **Settings → Users → Manage → Delete user**; this also removes their place in the order. Names and turn order are public; private song lists are not.
+On **Host desk**, drag any participant card into a new position. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. On a touch screen, press and hold a card to pick it up; an ordinary swipe scrolls the order. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. To delete a user, open **Settings → Users → Manage → Delete user**; this also removes their place in the order. Names and turn order are public; private song lists are not.
 
 ## Prepare selections
 
 Open **Your music** after joining:
 
-1. Search artists or tracks in **Find music**. Browse an artist’s albums, then choose a song.
+1. Search for an artist or a song title in **Find music**. Matching artists are listed first, then songs. Tap an artist to see their albums, then an album to see its songs.
 2. If several services provide a result, select the intended source/version. The app does not silently substitute a different recording.
 3. Use **Add to list** to save a choice for later. Preparation remains available while another participant is playing.
 4. Use **Upload a song** for an audio file on the device. Review its details and add it to the private list.
 
-**Your playlist** and search share one card: stacked on phones, or side by side on desktop with search on the left and a wider playlist pane on the right. The number of upcoming tracks appears beneath the playlist title. The saved list stays visible while browsing, with its own scrolling area and compact rows. Reorder inline with **Edit order**, or use a song’s **⋯** menu to move it to the top or remove it; no separate list screen is needed.
+**Your playlist** and search share one card: stacked on phones, or side by side on desktop with search on the left and a wider playlist pane on the right. The number of upcoming tracks appears beneath the playlist title. The list has its own scrolling area with compact rows, followed by **Previously played** and **Removed**. On phones, while you browse results below the list, a one-line playlist bar at the top shows the track count and your next pick, confirms each added song, and **View list** returns to the list. Reorder inline with **Edit order**, or use a song’s **⋯** menu to move it to the top or remove it; no separate list screen is needed.
 
 See [private lists](private-lists.md) and [uploaded audio](uploaded-audio.md). Without a Music Assistant connection, the app offers a simulated demo catalogue. The host, desktop participant, and room-display pages identify **Demo mode — no audio**; playback and volume controls are simulated and produce no sound on every device.
 
 ## Play a turn
 
-Only the current participant can start a track or reveal its details. Participant playback controls are available only during their turn. Choose **Play** from a search result or **Play first selection** (**Play pick** on phones) in the player to start the first entry in **Your playlist**. The list’s **Move to top** action changes which saved track comes first without starting playback. Playing takes over the chosen Music Assistant speaker or group with one track, replacing its existing queue and disabling repeat, shuffle, and autoplay.
+Only the current participant can start a track or reveal its details. Participant playback controls are available only during their turn, and search results show **Play** only then. Choose **Play** from a search result or **Play first selection** (**Play pick** on phones) in the player to start the first entry in **Your playlist**.
+
+On phones, while someone else has the turn, the player shows whose turn it is, whether they are choosing or playing, how many turns until yours, your next pick and the speaker. When your turn starts, the player shows its controls and its border lights up, the browser tab title starts with **● Your turn**, and phones that support it vibrate briefly. If you have scrolled away from the player, a bar at the bottom of the screen says **It’s your turn** with **Go to player**; the same bar reports a lost connection. The list’s **Move to top** action changes which saved track comes first without starting playback. Playing takes over the chosen Music Assistant speaker or group with one track, replacing its existing queue and disabling repeat, shuffle, and autoplay.
 
 The shared display shows **Track details hidden.** until playback reaches **70%**, or the current participant selects **Reveal details** earlier. Auto-reveal is enabled by default; switch it off in **Settings → Playback → Automatically reveal at 70%** for manual-only reveal. A subtle marker on the progress bar indicates the threshold and disappears after either kind of reveal, or when auto-reveal is disabled. Tracks with unknown duration or unavailable progress remain manual. Enabling auto-reveal during a track already beyond 70% reveals it; disabling it does not hide a track already revealed. Host players never show track names, artist names or artwork.
 
-If cover artwork is unavailable, the revealed title and artist appear on the display’s spinning record label. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the track controlled by the app and pass to the next person, or **Pass turn** to advance without playing a track. Other Music Assistant and speaker interfaces may independently show track information before reveal.
+If cover artwork is unavailable, the revealed title and artist appear on the display’s spinning record label. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the track controlled by the app and pass to the next person, or **Pass turn** to advance without playing a track. Both ask for confirmation, because a passed turn cannot be taken back. Other Music Assistant and speaker interfaces may independently show track information before reveal.
 
 The display smooths progress locally between playback updates. Before reveal, it eases toward received positions without exposing elapsed time or duration; afterward it uses a bounded local clock and gently corrects ordinary timing differences. Stale updates stop animation rather than implying continued playback. This visual smoothing does not trigger reveal or advance turns.
 
@@ -45,7 +47,7 @@ The host and current playing participant can adjust volume when the selected spe
 
 Both players offer **Pause / Resume** and **Stop song** controls, separate from finishing or skipping the turn. Stopping keeps the current participant's turn; the participant chooses and starts a selection again. A successfully started saved selection remains in **Previously played** history. The progress bar is read-only: seeking, previous-track, repeat, and shuffle controls are not exposed.
 
-**Host desk** shows playback progress and whether the song is hidden or visible on the room display. Exact times appear after the participant reveals the song. **Stop song — keep turn** is directly available and asks for confirmation. **Skip turn** stops the app-owned song and passes control to the next participant.
+**Host desk** shows playback progress and whether the song is hidden or visible on the room display. Exact times appear after the participant reveals the song. **Stop song — keep turn** is directly available and asks for confirmation. **Skip turn** stops the app-owned song and passes control to the next participant; it asks for confirmation, including while the participant is still choosing. The host player has **Pause / Resume** and **Stop song** but no Play button, because only the current participant starts their song.
 
 ### Playback problems
 

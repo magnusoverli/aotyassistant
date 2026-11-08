@@ -31,7 +31,7 @@ test('the shared playback component preserves host and participant actions, priv
         await expect(participant.locator('#participant-player')).toHaveCSS('height', '272px');
       }
       await expect(host.locator('#host-player img, #host-player .artist-portrait')).toHaveCount(0);
-      await expect(host.locator('#host-play')).toBeDisabled();
+      await expect(host.locator('#host-play')).toHaveCount(0);
       await expect(host.locator('#host-reveal-status')).toHaveCount(0);
     }
     await expect(host.locator('.host-progress .track-times')).toBeEmpty();
@@ -56,7 +56,7 @@ test('the shared playback component preserves host and participant actions, priv
     await host.locator('#host-stop').click();
     await expect(host.locator('.host-playback-status')).toContainText('Stopped · Current listener keeps the turn');
     await expect(participant.locator('.playback-status')).toHaveText('■ Stopped');
-    await participant.locator('#finish-my-turn').click();
+    participant.once('dialog', dialog => dialog.accept()); await participant.locator('#finish-my-turn').click();
     await expect(host.locator('.host-live h2')).toHaveText('Next listener');
     await expect(waiting.locator('#finish-my-turn')).toBeEnabled();
     await expect(participant.locator('#finish-my-turn')).toBeDisabled();

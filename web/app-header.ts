@@ -70,7 +70,7 @@ export class AppHeader {
     this.update({});
     this.logout.type = 'button'; this.logout.onclick = () => { void this.logOut(); };
     this.logoutError.setAttribute('role', 'alert'); this.logoutError.hidden = true;
-    this.logoutItem.append(this.logout, this.logoutError); this.logoutItem.hidden = true; this.primary.append(this.logoutItem);
+    this.logoutItem.append(this.logout, this.logoutError); this.logoutItem.hidden = true; this.logoutItem.className = 'nav-group-start'; this.primary.append(this.logoutItem);
   }
   private async refreshIdentity() {
     if (this.logoutPending) return;
@@ -108,7 +108,12 @@ export class AppHeader {
     for (const item of model.primary) {
       if (isPublic() && item.href.startsWith('/host')) continue;
       let anchor = this.links.get(item.id);
-      if (!anchor) { anchor = link('', item.href, 'header-nav-link'); const li = el('li'); li.append(anchor); this.primary.append(li); this.links.set(item.id, anchor); }
+      if (!anchor) {
+        anchor = link('', item.href, 'header-nav-link'); const li = el('li'); li.append(anchor);
+        // Guest pages come first; the host's pages follow as their own group.
+        if (item.id === 'host') li.className = 'nav-group-start';
+        this.primary.append(li); this.links.set(item.id, anchor);
+      }
       this.updateLink(anchor, item);
     }
     this.updateLayout(); this.updateFullscreen();

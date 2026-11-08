@@ -21,7 +21,7 @@ test('all pages use the same central route/navigation definitions with one curre
   for (const page of Object.keys(routes) as Page[]) {
     assert.equal(pageForPath(routes[page]), page);
     const model = headerModel(page, {});
-    assert.deepEqual(model.primary.map(item => item.id), ['host', 'settings', 'participant', 'display']);
+    assert.deepEqual(model.primary.map(item => item.id), ['participant', 'display', 'host', 'settings']);
     assert.equal(model.primary.filter(item => item.current).length, ['home', 'join'].includes(page) ? 0 : 1);
   }
   assert.equal(pageForPath('/not-a-page'), 'home');

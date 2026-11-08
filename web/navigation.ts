@@ -21,7 +21,7 @@ export type NavigationItem = { id: string; text: string; href: string; current: 
 
 export function headerModel(page: Page, state: HeaderState) {
   const view = state.view;
-  const primary: NavigationItem[] = (['host', 'settings', 'participant', 'display'] as const)
+  const primary: NavigationItem[] = (['participant', 'display', 'host', 'settings'] as const)
     .map(id => ({ id, text: pageTitles[id], href: routes[id], current: page === id }));
   const subtitle = page === 'participant' && view?.me ? view.me.nickname : pageTitles[page];
   return { primary, subtitle };

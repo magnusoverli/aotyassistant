@@ -79,7 +79,7 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     expect(await tv.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(770);
     await first.screenshot({ path: 'test-results/participant-media-volume.png', fullPage: true });
     await expect(second.getByText('Real catalogue fixture')).toHaveCount(0);
-    await first.getByRole('button', { name: 'Finish turn' }).click();
+    first.once('dialog', dialog => dialog.accept()); await first.getByRole('button', { name: 'Finish turn' }).click();
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await expect(tv.locator('.track-times')).toBeEmpty(); await expect(tv.getByAltText('Current album artwork')).toHaveCount(0);
     expect((await tv.request.get(oldImage!)).status()).toBe(403);

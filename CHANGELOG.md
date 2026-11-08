@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [1.1.21] — 2026-11-08
+
+- Phones show a compact waiting card while someone else has the turn: whose turn it is, whether they are choosing or playing, how many turns until yours, your next pick and the speaker, instead of a block of disabled controls. Search sits much higher on the first screen.
+- Make your turn hard to miss on phones: the player's border lights up and pulses, the tab title starts with "● Your turn", supporting phones vibrate, and when the player is scrolled out of view a bar at the bottom says "It's your turn" with Go to player. The same bar reports a lost connection while browsing.
+- Pass turn and Finish turn ask for confirmation, and sit apart from Reveal. The host's Skip turn also confirms while the participant is still choosing, and is no longer the most prominent button.
+- Fix Previously played and Removed rows on phones, which showed no title and a stretched Add back button. History now scrolls inside the playlist's own area instead of growing the card.
+- On phones the playlist is no longer pinned over the results, and shows about four rows. While browsing below it, a one-line playlist bar shows the track count and next pick, confirms each added song, and returns to the list. Edit order keeps up/down beside each song, and a song's ⋯ options open in view.
+- One Music Assistant search now finds artists and song titles, listed as Artists and Songs. Tapping anywhere on an artist or album row opens it.
+- Fix the ← Artists / ← Albums buttons and the phone's Back button while browsing, which could leave the page because a successful search or browse stopped before recording its step.
+- Search results show Play only during your turn, and saved results are marked on their Added button instead of a merged green block.
+- Joining starts with the name form; people who joined before choose their name underneath. PIN fields have a Show/Hide toggle inside the field.
+- The menu lists Your music and Room display first, then the host's pages and Log out as separate groups. Your own card in the listening order is no longer dimmed.
+- The host player drops its always-disabled Play button. On touch screens the host picks up a listening-order card with a press-and-hold, so swiping scrolls the order again.
+
 ## [1.1.20] — 2026-11-08
 
 - Fix pages opened through Home Assistant still failing with "__VITE_PRELOAD__ is not defined" after 1.1.18. Browsers kept the broken 1.1.17 copy of the main script, because 1.1.18 left its content, and therefore its file name, unchanged; such files are cached for a year without asking again. Script and style file names now include the version, so every release is fetched fresh.

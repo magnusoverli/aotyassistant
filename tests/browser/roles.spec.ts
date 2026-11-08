@@ -98,7 +98,7 @@ test('role-specific layouts show reliable seats/current/next and preserve privat
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Northern');
     await expect(jordan.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
     await expect(jordan.getByRole('list', { name: 'Participant rotation' })).toBeVisible();
-    await host.getByRole('button', { name: 'Skip turn' }).click();
+    host.once('dialog', dialog => dialog.accept()); await host.getByRole('button', { name: 'Skip turn' }).click();
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Jordan');
     await expect(tv.locator('.rotation-seat.is-next strong')).toHaveText('Sam');
     await expect(jordan.locator('main')).toHaveAttribute('data-turn-state', 'mine');

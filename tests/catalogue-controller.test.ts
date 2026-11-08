@@ -59,3 +59,34 @@ test('a browse started on pointer down is reused by its click, and dropped when 
   assert.equal(f.calls[4]!.signal?.aborted, true); assert.equal(f.calls.length, 6, 'An early request from another catalogue is not reused.');
   f.calls[5]!.resolve(albums); assert.deepEqual(await fresh, albums);
 });
+
+test('one Music Assistant search reads artists and song titles together, and a failed half does not hide the other', async () => {
+  const requests: { path: string; data: unknown; resolve(value: unknown): void; reject(error: Error): void; signal?: AbortSignal }[] = [];
+  let view: View = { mode: 'music-assistant', connected: true, roomId: 'room', turnId: 'turn', revision: 1, current: null, next: null,
+    me: { id: 'member', nickname: 'Listener' }, catalogue: { source: 'music-assistant', revision: 'catalogue-a', playbackAvailable: true } };
+  const request: typeof requestJson = <T>(path: string, data?: unknown, _timeout?: number, signal?: AbortSignal) =>
+    new Promise<T>((resolve, reject) => requests.push({ path, data, resolve: value => resolve(value as T), reject, signal }));
+  const controller = new CatalogueController(() => view, request);
+
+  const both = controller.searchAll('Night');
+  assert.deepEqual(requests.map(({ path, data }) => [path, data]), [
+    ['/api/participant/browse', { kind: 'artists', value: 'Night' }], ['/api/participant/search', { turnId: 'turn', query: 'Night' }]]);
+  const artists = { artists: [], playbackAvailable: true }; const songs = { source: 'music-assistant', playbackAvailable: true, tracks: [] };
+  requests[0]!.resolve(artists); requests[1]!.resolve(songs);
+  assert.deepEqual(await both, { artists, songs });
+
+  const partial = controller.searchAll('Night'); requests[2]!.resolve(artists); requests[3]!.reject(new Error('Song search failed'));
+  assert.deepEqual(await partial, { artists, songs: undefined });
+
+  const failed = controller.searchAll('Night'); requests[4]!.reject(new Error('Artists failed')); requests[5]!.reject(new Error('Songs failed'));
+  await assert.rejects(failed, /Artists failed/);
+
+  const replaced = controller.searchAll('old'); const current = controller.browse('albums', 'artist');
+  assert.equal(requests[6]!.signal?.aborted, true); assert.equal(requests[7]!.signal?.aborted, true, 'A newer catalogue task aborts both halves.');
+  requests[6]!.resolve(artists); requests[7]!.resolve(songs); assert.equal(await replaced, undefined);
+  requests[8]!.resolve({ albums: [], playbackAvailable: true }); await current;
+
+  const moved = controller.searchAll('Night'); view = { ...view, catalogue: { ...view.catalogue!, revision: 'catalogue-b' } };
+  requests[9]!.resolve(artists); requests[10]!.resolve(songs);
+  assert.equal(await moved, undefined, 'Results never cross a catalogue change.');
+});

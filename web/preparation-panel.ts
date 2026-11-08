@@ -4,7 +4,8 @@ import { el } from './dom';
 import { artwork } from './media';
 import { PreparationController } from './preparation-controller';
 import { UploadPanel } from './upload-panel';
-import { workspaceGrid, slot } from './page-layout';
+import { workspaceGrid, slot, stackedLayout } from './page-layout';
+import { ListBar } from './list-bar';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
 type Options = { getView(): View | undefined; starting(): boolean; changed(): void };
@@ -25,6 +26,8 @@ export class PreparationPanel {
   private nodes = new ViewNodes();
   private disclosures = new Map<string, HTMLDetailsElement>();
   private collection?: HTMLElement;
+  /** Phones: the playlist's one-line summary while browsing below it. */
+  readonly bar = new ListBar(() => this.focusList());
   constructor(private library: PreparationController, private options: Options) {
     this.feedback.setAttribute('role', 'status'); this.feedback.setAttribute('aria-live', 'polite');
     this.uploads = new UploadPanel(library, () => Boolean(options.getView()?.me), () => {
@@ -60,14 +63,19 @@ export class PreparationPanel {
     if (cached) { text(cached.querySelector('summary')!, caption); return cached; }
     const details = el('details', undefined, 'list-disclosure'); details.open = this.open.has(key);
     const summary = el('summary', caption); summary.id = `list-${key}`; details.append(summary);
-    details.addEventListener('toggle', () => { if (details.isConnected) { if (details.open) this.open.add(key); else this.open.delete(key); } });
+    details.addEventListener('toggle', () => {
+      if (!details.isConnected) return;
+      if (details.open) this.open.add(key); else this.open.delete(key);
+      // A row's options open inside the list's own scroll area; keep them in view.
+      if (details.open && key.startsWith('entry-')) requestAnimationFrame(() => details.scrollIntoView({ block: 'nearest', behavior: 'instant' }));
+    });
     this.disclosures.set(key, details); return details;
   }
   addButton(track: CatalogueTrack) {
     const button = this.button('Add to list', async () => {
       if (this.library.added.has(track.id)) return;
       await this.library.add(track);
-      if (this.library.added.has(track.id)) this.feedback.textContent = `Added ${track.title} to your list.`;
+      if (this.library.added.has(track.id)) { this.feedback.textContent = `Added ${track.title} to your list.`; this.bar.added(track.title); }
     }, true, `save-${track.id}`);
     button.dataset.preparationTrack = track.id;
     this.updateAddButton(button);
@@ -93,7 +101,7 @@ export class PreparationPanel {
     } else children(panel, player, this.feedback, list, uploads);
     return panel;
   }
-  /** Navigate to the always-visible list without changing the browse context. */
+  /** Navigate to the list without changing the browse context. */
   focusList() {
     this.list?.focus({ preventScroll: true });
     this.list?.scrollIntoView({ block: 'start', behavior: 'instant' });
@@ -131,6 +139,7 @@ export class PreparationPanel {
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
+    this.bar.observe(list);
     list.classList.add('is-expanded'); list.classList.toggle('is-editing', this.editing); prop(list, 'tabIndex', -1); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
     const heading = v.el('heading', 'div', undefined, 'list-heading');
     const title = v.get('title', () => { const node = el('h2', 'Your playlist'); node.id = 'music-list-title'; return node; });
@@ -145,6 +154,7 @@ export class PreparationPanel {
     prop(preview, 'hidden', !attention && !snapshot?.upcoming.length);
     const meta = v.el('meta', 'div', undefined, 'list-meta');
     prop(preview, 'title', preview.textContent ?? ''); children(meta, countLabel, preview); children(summary, title, meta); children(heading, summary);
+    this.bar.update(count, snapshot?.upcoming[0]?.title, attention);
     const status = v.el('status', 'p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Selections unavailable', 'list-save-status'); attr(status, 'role', 'status');
     const body = v.get('body', () => { const node = el('div', undefined, 'list-body'); node.id = 'music-list-body'; node.dataset.scrollKey = 'private-list'; return node; });
     const bodyNodes: Node[] = []; const listNodes: Node[] = [heading, status];
@@ -171,10 +181,15 @@ export class PreparationPanel {
     const actions = v.el('actions', 'div', undefined, 'list-actions'); const actionNodes: Node[] = [];
     const next = snapshot?.upcoming[0];
     if (next) {
-      const edit = v.get('edit', () => { const node = this.button('Edit order', () => { this.editing = !this.editing; this.refresh(); }, true, 'list-edit'); node.classList.add('list-edit'); return node; });
+      const edit = v.get('edit', () => { const node = this.button('Edit order', () => {
+        this.editing = !this.editing; this.refresh();
+        // Phones: editing enlarges the list; bring all of it into view.
+        const box = this.list?.getBoundingClientRect();
+        if (this.editing && stackedLayout() && box && (box.top < 0 || box.bottom > innerHeight)) this.list!.scrollIntoView({ block: 'start', behavior: 'instant' });
+      }, true, 'list-edit'); node.classList.add('list-edit'); return node; });
       text(edit, this.editing ? 'Done' : 'Edit order'); prop(edit, 'disabled', library.saving || !navigator.onLine); attr(edit, 'aria-pressed', String(this.editing)); actionNodes.push(edit);
     }
-    children(actions, ...actionNodes); children(ordered, ...upcomingRows); bodyNodes.push(actions, ordered); children(body, ...bodyNodes);
+    children(actions, ...actionNodes); children(ordered, ...upcomingRows); bodyNodes.push(actions, ordered);
     const tools = v.el('tools', 'div', undefined, 'list-tools'); const toolNodes: Node[] = [];
     const history = v.el('history', 'div', undefined, 'list-history'); prop(history, 'id', 'list-history');
     const historyNodes: Node[] = [];
@@ -188,11 +203,14 @@ export class PreparationPanel {
         historyIds.add(entry.id); const key = JSON.stringify([kind, entry]);
         let cached = this.historyRows.get(entry.id);
         if (!cached || cached.key !== key) {
-          const row = this.row(entry);
-          row.append(this.button('Add back', () => library.edit('restore', { entryId: entry.id }), true, `restore-${entry.id}`));
-          if (kind === 'removed' && entry.source === 'upload') row.append(this.button('Delete file permanently', () => {
+          // Same columns as upcoming rows: an empty number cell, the song, then its actions.
+          const row = this.row(entry); const marker = el('span', '', 'saved-number'); marker.setAttribute('aria-hidden', 'true'); row.prepend(marker);
+          const controls = el('div', undefined, 'saved-actions');
+          controls.append(this.button('Add back', () => library.edit('restore', { entryId: entry.id }), true, `restore-${entry.id}`));
+          if (kind === 'removed' && entry.source === 'upload') controls.append(this.button('Delete file permanently', () => {
             if (confirm('Permanently delete this uploaded file and all its entries from your list and history? This cannot be undone. Stop or finish it first.')) return library.edit('purge-upload', { entryId: entry.id }, entry.title);
           }, true, `purge-${entry.id}`));
+          row.append(controls);
           cached = { key, element: row }; this.historyRows.set(entry.id, cached);
         }
         for (const control of cached.element.querySelectorAll('button')) prop(control, 'disabled', library.locked);
@@ -205,7 +223,9 @@ export class PreparationPanel {
     children(history, ...historyNodes);
     for (const id of this.historyRows.keys()) if (!historyIds.has(id)) this.historyRows.delete(id);
     if (snapshot?.played.length || snapshot?.removed.length) toolNodes.push(history);
-    children(tools, ...toolNodes); listNodes.push(body, tools); children(list, ...listNodes);
+    // History scrolls with the list inside its own area, so it never grows the card.
+    children(tools, ...toolNodes); if (toolNodes.length) bodyNodes.push(tools);
+    children(body, ...bodyNodes); listNodes.push(body); children(list, ...listNodes);
     for (const id of this.rows.keys()) if (!snapshot?.upcoming.some(entry => entry.id === id)) { this.rows.delete(id); this.disclosures.delete(`entry-${id}`); }
     return list;
   }

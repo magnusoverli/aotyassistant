@@ -16,17 +16,35 @@ export class CatalogueController {
 
   cancel() { this.epoch++; this.pending?.abort(); this.pending = undefined; }
 
-  private async load<T>(path: string, data: unknown, early?: { controller: AbortController; result: Promise<T> }): Promise<T | undefined> {
-    this.cancel(); const pending = early?.controller ?? new AbortController(); this.pending = pending;
+  /** One current catalogue task: a newer one aborts it, and its result never crosses a catalogue or membership change. */
+  private async task<T>(work: (signal: AbortSignal) => Promise<T>, pending = new AbortController()): Promise<T | undefined> {
+    this.cancel(); this.pending = pending;
     const epoch = this.epoch; const identity = catalogueIdentity(this.getView());
     const current = () => epoch === this.epoch && identity === catalogueIdentity(this.getView());
-    try { const result = await (early?.result ?? this.request<T>(path, data, 18_000, pending.signal)); return current() ? result : undefined; }
+    try { const result = await work(pending.signal); return current() ? result : undefined; }
     catch (error) { if (current()) throw error; return undefined; }
     finally { if (this.pending === pending) this.pending = undefined; }
   }
 
+  private load<T>(path: string, data: unknown, early?: { controller: AbortController; result: Promise<T> }): Promise<T | undefined> {
+    return this.task(signal => early?.result ?? this.request<T>(path, data, 18_000, signal), early?.controller);
+  }
+
   search(query: string) {
     return this.load<CatalogueSearch>('/api/participant/search', { turnId: this.getView()?.turnId, query });
+  }
+
+  /** Music Assistant: matching artists and song titles for one query, read together.
+   * Either half may fail on its own; the search fails only when both do. */
+  searchAll(query: string) {
+    return this.task(async signal => {
+      const [artists, songs] = await Promise.allSettled([
+        this.request<CatalogueBrowse>('/api/participant/browse', { kind: 'artists', value: query }, 18_000, signal),
+        this.request<CatalogueSearch>('/api/participant/search', { turnId: this.getView()?.turnId, query }, 18_000, signal),
+      ]);
+      if (artists.status === 'rejected' && songs.status === 'rejected') throw artists.reason;
+      return { artists: artists.status === 'fulfilled' ? artists.value : undefined, songs: songs.status === 'fulfilled' ? songs.value : undefined };
+    });
   }
 
   /** Starts a browse when a finger or button goes down; the click that follows reuses it. */

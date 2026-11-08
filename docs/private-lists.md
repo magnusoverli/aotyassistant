@@ -5,10 +5,10 @@
 ## Save and arrange
 
 - **Add to list** saves the selected recording and its verified equivalent sources. The next choice is at the top.
-- **Edit order** provides drag handles and up/down controls. **Move to top** moves a choice to the front without playing it.
-- **Remove** moves a choice to **Removed**, shown below the playlist. Choose **Add back** to restore it.
+- **Edit order** provides up/down controls, and drag handles where a mouse is available. **Move to top** moves a choice to the front without playing it.
+- **Remove** moves a choice to **Removed**, shown below the upcoming tracks in the playlist’s scrolling area. Choose **Add back** to restore it.
 - **Play first selection** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
-- Successful playback keeps the choice in **Previously played**, shown by default below the playlist. This means playback started, not necessarily that the song finished.
+- Successful playback keeps the choice in **Previously played**, shown by default below the upcoming tracks. This means playback started, not necessarily that the song finished.
 
 The app never autoplays a list or sends the whole list to Music Assistant. Failed or uncertain playback keeps the entry for explicit review.
 

@@ -8,7 +8,10 @@ type Drag = {
   state: State; source: HTMLElement; id: string; name: string; index: number; active: boolean;
   pointer?: number; x: number; y: number; startX: number; startY: number; offsetX: number; offsetY: number;
   valid: boolean; ghost?: HTMLElement; slots: Slot[]; gap: number; targetLeft: number;
+  /** Touch picks a card up only after a press-and-hold, so ordinary swipes still scroll the order. */
+  touch?: boolean; hold?: ReturnType<typeof setTimeout>;
 };
+const touchHoldMs = 350;
 
 /** Pointer and keyboard previews stay local; only a completed drop writes the captured order. */
 export class OrderDrag {
@@ -32,6 +35,9 @@ export class OrderDrag {
       if (this.drag && this.drag.pointer === undefined && !list.contains(event.relatedTarget instanceof Node ? event.relatedTarget : null)) this.cancel();
     });
     list.addEventListener('dragstart', event => { if (this.options.state().enabled) event.preventDefault(); });
+    // Once a held card is picked up, the finger moves the card instead of scrolling the page or list.
+    list.addEventListener('touchmove', event => { if (this.drag?.touch && this.drag.active) event.preventDefault(); }, { passive: false });
+    list.addEventListener('contextmenu', event => { if (this.drag?.touch) event.preventDefault(); });
     // Track the whole gesture, including presses on the trash icon and releases after cancellation.
     document.addEventListener('pointermove', event => this.trackPress(event), true);
     document.addEventListener('pointerup', event => {
@@ -100,6 +106,16 @@ export class OrderDrag {
     if (this.drag || !(event.target instanceof Element) || event.target.closest('button, a, input, select, textarea')) return;
     const source = event.target.closest<HTMLElement>('.rotation-seat'); if (!source || !this.list.contains(source)) return;
     this.drag = this.create(source, event); if (!this.drag) return;
+    if (event.pointerType === 'touch') {
+      const drag = this.drag; drag.touch = true;
+      drag.hold = setTimeout(() => {
+        if (this.drag !== drag || drag.active) return;
+        try { this.list.setPointerCapture(drag.pointer!); } catch { this.clear(); return; }
+        try { navigator.vibrate?.(12); } catch { /* Optional feedback. */ }
+        source.focus({ preventScroll: true }); this.begin(drag);
+      }, touchHoldMs);
+      return;
+    }
     source.focus({ preventScroll: true }); this.list.setPointerCapture(event.pointerId);
   };
 
@@ -109,6 +125,8 @@ export class OrderDrag {
 
   private pointerMove = (event: PointerEvent) => {
     const drag = this.drag; if (!drag || event.pointerId !== drag.pointer) return;
+    // A touch that moves before the hold completes is a scroll: let the browser have it.
+    if (drag.touch && !drag.active) { if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) >= 8) this.clear(); return; }
     drag.x = event.clientX; drag.y = event.clientY;
     if (!drag.active && Math.hypot(drag.x - drag.startX, drag.y - drag.startY) >= 8) this.begin(drag);
     if (drag.active) { event.preventDefault(); this.pointerPosition(drag); }
@@ -227,7 +245,7 @@ export class OrderDrag {
   }
 
   private clear() {
-    const drag = this.drag; this.drag = undefined; cancelAnimationFrame(this.frame); this.frame = 0;
+    const drag = this.drag; this.drag = undefined; cancelAnimationFrame(this.frame); this.frame = 0; clearTimeout(drag?.hold);
     drag?.ghost?.remove(); drag?.source.classList.remove('is-dragging', 'is-keyboard-dragging');
     this.list.classList.remove('is-dragging');
     if (drag?.pointer !== undefined && this.list.hasPointerCapture(drag.pointer)) this.list.releasePointerCapture(drag.pointer);

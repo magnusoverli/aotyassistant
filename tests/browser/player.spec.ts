@@ -59,7 +59,7 @@ test('a delayed search leaves pause and finish available and retains its results
     await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Pause', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
+    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.locator('.playback-card')).toContainText('Choose a song');
     search.release();
     await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'false');
@@ -107,7 +107,7 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     const resumed = page.waitForResponse(response => response.url().endsWith('/api/participant/control') && response.request().postDataJSON().action === 'resume');
     pause.release(); await resumed;
     expect(actions).toEqual(['resume', 'pause', 'resume']);
-    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
+    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Fixture finish rejected.');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     expect(finishes).toBe(1); expect(actions).not.toContain('stop');
@@ -143,7 +143,7 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     page.on('request', request => { if (request.url().endsWith('/api/participant/control')) controls.push(request.postDataJSON().action); });
     await page.route('**/api/participant/finish', async route => { finishes++; await finish.promise; await route.continue(); });
     const before = await (await page.request.get('/api/participant/state')).json();
-    await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
+    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Finish turn', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeDisabled();
     await page.locator('#finish-my-turn').evaluate(node => { (node as HTMLButtonElement).click(); });
     expect(finishes).toBe(1);
@@ -155,7 +155,7 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     expect(after.turnId).not.toBe(before.turnId); expect(after.ownPlayback).toBeNull(); expect(controls).toEqual([]); expect(finishes).toBe(1);
     // A participant can still pass an idle turn without choosing music.
     await expect(next.getByRole('button', { name: 'Pass turn', exact: true })).toBeEnabled();
-    await next.getByRole('button', { name: 'Pass turn', exact: true }).click();
+    next.once('dialog', dialog => dialog.accept()); await next.getByRole('button', { name: 'Pass turn', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   } finally { finish.release(); await nextContext.close(); await f.close(); }
 });
