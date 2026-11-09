@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.2.5] — 2026-11-09
+
+- Disable the embedded browser speaker inside Home Assistant Ingress. Playback controls still work there; direct LAN access and Tailscale invitations continue to register browser speakers automatically.
+- Automatic play: switch on **Settings → Playback → Play the next song automatically** and, when a song finishes, the turn passes and the next participant's first song in Your playlist starts by itself. It is off by default. Nothing starts when their playlist is empty or the song can't play; they choose as usual. Finish turn, Skip turn and Pass turn never start the next song. While a song starts this way, the participant's playlist says so instead of asking for a review.
+
 ## [1.2.4] — 2026-11-09
 
 - Replace uploaded songs too: **⇄** opens an upload-and-review dialog instead of album tracks. The new file takes the same playlist position only after saving. The original stays in Removed, or Previously played if it has history, with its file retained for separate deletion. Cancelled or rejected uploads leave the original untouched.

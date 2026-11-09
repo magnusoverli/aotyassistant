@@ -42,7 +42,13 @@ The display smooths progress locally between playback updates. Before reveal, it
 
 Reveal follows the current participant's user identity across signed-in devices. Everyone can prepare their own playlist while waiting; only the current participant can play or reveal their track. The host has separate transport controls and no reveal button. A reveal request shows **Revealing…** until confirmed; **Details revealed** means the server has already accepted the reveal, including automatic reveal.
 
-When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song.
+When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song, unless automatic play is on.
+
+### Automatic play
+
+Switch on **Settings → Playback → Play the next song automatically** to keep the music going between turns. It is off by default. When a song finishes naturally and the turn passes, the next participant’s first song in **Your playlist** starts by itself, as if they had chosen **Play first selection**: it moves to **Previously played**, starts hidden on the room display, and is revealed in the usual way. The round continues in listening order for as long as each participant has a song ready.
+
+Nothing starts, and the participant chooses as usual, when their playlist is empty, a previous play attempt needs review, the song’s source isn’t connected, or the speaker isn’t ready. A song that can’t be found stays first in their playlist. **Finish turn**, **Skip turn** and **Pass turn** never start the next song, and switching the setting on doesn’t start music by itself. While an automatic start is in progress, the participant’s playlist shows **Your first song is starting…**. To stop the music, use **Stop song** or switch the setting off.
 
 The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.
 
@@ -62,6 +68,6 @@ There is no Create/Start/End session step. The room and join/display links persi
 
 Lists, users, settings, and order survive restart, while playback and reveal reset. Include the app in Home Assistant backups. To return on another device, select yourself and enter your PIN. The host can replace forgotten PINs in Settings without deleting songs or changing playback. Lists are automatic; there is no recovery-key or list-switching workflow.
 
-Settings has four sections: **Playback** for the active speaker/group and automatic reveal; **Users** for name/avatar rows and account actions; **Music Assistant** for connection setup; and **Access & network** for guest links and uploaded-file connectivity. Initial setup opens Music Assistant; configured installations open Playback. Use the section navigation on the left (above the content on smaller screens); switching sections keeps unfinished form edits. Connection and speaker status appear in their respective sections.
+Settings has four sections: **Playback** for the active speaker/group, automatic reveal and automatic play; **Users** for name/avatar rows and account actions; **Music Assistant** for connection setup; and **Access & network** for guest links and uploaded-file connectivity. Initial setup opens Music Assistant; configured installations open Playback. Use the section navigation on the left (above the content on smaller screens); switching sections keeps unfinished form edits. Connection and speaker status appear in their respective sections.
 
 To permanently remove someone and their playlist, use **Host → Settings → Users → Manage → Delete user** and confirm. This deletes their history and uploads, signs out their devices and removes any listening-order seat. A fresh registration can reuse the deleted name and starts with an empty playlist.

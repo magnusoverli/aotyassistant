@@ -40,8 +40,8 @@
   .settings-page .settings-recovery .warning { margin:14px 0; padding:14px; }
   .settings-page .settings-notice { margin:0; }
   .settings-workspace > .settings-notice { margin-bottom:20px; }
-  .auto-reveal-setting { display:flex; align-items:center; gap:12px; min-height:44px; margin:12px 0; cursor:pointer; }
-  .auto-reveal-setting input { width:18px; height:18px; min-height:0; flex:0 0 18px; accent-color:var(--accent); }
+  .setting-toggle { display:flex; align-items:center; gap:12px; min-height:44px; margin:12px 0; cursor:pointer; }
+  .setting-toggle input { width:18px; height:18px; min-height:0; flex:0 0 18px; accent-color:var(--accent); }
   .speaker-refresh { position:relative; padding-inline:40px; }
   .speaker-refresh[aria-busy='true'] { opacity:.8; cursor:progress; }
   .speaker-refresh[aria-busy='true']:before { content:''; position:absolute; left:16px; top:calc(50% - 8px); width:16px; height:16px; border:2px dotted var(--accent); border-right-color:transparent; border-radius:50%; animation:speaker-refresh-spin 1.2s linear infinite; }

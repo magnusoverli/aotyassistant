@@ -45,6 +45,7 @@ const roomShape = z.object({
   active: z.array(z.string().uuid()).max(100),
   currentId: z.string().uuid().nullable(),
   autoReveal: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
+  autoplay: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
   playback: z.object({
     id: z.string().uuid(), turnId: z.string().uuid(), track: trackSchema,
     status: z.enum(['playing', 'paused', 'stopped']), revealed: z.boolean(),
@@ -73,6 +74,8 @@ export type VolumeState = { available: boolean; level: number | null; revision?:
 /** Public output identity/health only; never a queue payload or current recording. */
 export type OutputState = { name: string | null; state: 'none' | 'checking' | 'ready' | 'unavailable' | 'unconfirmed' | 'recovery' | 'incompatible'; checkedAt: number | null; reason?: 'unsupported-schema' };
 export type PlaybackSettings = { enabled: boolean; revision: number };
+/** The participant whose turn began when a song ended, for automatic play. */
+export type AutoplayTarget = { turnId: string; participantId: string; userId: string };
 export const AUTO_REVEAL_FRACTION = 0.7;
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
 /** Source stream reported by MA; bitrate in kbps and sample rate in Hz. */

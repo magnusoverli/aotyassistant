@@ -10,7 +10,7 @@ Settings reports the installed MA version/schema and distinguishes an unsupporte
 
 The app selects speakers and groups exposed by Music Assistant. Search coverage, artist albums, availability, seeking, and volume depend on the provider/player. Compatibility has not been established for every player integration or provider. See [testing coverage and limitations](testing.md).
 
-The [Listening Room browser registers automatically as a speaker](browser-speaker.md). Select it in the existing Playback speaker selector; its audio engine survives navigation between app pages.
+The [Listening Room browser registers automatically as a speaker](browser-speaker.md) over direct LAN access and Tailscale invitations, but not Home Assistant Ingress. Select it in the existing Playback speaker selector; its audio engine survives navigation between app pages. Ingress retains playback controls for the selected speaker or group.
 
 ## Search and saved recordings
 

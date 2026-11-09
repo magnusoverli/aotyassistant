@@ -3,7 +3,7 @@ import type { IncomingMessage } from 'node:http';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import { BrowserSpeakers, requestSpeakerCookie, speakerCookie, speakerPath, speakerRegistration, type SpeakerContext } from './browser-speakers.js';
-import { ingressContext, validateIngress } from './ingress.js';
+import { ingressContext } from './ingress.js';
 import { publicContext, onlineCookie } from './public-listener.js';
 import type { OnlineAccess } from './online-access.js';
 import { AppError } from './model.js';
@@ -12,11 +12,9 @@ import { directHosts, isLoopbackPeer } from './http-guards.js';
 import { browserAudioHealth } from './browser-audio-health.js';
 
 export function speakerContext(req: IncomingMessage, kind: SpeakerContext['kind'], guestOrigin: string, port: number, online?: OnlineAccess): SpeakerContext | undefined {
-  if (kind === 'ingress') {
-    const ingress = ingressContext(req) ?? validateIngress(req);
-    if (ingress) return { ...ingress, kind, valid: () => true };
-    return;
-  }
+  // Ingress retains room controls, but never registers or relays a browser speaker.
+  // This also rejects requests from older pages that still initialize audio.
+  if (kind === 'ingress') return;
   if (kind === 'public') {
     const origin = online?.origin; const grant = onlineCookie(req);
     if (!online || !origin || !isLoopbackPeer(req) || req.headers.host !== new URL(origin).host || !online.authorized(grant)) return;

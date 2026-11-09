@@ -159,7 +159,7 @@ export class PreparationPanel {
     const countLabel = v.el('count', 'span', count === undefined ? '' : `${count} ${count === 1 ? 'track' : 'tracks'}`, 'list-count');
     prop(countLabel, 'hidden', count === undefined);
     const summary = v.el('summary', 'div', undefined, 'list-summary');
-    const attention = Boolean(library.error || library.warning || library.pending || snapshot?.reviewEntryId || snapshot?.upcoming.some(entry => entry.sourceAvailable === false));
+    const attention = Boolean(library.error || library.warning || library.pending || (snapshot?.reviewEntryId && !snapshot.starting) || snapshot?.upcoming.some(entry => entry.sourceAvailable === false));
     list.classList.toggle('needs-attention', attention);
     attr(list, 'data-save-state', library.loading ? 'loading' : library.saving ? 'saving' : library.pending ? 'pending' : !navigator.onLine ? 'offline' : 'ready');
     const preview = v.el('preview', 'p', attention ? 'Needs attention' : snapshot?.upcoming[0] ? `Your next pick: ${snapshot.upcoming[0].title}` : 'Save songs for your turn', 'list-preview');
@@ -198,7 +198,10 @@ export class PreparationPanel {
       children(notice, ...messages); bodyNodes.push(notice);
     }
     if (library.warning) bodyNodes.push(v.el('warning', 'p', library.warning, 'muted small list-note'));
-    if (snapshot?.reviewEntryId && !this.options.starting()) {
+    // Started from another device or by automatic play: wait for it rather than review it.
+    if (snapshot?.reviewEntryId && snapshot.starting && !this.options.starting()) {
+      const starting = v.el('starting', 'p', 'Your first song is starting…', 'muted small list-note'); attr(starting, 'role', 'status'); bodyNodes.push(starting);
+    } else if (snapshot?.reviewEntryId && !this.options.starting()) {
       const review = v.el('review', 'div', undefined, 'list-notice'); children(review, v.el('review-message', 'p', 'A previous play attempt needs review. The track is still saved; check the player before trying again.'),
         this.control('review', 'Keep in list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
     }

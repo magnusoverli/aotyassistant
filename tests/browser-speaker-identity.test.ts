@@ -15,17 +15,19 @@ import { ingressListener } from '../src/ingress.js';
 import { BrowserSpeakers, type BrowserSpeakerView } from '../src/browser-speakers.js';
 import type { Config } from '../src/config.js';
 
-for (const ingress of [false, true]) test(`speaker names receive path-scoped participant cookies over ${ingress ? 'Ingress' : 'LAN'}`, async t => {
-  const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
+for (const ingress of [false, true]) test(ingress ? 'Ingress disables browser speakers without blocking participant controls' : 'speaker names receive path-scoped participant cookies over LAN', async t => {
+  const server = createServer(); t.after(() => { server.closeAllConnections(); server.close(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const base = ingress ? '/api/hassio_ingress/fixture' : '';
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: origin,
     dataDir: await mkdtemp(join(tmpdir(), 'aoty-speaker-identity-')), demoSeconds: 3600 };
-  const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, origin); await engine.init();
-  const speakers = new BrowserSpeakers(() => ({ origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: '1', scope: 'fixture', version: '2.10.9', serverId: 'fixture' }));
+  const adapter = new DemoAdapter(3600); t.after(() => adapter.close());
+  const engine = new Engine(new FileStore(config.dataDir), adapter, origin); await engine.init();
+  const speakers = new BrowserSpeakers(() => ({ origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: '1', scope: 'fixture', version: '2.10.9', serverId: 'fixture' })); t.after(() => speakers.close());
   const { app, close } = createApp(engine, config, 'web', undefined, undefined, undefined, undefined, undefined, speakers);
   server.on('request', ingress ? ingressListener(app, '127.0.0.1') : app);
-  t.after(() => { speakers.close(); close(); adapter.close(); server.closeAllConnections(); server.close(); });
+  t.after(close);
 
   // Send cookies only where the browser would, using actual Set-Cookie paths from the app.
   const jar = new Map<string, { pair: string; path: string }>();
@@ -54,6 +56,15 @@ for (const ingress of [false, true]) test(`speaker names receive path-scoped par
     assert.equal(response.status, 200); return response.json() as Promise<BrowserSpeakerView>;
   };
 
+  if (ingress) {
+    assert.equal((await request('/api/browser-speaker/info')).status, 403);
+    assert.equal((await request('/api/participant/browser-speaker/register', { id: randomUUID(), clientId: randomBytes(32).toString('base64url'), name: 'Browser' })).status, 403);
+    assert.equal((await request('/api/host/state')).status, 200);
+    assert.equal((await request('/api/participant/join', { nickname: 'Magnus', pin: '1234' })).status, 200);
+    assert.equal((await request('/api/participant/state')).status, 200);
+    assert.equal((await request('/api/participant/logout', {})).status, 200);
+    assert.deepEqual(speakers.list(), []); return;
+  }
   assert.equal((await request('/api/browser-speaker/info')).status, 200);
   const guest = await register(); assert.equal(guest.name, 'Listening Room (Windows PC)');
   assert.equal((await request('/api/participant/join', { nickname: 'Magnus', pin: '1234' })).status, 200);

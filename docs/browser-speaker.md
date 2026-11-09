@@ -1,6 +1,6 @@
 # Browser playback
 
-Opening Listening Room automatically registers its browser as a Music Assistant speaker. This applies to Home Assistant, local access and invited internet browsers. The audio code and its format checks load in the background once the page is shown, so registration happens shortly after a page opens (within three seconds) rather than delaying it. There are no separate enable/disable buttons, approval codes, setup panels or persistent indicators.
+Opening Listening Room directly over the LAN or through a Tailscale invitation automatically registers its browser as a Music Assistant speaker. Home Assistant Ingress does not load or register the embedded player; its normal playback controls still operate the selected speaker or group. To use the same device as a browser speaker, open the direct LAN address or an online invitation outside Ingress. The audio code and its format checks load in the background once the page is shown, so registration happens shortly after a page opens (within three seconds) rather than delaying it. There are no separate enable/disable buttons, approval codes, setup panels or persistent indicators.
 
 Choose your **Listening Room** browser in the existing **Settings → Playback** speaker selector. Refresh the speaker list if necessary. Registration does not select a destination or start a track; playback uses the existing controls.
 
@@ -33,7 +33,7 @@ MA **2.10.9** has schema 65 and `aiosendspin[server]==10.2.1`. Its authenticated
 
 ## Access and testing
 
-Audio travels through Listening Room's own address, including the Ingress prefix or Funnel address. The MA account token stays on the backend. Public upgrades require both a valid invitation and a browser session. Invitation revocation, logout and connection replacement close affected audio connections.
+Audio travels through Listening Room's direct LAN or Funnel address. Ingress rejects browser-speaker API requests and audio WebSocket connections, including attempts from older open pages. The MA account token stays on the backend. Public upgrades require both a valid invitation and a browser session. Invitation revocation, logout and connection replacement close affected audio connections.
 
 ## Automatic audio quality and bandwidth
 
@@ -46,7 +46,7 @@ Browser players prefer **Opus, then FLAC, then PCM**, with no codec or quality s
 | Firefox desktop/Android | FLAC → PCM (SDK excludes glitch-prone Opus) |
 | Chromium without WebCodecs, including ordinary LAN HTTP | FLAC → PCM |
 
-Before connecting, bounded, inaudible sample-decode checks verify the compressed formats. Native and bundled software Opus decoding are checked independently. A failed check removes that format; PCM remains available. All decoder assets are served through the same app origin, including Ingress and public invitations.
+Before connecting, bounded, inaudible sample-decode checks verify the compressed formats. Native and bundled software Opus decoding are checked independently. A failed check removes that format; PCM remains available. All decoder assets are served through the same app origin for direct LAN access and public invitations.
 
 Three received chunks that fail to produce decoded audio within 2.5 seconds trigger automatic recovery: verified software Opus first, then another verified codec. Failed codecs remain excluded for that player lifetime. If MA ignores a format request for four seconds, the existing player reconnects with updated capabilities. Recovery preserves the player identity, pairing, volume and unlocked audio output; it never sends Play or replaces the queue. Silence, no incoming audio and a suspended output do not by themselves trigger codec fallback.
 

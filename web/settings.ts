@@ -8,7 +8,7 @@ import { pageFrame } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-nodes';
 import { SpeakerFreshness } from './speaker-freshness';
-import { PlaybackSettingsPanel } from './playback-settings';
+import { PlaybackSettingsPanel, autoRevealSetting, autoplaySetting } from './playback-settings';
 import { UserSettingsPanel } from './user-pin';
 import { SettingsSections, type SettingsSection } from './settings-sections';
 import { OnlinePanel } from './online-panel';
@@ -22,8 +22,9 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   const nodes = new ViewNodes();
   const sections = new SettingsSections(signal);
   const onlineInvitations = new OnlinePanel(signal);
-  const playbackSettings = new PlaybackSettingsPanel(signal);
-  void playbackSettings.load();
+  const playbackSettings = new PlaybackSettingsPanel(signal, autoRevealSetting);
+  const autoplaySettings = new PlaybackSettingsPanel(signal, autoplaySetting);
+  void playbackSettings.load(); void autoplaySettings.load();
   const userPins = new UserSettingsPanel(signal); void userPins.load();
   let settings: IntegrationView | undefined;
   let urlDraft = '';
@@ -369,7 +370,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', explanation, 'warning'), requiresRecovery && recovery, requiresRecovery && details);
       playbackNodes.push(playback);
     }
-    playbackNodes.push(destination, playbackSettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
+    playbackNodes.push(destination, playbackSettings.element, autoplaySettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
     sections.update('music-assistant', ...(feedbackSection === 'music-assistant' ? feedback : []), connection);
     sections.update('playback', ...(feedbackSection === 'playback' ? feedback : []), ...playbackNodes);
     sections.update('access', ...(feedbackSection === 'access' ? feedback : []), ...accessNodes);

@@ -25,6 +25,7 @@ import { errorPage, escapeHtml } from './error-page.js';
 import { mountStaticAssets } from './static-assets.js';
 import { diagnostics } from './diagnostics.js';
 import { UserManager, pinSchema } from './users.js';
+import { attachAutoplay } from './autoplay.js';
 import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
 import { mountBrowserSpeakers } from './browser-speaker-http.js';
 
@@ -46,6 +47,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   preparations ??= new PreparationManager(new PreparationFileStore(config.dataDir), Date.now, savedSourceAvailable(integrations));
   const users = new UserManager(config.dataDir, preparations, engine);
   uploads.setOwnerPolicy(ownerId => users.ownerAvailable(ownerId));
+  attachAutoplay(engine, preparations, users);
   const app = express();
   app.disable('x-powered-by');
   const rates = new RateLimiter();
@@ -135,6 +137,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.get('/api/host/playback-settings', (_req, res) => res.json(engine.playbackSettings()));
   app.post('/api/host/playback-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
     res.json(await engine.setAutoReveal(input.enabled, input.revision));
+  }));
+  app.get('/api/host/autoplay-settings', (_req, res) => res.json(engine.autoplaySettings()));
+  app.post('/api/host/autoplay-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
+    res.json(await engine.setAutoplay(input.enabled, input.revision));
   }));
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
   let closeAuthorization = () => {};

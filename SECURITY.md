@@ -14,7 +14,7 @@ The optional built-in Tailscale Funnel feature uses a separate loopback-only gue
 
 Online guests need a high-entropy revocable invitation before accessing profiles, participant APIs, or the display. Invitation fragments are exchanged for seven-day signed Secure/HttpOnly/SameSite cookies and removed from browser history before room requests start. Replacing or disabling invitations invalidates grants and closes active guest responses. Global and per-grant limits, bounded uploads, existing PIN cooldowns, and per-user private-list checks apply. An invited person can still share their invitation; this is a trusted-friends access model, not strong identity verification or protection against denial of service.
 
-Browsers register automatically as Sendspin players, including invited internet browsers. These are trusted audio clients: Sendspin can expose track metadata and playback-control capabilities independently of Listening Room's visible reveal/turn controls. Invitation revocation also closes the audio relay. MA credentials remain server-side, and the relay does not expose generic MA API access.
+Browsers register automatically as Sendspin players over direct LAN access and online invitations, but not Home Assistant Ingress. These are trusted audio clients: Sendspin can expose track metadata and playback-control capabilities independently of Listening Room's visible reveal/turn controls. Invitation revocation also closes the audio relay. MA credentials remain server-side, and the relay does not expose generic MA API access.
 
 ## Credentials and private music
 

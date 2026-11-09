@@ -1,6 +1,6 @@
 import { type SendspinStorage } from '@sendspin/sendspin-js';
 import { AutomaticAudioPlayer } from './sendspin-extension';
-import { appPath, isPublic } from './paths';
+import { appPath, inIngress, isPublic } from './paths';
 import { lanAudio, onlineAudio } from './audio-policy';
 import { requestJson } from './request';
 import { operationId } from './preparation-controller';
@@ -10,6 +10,7 @@ import { browserSpeakerName } from '../src/browser-speaker-name';
 
 let speaker: BrowserSpeakerRuntime | undefined;
 export function initializeBrowserSpeaker() {
+  if (inIngress()) return;
   if (speaker) return speaker;
   const device = browserDevice(navigator);
   speaker = new BrowserSpeakerRuntime({

@@ -10,7 +10,7 @@ import express from 'express';
 import { BrowserSpeakers, configureBrowserPlayer, openSpeakerSocket, pairingClientId, type SpeakerConnection, type SpeakerContext } from '../src/browser-speakers.js';
 import { browserSpeakerName } from '../src/browser-speaker-name.js';
 import { speakerContext, mountBrowserSpeakers } from '../src/browser-speaker-http.js';
-import { validateIngress } from '../src/ingress.js';
+import { ingressListener, validateIngress } from '../src/ingress.js';
 import { publicRoute } from '../src/public-listener.js';
 import type { OnlineAccess } from '../src/online-access.js';
 import { browserAudioHealth } from '../src/browser-audio-health.js';
@@ -94,10 +94,9 @@ test('automatic sessions enforce owner/context and abandoned sessions expire', t
 
 test('another tab waits for the identity lease and takes over automatically after the first leaves', t => {
   const speakers = new BrowserSpeakers(() => connection); t.after(() => speakers.close());
-  const ingress: SpeakerContext = { ...lan, kind: 'ingress', base: '/api/hassio_ingress/test' };
-  const first = speakers.register(registration(), owner, ingress); assert.equal(first.active, true);
-  const second = speakers.register(registration(), owner, ingress); assert.equal(second.active, false);
-  speakers.remove(first.id); assert.equal(speakers.status(second.id, owner, ingress).active, true);
+  const first = speakers.register(registration(), owner, lan); assert.equal(first.active, true);
+  const second = speakers.register(registration(), owner, lan); assert.equal(second.active, false);
+  speakers.remove(first.id); assert.equal(speakers.status(second.id, owner, lan).active, true);
   const remote = speakers.register({ ...registration(), clientId: randomBytes(32).toString('base64url') }, owner, { ...lan, kind: 'public' });
   speakers.revokePublic(); assert.equal(speakers.list().some(s => s.id === remote.id), false); assert.equal(speakers.list().length, 1);
   speakers.revokeOwner(owner); assert.deepEqual(speakers.list(), []);
@@ -222,13 +221,15 @@ test('a reused MA address or unsupported API schema is rejected before websocket
   assert.equal(upgrades, 0);
 });
 
-test('listener contexts require real Ingress provenance or a valid Funnel grant, not forwarded headers on LAN', () => {
+test('speaker contexts reject Ingress and spoofed LAN headers while retaining LAN and invited Funnel access', () => {
   const req = (headers: Record<string, string>, peer = '127.0.0.1') => ({ headers, socket: { remoteAddress: peer } }) as IncomingMessage;
   const ingressHeaders = { host: 'internal:8099', 'x-ingress-path': '/api/hassio_ingress/test', 'x-forwarded-proto': 'https', 'x-forwarded-host': 'ha.example', 'x-remote-user-id': 'user' };
   assert.equal(validateIngress(req(ingressHeaders)), undefined);
   assert.equal(speakerContext(req(ingressHeaders), 'lan', lan.origin, 3000), undefined);
-  const trusted = speakerContext(req(ingressHeaders, '172.30.32.2'), 'ingress', lan.origin, 3000)!;
-  assert.equal(trusted.origin, 'https://ha.example'); assert.equal(trusted.kind, 'ingress');
+  const trusted = req(ingressHeaders, '172.30.32.2');
+  assert.equal(validateIngress(trusted)?.origin, 'https://ha.example');
+  assert.equal(speakerContext(trusted, 'ingress', lan.origin, 3000), undefined);
+  assert.equal(speakerContext(req({ host: 'room.local:3000' }), 'lan', lan.origin, 3000)?.kind, 'lan');
   let valid = true; const online = { origin: 'https://room.ts.net', authorized: (grant: string) => valid && grant === 'fixture-grant' } as OnlineAccess;
   const remote = req({ host: 'room.ts.net', cookie: '__Host-aoty_online=fixture-grant' });
   const context = speakerContext(remote, 'public', lan.origin, 3000, online)!; assert.equal(context.kind, 'public'); assert.equal(context.valid(), true);
@@ -241,6 +242,45 @@ test('listener contexts require real Ingress provenance or a valid Funnel grant,
   assert.equal(publicRoute('POST', '/api/participant/browser-speaker/config'), false);
   assert.equal(publicRoute('GET', '/api/participant/browser-speaker/session/not-a-session'), false);
   assert.equal(publicRoute('POST', '/api/host/browser-speakers'), false);
+});
+
+test('Ingress blocks speaker HTTP routes and websocket upgrades without contacting MA or blocking host controls', async t => {
+  const f = await fixture(t);
+  const app = express(); app.use(express.json());
+  mountBrowserSpeakers(app, f.speakers, () => f.local.url, f.local.port);
+  app.get('/api/host/state', (_req, res) => res.json({ ok: true }));
+  app.use((error: { status?: number; message: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(error.status ?? 500).json({ error: error.message });
+  });
+  const gateway = await listen(t, ingressListener(app, '127.0.0.1'));
+  f.speakers.attach(gateway.server, req => speakerContext(req, 'ingress', f.local.url, f.local.port));
+  const base = '/api/hassio_ingress/test';
+  const headers = { 'x-ingress-path': base, 'x-forwarded-proto': 'https', 'x-forwarded-host': 'ha.example', 'x-remote-user-id': 'user',
+    Origin: 'https://ha.example', Cookie: `aoty_browser_speaker=${owner}`, 'Content-Type': 'application/json' };
+  const audio = { decodedChunks: 0, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 500 };
+  const routes = [
+    { path: '/api/browser-speaker/info' },
+    { path: '/api/browser-speaker/register', data: f.input },
+    { path: '/api/participant/browser-speaker/register', data: f.input },
+    { path: `/api/browser-speaker/session/${f.input.id}` },
+    { path: `/api/participant/browser-speaker/session/${f.input.id}` },
+    { path: '/api/browser-speaker/pair', data: { id: f.input.id, token: tokenFor(clientId) } },
+    { path: '/api/browser-speaker/stop', data: { id: f.input.id } },
+    { path: '/api/participant/browser-speaker/telemetry', data: { id: f.input.id, audio } },
+  ];
+  for (const { path, data } of routes) {
+    const response = await fetch(gateway.url + path, { headers, method: data ? 'POST' : 'GET', ...(data ? { body: JSON.stringify(data) } : {}) });
+    assert.equal(response.status, 403, path);
+    assert.equal(response.headers.get('set-cookie'), null, path);
+  }
+  for (const path of ['/api/browser-speaker/socket', base + '/api/browser-speaker/socket']) {
+    const socket = new WebSocket(gateway.url.replace('http:', 'ws:') + path + '?id=' + f.input.id, { headers });
+    t.after(() => socket.terminate());
+    await assert.rejects(once(socket, 'open'), /403/);
+  }
+  assert.equal((await fetch(gateway.url + '/api/host/state', { headers })).status, 200);
+  assert.equal(f.auth.length, 0); assert.equal(f.commands.length, 0);
+  assert.equal(f.speakers.status(f.input.id, owner, f.context).active, true, 'Ingress cannot stop the LAN session.');
 });
 
 test('browser audio diagnostics are bounded, owner-scoped and cleared when the connection ends', async t => {

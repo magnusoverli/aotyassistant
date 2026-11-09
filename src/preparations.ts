@@ -149,6 +149,8 @@ export type PreparationView = {
   ownerId: string; revision: number; capacity: { upcoming: number; entries: number };
   upcoming: PreparedEntryView[]; played: PreparedEntryView[]; removed: PreparedEntryView[];
   reviewEntryId?: string;
+  /** The reserved entry is still starting (on any device, or by automatic play), not awaiting review. */
+  starting?: true;
 };
 export type PreparationResult = { view: PreparationView; entryId: string; replayed: boolean; warning?: string };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -213,7 +215,7 @@ export class PreparationManager {
       upcoming: state.order.map(key => entry(byId.get(key)!)),
       played: state.entries.filter(item => item.state === 'played').sort((a, b) => b.playedAt! - a.playedAt!).map(entry),
       removed: state.entries.filter(item => item.state === 'removed').sort((a, b) => b.removedAt! - a.removedAt!).map(entry),
-      ...(state.pendingPlay ? { reviewEntryId: state.pendingPlay.entryId } : {}) };
+      ...(state.pendingPlay ? { reviewEntryId: state.pendingPlay.entryId, ...(this.playing.has(state.ownerId) ? { starting: true as const } : {}) } : {}) };
   }
   private async save(state: PreparationState) {
     try { await this.store.save(state); }
@@ -485,35 +487,77 @@ export class PreparationManager {
   }
   private async playReservedHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
     const access = identity(credential); entryId = input(id, entryId);
-    const selection = await this.serial(access.ownerId, async () => {
-      const state = await this.authorize(access.ownerId, access.secretHash);
+    const result = await this.playReserved(access.ownerId, () => this.authorize(access.ownerId, access.secretHash), state => {
       if (state.revision !== expectedRevision || state.order[0] !== entryId) throw new AppError(409, 'The next prepared track changed. Review your list.');
+      return entryId;
+    }, work);
+    return result!; // Always reserved (or thrown) here, and `work` never declines.
+  }
+  /** Automatic play, started by the server rather than a browser: reserves and plays the owner's first
+   * upcoming song exactly as Play first selection would. `available` (the owner still exists) is checked
+   * on every read; `ready` (the turn is still theirs) only before reserving. Nothing starts for an empty
+   * list, a pending review or a song whose source is not connected. Resolves true once it played. */
+  playFirstFor(ownerId: string, checks: { available: () => boolean; ready: () => boolean }, work: (selection: SavedSelection, entryId: string) => Promise<string | null>) {
+    return this.track((async () => {
+      ownerId = input(id, ownerId);
+      const result = await this.playReserved(ownerId, async () => checks.available() ? await this.store.load(ownerId) ?? undefined : undefined, state => {
+        const head = state.order[0];
+        if (!head || state.pendingPlay || !checks.ready() || this.sourceAvailable?.(this.find(state, head).selection) === false) return undefined;
+        return head;
+      }, async (selection, entryId) => {
+        const playbackId = await work(selection, entryId);
+        return playbackId === null ? null : { playbackId, value: undefined };
+      });
+      return Boolean(result);
+    })());
+  }
+  /** Reserves one upcoming entry durably, then releases the owner lane during audio work. Never retries audio.
+   * `work` returns null only when it sent no audio command: the entry then stays first, without a review. */
+  private async playReserved<T>(ownerId: string, load: () => Promise<PreparationState | undefined>, choose: (state: PreparationState) => string | undefined,
+    work: (selection: SavedSelection, entryId: string) => Promise<{ playbackId: string; value: T } | null>) {
+    const reserved = await this.serial(ownerId, async () => {
+      const state = await load(); const entryId = state && choose(state);
+      if (!state || entryId === undefined) return undefined;
       if (state.pendingPlay) throw new AppError(409, 'Review the previous play attempt before playing again.');
       const entry = this.find(state, entryId);
       if (entry.playbackIds.length >= 1000) throw new AppError(409, 'Playback history is full. The saved entry was kept.');
-      state.pendingPlay = { entryId, startedAt: this.now() }; state.revision++; await this.save(state);
-      this.playing.add(access.ownerId); return structuredClone(entry.selection);
+      state.pendingPlay = { entryId, startedAt: this.now() }; state.revision++;
+      // Marked before the save, so every device sees a start in progress rather than a review.
+      this.playing.add(ownerId);
+      try { await this.save(state); } catch (error) { this.playing.delete(ownerId); throw error; }
+      return { entryId, selection: structuredClone(entry.selection) };
     });
+    if (!reserved) return undefined;
+    const { entryId } = reserved; let settled = false;
     try {
       // A failed acknowledgement does not prove no audio started: leave the durable
       // marker for explicit review if work throws or the process exits here.
-      const result = await work(selection);
-      return await this.serial(access.ownerId, async () => {
+      const result = await work(reserved.selection, entryId);
+      return await this.serial(ownerId, async () => {
+        if (!result) {
+          const state = await load();
+          if (state?.pendingPlay?.entryId === entryId) { delete state.pendingPlay; state.revision++; await this.save(state); }
+          settled = true; return undefined;
+        }
         try {
-          const state = await this.authorize(access.ownerId, access.secretHash);
-          if (state.pendingPlay?.entryId !== entryId || state.order[0] !== entryId) throw new Error('Saved-play reservation changed.');
+          const state = await load();
+          if (!state || state.pendingPlay?.entryId !== entryId || state.order[0] !== entryId) throw new Error('Saved-play reservation changed.');
           const entry = this.find(state, entryId);
           entry.state = 'played'; entry.playedAt = this.now(); entry.playbackIds.push(input(id, result.playbackId));
           state.order = state.order.filter(key => key !== entryId); delete state.pendingPlay; state.revision++;
-          await this.save(state); return { value: result.value, preparation: this.view(state), warning: undefined };
+          await this.save(state); settled = true; return { value: result.value, preparation: this.view(state), warning: undefined };
         }
         catch {
           let preparation: PreparationView | undefined;
-          try { preparation = this.view(await this.authorize(access.ownerId, access.secretHash)); } catch { /* Audio succeeded; report bookkeeping uncertainty separately. */ }
+          try { const state = await load(); preparation = state && this.view(state); } catch { /* Audio succeeded; report bookkeeping uncertainty separately. */ }
           return { value: result.value, preparation, warning: 'Playback started, but the saved-list update could not be confirmed. Check the list and player before choosing Play again.' };
         }
       });
-    } finally { this.playing.delete(access.ownerId); }
+    } finally {
+      this.playing.delete(ownerId);
+      // The retained reservation now needs review on every device, not "starting".
+      if (!settled) void this.serial(ownerId, () => this.notifyIdentity(ownerId)).catch(() => {});
+    }
   }
   async move(credential: string, operation: PreparationOperation, entryId: string, beforeId: string | null) {
     entryId = input(id, entryId); beforeId = input(id.nullable(), beforeId);

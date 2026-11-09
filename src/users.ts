@@ -61,6 +61,11 @@ export class UserManager {
     this.check(); return { users: this.state.users.filter(user => host || !user.deleting).map(user => ({ ...profile(user), ...(user.deleting ? { deletionPending: true } : {}) })), current: this.current(token) ?? null };
   }
   ownerAvailable(ownerId: string) { return this.healthy && !this.state.deleted.some(user => user.ownerId === ownerId) && !this.state.users.some(user => user.ownerId === ownerId && user.deleting); }
+  /** A user's private list, for automatic play inside the server only; never an HTTP list selector. */
+  listOwner(userId: string) {
+    const user = this.healthy ? this.state.users.find(user => user.id === userId) : undefined;
+    return user?.ownerId && !user.deleting && !user.listPending && this.ownerAvailable(user.ownerId) ? user.ownerId : undefined;
+  }
   private check() { if (!this.healthy) throw new AppError(503, 'User storage is unavailable. Restart after checking the data directory.'); }
   private work<T>(action: string, work: () => Promise<T>): Promise<T> {
     const result = operation(action, work); this.pending.add(result);
