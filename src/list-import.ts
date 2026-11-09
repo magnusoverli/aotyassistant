@@ -3,9 +3,12 @@ import type { SharedSong } from './shared-list.js';
 
 /** What finding a shared song needs from Music Assistant. */
 export type SongFinder = {
-  search(query: string): Promise<CatalogueTrack[]>;
+  /** `providers` limits the search to some sources ("library" and service domains). */
+  search(query: string, providers?: string[]): Promise<CatalogueTrack[]>;
   /** One album's tracks in album order, by a streaming service's own album ID. */
   serviceAlbumTracks(provider: string, itemId: string): Promise<CatalogueTrack[]>;
+  /** The connected services by domain, when known. */
+  providers?: readonly string[];
 };
 
 /** Lowercase letters and digits only. `loose` also drops bracketed parts, "- Remastered"-style
@@ -66,27 +69,81 @@ export function bestMatch(song: SharedSong, tracks: CatalogueTrack[], checkArtis
   return best?.track;
 }
 
-/** Finds one shared song: on its own album when a link names it, otherwise by searching. */
-export async function findSong(finder: SongFinder, song: SharedSong): Promise<CatalogueTrack | undefined> {
-  let failure: unknown; let searched = false;
-  const references = new Map<string, { provider: string; itemId: string }>();
-  for (const link of song.albumLinks) { const reference = albumReference(link); if (reference) references.set(`${reference.provider}:${reference.itemId}`, reference); }
-  for (const reference of references.values()) {
-    let tracks: CatalogueTrack[];
-    // The service may not be connected in Music Assistant; the next link or a search follows.
-    try { tracks = await finder.serviceAlbumTracks(reference.provider, reference.itemId); } catch { continue; }
-    const found = bestMatch(song, tracks, false);
-    if (found) return found;
-    // Same album, renamed track: its position, when the lengths agree.
-    const numbered = song.trackNumber ? tracks[song.trackNumber - 1] : undefined;
-    if (numbered?.available && song.duration && numbered.duration && Math.abs(song.duration - numbered.duration) <= 5) return numbered;
+/** Music Assistant limits each service's requests: Spotify's shared login allows one every 2 seconds,
+ * Deezer 1, Qobuz 2 and Tidal 4 a second. Faster services are tried first; slow ones only when needed. */
+export const serviceSpeed = ['tidal', 'qobuz', 'deezer', 'apple_music', 'ytmusic', 'soundcloud'];
+export const slowServices = new Set(['spotify']);
+const speedRank = (provider: string) => slowServices.has(provider) ? 99 : serviceSpeed.includes(provider) ? serviceSpeed.indexOf(provider) : serviceSpeed.length;
+
+type Step = { kind: 'album'; provider: string; itemId: string } | { kind: 'search'; providers?: string[] };
+/** The lookups for one song, cheapest first: albums on fast services, a search of the library and fast
+ * services, then albums and a search on slow services. Unknown connections search everything once. */
+export function songSteps(song: SharedSong, connected?: readonly string[]): Step[] {
+  const albums = new Map<string, { provider: string; itemId: string }>();
+  for (const link of song.albumLinks) {
+    const reference = albumReference(link);
+    if (reference && (!connected || connected.includes(reference.provider))) albums.set(`${reference.provider}:${reference.itemId}`, reference);
   }
+  const sorted = [...albums.values()].sort((a, b) => speedRank(a.provider) - speedRank(b.provider));
+  const album = (fast: boolean) => sorted.filter(item => slowServices.has(item.provider) !== fast).map(item => ({ kind: 'album' as const, ...item }));
+  if (!connected) return [...album(true), ...album(false), { kind: 'search' }];
+  const slow = connected.filter(provider => slowServices.has(provider));
+  return [...album(true), { kind: 'search', providers: ['library', ...connected.filter(provider => !slowServices.has(provider))] },
+    ...album(false), ...(slow.length ? [{ kind: 'search' as const, providers: slow }] : [])];
+}
+
+/** Finds one shared song with the fewest and fastest lookups. Throws only when no lookup could be made at all. */
+export async function findSong(finder: SongFinder, song: SharedSong): Promise<CatalogueTrack | undefined> {
+  let failure: unknown; let checked = false;
   // A second search without "(Remastered)"-style extras, only when the title has them.
   const loose = normalized(song.title, true);
   const queries = [`${song.artist} ${song.title}`, ...(loose && loose !== normalized(song.title) ? [`${song.artist} ${loose}`] : [])];
-  for (const query of queries) {
-    try { const found = bestMatch(song, await finder.search(query)); searched = true; if (found) return found; }
-    catch (error) { failure ??= error; }
+  for (const step of songSteps(song, finder.providers)) {
+    if (step.kind === 'album') {
+      let tracks: CatalogueTrack[];
+      // The service may not have the album; the next step follows.
+      try { tracks = await finder.serviceAlbumTracks(step.provider, step.itemId); checked = true; } catch (error) { failure ??= error; continue; }
+      const found = bestMatch(song, tracks, false);
+      if (found) return found;
+      // Same album, renamed track: its position, when the lengths agree.
+      const numbered = song.trackNumber ? tracks[song.trackNumber - 1] : undefined;
+      if (numbered?.available && song.duration && numbered.duration && Math.abs(song.duration - numbered.duration) <= 5) return numbered;
+      continue;
+    }
+    for (const query of queries) {
+      try { const found = bestMatch(song, await finder.search(query, step.providers)); checked = true; if (found) return found; }
+      catch (error) { failure ??= error; }
+    }
   }
-  if (!searched && failure) throw failure;
+  if (!checked && failure) throw failure;
+}
+
+/** At most this many requests per service wait in Music Assistant's queue at once, across all imports.
+ * More would only queue longer inside Music Assistant and run into time limits. */
+const serviceCapacity: Record<string, number> = { spotify: 1, deezer: 1, qobuz: 2, tidal: 3, library: 4 };
+export class ServiceGates {
+  private active = new Map<string, number>();
+  private waiting = new Map<string, (() => void)[]>();
+  constructor(private capacity: Record<string, number> = serviceCapacity, private fallback = 2) {}
+  /** The gate for a lookup: the slowest service it touches. */
+  static key(providers: readonly string[] | undefined) {
+    if (!providers) return 'spotify'; // An unrestricted search reaches every service, Spotify included.
+    return [...providers].sort((a, b) => (serviceCapacity[a] ?? 2) - (serviceCapacity[b] ?? 2))[0] ?? 'library';
+  }
+  async run<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const active = this.active.get(key) ?? 0;
+    // A finished request hands its slot straight to the next in line, so newcomers cannot jump ahead.
+    if (active >= (this.capacity[key] ?? this.fallback)) await new Promise<void>(resolve => { const queue = this.waiting.get(key) ?? []; queue.push(resolve); this.waiting.set(key, queue); });
+    else this.active.set(key, active + 1);
+    try { return await work(); }
+    finally {
+      const next = this.waiting.get(key)?.shift();
+      if (next) next(); else this.active.set(key, this.active.get(key)! - 1);
+    }
+  }
+}
+
+/** The same song in anyone's list: so a song another person already imported is found instantly. */
+export function songKey(song: SharedSong) {
+  return JSON.stringify([normalized(song.artist), normalized(song.title), normalized(song.album, true), song.trackNumber, song.duration]);
 }

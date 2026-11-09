@@ -27,7 +27,7 @@ export class MusicAssistantTransport {
     let agent = this.agents.get(key);
     if (!agent) {
       const Agent = protocol === 'https:' ? HttpsAgent : HttpAgent;
-      agent = new Agent({ keepAlive: true, maxSockets: lane === 'resolution' ? 2 : 4, maxTotalSockets: 8, maxFreeSockets: 2, timeout: 30_000 });
+      agent = new Agent({ keepAlive: true, maxSockets: lane === 'resolution' ? 2 : lane === 'bulk' ? 3 : 4, maxTotalSockets: 8, maxFreeSockets: 2, timeout: 30_000 });
       const getName = agent.getName.bind(agent);
       // Include every validated address in the pool key. A DNS change cannot reuse
       // a socket to an old address, and the pinned lookup retains IPv4/IPv6 fallback.
@@ -46,6 +46,8 @@ export class MusicAssistantTransport {
     const start = performance.now();
     // MA awaits provider/player startup inside Play/Resume. Reads retain a shorter budget.
     const timeout = command === 'player_queues/play_media' || command === 'player_queues/resume' ? this.playbackTimeoutMs
+      // Imports expect to wait their turn behind Music Assistant's per-service request limits.
+      : requestPriority() === 'bulk' ? Math.max(this.timeoutMs, 30_000)
       : command === 'music/search' ? Math.max(this.timeoutMs, 12_000) : this.timeoutMs;
     const deadline = start + remaining(timeout);
     const url = new URL(path, musicAssistantUrl.parse(this.origin));
@@ -67,7 +69,7 @@ export class MusicAssistantTransport {
       const request = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
         signal: operationSignal(),
         method: command ? 'POST' : 'GET', agent: this.agent(url.protocol, binary ? 'artwork' : command?.startsWith('music/')
-          ? requestPriority() === 'playback' ? 'resolution' : 'catalogue' : path === '/api-docs' ? 'catalogue' : 'control'),
+          ? requestPriority() === 'playback' ? 'resolution' : requestPriority() === 'bulk' ? 'bulk' : 'catalogue' : path === '/api-docs' ? 'catalogue' : 'control'),
         ...{ pinnedAddresses: addresses.map(a => `${a.family}:${a.address}`).sort().join(',') },
         // A checked DNS result is used by the socket, preventing a second/rebound lookup.
         lookup: (_hostname, options, callback) => options.all ? callback(null, addresses) : callback(null, target.address, target.family),

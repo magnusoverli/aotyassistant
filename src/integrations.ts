@@ -1,7 +1,9 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type FoundSong, type OutputState, type GuestAccess } from './model.js';
-import { findSong } from './list-import.js';
+import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
+import { findSong, ServiceGates, songKey, type SongFinder } from './list-import.js';
+import { BoundedCache } from './bounded-cache.js';
+import { UpstreamError } from './upstream-error.js';
 import type { SharedSong } from './shared-list.js';
 import { PersistenceError } from './store.js';
 import { MusicAssistantClient, isMusicAssistantApi, type MusicAssistantApi, type MusicAssistantReader, type ConnectionReport, type ArtworkSize } from './music-assistant.js';
@@ -11,7 +13,7 @@ import type { UploadAssets, UploadSelection } from './uploads.js';
 import { applicationOrigin, shareableOrigin, diagnosticDuration, type AddressingView, type MediaCheck, type MediaChecks } from './addressing.js';
 import type { SupervisorHints } from './supervisor.js';
 import { SerialQueue } from './serial.js';
-import { operation } from './operation.js';
+import { bulkCatalogue, operation } from './operation.js';
 import { CatalogueReferences, artworkPath } from './catalogue-references.js';
 import { OutputMonitor } from './output-monitor.js';
 import { playbackCompatibility, supportsPlaybackSchema } from './music-assistant-policy.js';
@@ -60,6 +62,11 @@ export class IntegrationManager implements CatalogueProvider {
   private queue = new SerialQueue();
   private cachedReader?: MusicAssistantReader;
   private references = new CatalogueReferences();
+  /** Imports share per-service pacing, the connected-service list, and songs already found (by anyone). */
+  private gates = new ServiceGates();
+  private services?: { revision: string; domains?: string[]; expires: number };
+  private filterless?: string;
+  private importedSongs = new BoundedCache<SavedSelection>(4000);
   private runtimeId = randomBytes(16).toString('base64url');
   private playback?: PlaybackController;
   private uploads?: UploadAssets;
@@ -300,22 +307,46 @@ export class IntegrationManager implements CatalogueProvider {
     if (this.catalogueRevision !== revision) throw new AppError(409, 'The catalogue connection changed during search. Search again.');
     return tracks.map(t => this.catalogueItem(t, 'track', context));
   }
-  /** Finds songs from a shared list, two at a time. A song whose lookup failed is marked, not guessed. */
-  async findSongs(songs: SharedSong[], context: string): Promise<FoundSong[]> {
-    const revision = this.catalogueRevision; const api = this.getApi();
-    const results: FoundSong[] = new Array(songs.length); let next = 0;
-    await Promise.all([0, 1].map(async () => {
-      while (next < songs.length) {
-        const index = next++;
-        try { const track = await findSong(api, songs[index]!); results[index] = { track: track ? this.catalogueItem(track, 'track', context) : null }; }
+  /** Finds one song from an imported list and returns what to save, or undefined when it isn't found.
+   * Server-side only: the descriptor comes from Music Assistant's own answer and goes straight into the list. */
+  async importSong(song: SharedSong): Promise<SavedSelection | undefined> {
+    const revision = this.catalogueRevision; const sourceBindingId = this.sourceBindingId;
+    if (!sourceBindingId) throw new AppError(409, 'Importing a list needs a Music Assistant connection.');
+    const key = JSON.stringify([sourceBindingId, songKey(song)]);
+    const known = this.importedSongs.get(key);
+    if (known) return structuredClone(known);
+    const api = this.getApi(); const providers = await this.connectedServices(api);
+    let filters = this.filterless !== revision;
+    const finder: SongFinder = {
+      providers: filters ? providers : undefined,
+      serviceAlbumTracks: (provider, itemId) => this.gates.run(provider, () => api.serviceAlbumTracks(provider, itemId)),
+      search: async (query, only) => {
+        // A Music Assistant without per-source search answers every search unrestricted from then on.
+        try { return await this.gates.run(ServiceGates.key(filters ? only : undefined), () => api.search(query, { limit: 10, ...(filters && only ? { providers: only } : {}) })); }
         catch (error) {
-          if (error instanceof AppError && error.status === 499) throw error;
-          results[index] = { track: null, failed: true };
+          // Slowness, a lost connection or a cancelled import is not a reason to search everything.
+          const unrelated = error instanceof UpstreamError && ['timeout', 'connection', 'authorization', 'closed'].includes(error.kind);
+          if (!filters || !only || unrelated || (error instanceof AppError && error.status === 499)) throw error;
+          this.filterless = revision; filters = false;
+          return this.gates.run(ServiceGates.key(undefined), () => api.search(query, { limit: 10 }));
         }
-      }
-    }));
-    if (revision !== this.catalogueRevision) throw new AppError(409, 'The catalogue connection changed during the import. Import the list again.');
-    return results;
+      },
+    };
+    const track = await bulkCatalogue(() => findSong(finder, song));
+    if (revision !== this.catalogueRevision || sourceBindingId !== this.sourceBindingId) throw new AppError(409, 'The music connection changed during the import. Import the list again; songs already added are kept.');
+    if (!track) return undefined;
+    const selection: SavedSelection = { source: 'music-assistant', sourceBindingId, ...api.listedRecording(track) };
+    this.importedSongs.set(key, selection, { expires: Date.now() + 24 * 60 * 60_000 });
+    return structuredClone(selection);
+  }
+  /** Connected music services, asked once every few minutes; undefined when Music Assistant can't say. */
+  private async connectedServices(api: MusicAssistantApi) {
+    const revision = this.catalogueRevision; const cached = this.services;
+    if (cached?.revision === revision && cached.expires > Date.now()) return cached.domains;
+    let domains: string[] | undefined;
+    try { domains = await bulkCatalogue(() => api.musicProviders()); } catch { domains = undefined; }
+    this.services = { revision, domains, expires: Date.now() + 5 * 60_000 };
+    return domains;
   }
   async browse(kind: 'artists' | 'albums' | 'tracks', value: string, context: string): Promise<CatalogueBrowse> {
     const revision = this.catalogueRevision; const api = this.getApi();
@@ -350,6 +381,13 @@ export class IntegrationManager implements CatalogueProvider {
   private savedSource(selection: SavedSelection) {
     if (selection.source !== 'music-assistant' || selection.sourceBindingId !== this.sourceBindingId) throw new AppError(409, 'This saved track belongs to a different catalogue connection. It was kept in your list.');
     return selection;
+  }
+  /** The album of a saved song, to choose a replacement from. Results are sealed to this member like browsing. */
+  async albumForSaved(selection: SavedSelection, context: string) {
+    const saved = this.savedSource(selection); const epoch = this.catalogueRevision;
+    const result = await this.getApi().albumTracksFor(saved.recording);
+    if (epoch !== this.catalogueRevision) throw new AppError(409, 'The catalogue connection changed. Try again.');
+    return { ...result, tracks: result.tracks.map(track => this.catalogueItem(track, 'track', context)), playbackAvailable: this.playbackAvailable };
   }
   async resolveSaved(selection: SavedSelection, context: string, trackId: string) {
     const saved = this.savedSource(selection); const revision = this.state.revision; const epoch = this.catalogueRevision;

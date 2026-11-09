@@ -7,11 +7,14 @@ import { diagnostics } from './diagnostics.js';
 type Timing = { stage: string; ms: number };
 type Operation = { id: string; action: string; deadline: number; timings: Timing[]; active: boolean; logging: boolean; signal?: AbortSignal };
 const operations = new AsyncLocalStorage<Operation>();
-const priorities = new AsyncLocalStorage<'playback'>();
+const priorities = new AsyncLocalStorage<'playback' | 'bulk'>();
 const pending = new Set<Promise<unknown>>();
 
 export const requestPriority = () => priorities.getStore();
 export const playbackResolution = <T>(work: () => T): T => priorities.run('playback', work);
+/** Many catalogue reads in a row (importing a list): they may wait in Music Assistant's per-service
+ * queue, so they get a longer time limit and their own connections, leaving browsing responsive. */
+export const bulkCatalogue = <T>(work: () => T): T => priorities.run('bulk', work);
 export function operationWait() {
   const current = operations.getStore();
   return current?.active ? { deadline: current.deadline, signal: current.signal } : {};

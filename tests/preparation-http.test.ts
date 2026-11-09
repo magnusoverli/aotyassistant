@@ -14,7 +14,9 @@ import { ManagedPlayback } from '../src/live-playback.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { PreparationFileStore, PreparationManager } from '../src/preparations.js';
 import type { PreparationView, PreparationResult } from '../src/preparations.js';
-import type { CatalogueSearch, FoundSong, View, UserDirectory } from '../src/model.js';
+import type { CatalogueSearch, View, UserDirectory } from '../src/model.js';
+import type { SharedSong } from '../src/shared-list.js';
+import { ListImports } from '../src/list-import-jobs.js';
 import { createApp } from '../src/http.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
@@ -382,28 +384,56 @@ test('legacy connection files gain a durable source binding once without changin
   assert.equal(second.view().revision, 7); assert.deepEqual(second.view().destination, legacy.musicAssistant.destination); assert.equal(remote.calls.length, 0);
 });
 
-test('songs from a shared list are matched for the member only, then added like search results', async t => {
+test('a shared list is imported on the server: found songs are saved in order without asking Music Assistant again', async t => {
   const f = await fixture(t);
-  const songs = [
-    { rank: 2, artist: 'Fixture artist', title: 'Real catalogue fixture', album: 'Fixture album', trackNumber: 1, duration: 180,
-      albumLinks: [{ service: 'spotify', url: 'https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy' }] },
-    { rank: 1, artist: 'Someone else', title: 'Real catalogue fixture', album: '', trackNumber: null, duration: null, albumLinks: [] },
-  ];
-  assert.equal((await f.request('/api/participant/import/match', { songs })).status, 401);
-  const { results } = await f.json<{ results: FoundSong[] }>('/api/participant/import/match', { songs }, f.first.membership);
-  assert.equal(results[0]!.track?.title, 'Real catalogue fixture');
-  assert.deepEqual(results[1], { track: null }, 'a different artist is not a match');
-  assert.ok(f.remote.calls.some(call => call.command === 'music/albums/album_tracks' && call.args.provider_instance_id_or_domain === 'spotify' && call.args.item_id === '4aawyAB9vmqN3uQ7FjRGTy'));
+  const token = (member: typeof f.first) => member.privateCookie.split('=')[1]!;
+  const song = (rank: number, fields: Partial<SharedSong> = {}): SharedSong => ({ rank, artist: 'Fixture artist', title: 'Real catalogue fixture', album: 'Fixture album',
+    trackNumber: 1, duration: 180, albumLinks: [{ service: 'spotify', url: 'https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy' }], ...fields });
+  const shared = { list: { name: 'Best of 2025', year: 2025 }, leftOut: { noPick: 0, disqualified: 0 }, skipped: 0,
+    songs: [song(1), song(2, { artist: 'Someone else', albumLinks: [] }), song(3)] };
+  const imports = new ListImports(f.running.preparations, item => f.running.integrations.importSong(item));
+  const finished = async (credential: string) => { for (let i = 0; i < 200; i++) { const view = await imports.current(credential); if (view?.finished) return view; await delay(10); } throw new Error('Import did not finish'); };
+  const lookups = () => f.remote.calls.filter(call => ['music/search', 'music/albums/album_tracks', 'music/item_by_uri', 'providers'].includes(call.command)).length;
+  const exact = () => f.remote.calls.filter(call => call.command === 'music/item_by_uri').length;
+  const exactBefore = exact();
+  await imports.start(token(f.first), shared);
+  const first = await finished(token(f.first));
+  // The same song twice is added once; a different artist is not a match.
+  assert.deepEqual([first.added, first.already, first.missing.map(item => item.rank)], [1, 1, [2]]);
+  assert.equal(exact(), exactBefore, 'the match is saved from the listing, without a second lookup');
+  const searches = f.remote.calls.filter(call => call.command === 'music/search');
+  assert.ok(searches.length && searches.every(call => call.args.limit === 10), 'imports ask for one page of results per service');
+  assert.ok(searches.some(call => JSON.stringify(call.args.providers) === '["library"]'), 'the library is searched before slow services');
   const list = await f.json<PreparationView>(prefix + '/state', undefined, f.first.privateCookie);
-  const added = await f.json<PreparationResult>(prefix + '/add', { operation: operation(list.revision), trackId: results[0]!.track!.id }, f.first.credentials);
-  assert.equal(added.view.upcoming.length, 1);
-  // Like a search result, a match belongs to the member it was found for.
-  const other = await f.json<PreparationView>(prefix + '/state', undefined, f.second.privateCookie);
-  assert.equal((await f.request(prefix + '/add', { operation: operation(other.revision), trackId: results[0]!.track!.id }, f.second.credentials)).status, 409);
-  // Links are checked before anything is contacted.
-  for (const link of ['not a link', 'https://127.0.0.1/lr/AbCdEfGhIjKlMnOpQrStUv']) assert.equal((await f.request('/api/participant/import/read', { link }, f.first.membership)).status, 422, link);
-  // There is no demo version: without Music Assistant, importing is refused.
+  assert.deepEqual(list.upcoming.map(entry => entry.title), ['Real catalogue fixture']);
+  // Another person importing the same songs needs no Music Assistant lookups at all.
+  const before = lookups();
+  await imports.start(token(f.second), shared); const second = await finished(token(f.second));
+  assert.equal(second.added, 1); assert.equal(lookups(), before);
+  await assert.rejects(imports.current('not-a-playlist-credential'), 'a progress view needs the playlist’s own credential');
+  // Links are checked before anything is contacted, and there is no demo version.
+  for (const link of ['not a link', 'https://127.0.0.1/lr/AbCdEfGhIjKlMnOpQrStUv']) assert.equal((await f.request(prefix + '/import', { link }, f.first.credentials)).status, 422, link);
+  assert.equal((await f.request(prefix + '/import', { link: 'https://sushe.example/lr/AbCdEfGhIjKlMnOpQrStUv' }, f.first.privateCookie)).status, 401, 'members only');
+  assert.deepEqual(await (await f.request(prefix + '/import', undefined, f.first.privateCookie)).json(), { import: null });
   await f.running.integrations.clear(f.running.integrations.view().revision);
-  assert.equal((await f.request('/api/participant/import/match', { songs }, f.first.membership)).status, 422);
-  assert.equal((await f.request('/api/participant/import/read', { link: 'https://sushe.example/lr/AbCdEfGhIjKlMnOpQrStUv' }, f.first.membership)).status, 422);
+  assert.equal((await f.request(prefix + '/import', { link: 'https://sushe.example/lr/AbCdEfGhIjKlMnOpQrStUv' }, f.first.credentials)).status, 422);
+  imports.close();
+});
+
+test('a song is replaced with another from its album, in the same place, for its owner only', async t => {
+  const f = await fixture(t); const added = await f.add();
+  type Album = { album: { name: string; artist: string }; tracks: CatalogueSearch['tracks']; current: number };
+  const album = await f.json<Album>(prefix + '/album', { entryId: added.entryId }, f.first.credentials);
+  assert.deepEqual(album.album, { name: 'Fixture album', artist: 'Fixture artist' });
+  assert.deepEqual(album.tracks.map(track => track.title), ['Real catalogue fixture', 'Second fixture song']); assert.equal(album.current, 0);
+  assert.equal((await f.request(prefix + '/album', { entryId: added.entryId }, f.first.privateCookie)).status, 401, 'members only');
+  assert.equal((await f.request(prefix + '/album', { entryId: added.entryId }, f.second.credentials)).status, 404, 'another person’s song');
+  // The album's songs are sealed to the person who listed them, like search results.
+  const other = await f.json<PreparationView>(prefix + '/state', undefined, f.second.privateCookie);
+  assert.equal((await f.request(prefix + '/replace', { operation: operation(other.revision), entryId: added.entryId, trackId: album.tracks[1]!.id }, f.second.credentials)).status, 409);
+  const replaced = await f.json<PreparationResult>(prefix + '/replace', { operation: operation(added.view.revision), entryId: added.entryId, trackId: album.tracks[1]!.id }, f.first.credentials);
+  assert.deepEqual(replaced.view.upcoming.map(entry => entry.title), ['Second fixture song']);
+  assert.deepEqual(replaced.view.removed, [], 'the replaced song leaves the list');
+  const again = await f.json<Album>(prefix + '/album', { entryId: replaced.entryId }, f.first.credentials);
+  assert.equal(again.current, 1);
 });

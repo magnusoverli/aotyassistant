@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [1.2.3] — 2026-11-09
+
+- Replace a song in Your playlist with another from the same album: the new **⇄** beside **✕** lists the album's songs, with the current one marked. The chosen song takes the same place in the list. The old song leaves the list; if it was played before, its history stays in Previously played.
+
+- Importing a list is much faster and no longer slows down and fails on larger lists. Music Assistant limits each service's requests (its shared Spotify login: one every 2 seconds), and the old import queued up far more than that. Now each song tries Tidal, Qobuz, Deezer and Apple Music and your library before Spotify, asks for fewer search results, and is saved without a second lookup. Requests are paced per service and may wait their turn instead of timing out.
+- The import runs on the server: closing the window, locking the phone or reloading no longer interrupts it, and choosing Import again shows its progress. Songs someone else already imported are found instantly. Several failed lookups in a row stop the import with a clear message.
+
 ## [1.2.2] — 2026-11-09
 
 - **Clear list** beside Your playlist starts again from scratch: after a confirmation, it removes every upcoming song and the whole history (Previously played and Removed) and permanently deletes your uploaded songs. Your place in the listening order is kept.

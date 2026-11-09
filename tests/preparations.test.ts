@@ -8,7 +8,7 @@ import { Engine } from '../src/engine.js';
 import { DemoAdapter } from '../src/playback.js';
 import { FileStore } from '../src/store.js';
 import { PreparationManager, PreparationFileStore, preparationLimits, preparationStateSchema,
-  type PreparationStore, type PreparationState, type PreparationOperation, type SavedSelection } from '../src/preparations.js';
+  type PreparationStore, type PreparationState, type PreparationOperation, type PreparationView, type SavedSelection } from '../src/preparations.js';
 
 class MemoryStore implements PreparationStore {
   states = new Map<string, PreparationState>();
@@ -350,4 +350,58 @@ test('clearing empties upcoming songs and history, deletes uploaded files once, 
   // The deleted file cannot come back, and the list works as new.
   await assert.rejects(f.manager.add(f.owner.credential, await f.op(), upload), status(410));
   assert.equal((await f.add(3)).view.upcoming.length, 1);
+});
+
+test('imported songs are appended in order with one save, duplicates keep their place, and a full list stops the batch', async () => {
+  const f = await fixture(); const first = await f.add(1);
+  let saves = 0; const store = f.store as MemoryStore; const save = store.save.bind(store); store.save = async state => { saves++; return save(state); };
+  const result = await f.manager.appendImported(f.owner.credential, [selected(2), selected(1), selected(3)]);
+  assert.deepEqual(result, { added: 2, already: 1, full: false }); assert.equal(saves, 1);
+  const view = await f.manager.read(f.owner.credential);
+  assert.deepEqual(view.upcoming.map(entry => entry.title), ['Private title 1', 'Private title 2', 'Private title 3']);
+  assert.equal(view.upcoming[0]!.id, first.entryId);
+  // Nothing new: no save and no new revision.
+  assert.deepEqual(await f.manager.appendImported(f.owner.credential, [selected(2)]), { added: 0, already: 1, full: false });
+  assert.equal(saves, 1); assert.equal((await f.manager.read(f.owner.credential)).revision, view.revision);
+  // Appending never disturbs a play in progress at the head of the list.
+  await assert.rejects(f.manager.playHead(f.owner.credential, first.entryId, view.revision, async () => {
+    assert.equal((await f.manager.appendImported(f.owner.credential, [selected(4)])).added, 1);
+    throw new AppError(502, 'Uncertain start');
+  }), status(502));
+  assert.equal((await f.manager.read(f.owner.credential)).reviewEntryId, first.entryId);
+  const many = Array.from({ length: preparationLimits.upcoming }, (_, index) => selected(10 + index));
+  const filled = await f.manager.appendImported(f.owner.credential, many);
+  assert.equal(filled.full, true); assert.equal((await f.manager.read(f.owner.credential)).upcoming.length, preparationLimits.upcoming);
+});
+
+test('replacing swaps a song in the same place; the old song leaves the list instead of going to Removed', async () => {
+  const f = await fixture(); const first = await f.add(1); const second = await f.add(2); await f.add(3);
+  const operation = await f.op();
+  const replaced = await f.manager.replaceCaptured(f.owner.credential, operation, second.entryId, 'reference-4', async () => selected(4));
+  const titles = (entries: PreparationView['upcoming']) => entries.map(entry => entry.title.replace('Private title ', ''));
+  assert.deepEqual(titles(replaced.view.upcoming), ['1', '4', '3']);
+  assert.deepEqual([replaced.view.removed.length, replaced.view.played.length], [0, 0]); assert.notEqual(replaced.entryId, second.entryId);
+  // A lost acknowledgement replays without capturing again.
+  const replay = await f.manager.replaceCaptured(f.owner.credential, operation, second.entryId, 'reference-4', async () => { throw new Error('Captured twice'); });
+  assert.equal(replay.replayed, true); assert.equal(replay.entryId, replaced.entryId);
+  // The same song changes nothing; a song already elsewhere in the list is refused; so is a song no longer in the list.
+  const same = await f.manager.replaceCaptured(f.owner.credential, await f.op(), replaced.entryId, 'reference-4b', async () => selected(4));
+  assert.equal(same.entryId, replaced.entryId); assert.deepEqual(titles(same.view.upcoming), ['1', '4', '3']);
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), first.entryId, 'reference-3', async () => selected(3)),
+    (error: unknown) => error instanceof AppError && error.status === 409 && /already in your playlist/.test(error.message));
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), second.entryId, 'reference-5', async () => selected(5)), status(404));
+  // A song played before keeps its history: it returns to Previously played.
+  const view = await f.manager.read(f.owner.credential);
+  await f.manager.playHead(f.owner.credential, first.entryId, view.revision, async () => ({ playbackId: randomUUID(), value: null }));
+  const restored = await f.manager.restore(f.owner.credential, await f.op(), first.entryId);
+  assert.deepEqual(titles(restored.view.upcoming), ['4', '3', '1']);
+  const again = await f.manager.replaceCaptured(f.owner.credential, await f.op(), first.entryId, 'reference-7', async () => selected(7));
+  assert.deepEqual(titles(again.view.upcoming), ['4', '3', '7']); assert.deepEqual(titles(again.view.played), ['1']); assert.equal(again.view.removed.length, 0);
+  // Uploaded songs are removed, not replaced, so their file is never left behind.
+  const upload = await f.manager.add(f.owner.credential, await f.op(), { source: 'upload', assetId: randomUUID(), metadata: { ...selected().metadata, provider: 'Uploaded file' } });
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), upload.entryId, 'reference-8', async () => selected(8)), status(409));
+  // Not while a play attempt waits for review.
+  const head = (await f.manager.read(f.owner.credential)).upcoming[0]!;
+  await assert.rejects(f.manager.playHead(f.owner.credential, head.id, (await f.manager.read(f.owner.credential)).revision, async () => { throw new AppError(502, 'Uncertain start'); }), status(502));
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), head.id, 'reference-9', async () => selected(9)), status(409));
 });

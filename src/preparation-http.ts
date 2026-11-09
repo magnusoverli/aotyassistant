@@ -13,6 +13,8 @@ import { RateLimiter, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
 import { operation } from './operation.js';
 import type { UserManager } from './users.js';
+import { ListImports } from './list-import-jobs.js';
+import { fetchSharedList, sharedListLink } from './shared-list.js';
 
 const prefix = '/api/participant/preparations';
 const uuid = z.uuid();
@@ -100,6 +102,42 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.post(`${prefix}/purge-upload`, jsonBody(z.strictObject({ operation: preparationOperationSchema, entryId: uuid }), async (input, req, res) => {
     res.json(await manager.purgeUpload(credential(req), input.operation, input.entryId, assetId => uploads.busy(assetId), (ownerId, assetId) => uploads.remove(ownerId, assetId)));
   }));
+  // Importing a list shared from SuShe Online runs on the server; the page only starts it and follows its progress.
+  const imports = new ListImports(manager, song => {
+    if (!integrations?.configured) throw new AppError(409, 'Importing a list needs a Music Assistant connection.');
+    return integrations.importSong(song);
+  });
+  // Reading a link contacts another server; a person rarely needs more than a few a minute.
+  const importReads = new RateLimiter(1000); const importTimer = setInterval(() => importReads.prune(), 60_000); importTimer.unref();
+  app.get(`${prefix}/import`, async (req, res) => { res.json({ import: await imports.current(credential(req)) }); });
+  app.post(`${prefix}/import`, jsonBody(z.strictObject({ link: z.string().trim().min(1).max(2000) }), async (input, req, res) => {
+    engine.catalogueContext(member(req));
+    if (!integrations?.configured) throw new AppError(422, 'Importing a list needs a Music Assistant connection.');
+    const ownerId = await manager.ownerOf(credential(req));
+    if (importReads.hit(ownerId, 10) !== 'ok') throw new AppError(429, 'Too many imports. Wait a minute and try again.');
+    const link = sharedListLink(input.link);
+    const shared = await operation('list-import', () => fetchSharedList(link), 15_000, req.signal);
+    res.json({ import: await imports.start(credential(req), shared) });
+  }));
+  // Replacing a song with another from its album: list the album, then swap in place.
+  app.post(`${prefix}/album`, jsonBody(z.strictObject({ entryId: uuid }), async (input, req, res) => {
+    const context = engine.catalogueContext(member(req));
+    if (!integrations?.configured) throw new AppError(422, 'Replacing a song needs a Music Assistant connection.');
+    const selection = await manager.selection(credential(req), input.entryId);
+    if (selection.source !== 'music-assistant') throw new AppError(422, 'Only songs from Music Assistant can be replaced with another song from their album.');
+    const album = await operation('album-for-saved', () => integrations.albumForSaved(selection, context), 30_000, req.signal);
+    if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed. Your list was kept.');
+    res.json(album);
+  }));
+  app.post(`${prefix}/replace`, jsonBody(z.strictObject({ operation: preparationOperationSchema, entryId: uuid, trackId: z.string().min(1).max(1000) }), async (input, req, res) => {
+    res.json(await manager.replaceCaptured(credential(req), input.operation, input.entryId, input.trackId, async () => {
+      const context = engine.catalogueContext(member(req));
+      if (!integrations?.configured) throw new AppError(422, 'Replacing a song needs a Music Assistant connection.');
+      const saved = await integrations.captureSaved(input.trackId, context);
+      if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed. Your list was kept.'); return saved;
+    }));
+  }));
+  app.post(`${prefix}/import/stop`, jsonBody(empty, async (_input, req, res) => { res.json({ import: await imports.stop(credential(req)) }); }));
   app.post(`${prefix}/clear`, jsonBody(z.strictObject({ operation: preparationOperationSchema }), async (input, req, res) => {
     res.json(await manager.clear(credential(req), input.operation, assetId => uploads.busy(assetId), (ownerId, assetId) => uploads.remove(ownerId, assetId)));
   }));
@@ -213,5 +251,5 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       }, 15_000);
     } catch (error) { stream.release(); throw error; }
   });
-  return () => { clearInterval(timer); streams.close(); };
+  return () => { clearInterval(timer); clearInterval(importTimer); imports.close(); streams.close(); };
 }

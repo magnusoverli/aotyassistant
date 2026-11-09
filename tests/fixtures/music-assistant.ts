@@ -15,8 +15,11 @@ export function metadataOnly<T extends { item_id: string; provider: string; prov
 export async function startMusicAssistantFixture(port = 0) {
   const jpeg = await sharp({ create: { width: 1, height: 1, channels: 3, background: '#608040' } }).jpeg({ quality: 95 }).toBuffer();
   const track = { item_id: 'catalogue-result', provider: 'spotify', name: 'Real catalogue fixture', version: 'Original recording', media_type: 'track',
-    uri: 'spotify://track/private-fixture-uri', duration: 180, artists: [{ name: 'Fixture artist', image: { type: 'thumb', proxy_id: 'b'.repeat(64) } }], album: { name: 'Fixture album' },
+    uri: 'spotify://track/private-fixture-uri', duration: 180, artists: [{ name: 'Fixture artist', image: { type: 'thumb', proxy_id: 'b'.repeat(64) } }], album: { name: 'Fixture album', item_id: 'fixture-album-full', provider: 'spotify', uri: 'spotify://album/fixture-album-full' },
     provider_mappings: [{ item_id: 'catalogue-result', provider_domain: 'spotify', available: true }], metadata: { images: [{ type: 'thumb', proxy_id: 'a'.repeat(64), path: 'http://private.example/secret-search-art' }] } };
+  // A second song on the fixture track's album, for replacing.
+  const albummate = { ...track, item_id: 'catalogue-result-2', name: 'Second fixture song', uri: 'spotify://track/private-fixture-2', duration: 200,
+    provider_mappings: [{ item_id: 'catalogue-result-2', provider_domain: 'spotify', available: true }] };
   const artist = { item_id: 'artist-1', provider: 'spotify', name: 'Fixture artist', uri: 'spotify://artist/private-fixture-artist', metadata: { images: [{ type: 'thumb', proxy_id: 'b'.repeat(64) }] } };
   const album = { item_id: 'album-1', provider: 'spotify', name: 'Fixture album', uri: 'spotify://album/private-fixture-album', year: 2025, version: 'Original album', artists: [{ name: artist.name }], metadata: { images: [{ type: 'thumb', proxy_id: 'a'.repeat(64) }] } };
   const artistIdentity = [['musicbrainz_artistid', '11111111-1111-4111-8111-111111111111']];
@@ -32,7 +35,7 @@ export async function startMusicAssistantFixture(port = 0) {
   let metadataArtistName = 'Metallica';
   let itemNumber = 0;
   const queue = { queue_id: 'fixture-queue', available: true, active: true, items: 0, state: 'idle', ended: false,
-    repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, is_dynamic: false, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: typeof track; streamdetails?: { provider: string; item_id: string; audio_format?: Record<string, unknown> | null } }, next_item: null as unknown };
+    repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, is_dynamic: false, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: Omit<typeof track, 'album'> & { album: { name: string } }; streamdetails?: { provider: string; item_id: string; audio_format?: Record<string, unknown> | null } }, next_item: null as unknown };
   const player = { player_id: 'sonos:room', available: true, type: 'player', supported_features: ['volume_set'], volume_control: 'native', volume_level: 30, group_volume: 40, group_members: [] as string[],
     playback_state: 'idle', active_source: null as string | null, active_group: null as string | null, synced_to: null as string | null };
   let speakers = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
@@ -119,6 +122,7 @@ export async function startMusicAssistantFixture(port = 0) {
     if (command === 'auth/token/create') result = appToken;
     else if (command === 'auth/token/revoke') result = null;
     else if (command === 'players/all') result = speakers;
+    else if (command === 'providers') result = [{ domain: 'spotify', instance_id: 'spotify--private-instance', type: 'music', available: true }, { domain: 'builtin', type: 'music', available: true }, { domain: 'sonos', type: 'player', available: true }];
     else if (command === 'players/get') result = { ...player, player_id: args.player_id };
     else if (command === 'players/cmd/volume_set') player.volume_level = volumeClamp ?? args.volume_level;
     else if (command === 'players/cmd/group_volume') player.group_volume = volumeClamp ?? args.volume_level;
@@ -143,6 +147,7 @@ export async function startMusicAssistantFixture(port = 0) {
       const albums = [selected, { ...selected, item_id: `${provider}-private-exclusive`, uri: `${provider}://album/private-exclusive`, name: `${provider} exclusive`, external_ids: [] }];
       result = catalogueMode ? catalogueMode.startsWith('multi-provider-metadata') ? albums.map(metadataOnly) : albums : [album];
     }
+    else if (command === 'music/albums/album_tracks' && args.item_id === 'fixture-album-full') result = [track, albummate];
     else if (command === 'music/albums/album_tracks') {
       const tracks = multiTracks.filter(t => t.provider === args.provider_instance_id_or_domain);
       result = catalogueMode ? catalogueMode.startsWith('multi-provider-metadata') ? tracks.map(metadataOnly) : tracks : [track];
@@ -159,7 +164,7 @@ export async function startMusicAssistantFixture(port = 0) {
         uploads.set(args.uri, uploaded); result = uploaded;
       } catch { res.statusCode = 400; res.end(`PRIVATE unreachable source ${url}`); return; }
     }
-    else if (command === 'music/item_by_uri') result = multiTracks.find(t => t.uri === args.uri) ?? track;
+    else if (command === 'music/item_by_uri') result = [...multiTracks, albummate].find(t => t.uri === args.uri) ?? track;
     else if (command === 'player_queues/get_active_queue') result = queue;
     else if (command === 'player_queues/items') result = queue.current_item ? [queue.current_item] : [];
     else if (command === 'player_queues/autoplay') queue.autoplay_enabled = args.autoplay_enabled;

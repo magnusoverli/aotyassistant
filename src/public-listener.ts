@@ -13,7 +13,7 @@ const readRoutes = [
   /^\/api\/participant\/browser-speaker\/session\/[a-f0-9-]{36}$/,
   /^\/(?:join|participant|display)?$/, /^\/demo-cover\.svg$/, /^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css|svg|woff2)$/,
   /^\/api\/participant\/(?:identity|state|events)$/,
-  /^\/api\/participant\/preparations\/(?:state|live|events)$/,
+  /^\/api\/participant\/preparations\/(?:state|live|events|import)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/artwork)?$/,
   /^\/api\/participant\/preparations\/artwork\/[a-f0-9-]{36}\/(?:artwork|artistArtwork)$/,
   /^\/api\/display\/(?:state|events)$/, /^\/api\/display\/artwork\/[a-f0-9-]{36}\/(?:artwork|artistArtwork)$/,
@@ -25,7 +25,7 @@ const writeRoutes = [
   /^\/api\/participant\/browser-speaker\/(?:register|telemetry)$/,
   /^\/api\/participant\/(?:join|logout|finish|search|browse|play|control|volume|reveal)$/,
   /^\/api\/participant\/import\/(?:read|match)$/,
-  /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-upload|purge-upload|clear|move|remove|restore|review|play)$/,
+  /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-upload|purge-upload|clear|move|remove|restore|review|play|import|import\/stop|album|replace)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/discard)?$/,
 ];
 export function publicRoute(method: string, path: string) {

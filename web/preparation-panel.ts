@@ -9,6 +9,7 @@ import { ListBar } from './list-bar';
 import { ListDrag } from './list-drag';
 import { ListImport } from './list-import';
 import { ClearList } from './clear-list';
+import { ReplaceTrack } from './replace-track';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
 type Options = { getView(): View | undefined; starting(): boolean; changed(): void; search(query: string): void };
@@ -37,10 +38,13 @@ export class PreparationPanel {
   private importer: ListImport;
   /** Empties the playlist and its history after a confirmation, to start from scratch. */
   private clearer: ClearList;
+  /** Swaps a song for another from its album, in the same place. */
+  private replacer: ReplaceTrack;
   constructor(private library: PreparationController, private options: Options) {
     this.feedback.setAttribute('role', 'status'); this.feedback.setAttribute('aria-live', 'polite');
-    this.importer = new ListImport(library, { search: query => options.search(query) });
+    this.importer = new ListImport({ search: query => options.search(query), changed: () => this.refresh() });
     this.clearer = new ClearList(library, () => { this.feedback.textContent = 'Your playlist and its history were cleared.'; this.focusList(); });
+    this.replacer = new ReplaceTrack(library, (from, to) => { this.feedback.textContent = `Replaced ${from} with ${to}.`; });
     this.uploads = new UploadPanel(library, () => Boolean(options.getView()?.me), () => {
       this.uploads.render(Boolean(options.getView()?.me));
       if (this.uploadDisclosure?.isConnected) { if (this.uploads.hasWork) this.uploadDisclosure.open = true; }
@@ -140,7 +144,7 @@ export class PreparationPanel {
     const v = this.nodes;
     const canImport = this.options.getView()?.catalogue?.source === 'music-assistant';
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      this.moving, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport]);
+      this.moving, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport, this.importer.busy]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
@@ -164,8 +168,8 @@ export class PreparationPanel {
       node.setAttribute('aria-label', 'Import a list'); node.setAttribute('aria-haspopup', 'dialog'); node.setAttribute('aria-controls', 'list-import');
       node.onclick = () => this.importer.open(); return node;
     });
-    // During an import its own saves lock the list; the button then reopens its progress.
-    prop(importButton, 'disabled', !snapshot || library.loading || !navigator.onLine || (library.locked && !this.importer.busy));
+    // During an import the button reopens its progress.
+    prop(importButton, 'disabled', !this.importer.busy && (!snapshot || library.loading || !navigator.onLine));
     const clearButton = v.get('clear', () => {
       const node = el('button', 'Clear list', 'secondary list-clear-open'); node.type = 'button'; node.title = 'Empty your playlist and its history';
       node.setAttribute('aria-haspopup', 'dialog'); node.setAttribute('aria-controls', 'clear-list');
@@ -202,7 +206,7 @@ export class PreparationPanel {
       commit: (id, ids) => { void this.move(id, ids); },
     });
     const upcoming = this.displayed(snapshot?.upcoming ?? []);
-    const upcomingRows = upcoming.map(entry => this.savedRow(entry, upcoming.indexOf(entry)));
+    const upcomingRows = upcoming.map(entry => this.savedRow(entry, upcoming.indexOf(entry), canImport));
     // A song being dragged keeps its place only while the rows stay the same.
     drag.retain(upcomingRows);
     ordered.classList.toggle('is-reorderable', upcoming.length > 1 && !library.locked);
@@ -261,14 +265,19 @@ export class PreparationPanel {
     finally { this.moving = undefined; this.refresh(); }
   }
 
-  private savedRow(entry: PreparedEntryView, index: number) {
+  private savedRow(entry: PreparedEntryView, index: number, catalogue: boolean) {
     const library = this.library; const key = JSON.stringify(entry);
     let cached = this.rows.get(entry.id);
     if (!cached || cached.key !== key) {
       const row = this.row(entry); row.dataset.entryId = entry.id; row.prepend(el('span', '', 'saved-number'));
       row.querySelector('.result-identity > div:last-child')!.prepend(el('span', 'Your next pick', 'saved-next-label'));
-      // Reordering is by dragging the row itself; the row's only button removes the song.
+      // Reordering is by dragging the row itself; the row's buttons replace or remove the song.
       const controls = el('div', undefined, 'saved-actions');
+      if (entry.source === 'music-assistant') {
+        const replace = this.button('⇄', () => this.replacer.open(entry), true, `replace-${entry.id}`);
+        replace.classList.add('saved-replace'); replace.setAttribute('aria-label', `Replace ${entry.title}`); replace.setAttribute('aria-haspopup', 'dialog');
+        replace.title = 'Replace with another song from the album'; controls.append(replace);
+      }
       const remove = this.button('✕', () => library.edit('remove', { entryId: entry.id }, entry.title), true, `remove-${entry.id}`);
       remove.classList.add('saved-remove'); remove.setAttribute('aria-label', `Remove ${entry.title}`); remove.title = 'Remove from playlist';
       controls.append(remove); row.append(controls);
@@ -281,6 +290,9 @@ export class PreparationPanel {
     const label = row.querySelector<HTMLElement>('.saved-next-label')!; if (label.hidden !== (index !== 0)) label.hidden = index !== 0;
     const disabled = library.locked;
     for (const button of row.querySelectorAll('button')) if (button.disabled !== disabled) button.disabled = disabled;
+    // Replacing needs Music Assistant and a source that still plays.
+    const replace = row.querySelector<HTMLButtonElement>('.saved-replace');
+    if (replace) replace.hidden = !catalogue || entry.sourceAvailable === false;
     return row;
   }
 

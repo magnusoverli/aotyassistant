@@ -291,15 +291,22 @@ export class PreparationManager {
   }
   /** Capture runs only for a new operation: lost acknowledgements remain retryable even after browse references expire. */
   addCaptured(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
-    return this.track(this.captureOutsideTransaction(credential, operation, reference, capture));
+    return this.track(this.captureOutsideTransaction(credential, operation, reference, capture, 'capture', (state, selection) => this.appendSelection(state, selection)));
   }
-  private async captureOutsideTransaction(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
+  /** Swaps an upcoming song for another in the same place. The old song leaves the list instead of going to Removed;
+   * one with play history returns to Previously played. */
+  replaceCaptured(credential: string, operation: PreparationOperation, entryId: string, reference: string, capture: () => Promise<SavedSelection>) {
+    entryId = input(id, entryId);
+    return this.track(this.captureOutsideTransaction(credential, operation, `${entryId}:${reference}`, capture, 'replace', (state, selection) => this.replaceSelection(state, entryId, selection)));
+  }
+  private async captureOutsideTransaction(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>,
+    kind: 'capture' | 'replace', apply: (state: PreparationState, selection: SavedSelection) => string) {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);
-    const payload = hash(reference); const intent = hash(JSON.stringify(['capture', operation.revision, operation.issuedAt, payload]));
+    const payload = hash(reference); const intent = hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload]));
     const key = `${access.ownerId}:${operation.id}`;
     const reservation = await this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
-      if (this.validateMutation(state, operation, intent, 'capture')) return undefined;
+      if (this.validateMutation(state, operation, intent, kind)) return undefined;
       const existing = this.captures.get(key);
       if (existing && existing.intent !== intent) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
       if (!existing && this.captures.size >= 64) throw new AppError(429, 'Too many tracks are being captured. Try again when the current additions finish.');
@@ -309,16 +316,16 @@ export class PreparationManager {
     });
     try {
       const selection = reservation ? input(savedSelectionSchema, await reservation.selection) : undefined;
-      return await this.mutate(credential, operation, 'capture', payload, state => {
+      return await this.mutate(credential, operation, kind, payload, state => {
         if (!selection) throw new AppError(409, 'The saved operation changed. Refresh your list.');
-        return this.appendSelection(state, selection);
+        return apply(state, selection);
       });
     } finally { if (reservation && this.captures.get(key) === reservation) this.captures.delete(key); }
   }
-  private appendSelection(state: PreparationState, selection: SavedSelection) {
-    if (selection.source === 'upload' && state.deletedUploads?.includes(selection.assetId)) throw new AppError(410, 'This uploaded file was permanently deleted. Select the file again.');
+  /** The upcoming entry for the same recording, through any equivalent source. */
+  private upcomingFor(state: PreparationState, selection: SavedSelection) {
     const key = fingerprint(selection);
-    const existing = state.entries.find(item => {
+    return state.entries.find(item => {
       if (item.state !== 'upcoming') return false;
       if (fingerprint(item.selection) === key) return true;
       const saved = item.selection;
@@ -329,11 +336,33 @@ export class PreparationManager {
         left.provider === right.provider && left.itemId === right.itemId && left.uri === right.uri && left.version === right.version)) ||
         Boolean(a.identity && b.identity && sameRecordingEvidence(a.identity, b.identity));
     });
+  }
+  private appendSelection(state: PreparationState, selection: SavedSelection) {
+    if (selection.source === 'upload' && state.deletedUploads?.includes(selection.assetId)) throw new AppError(410, 'This uploaded file was permanently deleted. Select the file again.');
+    const existing = this.upcomingFor(state, selection);
     if (existing) return existing.id;
     if (state.order.length >= preparationLimits.upcoming || state.entries.length >= preparationLimits.entries) throw new AppError(409, 'The saved list is full. No saved entries or history were removed.');
     const entryId = randomUUID();
     state.entries.push({ id: entryId, selection, state: 'upcoming', addedAt: this.now(), playbackIds: [] });
     state.order.push(entryId); return entryId;
+  }
+  private replaceSelection(state: PreparationState, entryId: string, selection: SavedSelection) {
+    const entry = this.find(state, entryId);
+    if (entry.state !== 'upcoming') throw new AppError(409, 'Only songs in your playlist can be replaced. Refresh your list.');
+    // Dropping an uploaded song's entry would leave its file behind; those are removed instead.
+    if (entry.selection.source === 'upload') throw new AppError(409, 'Uploaded songs can’t be replaced. Remove the song instead.');
+    const existing = this.upcomingFor(state, selection);
+    if (existing?.id === entryId) return entryId; // The same song: nothing changes.
+    if (existing) throw new AppError(409, 'That song is already in your playlist.');
+    const kept = entry.playbackIds.length > 0;
+    if (kept && state.entries.length >= preparationLimits.entries) throw new AppError(409, 'Your playlist and its history are full (1,000 songs). Use Clear list to start again.');
+    const replacement = randomUUID();
+    state.order[state.order.indexOf(entryId)] = replacement;
+    // A song that was played before keeps its play history; otherwise the replaced song is simply gone.
+    if (kept) { entry.state = 'played'; entry.playedAt ??= this.now(); }
+    else state.entries = state.entries.filter(item => item.id !== entryId);
+    state.entries.push({ id: replacement, selection, state: 'upcoming', addedAt: this.now(), playbackIds: [] });
+    return replacement;
   }
   /** Internal descriptor access for authorized artwork adapters. Never return this object as HTTP JSON. */
   async selection(credential: string, entryId: string): Promise<SavedSelection> {
@@ -379,6 +408,28 @@ export class PreparationManager {
     try { await this.cleanupDeletedUploads(credential, remove); }
     catch { result.warning = 'The list change was saved, but file deletion needs another attempt. Refresh your list to retry cleanup.'; }
     result.view = await this.read(credential); return result;
+  }
+  /** The owner a credential opens, after the normal authorization. */
+  async ownerOf(credential: string) {
+    const access = identity(credential);
+    return this.serial(access.ownerId, async () => (await this.authorize(access.ownerId, access.secretHash, true)).ownerId);
+  }
+  /** Server-side import: appends songs in the given order with one save. A song already upcoming keeps its
+   * place; a full list stops the batch. Only appends, so it is safe beside a play in progress. */
+  appendImported(credential: string, selections: SavedSelection[]) {
+    const access = identity(credential); selections = selections.map(selection => input(savedSelectionSchema, selection));
+    return this.track(this.serial(access.ownerId, async () => {
+      const state = await this.authorize(access.ownerId, access.secretHash);
+      let added = 0; let already = 0; let full = false;
+      for (const selection of selections) {
+        const before = state.order.length;
+        try { this.appendSelection(state, selection); }
+        catch (error) { if (error instanceof AppError && error.status === 409) { full = true; break; } throw error; }
+        if (state.order.length > before) added++; else already++;
+      }
+      if (added) { state.revision++; await this.save(state); }
+      return { added, already, full };
+    }));
   }
   /** Starting from scratch: every upcoming and past entry goes, and uploaded files are deleted
    * like a permanent purge. Old receipts stay, so a lost acknowledgement replays without harm. */

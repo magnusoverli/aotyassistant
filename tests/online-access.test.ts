@@ -127,11 +127,16 @@ test('every participant action is reachable through an online invitation', () =>
   const paths = [...source('http.ts').matchAll(/app\.post\('(\/api\/participant\/[^':]+)'/g)].map(match => match[1]!);
   // Playlist actions: `${prefix}/name` routes and the shared `for (const action of [...])` routes.
   const playlist = source('preparation-http.ts');
-  const actions = [...playlist.matchAll(/app\.post\(`\$\{prefix\}\/([a-z-]+)`/g)].map(match => match[1]!);
+  const actions = [...playlist.matchAll(/app\.post\(`\$\{prefix\}\/([a-z/-]+)`/g)].map(match => match[1]!);
   for (const list of playlist.matchAll(/for \(const action of \[([^\]]+)\]/g)) actions.push(...[...list[1]!.matchAll(/'([a-z-]+)'/g)].map(match => match[1]!));
   paths.push(...actions.map(action => `/api/participant/preparations/${action}`));
-  for (const expected of ['/api/participant/import/read', '/api/participant/search', '/api/participant/preparations/clear', '/api/participant/preparations/move']) assert.ok(paths.includes(expected), expected);
+  for (const expected of ['/api/participant/search', '/api/participant/preparations/import', '/api/participant/preparations/import/stop',
+    '/api/participant/preparations/clear', '/api/participant/preparations/move']) assert.ok(paths.includes(expected), expected);
   for (const path of paths) assert.equal(publicRoute('POST', path), true, path);
+  // Reads too, such as following an import's progress.
+  const reads = [...playlist.matchAll(/app\.get\(`\$\{prefix\}\/([a-z/-]+)`/g)].map(match => `/api/participant/preparations/${match[1]!}`);
+  assert.ok(reads.includes('/api/participant/preparations/import'), 'read routes were found');
+  for (const path of reads) assert.equal(publicRoute('GET', path), true, path);
 });
 
 async function listen(t: TestContext, handler?: RequestListener) {

@@ -44,7 +44,9 @@ const searchTrackSchema = z.object({
   version: z.string().max(500).default(''), media_type: z.literal('track').default('track'),
   duration: z.number().finite().nonnegative().optional(), is_playable: z.boolean().default(true),
   artists: z.array(artistSchema).max(100).default([]),
-  album: z.object({ name: z.string().max(1000), version: z.string().max(500).optional(), year: z.number().int().nullable().optional(), external_ids: externalIds, ...imageFields }).nullable().optional(), ...imageFields, ...identityFields,
+  // The album's own ID (an item mapping) lets a saved song's album be listed again.
+  album: z.object({ name: z.string().max(1000), version: z.string().max(500).optional(), year: z.number().int().nullable().optional(), external_ids: externalIds,
+    item_id: z.string().min(1).max(2048).optional().catch(undefined), provider: z.string().min(1).max(200).optional().catch(undefined), uri: z.string().max(4096).nullable().optional().catch(undefined), ...imageFields }).nullable().optional(), ...imageFields, ...identityFields,
   disc_number: z.number().int().nonnegative().optional(), track_number: z.number().int().nonnegative().optional(),
 });
 const mediaSchema = z.object({ item_id: z.string().min(1).max(2048), provider: z.string().min(1).max(200),
@@ -72,7 +74,7 @@ export const queueSchema = z.object({
   elapsed_time: z.number().finite().nonnegative().optional(), elapsed_time_last_updated: z.number().finite().optional(),
 });
 export type QueueSnapshot = z.infer<typeof queueSchema>;
-type Command = 'players/all' | 'player_queues/get_active_queue' | 'music/search' | 'music/artists/artist_albums'
+type Command = 'players/all' | 'providers' | 'player_queues/get_active_queue' | 'music/search' | 'music/artists/artist_albums'
   | 'music/albums/album_tracks' | 'music/item_by_uri' | 'player_queues/items' | 'player_queues/autoplay'
   | 'player_queues/repeat' | 'player_queues/shuffle' | 'player_queues/play_media' | 'player_queues/stop'
   | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/clear' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
@@ -349,15 +351,46 @@ export class MusicAssistantClient implements MusicAssistantReader {
       return queue.queue_id;
     });
   }
-  async search(query: string): Promise<CatalogueTrack[]> {
+  /** `providers` limits the search to some sources ("library" and service domains); `limit` is per service.
+   * Spotify answers 10 results per request, so a limit of 10 costs one request against its rate limit. */
+  async search(query: string, options: { providers?: string[]; limit?: number } = {}): Promise<CatalogueTrack[]> {
     return this.compatible('Music Assistant returned an incompatible search response. Check its music sources and version compatibility.', async () => {
       // Verified against the deployment's generated music/search documentation.
       // Omitting providers searches the library and all connected sources, not playlists.
       const result = z.object({ tracks: z.array(searchTrackSchema).max(500) }).parse(await this.read('/api', 'music/search', {
-        search_query: query, media_types: ['track'], limit: 20,
+        search_query: query, media_types: ['track'], limit: options.limit ?? 20, ...(options.providers ? { providers: options.providers } : {}),
       }));
       return this.grouped('track', result.tracks, track => this.track(track));
     });
+  }
+  /** Domains of the connected music services, such as "spotify" and "tidal". */
+  async musicProviders(): Promise<string[]> {
+    return this.compatible('Music Assistant returned an incompatible provider list.', async () => {
+      const providers = z.array(z.object({ domain: z.string().max(200), type: z.string().max(100).optional(), available: z.boolean().optional() }))
+        .max(500).parse(await this.read('/api', 'providers', {}));
+      // "builtin" only plays plain URLs; it has no catalogue to search.
+      return [...new Set(providers.filter(item => (item.type ?? 'music') === 'music' && item.available !== false && item.domain !== 'builtin').map(item => item.domain))];
+    });
+  }
+  /** A saved descriptor for a track Music Assistant listed moments ago (search or album tracks), built from
+   * that answer instead of asking again. Playback still resolves and verifies the exact recording. */
+  listedRecording(track: CatalogueTrack): Omit<Extract<SavedSelection, { source: 'music-assistant' }>, 'source' | 'sourceBindingId'> {
+    const ref = this.recording(track.id); const identity = ref.identity;
+    if (!identity) throw new AppError(422, 'This result has no exact recording identity. Search for it again.');
+    if (JSON.stringify([ref, identity]).includes(this.token)) throw new AppError(502, 'The source returned an invalid recording identity.');
+    const equivalents = new Map<string, RecordingReference>();
+    for (const candidate of [...(ref.equivalents ?? []), ...(identity.provider_mappings ?? []).flatMap(mapping => {
+      if (mapping.item_id === ref.itemId && (mapping.provider_instance === ref.provider || mapping.provider_domain === ref.provider)) return [];
+      const provider = mapping.provider_instance ?? mapping.provider_domain;
+      return provider && mapping.item_id ? [{ provider, itemId: mapping.item_id, uri: `${provider}://track/${mapping.item_id}`, version: identity.version }] : [];
+    })]) {
+      if (candidate.provider === ref.provider && candidate.itemId === ref.itemId) continue;
+      equivalents.set(JSON.stringify([candidate.provider, candidate.itemId]), candidate);
+    }
+    return { recording: { itemId: ref.itemId, provider: ref.provider, uri: ref.uri, version: ref.version, identity,
+        ...(equivalents.size ? { equivalents: [...equivalents.values()].slice(0, 8) } : {}) },
+      metadata: { title: track.title, artist: track.artist, album: track.album, version: ref.version, provider: ref.sourceLabel ?? track.provider, duration: track.duration,
+        artworkId: ref.artwork ?? track.artwork, artistArtworkId: ref.artistArtwork ?? track.artistArtwork } };
   }
   async artists(query: string): Promise<CataloguePage<CatalogueArtist>> {
     return this.compatible('Music Assistant returned an incompatible artist response.', async () => {
@@ -425,11 +458,26 @@ export class MusicAssistantClient implements MusicAssistantReader {
       return result.map(track => this.track(track));
     });
   }
+  /** The album of a saved song, listed like browsing it, with the saved song's place (`current`, or -1). */
+  async albumTracksFor(saved: RecordingDescriptor): Promise<{ album: { name: string; artist: string }; tracks: CatalogueTrack[]; current: number; notices?: string[] }> {
+    const { media } = await this.exactRecording(saved, false);
+    const album = media.album;
+    if (!album?.item_id || !album.provider || !album.name) throw new AppError(404, 'This song’s album isn’t available in Music Assistant.');
+    const albumId = this.remember('album', mediaSchema.parse({ item_id: album.item_id, provider: album.provider, name: album.name, uri: album.uri ?? undefined,
+      version: album.version ?? '', image: album.image, metadata: album.metadata }), this.image(media.artists[0]));
+    const page = await this.tracks(albumId);
+    const savedRefs = [saved, ...(saved.equivalents ?? [])];
+    const sources = (id: string) => (id.startsWith('group:') ? this.groups.get(id)?.sources ?? [] : [id]).map(source => this.references.get(source)).filter(ref => ref !== undefined);
+    const current = page.items.findIndex(item => sources(item.id).some(ref => savedRefs.some(other => other.provider === ref.provider && other.itemId === ref.itemId) ||
+      Boolean(saved.identity && ref.identity && sameRecordingEvidence(saved.identity, ref.identity))));
+    return { album: { name: this.redact(album.name), artist: this.redact(media.artists.map(artist => artist.name).filter(Boolean).join(', ')) },
+      tracks: page.items, current, ...(page.notices ? { notices: page.notices } : {}) };
+  }
   async resolveTrack(id: string) {
     const ref = this.recording(id);
     return this.resolveRecording(ref);
   }
-  private recording(id: string): RecordingDescriptor & { artwork?: string; artistArtwork?: string } {
+  private recording(id: string): RecordingDescriptor & { artwork?: string; artistArtwork?: string; sourceLabel?: string } {
     if (!id.startsWith('group:')) return this.reference(id, 'track');
     const refs = this.group(id, 'track', 'This catalogue result expired. Search again.').sort((a, b) => Number(b.available) - Number(a.available));
     const first = refs[0]!;
@@ -568,7 +616,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
   }
 }
 
-const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'albums', 'tracks', 'serviceAlbumTracks', 'resolveTrack',
+const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'albums', 'tracks', 'serviceAlbumTracks', 'musicProviders', 'listedRecording', 'albumTracksFor', 'resolveTrack',
   'captureTrack', 'resolveRecording', 'resolveUploaded', 'playbackCapability', 'queue', 'queueItems', 'configureSingle',
   'playSingle', 'controlQueue', 'volume', 'pausedDestination', 'setVolume', 'subscribePlayback'] as const satisfies readonly (keyof MusicAssistantClient)[];
 

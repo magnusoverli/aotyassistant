@@ -7,6 +7,7 @@
 - **Add to list** saves the selected recording and its verified equivalent sources. The next choice is at the top.
 - Drag a song’s row to reorder the list; on a touch screen, press and hold the song first. Dragging a choice to the top makes it the next pick without playing it.
 - The **✕** on a row moves the choice to **Removed**, shown below the upcoming tracks in the playlist’s scrolling area. Choose **Add back** to restore it.
+- The **⇄** on a row replaces the song with another from the same album. It opens the album's songs, with the current one marked **In your list**. The song you choose takes the same place in your playlist. The old song leaves the list rather than moving to **Removed**; if it was played before, its history stays in **Previously played**. Replacing needs Music Assistant, so uploaded songs have no **⇄**.
 - **Clear list** beside **Your playlist** starts again from scratch. After you confirm, it removes every upcoming song and the whole history (**Previously played** and **Removed**), and permanently deletes your uploaded songs. It can't be undone. Your place in the listening order is kept, and an uploaded song that is playing must stop or finish first. The button appears only when there is something to clear.
 - **Play first selection** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
 - Successful playback keeps the choice in **Previously played**, shown by default below the upcoming tracks. This means playback started, not necessarily that the song finished.
@@ -23,9 +24,12 @@ Lists allow 200 upcoming choices and 1,000 retained entries including history. C
 
 - SuShe Online shares one song per album: your primary track pick, or your only pick. Albums without a pick and disqualified albums are left out, and the summary says how many.
 - Songs are added after anything already in your playlist, **last album first**, so the top of the SuShe list plays last. Songs already in your playlist are not added twice, so importing the same link again only adds what is new.
-- Each song is looked up in Music Assistant: on the album the link names (Spotify, Tidal, Qobuz, Apple Music or Deezer, when Music Assistant has that service), otherwise by searching. A match needs the same title and artist and a similar length, and a live, remixed or acoustic recording is never taken for the original. Remove a wrong match with **✕**.
+- Each song is looked up in Music Assistant: on the album the link names, or by searching your library and services. A match needs the same title and artist and a similar length, and a live, remixed or acoustic recording is never taken for the original. Remove a wrong match with **✕**.
+- Faster services are tried first. Music Assistant limits each service's requests: its shared Spotify login allows one every 2 seconds, while Tidal allows 4 a second. So Tidal, Qobuz, Deezer and Apple Music albums and a search of your library and those services come before anything on Spotify. With Tidal connected, most songs never touch Spotify.
+- Songs someone else already imported are found instantly. Music Assistant also remembers albums and tracks it looked up, for days to months, so lists that share albums get faster.
+- The import runs on the server: you can close the window, lock your phone or reload the page. Choose **Import** again to see its progress or summary.
 - Songs that weren't found are listed with a **Search** button. Search for them yourself or [upload a file](uploaded-audio.md).
-- **Stop** ends an import; songs added so far are kept. A full playlist (200 songs) also stops it.
+- **Stop** ends an import; songs added so far are kept. A full playlist (200 songs) also stops it, and so do several lookups failing in a row, for example while a music service is limiting requests. Importing again later skips the songs already added.
 - Importing needs a Music Assistant connection; there is no demo version. Imported songs are private like any other choice: the host, other participants and the display see nothing.
 
 Listening Room opens the link like any public web address. The two apps share no accounts or settings, and any SuShe Online server works. Only `https` links on the public internet are opened, never addresses on your home network. A link that stopped working or expired says so; share the list again in SuShe Online for a new week.
