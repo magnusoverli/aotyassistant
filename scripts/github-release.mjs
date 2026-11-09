@@ -17,7 +17,7 @@ const changelog = readFileSync('CHANGELOG.md', 'utf8');
 function notes(release, validation) {
   return [
     '## Highlights', '', changelogSection(changelog, release), '',
-    '## Upgrade', '', `Refresh the Home Assistant app store, update Listening Room to **${release}**, and reload open Listening Room tabs. Any required action is listed above.`, '',
+    '## Upgrade', '', `Refresh the Home Assistant app store, update Doom Room to **${release}**, and reload open Doom Room tabs. Any required action is listed above.`, '',
     '## Verification', '', 'The release workflow passed application checks, the unit and integration suite, native **amd64** and **aarch64** packaged-app tests, both image builds and anonymous public-image verification. Browser tests are opt-in and were not run.',
     ...(validation ? ['', `Validation: ${validation}`] : []), '',
     `Image: \`${image}:${release}\` for **amd64** and **aarch64**.`, '',
@@ -27,7 +27,7 @@ function notes(release, validation) {
 const directory = mkdtempSync(join(tmpdir(), 'release-notes-'));
 function publish(release, latest, validation) {
   const file = join(directory, `${release}.md`); writeFileSync(file, notes(release, validation));
-  run('gh', ['release', 'create', `v${release}`, '--verify-tag', '--title', `Listening Room ${release}`, '--notes-file', file, `--latest=${latest}`]);
+  run('gh', ['release', 'create', `v${release}`, '--verify-tag', '--title', `Doom Room ${release}`, '--notes-file', file, `--latest=${latest}`]);
   console.log(`Wrote the GitHub release for ${release}${latest ? ' (latest)' : ''}.`);
 }
 

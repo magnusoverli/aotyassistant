@@ -21,7 +21,7 @@ Lists allow 200 upcoming choices and 1,000 retained entries including history. C
 
 ## Import a list from SuShe Online
 
-[SuShe Online](https://github.com/magnusoverli/sushe-online) can share one of your album lists as a link that works for one week. In SuShe Online, open the list's menu and choose **Share to Listening Room**, then copy the link. In Listening Room, choose **Import** beside **Your playlist** and paste it. A whole chat message that contains the link works too.
+[SuShe Online](https://github.com/magnusoverli/sushe-online) can share one of your album lists as a link that works for one week. In SuShe Online, open the list's menu and choose **Share to Listening Room**, then copy the link. In Doom Room, choose **Import** beside **Your playlist** and paste it. A whole chat message that contains the link works too.
 
 - SuShe Online shares one song per album: your primary track pick, or your only pick. Albums without a pick and disqualified albums are left out, and the summary says how many.
 - Songs are added after anything already in your playlist, **last album first**, so the top of the SuShe list plays last. Songs already in your playlist are not added twice, so importing the same link again only adds what is new.
@@ -33,7 +33,7 @@ Lists allow 200 upcoming choices and 1,000 retained entries including history. C
 - **Stop** ends an import; songs added so far are kept. A full playlist (200 songs) also stops it, and so do several lookups failing in a row, for example while a music service is limiting requests. Importing again later skips the songs already added.
 - Importing needs a Music Assistant connection; there is no demo version. Imported songs are private like any other choice: the host, other participants and the display see nothing.
 
-Listening Room opens the link like any public web address. The two apps share no accounts or settings, and any SuShe Online server works. Only `https` links on the public internet are opened, never addresses on your home network. A link that stopped working or expired says so; share the list again in SuShe Online for a new week.
+Doom Room opens the link like any public web address. The two apps share no accounts or settings, and any SuShe Online server works. Only `https` links on the public internet are opened, never addresses on your home network. A link that stopped working or expired says so; share the list again in SuShe Online for a new week.
 
 ## Continue as yourself
 

@@ -10,7 +10,7 @@ import { UploadAssets } from '../src/uploads.js';
 import { fixtureUploadAnalysis, uploadBytes } from './fixtures/uploads.js';
 
 test('uploaded covers have shared bounded JPEG thumbnails and a separate display variant, with authorization before cache reuse', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'aoty-upload-art-'));
+  const directory = await mkdtemp(join(tmpdir(), 'doom-room-upload-art-'));
   const assets = new UploadAssets(directory, async (path, filename) => {
     const analysis = await fixtureUploadAnalysis(path, filename);
     const cover = await sharp({ create: { width: 1024, height: 768, channels: 3, background: '#657a48' } }).png().toBuffer();

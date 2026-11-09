@@ -21,7 +21,7 @@ for (const ingress of [false, true]) test(ingress ? 'Ingress disables browser sp
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const base = ingress ? '/api/hassio_ingress/fixture' : '';
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: origin,
-    dataDir: await mkdtemp(join(tmpdir(), 'aoty-speaker-identity-')), demoSeconds: 3600 };
+    dataDir: await mkdtemp(join(tmpdir(), 'doom-room-speaker-identity-')), demoSeconds: 3600 };
   const adapter = new DemoAdapter(3600); t.after(() => adapter.close());
   const engine = new Engine(new FileStore(config.dataDir), adapter, origin); await engine.init();
   const speakers = new BrowserSpeakers(() => ({ origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: '1', scope: 'fixture', version: '2.10.9', serverId: 'fixture' })); t.after(() => speakers.close());
@@ -48,7 +48,7 @@ for (const ingress of [false, true]) test(ingress ? 'Ingress disables browser sp
     return response;
   };
   const register = async () => {
-    const response = await request('/api/participant/browser-speaker/register', { id: randomUUID(), clientId: randomBytes(32).toString('base64url'), name: 'Listening Room (Windows PC)', device: 'Windows PC' });
+    const response = await request('/api/participant/browser-speaker/register', { id: randomUUID(), clientId: randomBytes(32).toString('base64url'), name: 'Doom Room (Windows PC)', device: 'Windows PC' });
     assert.equal(response.status, 200); return response.json() as Promise<BrowserSpeakerView>;
   };
   const status = async (id: string) => {
@@ -66,16 +66,16 @@ for (const ingress of [false, true]) test(ingress ? 'Ingress disables browser sp
     assert.deepEqual(speakers.list(), []); return;
   }
   assert.equal((await request('/api/browser-speaker/info')).status, 200);
-  const guest = await register(); assert.equal(guest.name, 'Listening Room (Windows PC)');
+  const guest = await register(); assert.equal(guest.name, 'Doom Room (Windows PC)');
   assert.equal((await request('/api/participant/join', { nickname: 'Magnus', pin: '1234' })).status, 200);
-  assert.ok(!cookiesFor(base + '/api/browser-speaker/register').includes('aoty_participant='));
-  assert.ok(cookiesFor(base + '/api/participant/browser-speaker/register').includes('aoty_participant='));
-  assert.equal((await status(guest.id)).name, 'Listening Room (Magnus · Windows PC)');
-  assert.equal((await register()).name, 'Listening Room (Magnus · Windows PC)');
+  assert.ok(!cookiesFor(base + '/api/browser-speaker/register').includes('doom_room_participant='));
+  assert.ok(cookiesFor(base + '/api/participant/browser-speaker/register').includes('doom_room_participant='));
+  assert.equal((await status(guest.id)).name, 'Doom Room (Magnus · Windows PC)');
+  assert.equal((await register()).name, 'Doom Room (Magnus · Windows PC)');
 
   assert.equal((await request('/api/participant/logout', {})).status, 200);
   assert.equal((await request(`/api/participant/browser-speaker/session/${guest.id}`)).status, 403);
-  const next = await register(); assert.equal(next.name, 'Listening Room (Windows PC)');
+  const next = await register(); assert.equal(next.name, 'Doom Room (Windows PC)');
   assert.equal((await request('/api/participant/join', { nickname: 'Sam', pin: '5678' })).status, 200);
-  assert.equal((await status(next.id)).name, 'Listening Room (Sam · Windows PC)');
+  assert.equal((await status(next.id)).name, 'Doom Room (Sam · Windows PC)');
 });

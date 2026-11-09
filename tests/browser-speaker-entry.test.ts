@@ -7,7 +7,7 @@ test('Ingress never initializes browser audio, including repeated initialization
   let base = '/api/hassio_ingress/fixture'; let publicPage = '';
   const original = Object.getOwnPropertyDescriptor(globalThis, 'document');
   Object.defineProperty(globalThis, 'document', { configurable: true, value: {
-    querySelector: (selector: string) => ({ content: selector === 'meta[name="aoty-base"]' ? base : publicPage }),
+    querySelector: (selector: string) => ({ content: selector === 'meta[name="doom-room-base"]' ? base : publicPage }),
     addEventListener: () => assert.fail('Ingress must not install audio unlock handlers.'),
   } });
   t.after(() => { if (original) Object.defineProperty(globalThis, 'document', original); else Reflect.deleteProperty(globalThis, 'document'); });

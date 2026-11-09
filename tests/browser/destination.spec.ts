@@ -36,7 +36,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     const firstTrack = await prepare(first); const secondTrack = await prepare(second);
     const beforeFirst = await (await first.request.get('/api/participant/state')).json();
     const beforeSecond = await (await second.request.get('/api/participant/state')).json();
-    const cookieBefore = (await secondContext.cookies()).find(cookie => cookie.name === 'aoty_participant')!.value;
+    const cookieBefore = (await secondContext.cookies()).find(cookie => cookie.name === 'doom_room_participant')!.value;
     await first.getByRole('searchbox', { name: 'Search catalogue' }).focus();
     await host.goto('/host/settings');
     await expect(host.getByLabel('Speaker or group', { exact: true })).toBeEnabled();
@@ -57,7 +57,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
       expect(after.roomId).toBe(before.roomId); expect(after.me.id).toBe(before.me.id); expect(after.turnId).toBe(before.turnId);
       expect(after.catalogue.revision).toBe(before.catalogue.revision); expect(after.catalogue.playbackAvailable).toBe(true);
     }
-    expect((await secondContext.cookies()).find(cookie => cookie.name === 'aoty_participant')!.value === cookieBefore).toBe(true);
+    expect((await secondContext.cookies()).find(cookie => cookie.name === 'doom_room_participant')!.value === cookieBefore).toBe(true);
     expect((await first.request.get(firstTrack.artwork)).status()).toBe(200);
     expect((await second.request.get(secondTrack.artwork)).status()).toBe(200);
     expect((await second.request.get(firstTrack.artwork)).status()).toBe(409);

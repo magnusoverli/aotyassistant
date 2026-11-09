@@ -1,6 +1,6 @@
 # Music Assistant connection and compatibility
 
-Listening Room uses Music Assistant for catalogue search, artwork, speaker discovery, and playback. Configure music providers and speakers in Music Assistant first, then [connect the app](../DOCS.md#connect-music-assistant).
+Doom Room uses Music Assistant for catalogue search, artwork, speaker discovery, and playback. Configure music providers and speakers in Music Assistant first, then [connect the app](../DOCS.md#connect-music-assistant).
 
 ## Supported API
 
@@ -10,7 +10,7 @@ Settings reports the installed MA version/schema and distinguishes an unsupporte
 
 The app selects speakers and groups exposed by Music Assistant. Search coverage, artist albums, availability, seeking, and volume depend on the provider/player. Compatibility has not been established for every player integration or provider. See [testing coverage and limitations](testing.md).
 
-The [Listening Room browser registers automatically as a speaker](browser-speaker.md) over direct LAN access and Tailscale invitations, but not Home Assistant Ingress. Select it in the existing Playback speaker selector; its audio engine survives navigation between app pages. Ingress retains playback controls for the selected speaker or group.
+The [Doom Room browser registers automatically as a speaker](browser-speaker.md) over direct LAN access and Tailscale invitations, but not Home Assistant Ingress. Select it in the existing Playback speaker selector; its audio engine survives navigation between app pages. Ingress retains playback controls for the selected speaker or group.
 
 ## Search and saved recordings
 
@@ -61,6 +61,14 @@ Natural turn advancement requires an authoritative completion flag for the exact
 External queue changes or unverified source changes invalidate app playback and conceal its details. When ownership is uncertain, use **Recover playback controls** in Settings. Recovery stops only the exact item if it is still owned, clears uncertainty, and neither restarts music nor advances the turn. Avoid repeated Play requests while resolving an uncertain result.
 
 Restart drops playback ownership and reveal. It never reclaims or resumes a Music Assistant queue automatically. Finish app-owned playback before updates.
+
+### Speaker transfer
+
+The host can [change speakers during an active song](using-the-app.md#change-speakers-during-a-song) using MA's `player_queues/transfer`. Handoff requires a stable MA **2.10.8 or later** release and the supported playback schema; ordinary playback compatibility is unchanged. Earlier schema-65 releases can resume a transfer using the target's old playback position. The fixed behavior was source-verified in [2.10.8/2.10.9](https://github.com/music-assistant/server/blob/2.10.9/music_assistant/controllers/player_queues/controller.py#L1099-L1218) and [upstream tests](https://github.com/music-assistant/server/blob/2.10.9/tests/controllers/player_queues/test_transfer_queue.py).
+
+MA stops and clears the source queue before starting the destination, so transfer is not gapless or atomic. The app verifies the preserved queue-item ID, recording, reported stream source, single-track policies and position, plus the cleared source. It never retries a transfer after a lost acknowledgement or uses a new Play as a fallback. Group members are addressed through their own queue rather than their group's active queue; MA may release grouping. Paused transfer uses `auto_play:false` and requires an idle, ungrouped target.
+
+Synthetic tests cover routing, position, pause/resume, upload leases, stale commands, partial outcomes and recovery. Actual audible interruption, position accuracy and group behavior still need installed-system acceptance with the affected speaker integrations.
 
 ## Credentials and transport
 

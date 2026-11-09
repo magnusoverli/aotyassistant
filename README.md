@@ -1,10 +1,10 @@
-# Listening Room
+# Doom Room
 
 **Take turns. Share music. Listen together.**
 
 Turn-based music sharing for Home Assistant, powered by Music Assistant.
 
-People join a shared listening room from their phones, prepare private track selections, and take turns playing music. Browse the sources configured in Music Assistant or upload an audio file. Track details stay hidden on the room display until the current participant reveals the title, artist, and artwork.
+People join the Doom Room from their phones, prepare private track selections, and take turns playing music. Browse the sources configured in Music Assistant or upload an audio file. Track details stay hidden on the room display until the current participant reveals the title, artist, and artwork.
 
 [![Release](https://img.shields.io/github/v/release/magnusoverli/aotyassistant)](https://github.com/magnusoverli/aotyassistant/releases/latest)
 [![Application checks](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml)
@@ -15,7 +15,7 @@ People join a shared listening room from their phones, prepare private track sel
 - **Take turns:** choose your name and four-digit PIN, see who is up next, and let the host arrange the listening order.
 - **Browse music:** search artists, albums, and tracks across the sources configured in Music Assistant.
 - **Prepare privately:** save and reorder selections, upload a track, and return to the same private list on later visits.
-- **Play and reveal:** the current participant controls playback and can reveal track details on the shared display.
+- **Play and reveal:** the current participant controls playback and can reveal track details on the shared display, or the host can switch off secret playback to show them as each song starts.
 - **Keep the room moving:** confirmed track completion advances the turn; the next track starts when its participant presses Play, or by itself with optional automatic play.
 - **Use existing devices:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
 
@@ -38,7 +38,7 @@ Use it for music discovery, listening clubs, or themed track-sharing. The app ma
    ```text
    https://github.com/magnusoverli/aotyassistant
    ```
-2. Install **Listening Room**, start it, and select **Open web UI**.
+2. Install **Doom Room**, start it, and select **Open web UI**.
 3. Open **Settings**, connect Music Assistant, and choose a speaker or group.
 4. Share the host desk’s join QR code and open **Room display** on a shared screen.
 

@@ -22,7 +22,7 @@ async function listen(t: TestContext, handler?: RequestListener) {
   return { server, port: (server.address() as AddressInfo).port, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
 }
 async function directory(t: TestContext) {
-  const dir = await mkdtemp('/tmp/opencode/aoty-ha-'); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
+  const dir = await mkdtemp('/tmp/opencode/doom-room-ha-'); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
 }
 const serverInfo: ServerInfo = { server_id: 'ma-instance-one', server_version: '2.10.6', schema_version: 65, min_supported_schema_version: 28, onboard_done: true };
 
@@ -30,7 +30,7 @@ test('Supervisor hints use default-role reads, effective ports, private interfac
   const calls: string[] = [];
   const data: Record<string, unknown> = {
     '/info': { homeassistant: '2026.10.0', supervisor: '2026.10.2' },
-    '/addons/self/info': { hostname: 'local-aoty', ip_address: '172.30.33.5', network: { '3000/tcp': 4567 } },
+    '/addons/self/info': { hostname: 'local-doom-room', ip_address: '172.30.33.5', network: { '3000/tcp': 4567 } },
     '/network/info': { interfaces: [
       { interface: 'tailscale0', primary: true, ipv4: { address: ['100.64.1.3/32'] } },
       { interface: 'eth0', primary: true, enabled: true, ipv4: { address: ['192.168.5.20/24'] } },
@@ -44,7 +44,7 @@ test('Supervisor hints use default-role reads, effective ports, private interfac
   const hints = await supervisorHints(reader, 3000);
   assert.deepEqual(hints.guestOrigins, ['http://192.168.5.20:4567', 'http://192.168.6.20:4567']);
   assert.deepEqual(hints.preferredGuestOrigins, ['http://192.168.5.20:4567']);
-  assert.deepEqual(hints.mediaOrigins, ['http://local-aoty:3000', 'http://172.30.33.5:3000', 'http://192.168.5.20:4567', 'http://192.168.6.20:4567']);
+  assert.deepEqual(hints.mediaOrigins, ['http://local-doom-room:3000', 'http://172.30.33.5:3000', 'http://192.168.5.20:4567', 'http://192.168.6.20:4567']);
   assert.deepEqual(hints.maOrigins, ['http://192.168.5.20:8095', 'http://192.168.6.20:8095', 'http://172.30.32.1:8094']);
   assert.ok(!calls.includes('/addons') && !calls.some(path => path.startsWith('/discovery')));
   assert.throws(() => new SupervisorClient('never-send').read('http://192.168.1.1/info'));
@@ -127,7 +127,7 @@ async function authorizationFixture(t: TestContext) {
   const start = async () => {
     const response = await post('/api/host/auth/start', { url: remote.origin, revision: manager.view().revision }); assert.equal(response.status, 200);
     const payload = await response.json() as { loginUrl: string; attemptId: string }; const login = new URL(payload.loginUrl);
-    assert.equal(login.searchParams.get('device_name'), 'Listening Room');
+    assert.equal(login.searchParams.get('device_name'), 'Doom Room');
     return { attemptId: payload.attemptId, callback: new URL(login.searchParams.get('return_url')!), cookie: response.headers.get('set-cookie')!.split(';')[0]!, response };
   };
   return { manager, local, remote, token, calls, tokenNames, dir, engine, app: http.app, post, start, setIdentity(value: string) { identity = value; } };
@@ -147,7 +147,7 @@ test('browser authorization binds state to cookie, consumes callbacks once, and 
   assert.ok(!(JSON.stringify(f.manager.view())).includes(f.token)); assert.ok(!(await readFile(join(f.dir, 'integrations.json'), 'utf8')).includes('login-code'));
   await fetch(login.callback, { headers: { Cookie: login.cookie }, redirect: 'manual' });
   assert.equal(f.calls.filter(c => c === 'auth/token/create').length, 1);
-  assert.deepEqual(f.tokenNames, ['Listening Room']);
+  assert.deepEqual(f.tokenNames, ['Doom Room']);
   assert.ok(!f.calls.some(c => /play|volume|stop/.test(c) && c !== 'players/all'));
 });
 

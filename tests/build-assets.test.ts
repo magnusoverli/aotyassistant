@@ -7,7 +7,7 @@ import { gzipSync, brotliCompressSync } from 'node:zlib';
 import { checkBuild } from '../scripts/check-build.js';
 
 async function fixture(t: TestContext) {
-  const directory = await mkdtemp(join(tmpdir(), 'aoty-build-'));
+  const directory = await mkdtemp(join(tmpdir(), 'doom-room-build-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await mkdir(join(directory, 'assets')); await mkdir(join(directory, '.vite'));
   const write = (path: string, data: string | Buffer) => writeFile(join(directory, path), data);

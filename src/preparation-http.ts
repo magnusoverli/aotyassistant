@@ -18,14 +18,14 @@ import { fetchSharedList, sharedListLink } from './shared-list.js';
 
 const prefix = '/api/participant/preparations';
 const uuid = z.uuid();
-const cookieName = 'aoty_preparation';
+const cookieName = 'doom_room_preparation';
 const empty = z.object({}).strict();
 
 /** Private library routes deliberately use a separate credential, revision, rate lane, and event stream. */
 export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets, users: UserManager) {
   const streams = new EventStreams(200, 'Too many private-list connections. Close unused tabs.');
   const rates = new RateLimiter(5000);
-  const member = (req: Request) => readCookie(req, 'aoty_participant');
+  const member = (req: Request) => readCookie(req, 'doom_room_participant');
   const credential = (req: Request) => readCookie(req, cookieName);
   const setCookie = (res: Response, value: string) => setParticipantCookie(res.req, res, cookieName, value, prefix, config.guestUrl);
   const timer = setInterval(() => rates.prune(), 60_000); timer.unref();

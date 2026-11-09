@@ -11,7 +11,7 @@ import { readCookie } from './http-guards.js';
 import { browserOrigin, ingressContext, requestBase } from './ingress.js';
 import { productName } from './product.js';
 
-const cookieName = 'aoty_ma_login';
+const cookieName = 'doom_room_ma_login';
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 type Transaction = { attemptId: string; browserHash: string; origin: string; base: string; userId?: string; url: string; browserUrl: string; serverId: string; revision: number; expires: number };
 const random = () => randomBytes(32).toString('base64url');

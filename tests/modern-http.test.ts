@@ -83,7 +83,7 @@ test('compiled JSON routes match runtime schema outputs and errors for nested re
 });
 
 test('real room routes compile at registration and preserve strict validation and revision guards', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'aoty-modern-http-'));
+  const directory = await mkdtemp(join(tmpdir(), 'doom-room-modern-http-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const adapter = new DemoAdapter(); let state: State = { schema: 3, room: null };
   const engine = new Engine({ load: async () => structuredClone(state), save: async value => { state = structuredClone(value); } }, adapter, 'http://localhost:3000');

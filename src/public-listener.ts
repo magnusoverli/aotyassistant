@@ -6,7 +6,7 @@ import { RateLimiter, isLoopbackPeer, readCookie } from './http-guards.js';
 /** `authorized`: the invitation cookie is valid. The page shell exposes only this yes/no. */
 const contexts = new WeakMap<IncomingMessage, { origin: string; session: string; authorized: boolean }>();
 export const publicContext = (request: IncomingMessage) => contexts.get(request);
-const cookieName = '__Host-aoty_online';
+const cookieName = '__Host-doom_room_online';
 export const onlineCookie = (req: IncomingMessage) => readCookie(req, cookieName);
 const readRoutes = [
   /^\/api\/browser-speaker\/(?:info|session\/[a-f0-9-]{36})$/,

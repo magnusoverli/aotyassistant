@@ -36,6 +36,8 @@ On phones, while someone else has the turn, the player shows whose turn it is, w
 
 The shared display shows **Track details hidden.** until playback reaches **70%**, or the current participant selects **Reveal details** earlier. Auto-reveal is enabled by default; switch it off in **Settings → Playback → Automatically reveal at 70%** for manual-only reveal. A subtle marker on the progress bar indicates the threshold and disappears after either kind of reveal, or when auto-reveal is disabled. Tracks with unknown duration or unavailable progress remain manual. Enabling auto-reveal during a track already beyond 70% reveals it; disabling it does not hide a track already revealed. Host players never show track names, artist names or artwork.
 
+Hiding tracks is optional. Switch off **Settings → Playback → Hide track details until revealed** (Secret playback, on by default) and the room display shows each song's title, artist and artwork as soon as it starts. Participants no longer see **Reveal details**, and the 70% marker and automatic reveal no longer apply, so that setting is greyed out. Switching Secret playback off during a hidden song reveals it right away. Switching it back on never hides a song already shown; the next song starts hidden. The host desk is unchanged.
+
 If cover artwork is unavailable, the revealed title and artist appear on the display’s spinning record label. Pause freezes progress. Resume is explicit, including when Music Assistant has parked a long-paused stream. Use **Finish turn** to stop the track controlled by the app and pass to the next person, or **Pass turn** to advance without playing a track. Both ask for confirmation, because a passed turn cannot be taken back. Other Music Assistant and speaker interfaces may independently show track information before reveal.
 
 The display smooths progress locally between playback updates. Before reveal, it eases toward received positions without exposing elapsed time or duration; afterward it uses a bounded local clock and gently corrects ordinary timing differences. Stale updates stop animation rather than implying continued playback. This visual smoothing does not trigger reveal or advance turns.
@@ -50,11 +52,19 @@ Switch on **Settings → Playback → Play the next song automatically** to keep
 
 Nothing starts, and the participant chooses as usual, when their playlist is empty, a previous play attempt needs review, the song’s source isn’t connected, or the speaker isn’t ready. A song that can’t be found stays first in their playlist. **Finish turn**, **Skip turn** and **Pass turn** never start the next song, and switching the setting on doesn’t start music by itself. While an automatic start is in progress, the participant’s playlist shows **Your first song is starting…**. To stop the music, use **Stop song** or switch the setting off.
 
-The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume. Changing speakers requires stopping or finishing the app-owned track first.
+The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume.
 
 Both players offer **Pause / Resume** and **Stop song** controls, separate from finishing or skipping the turn. Stopping keeps the current participant's turn; the participant chooses and starts a selection again. A successfully started saved selection remains in **Previously played** history. The progress bar is read-only: seeking, previous-track, repeat, and shuffle controls are not exposed.
 
 **Host desk** shows playback progress and whether the song is hidden or visible on the room display. Exact times appear after the participant reveals the song. **Stop song — keep turn** is directly available and asks for confirmation. **Skip turn** stops the app-owned song and passes control to the next participant; it asks for confirmation, including while the participant is still choosing. The host player has **Pause / Resume** and **Stop song** but no Play button, because only the current participant starts their song.
+
+### Change speakers during a song
+
+Open **Settings → Playback**, choose another **Speaker or group**, and confirm the move. **Moving playback…** stays visible until Music Assistant confirms the song on the new speaker. The same song continues from its playback position, with the participant's turn, revealed details and playlist history kept. This uses Music Assistant's native queue transfer, not a crossfade or a new Play. A short interruption and small position rounding are possible; timing depends on the speaker, music source and network.
+
+Moving playback requires **Music Assistant 2.10.8 or later** and a supported playback API. The destination keeps its own volume. The move replaces its existing queue and may change active grouping when you choose a group member. A paused song can move to an idle, ungrouped speaker without starting audio; otherwise resume it first or choose another target. Connection and file-playback address settings remain locked during app-owned playback.
+
+If the move cannot be confirmed, do not repeat it: the song may be on either speaker. **Recover playback controls** checks both exact queue identities and stops only verified app-owned audio; the turn does not advance. If playback moved but the speaker choice could not be saved, controls stay on the new speaker. **Refresh speakers** retries saving that choice without moving audio again; do this before restarting the app.
 
 ### Playback problems
 

@@ -1,11 +1,11 @@
 # Online invitations with Tailscale Funnel
 
-Friends can join Listening Room on mobile data or any Wi-Fi. They open a link or scan the room QR code, choose their name, and enter their PIN. They do not install Tailscale or need a Home Assistant account. Music still plays through your local Music Assistant and speaker; this does not stream the room's audio to remote phones.
+Friends can join Doom Room on mobile data or any Wi-Fi. They open a link or scan the room QR code, choose their name, and enter their PIN. They do not install Tailscale or need a Home Assistant account. Music still plays through your local Music Assistant and speaker; this does not stream the room's audio to remote phones.
 
 ## One-time setup
 
-1. Open Listening Room **inside Home Assistant**, then **Settings → Access & network → Online invitations**.
-2. Select **Enable online invitations**, then **Sign in to Tailscale**. Create a Tailscale account if you do not already have one. Authorize the new Listening Room device in the account you want to use.
+1. Open Doom Room **inside Home Assistant**, then **Settings → Access & network → Online invitations**.
+2. Select **Enable online invitations**, then **Sign in to Tailscale**. Create a Tailscale account if you do not already have one. Authorize the new Doom Room device in the account you want to use.
 3. Return to the app. Select **Approve in Tailscale** when prompted and approve HTTPS and Funnel. A managed Tailscale account may require its administrator to approve the device and Funnel policy.
 4. Wait for **Online invitations ready**. The app checks the exact guest-only proxy configuration and performs an HTTPS challenge through its public address before advertising links.
 5. Open Host desk and share its QR code, or use **Copy invitation** in Settings. Test the invitation on a phone with Wi-Fi switched off.
@@ -24,7 +24,7 @@ When online invitations are ready, Settings shows the **online round trip from t
 
 Connect the HA machine to internet access, complete any venue captive-portal login, and ensure Music Assistant can reach the speaker. The tunnel reconnects automatically. No venue router access is needed. Bringing a travel router and your own speaker keeps the local network predictable.
 
-Your `https://listening-room.…ts.net` address and invitation survive network changes and app restarts. Keep the same Tailscale device/account and saved app data: deleting or renaming that device, changing the tailnet domain, or losing its state can change the address. Browser sign-in is origin-specific; switching from a LAN address to the online address may require choosing your name and entering your existing PIN again. Playlists and uploaded files stay on the HA machine.
+Your `https://doom-room.…ts.net` address and invitation survive network changes and app restarts. Keep the same Tailscale device/account and saved app data: deleting or renaming that device, changing the tailnet domain, or losing its state can change the address. Browser sign-in is origin-specific; switching from a LAN address to the online address may require choosing your name and entering your existing PIN again. Playlists and uploaded files stay on the HA machine.
 
 Guest authorization lasts seven days per browser. Reopen the invitation to renew it. The invitation itself stays valid until you replace it or turn online invitations off. Share the whole link, including its `#online=…` fragment; the bare hostname is not an invitation.
 

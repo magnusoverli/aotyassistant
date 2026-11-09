@@ -10,7 +10,7 @@ export async function enterOnline(root: HTMLElement): Promise<boolean> {
   else if (hasOnlineSession()) return true;
   const main = el('main', undefined, 'page stack'); main.id = 'main-content';
   const status = el('p', 'Opening your invitation…'); status.setAttribute('role', 'status');
-  main.append(el('h1', 'Join Listening Room'), status); root.replaceChildren(main);
+  main.append(el('h1', 'Join Doom Room'), status); root.replaceChildren(main);
   return new Promise(resolve => {
     const retry = el('button', 'Try again'); retry.type = 'button';
     const attempt = async () => {

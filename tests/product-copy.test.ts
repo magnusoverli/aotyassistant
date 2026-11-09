@@ -8,7 +8,8 @@ import { errorPage } from '../src/error-page.js';
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 
 test('documentation and distribution metadata describe the same music-sharing product', () => {
-  assert.equal(productName, 'Listening Room');
+  assert.equal(productName, 'Doom Room');
+  assert.equal(JSON.parse(read('package.json')).name, 'doom-room');
   assert.equal(JSON.parse(read('package.json')).description, productDescription);
   assert.ok(read('config.yaml').startsWith(`name: ${productName}\n`));
   assert.ok(read('config.yaml').includes(`\ndescription: ${productDescription}\n`));
@@ -24,21 +25,30 @@ test('documentation and distribution metadata describe the same music-sharing pr
   assert.ok(read('.github/ISSUE_TEMPLATE/bug-report.yml').includes(`label: ${productName} version`));
 });
 
-test('the display rename preserves installation, browser and retained-draft identities', () => {
-  assert.equal(JSON.parse(read('package.json')).name, 'albums-of-the-year');
-  assert.match(read('config.yaml'), /^slug: albums_of_the_year$/m);
+test('installation, browser and draft identities use the Doom Room names', () => {
+  assert.match(read('config.yaml'), /^slug: doom_room$/m);
+  assert.ok(read('src/http.ts').includes("cookie(req, 'doom_room_participant')"));
+  assert.ok(read('src/preparation-http.ts').includes("const cookieName = 'doom_room_preparation'"));
+  assert.ok(read('src/ma-authorization.ts').includes("const cookieName = 'doom_room_ma_login'"));
+  assert.ok(read('src/browser-speakers.ts').includes("export const speakerCookie = 'doom_room_browser_speaker'"));
+  assert.ok(read('src/public-listener.ts').includes("const cookieName = '__Host-doom_room_online'"));
+  assert.ok(read('web/preparation-controller.ts').includes('doom-room.preparation-pending.v1.'));
+  assert.ok(read('web/upload-panel.ts').includes('doom-room.upload-draft.v1.'));
+  assert.ok(read('web/record-labels.ts').includes('doom-room.public-record-labels.v1'));
+  assert.ok(read('web/browser-speaker.ts').includes('doom-room.sendspin:'));
+  assert.ok(read('src/tailscale.ts').includes("'--hostname=doom-room'"));
+  assert.ok(read('DOCS.md').includes('## Move from Listening Room'));
+});
+
+test('identities owned by other systems or derived into stored data stay unchanged', () => {
   assert.match(read('config.yaml'), /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);
-  assert.ok(read('src/http.ts').includes("cookie(req, 'aoty_participant')"));
-  assert.ok(read('src/preparation-http.ts').includes("const cookieName = 'aoty_preparation'"));
-  assert.ok(read('src/ma-authorization.ts').includes("const cookieName = 'aoty_ma_login'"));
-  assert.ok(read('web/preparation-controller.ts').includes('aoty.preparation-pending.v1.'));
-  assert.ok(read('web/upload-panel.ts').includes('aoty.upload-draft.v1.'));
-  assert.ok(read('web/record-labels.ts').includes('aoty.public-record-labels.v1'));
-  assert.ok(read('DOCS.md').includes('does not require rejoining or reconnecting Music Assistant'));
+  assert.ok(read('src/preparation-identity.ts').includes('aoty-selections:'));
+  assert.ok(read('src/preparation-identity.ts').includes('aoty-selections-owner:'));
+  assert.ok(read('src/shared-list.ts').includes("format: z.literal('sushe-listening-room')"));
 });
 
 test('active browser and backend copy does not reintroduce event branding or ambiguous action labels', () => {
-  const stale = ['Albums of the Year', 'Saved list', 'Play next', 'Make next', 'Reveal song', 'Keep them guessing.', 'listening circle', "'AOTY'"];
+  const stale = ['Albums of the Year', 'Saved list', 'Play next', 'Make next', 'Reveal song', 'Keep them guessing.', 'listening circle', "'AOTY'", "'Listening Room'"];
   function check(directory: string) {
     for (const entry of readdirSync(new URL(`../${directory}`, import.meta.url), { withFileTypes: true })) {
       const path = join(directory, entry.name);

@@ -35,7 +35,7 @@ async function fixture(store: PreparationStore = new MemoryStore()) {
 }
 
 test('private preparation persists exact identities/order across restart with private file permissions and an allowlisted owner view', async () => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-preparation-store-'); const store = new PreparationFileStore(dir);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-store-'); const store = new PreparationFileStore(dir);
   const f = await fixture(store); const first = await f.add(); const second = await f.add(2);
   await f.manager.move(f.owner.credential, await f.op(), second.entryId, first.entryId);
   const restored = new PreparationManager(new PreparationFileStore(dir)); const view = await restored.read(f.owner.credential);
@@ -194,7 +194,7 @@ test('old edits expire instead of being replayed after their deduplication windo
 });
 
 test('corrupt/mismatched/oversized preparation files fail closed and never overwrite another owner or unrelated app state', async () => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-preparation-corrupt-'); const store = new PreparationFileStore(dir); const f = await fixture(store); await f.add();
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-corrupt-'); const store = new PreparationFileStore(dir); const f = await fixture(store); await f.add();
   const other = await f.manager.createOwner(); const filename = join(dir, 'preparations', `${f.owner.view.ownerId}.json`);
   const initial = await readFile(filename, 'utf8');
   await writeFile(join(dir, 'state.json'), 'Unrelated existing event state');
@@ -209,17 +209,17 @@ test('corrupt/mismatched/oversized preparation files fail closed and never overw
 });
 
 test('validated owner snapshots can be restored from backup and reject invalid order without replacing saved data', async () => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-preparation-backup-'); const store = new PreparationFileStore(dir); const f = await fixture(store); const first = await f.add();
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-backup-'); const store = new PreparationFileStore(dir); const f = await fixture(store); const first = await f.add();
   const state = (await store.load(first.view.ownerId))!;
   await assert.rejects(store.save({ ...state, order: [state.order[0]!, state.order[0]!] }), status(503));
   assert.deepEqual(await store.load(state.ownerId), state);
-  const restoreDir = await mkdtemp('/tmp/opencode/aoty-preparation-restored-'); await mkdir(join(restoreDir, 'preparations'), { mode: 0o700 });
+  const restoreDir = await mkdtemp('/tmp/opencode/doom-room-preparation-restored-'); await mkdir(join(restoreDir, 'preparations'), { mode: 0o700 });
   const restoredStore = new PreparationFileStore(restoreDir); await restoredStore.save(state);
   assert.deepEqual(await new PreparationManager(restoredStore).read(f.owner.credential), first.view);
 });
 
 test('a schema-valid state exceeding the readable byte bound cannot replace a saved private list', async () => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-preparation-large-'); const store = new PreparationFileStore(dir);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-large-'); const store = new PreparationFileStore(dir);
   const f = await fixture(store); const first = await f.add(); const initial = (await store.load(first.view.ownerId))!;
   const large = structuredClone(initial); large.entries = []; large.order = [];
   // UTF-8 bytes and JSON escaping exceed character-based schema bounds. No invalid
@@ -250,7 +250,7 @@ test('invalid descriptor metadata/proxy URLs and mutated operation bodies fail b
 });
 
 test('preparation edits and save failures do not touch a running engine, its turn/reveal, or playback controls', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-preparation-isolation-'); const adapter = new DemoAdapter(3600); t.after(() => adapter.close());
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-isolation-'); const adapter = new DemoAdapter(3600); t.after(() => adapter.close());
   let controls = 0; const control = adapter.control.bind(adapter); adapter.control = async action => { controls++; await control(action); };
   const engine = new Engine(new FileStore(dir), adapter, 'http://localhost:3000'); await engine.init();
   const member = await engine.join('Alex');

@@ -26,7 +26,7 @@ const status = (expected: number) => (error: unknown) => error instanceof AppErr
 const cookie = (response: Response) => response.headers.get('set-cookie')!.split(';')[0]!;
 
 async function fixture(t: TestContext, analyze = fixtureUploadAnalysis) {
-  const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/aoty-uploads-');
+  const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/doom-room-uploads-');
   const server = createServer(); server.listen(0, '0.0.0.0'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: directory, demoSeconds: 3600 };
@@ -357,7 +357,7 @@ test('the media origin is host-configurable, preserves files, and permits only c
 });
 
 test('failed analysis, cancelled transfers and cleanup do not discard retained audio or change the player lane', async t => {
-  let clock = Date.now(); const dir = await mkdtemp('/tmp/opencode/aoty-upload-cleanup-');
+  let clock = Date.now(); const dir = await mkdtemp('/tmp/opencode/doom-room-upload-cleanup-');
   const assets = new UploadAssets(dir, fixtureUploadAnalysis, () => clock); t.after(() => assets.close());
   const owner = randomUUID(); const retained = randomUUID(); const draft = randomUUID();
   await assets.receive(owner, retained, 'retained.mp3', Readable.from(uploadBytes));
@@ -374,7 +374,7 @@ test('failed analysis, cancelled transfers and cleanup do not discard retained a
 });
 
 test('the real analysis child fails clearly when FFprobe is missing rather than accepting filename metadata as audio', async () => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-upload-worker-'); await writeFile(join(dir, 'audio'), uploadBytes);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-upload-worker-'); await writeFile(join(dir, 'audio'), uploadBytes);
   await assert.rejects(analyzeUpload(dir, 'test.mp3'), error => error instanceof AppError && [422, 503].includes(error.status));
 });
 
@@ -391,7 +391,7 @@ test('large streamed files have no storage quota, and slow processing/authorizat
   const user = (await f.json('/api/participant/state', undefined, f.second.membership)).user!;
   const login = await f.request('/api/participant/join', { userId: user.id, pin: '1234' });
   const initialized = await f.request(prefix + '/init', {}, cookie(login));
-  const replacementCookie = cookie(initialized); const replacement = replacementCookie.slice('aoty_preparation='.length);
+  const replacementCookie = cookie(initialized); const replacement = replacementCookie.slice('doom_room_preparation='.length);
   const store = new PreparationFileStore(f.directory); const state = (await store.load(f.second.ownerId))!;
   state.credentials = [{ hash: createHash('sha256').update(replacement).digest('hex'), createdAt: Date.now() }]; await store.save(state);
   release(); const finished = await uploading; assert.equal(finished.status, 401);

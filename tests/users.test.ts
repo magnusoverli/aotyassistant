@@ -16,7 +16,7 @@ const selection: SavedSelection = { source: 'demo', trackId: 'demo:aurora', meta
 } };
 const status = (code: number) => (error: unknown) => error instanceof AppError && error.status === code;
 async function fixture(t: TestContext) {
-  const directory = await mkdtemp('/tmp/opencode/aoty-users-');
+  const directory = await mkdtemp('/tmp/opencode/doom-room-users-');
   const engine = new Engine(new FileStore(directory), new DemoAdapter(3600), 'http://localhost:3000'); await engine.init();
   const lists = new PreparationManager(new PreparationFileStore(directory));
   let now = Date.now(); const users = new UserManager(directory, lists, engine, () => now); await users.ready;

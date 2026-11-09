@@ -46,6 +46,7 @@ const roomShape = z.object({
   currentId: z.string().uuid().nullable(),
   autoReveal: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
   autoplay: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
+  secretPlayback: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
   playback: z.object({
     id: z.string().uuid(), turnId: z.string().uuid(), track: trackSchema,
     status: z.enum(['playing', 'paused', 'stopped']), revealed: z.boolean(),
@@ -88,6 +89,8 @@ export type View = {
   playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';
   revision: number; turnId: string | null; current: Person | null; next: Person | null;
   me?: Person; myTurn?: boolean; ownPlayback?: Room['playback'];
+  /** Participants only. False when songs show on the room display as soon as they start. */
+  secretPlayback?: boolean;
   user?: UserProfile;
   hostPlayback?: Pick<NonNullable<Room['playback']>, 'id' | 'status' | 'revealed'> | null;
   catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };

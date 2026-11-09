@@ -72,12 +72,13 @@ export const queueSchema = z.object({
   current_item: queueItemSchema.nullable(),
   next_item: z.unknown().nullable(),
   elapsed_time: z.number().finite().nonnegative().optional(), elapsed_time_last_updated: z.number().finite().optional(),
+  resume_pos: z.number().finite().nonnegative().optional(),
 });
 export type QueueSnapshot = z.infer<typeof queueSchema>;
 type Command = 'players/all' | 'providers' | 'player_queues/get_active_queue' | 'music/search' | 'music/artists/artist_albums'
   | 'music/albums/album_tracks' | 'music/item_by_uri' | 'player_queues/items' | 'player_queues/autoplay'
   | 'player_queues/repeat' | 'player_queues/shuffle' | 'player_queues/play_media' | 'player_queues/stop'
-  | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/clear' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
+  | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/clear' | 'player_queues/get' | 'player_queues/transfer' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
 const volumePlayerSchema = z.object({ player_id: z.string(), available: z.boolean(), type: z.string().default('player'),
   supported_features: z.array(z.string()).default([]), volume_control: z.string().default('none'),
   volume_level: z.number().int().min(0).max(100).nullable().default(null), group_volume: z.number().int().min(0).max(100).nullable().default(null),
@@ -559,6 +560,26 @@ export class MusicAssistantClient implements MusicAssistantReader {
     if (result.data.state === 'unknown') throw new UpstreamError('state-unconfirmed', 502, 'Music Assistant could not confirm the speaker’s playback state.');
     return result.data;
   }
+  /** Direct queue identity: unlike get_active_queue this never follows a group or sync leader. */
+  async queueById(queueId: string): Promise<QueueSnapshot> {
+    const result = queueSchema.safeParse(await this.read('/api', 'player_queues/get', { queue_id: queueId }));
+    if (!result.success || result.data.queue_id !== queueId) throw new UpstreamError('unsupported-response', 502, 'The transfer queue response is unsupported.');
+    return result.data;
+  }
+  async transferTarget(playerId: string) {
+    const result = z.object({ player_id: z.string(), available: z.boolean(), type: z.string(),
+      playback_state: z.enum(['idle', 'paused', 'playing', 'unknown']), active_source: z.string().nullable(),
+      active_group: z.string().nullable().optional(), synced_to: z.string().nullable().optional() })
+      .safeParse(await this.read('/api', 'players/get', { player_id: playerId }));
+    if (!result.success || result.data.player_id !== playerId) throw new UpstreamError('unsupported-response', 502, 'The transfer speaker response is unsupported.');
+    if (!result.data.available || !['player', 'group', 'stereo_pair'].includes(result.data.type)) throw new AppError(409, 'Choose an available speaker or group capable of audio playback.');
+    if (result.data.playback_state === 'unknown') throw new AppError(409, 'The new speaker’s playback state is unconfirmed. Check it in Music Assistant.');
+    return result.data;
+  }
+  async transferQueue(sourceQueueId: string, targetQueueId: string, autoPlay: boolean): Promise<void> {
+    if (sourceQueueId === targetQueueId) throw new AppError(409, 'Choose a different playback queue.');
+    await this.read('/api', 'player_queues/transfer', { source_queue_id: sourceQueueId, target_queue_id: targetQueueId, auto_play: autoPlay });
+  }
   async queueItems(queueId: string): Promise<z.infer<typeof queueItemSchema>[]> {
     const result = z.array(queueItemSchema).max(2)
       .safeParse(await this.read('/api', 'player_queues/items', { queue_id: queueId, limit: 2, offset: 0 }));
@@ -621,7 +642,8 @@ const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'a
   'playSingle', 'controlQueue', 'volume', 'pausedDestination', 'setVolume', 'subscribePlayback'] as const satisfies readonly (keyof MusicAssistantClient)[];
 
 /** Structural port: integrations depend on capabilities, not one concrete client's prototype. */
-export type MusicAssistantApi = Pick<MusicAssistantClient, typeof apiMethods[number]>;
+export type MusicAssistantApi = Pick<MusicAssistantClient, typeof apiMethods[number]> &
+  Partial<Pick<MusicAssistantClient, 'queueById' | 'transferTarget' | 'transferQueue'>>;
 export function isMusicAssistantApi(reader: MusicAssistantReader): reader is MusicAssistantApi {
   return apiMethods.every(method => typeof Reflect.get(reader, method) === 'function');
 }

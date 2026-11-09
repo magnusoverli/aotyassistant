@@ -21,7 +21,7 @@ test('pages use function-first copy while joining, playback and reveal remain us
   const participantContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const displayContext = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   try {
-    await host.goto('/'); await expect(host.getByRole('heading', { name: 'Listening Room', exact: true })).toBeVisible(); await plainCopy(host);
+    await host.goto('/'); await expect(host.getByRole('heading', { name: 'Doom Room', exact: true })).toBeVisible(); await plainCopy(host);
     await expect(host.getByText('Take turns. Share music. Listen together.', { exact: true })).toBeVisible();
     await expect(host.locator('meta[name="description"]')).toHaveAttribute('content', 'Turn-based music sharing for Home Assistant, powered by Music Assistant.');
     await host.goto('/host'); await expect(host.getByRole('main', { name: 'Host desk', exact: true })).toBeVisible(); await plainCopy(host);

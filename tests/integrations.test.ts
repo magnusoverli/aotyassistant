@@ -91,7 +91,7 @@ test('network boundary permits private LAN/loopback and rejects metadata/public/
 
 test('frontend settings persist privately, never return tokens, and require a new token when changing origin', async t => {
   const mock = await mockMusicAssistant(); t.after(mock.close);
-  const directory = await mkdtemp('/tmp/opencode/aoty-integrations-'); const store = new IntegrationFileStore(directory);
+  const directory = await mkdtemp('/tmp/opencode/doom-room-integrations-'); const store = new IntegrationFileStore(directory);
   const manager = new IntegrationManager(store); await manager.init();
   assert.equal(manager.view().status, 'not-configured');
   assert.equal(manager.view().destinationStatus, 'not-selected');
@@ -121,7 +121,7 @@ test('frontend settings persist privately, never return tokens, and require a ne
 
 test('failed saved destination can be replaced without discarding a valid token; auth failure clears inventory', async t => {
   const mock = await mockMusicAssistant(); t.after(mock.close);
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-integrations-'))); await manager.init();
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-integrations-'))); await manager.init();
   await manager.save(mock.origin, 'fixture-token', 0); await manager.check(manager.view().revision);
   await assert.rejects(manager.selectDestination('sonos:offline', manager.view().revision));
   await manager.selectDestination('sonos:living', manager.view().revision);
@@ -136,7 +136,7 @@ test('failed saved destination can be replaced without discarding a valid token;
 
 test('missing speakers and failed queue checks cannot mark a healthy Music Assistant connection as broken, and checks recover independently', async t => {
   const mock = await mockMusicAssistant(); t.after(mock.close);
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-speaker-health-'))); await manager.init();
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-speaker-health-'))); await manager.init();
   t.after(() => manager.close());
   await manager.save(mock.origin, 'fixture-token', 0); await manager.selectDestination('sonos:living', 1);
   const revision = manager.view().revision;
@@ -159,7 +159,7 @@ test('missing speakers and failed queue checks cannot mark a healthy Music Assis
 
 test('a Music Assistant authentication failure while selecting a speaker stays a connection error, never a speaker diagnosis', async t => {
   const mock = await mockMusicAssistant(); t.after(mock.close);
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-connection-health-'))); await manager.init();
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-connection-health-'))); await manager.init();
   t.after(() => manager.close());
   await manager.save(mock.origin, 'fixture-token', 0); await manager.selectDestination('sonos:living', 1);
   await manager.save(mock.origin, 'bad-token', manager.view().revision);
@@ -171,7 +171,7 @@ test('a Music Assistant authentication failure while selecting a speaker stays a
 test('a delayed speaker-check failure cannot mark a replacement connection or its speaker as unhealthy', async t => {
   let enter!: () => void; let release!: () => void; let held = false;
   const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-speaker-health-race-')), () => ({
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-speaker-health-race-')), () => ({
     async inspect() { return { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true, players: [{ id: 'speaker', name: 'Speaker', available: true }] }; },
     async activeQueue() { if (held) { enter(); await gate; throw new Error('PRIVATE obsolete speaker error'); } return 'queue'; },
     async search() { return []; },
@@ -184,7 +184,7 @@ test('a delayed speaker-check failure cannot mark a replacement connection or it
 });
 
 test('malformed integration files fail startup without losing stored data', async () => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-integrations-'); await writeFile(join(directory, 'integrations.json'), 'broken');
+  const directory = await mkdtemp('/tmp/opencode/doom-room-integrations-'); await writeFile(join(directory, 'integrations.json'), 'broken');
   await assert.rejects(new IntegrationFileStore(directory).load());
   assert.equal(await readFile(join(directory, 'integrations.json'), 'utf8'), 'broken');
 });
@@ -193,7 +193,7 @@ test('HTTP integration endpoints use explicit open-host routes with sanitization
   const mock = await mockMusicAssistant(); t.after(mock.close);
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config: Config = { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: await mkdtemp('/tmp/opencode/aoty-integration-http-'), demoSeconds: 30 };
+  const config: Config = { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: await mkdtemp('/tmp/opencode/doom-room-integration-http-'), demoSeconds: 30 };
   const manager = new IntegrationManager(new IntegrationFileStore(config.dataDir)); await manager.init();
   const adapter = new DemoAdapter(); const engine = new Engine(new FileStore(config.dataDir), adapter, origin, manager); await engine.init();
   const { app, close } = createApp(engine, config, 'web', manager); server.on('request', app);
@@ -232,7 +232,7 @@ test('catalogue search uses bounded track-only requests and preserves recording 
 
 test('changing connection settings during an in-flight search discards the old results', async () => {
   let resolveSearch!: (tracks: CatalogueTrack[]) => void;
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-search-race-')), () => ({
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-search-race-')), () => ({
     async inspect() { throw new Error('Not used'); }, async activeQueue() { return 'unused'; },
     search: () => new Promise(resolve => { resolveSearch = resolve; }),
   }));
@@ -245,7 +245,7 @@ test('slow coalesced discovery does not block settings and cannot publish an old
   let entered!: () => void; let release!: () => void; let inspections = 0;
   const waiting = new Promise<void>(resolve => { entered = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; });
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-discovery-race-')), () => ({
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-discovery-race-')), () => ({
     async inspect() { inspections++; entered(); await gate; return { checkedAt: Date.now(), serverVersion: 'old-server', schemaVersion: 65, docsAvailable: true, players: [] }; },
     async activeQueue() { return 'queue'; }, async search() { return []; },
   }));
@@ -274,7 +274,7 @@ test('slow destination discovery leaves the command lane available and cannot co
   let enter!: () => void; let release!: () => void;
   const entered = new Promise<void>(resolve => { enter = resolve; });
   const gate = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-select-race-')), () => ({
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-select-race-')), () => ({
     async inspect() { enter(); await gate; return { checkedAt: Date.now(), serverVersion: 'old-server', schemaVersion: 65, docsAvailable: true, players: [{ id: 'speaker', name: 'Speaker', available: true }] }; },
     async activeQueue() { return 'queue'; }, async search() { return []; },
   }));

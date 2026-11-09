@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 
 test('an occupied listening port fails startup without reporting a running application', { timeout: 10_000 }, async t => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-startup-');
+  const directory = await mkdtemp('/tmp/opencode/doom-room-startup-');
   t.after(() => rm(directory, { recursive: true, force: true }));
   const occupied = createServer(); occupied.listen(0, '127.0.0.1'); await once(occupied, 'listening');
   t.after(() => occupied.close());

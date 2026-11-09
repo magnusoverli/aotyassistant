@@ -182,7 +182,7 @@ test('verified recording groups resolve available equivalents without a provider
 
 test('nested source references/artwork remain participant-bound, opaque and revoked with credentials', async () => {
   const f = fixture();
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-multi-provider-')), () => f.client);
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-multi-provider-')), () => f.client);
   await manager.init(); await manager.save('http://localhost:8095', 'PRIVATE-TOKEN', 0);
   const artists = await manager.browse('artists', 'Metallica', 'alice');
   const group = artists.artists![0]!;
@@ -291,7 +291,7 @@ test('one artist unions provider albums [1,2,3] and [1,3,4] into [1,2,3,4] witho
     assert.equal(command, 'music/albums/album_tracks');
     return [];
   } }, { cacheListings: false }); // The repeated search returns a reordered response.
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-union-')), () => client);
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-union-')), () => client);
   await manager.init(); await manager.save('http://localhost:8095', 'PRIVATE', 0);
   const search = await manager.browse('artists', 'Metallica', 'alice');
   assert.equal(search.artists!.length, 1); assert.equal(search.notices, undefined);
@@ -496,7 +496,7 @@ test('merged artist references remain opaque, participant-bound and revoked with
     if (command === 'music/search') return { artists: ['spotify', 'tidal'].map(provider => metadataOnly(artist(provider))) };
     return [];
   } });
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-metadata-')), () => client);
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-metadata-')), () => client);
   await manager.init(); await manager.save('http://localhost:8095', 'token', 0);
   const artists = (await manager.browse('artists', 'Metallica', 'alice')).artists!;
   const group = artists[0]!;

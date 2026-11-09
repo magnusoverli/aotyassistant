@@ -52,7 +52,7 @@ test('a stale cookie from an earlier installation opens the automatic empty list
   const joined = await page.request.post('/api/participant/join', { headers: { Origin: isolatedApp.origin }, data: { pin: '1234', nickname: 'Old browser cookie' } });
   expect(joined.ok()).toBe(true);
   const staleOwner = randomUUID();
-  await page.context().addCookies([{ name: 'aoty_preparation', value: `${staleOwner}.${'x'.repeat(43)}`,
+  await page.context().addCookies([{ name: 'doom_room_preparation', value: `${staleOwner}.${'x'.repeat(43)}`,
     domain: new URL(isolatedApp.origin).hostname, path: '/api/participant/preparations', httpOnly: true, sameSite: 'Strict' }]);
   await page.goto('/participant'); await expect(page.locator('.list-empty')).toBeVisible();
   await expect(page.getByText('Needs attention', { exact: true })).toHaveCount(0);
@@ -74,7 +74,7 @@ test('checking valid membership never flashes a join form and failed checks requ
     release(); await expect(page.getByRole('heading', { name: 'Your turn.', exact: true })).toBeVisible();
   } finally { release(); await page.unroute('**/api/participant/state'); }
   await page.goto('about:blank');
-  await page.context().clearCookies({ name: 'aoty_participant' });
+  await page.context().clearCookies({ name: 'doom_room_participant' });
   let fail = true; const writes: string[] = [];
   page.on('request', request => { if (request.method() === 'POST') writes.push(request.url()); });
   await page.route('**/api/participant/state', async route => {
@@ -118,7 +118,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
   const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, count);
   try {
     const writes: string[] = []; r.page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
-    await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
+    await r.context.clearCookies({ name: 'doom_room_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
     await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();
     await expect(r.page.locator('.preparation-list, .saved-track, .music-workspace')).toHaveCount(0);
     await expect(r.page.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toHaveCount(0);
@@ -159,7 +159,7 @@ for (const entryPath of ['/participant', '/join']) test(`joining through ${entry
     await expect(page.locator('.list-empty')).toHaveText('No songs yet. Search to add one.');
     const library = await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json();
     expect(library.ownerId).not.toBe(r.library.ownerId); expect(library.upcoming).toHaveLength(0);
-    await fresh.clearCookies({ name: 'aoty_preparation' }); await page.reload();
+    await fresh.clearCookies({ name: 'doom_room_preparation' }); await page.reload();
     await expect(page.locator('.list-empty')).toBeVisible();
     expect((await (await page.request.get(isolatedApp.origin + '/api/participant/preparations/state')).json()).ownerId).toBe(library.ownerId);
     expect((await (await page.request.get(isolatedApp.origin + '/api/participant/state')).json()).ownPlayback).toBeUndefined();
@@ -208,7 +208,7 @@ test('an unconfirmed private-list edit survives an unjoined reload and can be re
     await r.page.route('**/api/participant/preparations/move', async route => { moves++; await route.fetch(); await route.abort('failed'); });
     await dragSong(r.page, 'Saved selection 2', 'Saved selection 1');
     await expect(r.page.locator('.list-save-status')).toHaveText('Save not confirmed. Your change is kept.');
-    await r.context.clearCookies({ name: 'aoty_participant' }); await r.page.reload();
+    await r.context.clearCookies({ name: 'doom_room_participant' }); await r.page.reload();
     await expect(r.page.getByText('Recover a saved list', { exact: true })).toHaveCount(0);
     await expect(r.page.locator('.preparation-list')).toHaveCount(0);
     expect(moves).toBe(1); await expect(r.page.getByRole('heading', { name: 'Join room', exact: true })).toBeVisible();

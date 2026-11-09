@@ -8,7 +8,7 @@ import { pageFrame } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-nodes';
 import { SpeakerFreshness } from './speaker-freshness';
-import { PlaybackSettingsPanel, autoRevealSetting, autoplaySetting } from './playback-settings';
+import { PlaybackSettingsPanel, autoRevealSetting, autoplaySetting, secretPlaybackSetting } from './playback-settings';
 import { UserSettingsPanel } from './user-pin';
 import { SettingsSections, type SettingsSection } from './settings-sections';
 import { OnlinePanel } from './online-panel';
@@ -22,9 +22,11 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   const nodes = new ViewNodes();
   const sections = new SettingsSections(signal);
   const onlineInvitations = new OnlinePanel(signal);
+  const secretPlayback = new PlaybackSettingsPanel(signal, secretPlaybackSetting);
   const playbackSettings = new PlaybackSettingsPanel(signal, autoRevealSetting);
   const autoplaySettings = new PlaybackSettingsPanel(signal, autoplaySetting);
-  void playbackSettings.load(); void autoplaySettings.load();
+  secretPlayback.onValue = enabled => playbackSettings.setActive(enabled);
+  void secretPlayback.load(); void playbackSettings.load(); void autoplaySettings.load();
   const userPins = new UserSettingsPanel(signal); void userPins.load();
   let settings: IntegrationView | undefined;
   let urlDraft = '';
@@ -57,7 +59,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   if (authResult) {
     const attemptId = new URL(location.href).searchParams.get('ma_attempt');
     history.replaceState(null, '', location.pathname + location.hash);
-    try { localStorage.setItem(storageKey('aoty.ma-auth-result'), JSON.stringify({ result: authResult, attemptId, at: Date.now() })); } catch { /* The integration stream also confirms successful attempts. */ }
+    try { localStorage.setItem(storageKey('doom-room.ma-auth-result'), JSON.stringify({ result: authResult, attemptId, at: Date.now() })); } catch { /* The integration stream also confirms successful attempts. */ }
     if (authResult === 'connected') notice = 'Music Assistant connected. Open Playback to choose a speaker.';
     else if (authResult === 'cancelled') notice = signInNotices.cancelled;
     else if (authResult === 'expired') notice = signInNotices.expired;
@@ -281,7 +283,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     const inventoryState = speakerFreshness.state;
     const updatingSpeakers = refreshingSpeakers || refreshing || inventoryState === 'loading' || inventoryState === 'refreshing';
     const activeOutput = settings?.output.state === 'ready' && !speakerFreshness.ready ? { ...settings.output, state: 'checking' as const } : settings?.output;
-    const speakerState = pendingDestination ? 'Selecting…' : busy && busyScope === 'speaker' ? outputStatus.checking : !settings ? 'Loading…' : !online ? 'Connection lost'
+    const speakerState = pendingDestination ? settings?.playbackId ? 'Moving playback…' : 'Selecting…' : busy && busyScope === 'speaker' ? outputStatus.checking : !settings ? 'Loading…' : !online ? 'Connection lost'
       : inventoryState === 'loading' && activeOutput?.state !== 'recovery' ? 'Loading…'
       : activeOutput?.state === 'ready' ? updatingSpeakers ? 'Updating…' : 'Ready'
       : activeOutput?.state === 'checking' || activeOutput?.state === 'recovery' || activeOutput?.state === 'incompatible' ? outputStatus[activeOutput.state]
@@ -291,14 +293,14 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     const destinationNodes: Node[] = [destination.firstElementChild!];
     const report = online && settings?.status === 'checked' ? settings.report : null;
     const availableSpeakers = (online ? inventory?.players ?? report?.players : undefined)?.filter(player => player.available) ?? [];
-    if (pendingDestination) destinationNodes.push(v.el('speaker-description', 'p', `Selecting ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
+    if (pendingDestination) destinationNodes.push(v.el('speaker-description', 'p', `${settings?.playbackId ? 'Moving playback to' : 'Selecting'} ${availableSpeakers.find(player => player.id === pendingDestination)?.name ?? 'speaker'}…`, 'muted small'));
     else if (online && activeOutput?.state === 'ready') destinationNodes.push(v.el('speaker-description', 'p', `Active speaker: ${activeOutput.name}`, 'active-destination'));
     else if (activeOutput?.state === 'incompatible') destinationNodes.push(v.el('speaker-description', 'p', `Selected speaker: ${activeOutput.name}. Playback needs a compatible Music Assistant API.`, 'muted small'));
     else if (activeOutput?.state === 'unavailable' && activeOutput.name) destinationNodes.push(v.el('speaker-description', 'p', `${activeOutput.name} is unavailable. Choose another speaker or wait for it to reconnect.`, 'muted small'));
     else if (activeOutput?.state === 'checking' && activeOutput.name) destinationNodes.push(v.el('speaker-description', 'p', `Checking ${activeOutput.name}…`, 'muted small'));
     const destinationLabel = v.el('speaker-label', 'label', 'Speaker or group'); prop(destinationLabel, 'htmlFor', 'ma-destination');
     const select = v.el('speaker-select', 'select'); prop(select, 'id', 'ma-destination');
-    prop(select, 'disabled', busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.settingsChangesBlocked));
+    prop(select, 'disabled', busy || !online || !settings?.tokenConfigured || settings.status === 'error' || !availableSpeakers.length || Boolean(settings.speakerChangesBlocked ?? settings.settingsChangesBlocked));
     const placeholder = !settings ? 'Loading speakers…' : !settings.tokenConfigured || settings.status === 'error' ? 'Connect Music Assistant first'
       : !report && inventory?.checkedAt == null ? updatingSpeakers ? 'Discovering speakers…' : 'Speakers not checked'
       : availableSpeakers.length ? 'Choose a speaker or group' : 'No available speakers or groups';
@@ -312,11 +314,16 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     select.onchange = () => {
       const id = select.value;
       if (busy || select.disabled || !id || id === settings?.destination?.id && settings.output.state === 'ready' && speakerFreshness.ready) return;
+      const playbackId = settings?.playbackId;
+      const revision = settings!.revision;
+      if (playbackId && !confirm(`Move the current song to ${availableSpeakers.find(player => player.id === id)?.name ?? 'this speaker'}? There may be a short interruption. This replaces that speaker’s queue and may change active speaker grouping. Your turn and revealed details are kept.`)) {
+        prop(select, 'value', settings?.destination?.id ?? ''); return;
+      }
       const restoreFocus = document.activeElement === select;
       pendingDestination = id;
       void run(async () => {
         try {
-          apply(await request('/destination', { id, revision: settings!.revision }));
+          apply(await request('/destination', { id, revision, ...(playbackId ? { playbackId } : {}) }));
           notice = settings?.output.state === 'ready' ? `${settings.output.name} is now the active speaker.` : 'Speaker selected. Playback is not ready; check its status below.';
         }
         finally { pendingDestination = ''; }
@@ -350,7 +357,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       if (!refresh.classList.contains('speaker-refresh')) refresh.classList.add('speaker-refresh'); attr(refresh, 'aria-busy', String(refreshingSpeakers));
       destinationNodes.push(refresh);
     }
-    if (settings?.settingsChangesBlocked) destinationNodes.push(v.el('speaker-blocked', 'p', 'Finish the current song before changing speakers.', 'muted small'));
+    if (settings?.speakerChangeMessage) destinationNodes.push(v.el('speaker-blocked', 'p', settings.speakerChangeMessage, settings.destinationSavePending ? 'warning small' : 'muted small'));
     if (settings?.destination) destinationNodes.push(v.el('speaker-safe-note', 'p', 'Pressing Play replaces the selected speaker’s queue and may interrupt other audio.', 'muted settings-safe-note'));
     if (settings && !settings.tokenConfigured) {
       const connect = v.el('speaker-connect', 'button', 'Set up Music Assistant', 'secondary'); prop(connect, 'type', 'button'); connect.onclick = () => sections.show('music-assistant'); destinationNodes.push(connect);
@@ -370,7 +377,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', explanation, 'warning'), requiresRecovery && recovery, requiresRecovery && details);
       playbackNodes.push(playback);
     }
-    playbackNodes.push(destination, playbackSettings.element, autoplaySettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
+    playbackNodes.push(destination, secretPlayback.element, playbackSettings.element, autoplaySettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
     sections.update('music-assistant', ...(feedbackSection === 'music-assistant' ? feedback : []), connection);
     sections.update('playback', ...(feedbackSection === 'playback' ? feedback : []), ...playbackNodes);
     sections.update('access', ...(feedbackSection === 'access' ? feedback : []), ...accessNodes);
@@ -398,7 +405,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   }, 1000);
   window.addEventListener('pagehide', () => clearInterval(authTimer), { once: true, signal });
   window.addEventListener('storage', event => {
-    if (event.key !== storageKey('aoty.ma-auth-result') || !authPending || !event.newValue) return;
+    if (event.key !== storageKey('doom-room.ma-auth-result') || !authPending || !event.newValue) return;
     try {
       const result = JSON.parse(event.newValue);
       if (result.attemptId !== authAttempt || typeof result.at !== 'number' || Date.now() - result.at > 60_000) return;

@@ -92,8 +92,8 @@ test('opt-in timings correlate commands and include no token, URI, arguments or 
   const remote = await startMusicAssistantFixture(); t.after(remote.close);
   const transport = new MusicAssistantTransport(remote.origin, 'fixture-token'); t.after(() => transport.close());
   const logs: string[] = []; t.mock.method(console, 'info', (value: string) => logs.push(value));
-  const previous = process.env.AOTY_MA_TIMINGS; process.env.AOTY_MA_TIMINGS = '1';
-  t.after(() => { if (previous === undefined) delete process.env.AOTY_MA_TIMINGS; else process.env.AOTY_MA_TIMINGS = previous; });
+  const previous = process.env.DOOM_ROOM_MA_TIMINGS; process.env.DOOM_ROOM_MA_TIMINGS = '1';
+  t.after(() => { if (previous === undefined) delete process.env.DOOM_ROOM_MA_TIMINGS; else process.env.DOOM_ROOM_MA_TIMINGS = previous; });
   await operation('play', () => transport.read('/api', 'music/item_by_uri', { uri: remote.track.uri }));
   assert.equal(logs.length, 1);
   const report = JSON.parse(logs[0]!); assert.equal(report.action, 'play'); assert.equal(report.ok, true);

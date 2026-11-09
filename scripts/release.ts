@@ -41,7 +41,7 @@ const token = githubToken();
 if (!token) console.log('Not logged in to GitHub: progress checks are limited to 60 an hour. Run "gh auth login" or set GH_TOKEN.');
 
 async function workflowRun(file: string, sha: string) {
-  const headers = { 'User-Agent': 'listening-room-release', Accept: 'application/vnd.github+json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const headers = { 'User-Agent': 'doom-room-release', Accept: 'application/vnd.github+json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
   const started = Date.now(); let reported = ''; let limited = false;
   while (Date.now() - started < 40 * 60_000) {
     await delay(15_000);
@@ -101,10 +101,10 @@ const checks = await workflowRun('ci.yaml', sha);
 if (checks.conclusion !== 'success') fail(`The checks failed: ${checks.html_url}\n  Fix on ${branch}, commit, and run the same command again.`);
 
 step(`Tag ${tag} and publish`);
-execFileSync('git', ['tag', '--annotate', tag, '--message', `Listening Room ${version}`]);
+execFileSync('git', ['tag', '--annotate', tag, '--message', `Doom Room ${version}`]);
 git('push', '--quiet', 'origin', tag);
 const published = await workflowRun('publish.yaml', sha);
 if (published.conclusion !== 'success') fail(`Publishing failed: ${published.html_url}\n  The store still offers the previous version.`);
 
 git('fetch', '--quiet', 'origin'); git('checkout', '--quiet', 'main'); git('merge', '--quiet', '--ff-only', 'origin/main');
-console.log(`\n✔ Listening Room ${version} is published, in the Home Assistant store, and has its GitHub release.\n  ${published.html_url}`);
+console.log(`\n✔ Doom Room ${version} is published, in the Home Assistant store, and has its GitHub release.\n  ${published.html_url}`);

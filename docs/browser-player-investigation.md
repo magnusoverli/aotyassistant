@@ -4,7 +4,7 @@ Date: 2026-11-06. Historical investigation and proposal, superseded by the reque
 
 ## Recommendation
 
-Add an opt-in, host-approved **Use this device as a speaker** feature backed by Sendspin. Own the audio engine in the persistent application shell, independent of the currently mounted page. Keep Music Assistant as the source and Listening Room's existing playback engine as the authority for queue ownership, turns, and reveal.
+Add an opt-in, host-approved **Use this device as a speaker** feature backed by Sendspin. Own the audio engine in the persistent application shell, independent of the currently mounted page. Keep Music Assistant as the source and Doom Room's existing playback engine as the authority for queue ownership, turns, and reveal.
 
 Internal page navigation can preserve the same audio engine and connection. This does not promise uninterrupted audio after a document reload, closing the tab, leaving the HA app iframe, changing origins, or operating-system suspension.
 
@@ -27,7 +27,7 @@ The published `@sendspin/sendspin-js` package was **6.0.0** at investigation tim
 
 `unlock()` must run directly in the user's click/tap handler, before unrelated awaited network requests, to satisfy autoplay restrictions. Adopted sockets do not auto-reconnect: the application must own reconnection if it supplies the socket.
 
-Listening Room currently supports MA playback schema 65, documented here for MA 2.10.6–2.10.8. Those tags do **not** pin the same Sendspin library:
+Doom Room currently supports MA playback schema 65, documented here for MA 2.10.6–2.10.8. Those tags do **not** pin the same Sendspin library:
 
 | MA tag inspected | Sendspin dependency | Pairing command present |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ Listening Room currently supports MA playback schema 65, documented here for MA 
 
 This confirms a separate Sendspin compatibility check is necessary; schema 65 alone is insufficient.
 
-The MA 2.10.8 source contains an authenticated `/sendspin` WebSocket proxy on its web server. Non-Ingress clients first send an authentication message and wait for `auth_ok`; the proxy then forwards to its internal Sendspin service. This is an application-specific authentication layer, not a generic Sendspin endpoint. A Listening Room backend adapter could perform this handshake without exposing the MA token to the browser.
+The MA 2.10.8 source contains an authenticated `/sendspin` WebSocket proxy on its web server. Non-Ingress clients first send an authentication message and wait for `auth_ok`; the proxy then forwards to its internal Sendspin service. This is an application-specific authentication layer, not a generic Sendspin endpoint. A Doom Room backend adapter could perform this handshake without exposing the MA token to the browser.
 
 The same source contains `sendspin/pair_web_player`, accepting a client pairing token. It requires a registered web-player identity and binds pairing to the calling MA account. The player classification currently uses product-name/manufacturer heuristics, and web players are private/hidden by default. Prove registration, pairing, visibility to our integration account, and active-queue access together before choosing this as the production adapter. Do not pretend to be Music Assistant's own application or assume an arbitrary player ID is authorized.
 
@@ -51,7 +51,7 @@ Browser: one shell-owned Sendspin player + AudioContext/audio element
        same-origin authenticated WebSocket
        (Ingress-prefixed when applicable)
                 |
-Listening Room: device authorization, bounded relay, MA handshake
+Doom Room: device authorization, bounded relay, MA handshake
                 |
 Music Assistant: Sendspin player registration, queue and audio source
 ```
@@ -86,7 +86,7 @@ Music Assistant: Sendspin player registration, queue and audio source
 
 The inspected SDK advertises `player@v1`, `controller@v1`, and `metadata@v1` in its hello. Its configuration does not expose a simple built-in-role allowlist. Its transport also implements encrypted Sendspin sessions. Therefore a transparent relay cannot promise to strip metadata or reject individual playback commands by inspecting JSON frames.
 
-For the first implementation, approve only a **trusted output device**, normally the host's laptop or room display. Keep Listening Room's UI and OS media metadata generic until its own authoritative reveal state permits disclosure; do not populate either directly from Sendspin metadata. Do not wire SDK next/previous/play controls around Listening Room's turn checks.
+For the first implementation, approve only a **trusted output device**, normally the host's laptop or room display. Keep Doom Room's UI and OS media metadata generic until its own authoritative reveal state permits disclosure; do not populate either directly from Sendspin metadata. Do not wire SDK next/previous/play controls around Doom Room's turn checks.
 
 This UI policy is not a claim that unrevealed metadata is unavailable to the trusted speaker's browser internals. If arbitrary guest browsers must become speakers while retaining the existing private-metadata and command restrictions, first establish server-enforced role restrictions or a protocol-terminating, policy-aware bridge. Hiding buttons or deleting metadata from the DOM is insufficient. Do not enable streaming for every invitation holder by default.
 

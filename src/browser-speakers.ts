@@ -18,7 +18,7 @@ export type SpeakerContext = { origin: string; base: string; kind: 'lan' | 'ingr
 type Transfer = { bytesToBrowser: number; peakQueuedBytes: number; connections: number };
 export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number; configurationError?: string; audio?: AudioHealth; audioReportedAt?: number; transfer?: Transfer };
 type Session = BrowserSpeakerView & { clientId: string; device: BrowserDevice; owner: string; epoch: string; context: SpeakerContext; leaseUntil: number; close?: () => void; pairing?: Promise<void>; configuring?: Promise<void>; configuredName?: string; revoked: boolean; transferStats?: () => Transfer };
-export const speakerCookie = 'aoty_browser_speaker';
+export const speakerCookie = 'doom_room_browser_speaker';
 export const speakerPath = '/api/browser-speaker';
 export const speakerId = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
 export const speakerRegistration = z.object({ id: z.string().uuid(), clientId: speakerId, name: z.string().trim().min(1).max(60), device: z.enum(browserDevices).optional() }).strict();

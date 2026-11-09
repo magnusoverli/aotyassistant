@@ -124,8 +124,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const uploadCleanup = setInterval(() => { void uploads.cleanup(); }, 60 * 60_000); uploadCleanup.unref();
   app.get('/api/media/uploads/:assetId/:key/:filename', async (req, res) => { await uploads.serve(req, res); });
   app.get('/api/media/check/:key/track.wav', (req, res) => { checks.serve(req, res); });
-  const participant = (req: Request): Role => ({ kind: 'participant', credential: cookie(req, 'aoty_participant') });
-  const participantCredential = (req: Request) => cookie(req, 'aoty_participant');
+  const participant = (req: Request): Role => ({ kind: 'participant', credential: cookie(req, 'doom_room_participant') });
+  const participantCredential = (req: Request) => cookie(req, 'doom_room_participant');
 
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
   // Connector account approval and invitations are administered only through HA authentication.
@@ -137,6 +137,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.get('/api/host/playback-settings', (_req, res) => res.json(engine.playbackSettings()));
   app.post('/api/host/playback-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
     res.json(await engine.setAutoReveal(input.enabled, input.revision));
+  }));
+  app.get('/api/host/secret-playback-settings', (_req, res) => res.json(engine.secretPlaybackSettings()));
+  app.post('/api/host/secret-playback-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
+    res.json(await engine.setSecretPlayback(input.enabled, input.revision));
   }));
   app.get('/api/host/autoplay-settings', (_req, res) => res.json(engine.autoplaySettings()));
   app.post('/api/host/autoplay-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
@@ -192,27 +196,27 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const login = await users.login(input.userId, input.pin); credential = login.token; user = login.user;
     } else if (!user) {
       if (!input.nickname || !input.pin) throw new AppError(400, 'Enter your name and choose a four-digit PIN.');
-      const registered = await users.register(input.nickname, input.pin, input.operation, readCookie(req, 'aoty_preparation')); credential = registered.token; user = registered.user;
+      const registered = await users.register(input.nickname, input.pin, input.operation, readCookie(req, 'doom_room_preparation')); credential = registered.token; user = registered.user;
     }
     await engine.joinUser(user.id, credential);
     if (credential !== participantCredential(req)) await users.logout(participantCredential(req));
-    setParticipantCookie(req, res, 'aoty_participant', credential, '/api/participant', config.guestUrl);
+    setParticipantCookie(req, res, 'doom_room_participant', credential, '/api/participant', config.guestUrl);
     // A different identity must never inherit the previous browser user's list cookie.
-    if (credential !== participantCredential(req)) res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` });
+    if (credential !== participantCredential(req)) res.clearCookie('doom_room_preparation', { path: `${requestBase(req)}/api/participant/preparations` });
     res.json(engine.view({ kind: 'participant', credential }));
   }));
   app.get('/api/participant/identity', (req, res) => res.json(users.directoryView(participantCredential(req))));
   app.post('/api/participant/preparations/pin', jsonBody(z.strictObject({ pin: pinSchema }), async (input, req, res) => {
     const token = participantCredential(req);
     const user = users.current(token); if (!user) throw new AppError(401, 'Select your name to continue.');
-    await users.ensureList(token, readCookie(req, 'aoty_preparation'));
+    await users.ensureList(token, readCookie(req, 'doom_room_preparation'));
     await users.setPin(user.id, input.pin, token); res.json(users.directoryView(token));
   }));
   app.post('/api/participant/logout', jsonBody(z.strictObject({}), async (_input, req, res) => {
     await users.logout(participantCredential(req));
     browserSpeakers?.revokeOwner(requestSpeakerCookie(req));
-    res.clearCookie('aoty_participant', { path: `${requestBase(req)}/api/participant` });
-    res.clearCookie('aoty_preparation', { path: `${requestBase(req)}/api/participant/preparations` }); res.json({ ok: true });
+    res.clearCookie('doom_room_participant', { path: `${requestBase(req)}/api/participant` });
+    res.clearCookie('doom_room_preparation', { path: `${requestBase(req)}/api/participant/preparations` }); res.json({ ok: true });
   }));
   app.get('/api/host/users', (_req, res) => res.json(users.directoryView('', true)));
   app.post('/api/host/users/pin', jsonBody(z.strictObject({ userId: turn, pin: pinSchema }), async (input, _req, res) => {
@@ -314,7 +318,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       let html = await pageShell();
       const remote = publicContext(req);
       // Online pages learn whether their invitation cookie is valid without a separate round trip.
-      html = html.replace('</head>', `<meta name="aoty-base" content="${escapeHtml(base)}"><meta name="aoty-guest" content="${escapeHtml(remote?.origin ?? config.guestUrl)}"><meta name="aoty-public" content="${remote ? '1' : '0'}">${remote?.authorized ? '<meta name="aoty-online-session" content="1">' : ''}</head>`);
+      html = html.replace('</head>', `<meta name="doom-room-base" content="${escapeHtml(base)}"><meta name="doom-room-guest" content="${escapeHtml(remote?.origin ?? config.guestUrl)}"><meta name="doom-room-public" content="${remote ? '1' : '0'}">${remote?.authorized ? '<meta name="doom-room-online-session" content="1">' : ''}</head>`);
       html = html.replace(/(src|href)="(?:\.\/|\/)(?!\/)/g, `$1="${base}/`);
       res.type('html').send(html);
     });

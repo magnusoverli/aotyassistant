@@ -12,6 +12,7 @@ const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const defaultAutoReveal = { enabled: true, revision: 0 };
 const defaultAutoplay = { enabled: false, revision: 0 };
+const defaultSecretPlayback = { enabled: true, revision: 0 };
 export type EngineChange = 'room' | 'playback' | 'output';
 type PlayActor = { kind: 'participant'; credential: string } | { kind: 'autoplay'; target: AutoplayTarget };
 
@@ -136,6 +137,20 @@ export class Engine extends EventEmitter {
     });
     return this.autoplaySettings();
   }
+  secretPlaybackSettings(): PlaybackSettings { return { ...(this.room().secretPlayback ?? defaultSecretPlayback) }; }
+  /** Switching it off reveals the current song in the same save. Switching it on never hides a song
+   * already shown; the next song starts hidden. */
+  async setSecretPlayback(enabled: boolean, revision: number): Promise<PlaybackSettings> {
+    await this.transaction(async state => {
+      const room = this.room(state); const current = room.secretPlayback ?? defaultSecretPlayback;
+      if (current.revision !== revision) throw new AppError(409, 'Playback settings changed. Refresh them before trying again.');
+      room.secretPlayback = { enabled, revision: current.revision + 1 };
+      if (!enabled && room.playback) room.playback.revealed = true;
+    });
+    return this.secretPlaybackSettings();
+  }
+  /** Automatic reveal only means something while songs start hidden. */
+  private autoRevealOn(room: Room) { return room.autoReveal?.enabled !== false && room.secretPlayback?.enabled !== false; }
   /** The same turn, the same seat still held by the same user, and the setting still on. */
   private autoplayAllowed(room: Room, target: AutoplayTarget) {
     return room.autoplay?.enabled === true && room.turnId === target.turnId && room.currentId === target.participantId &&
@@ -159,7 +174,7 @@ export class Engine extends EventEmitter {
   }
   private autoRevealEligible(id?: string) {
     const room = this.state.room; const playback = room?.playback;
-    if (!this.live || !this.playbackAvailable || this.concealPlayback || this.startingPlayback || !room || room.autoReveal?.enabled === false || !playback || playback.revealed || playback.status === 'stopped' || playback.turnId !== room.turnId || (id !== undefined && playback.id !== id)) return false;
+    if (!this.live || !this.playbackAvailable || this.concealPlayback || this.startingPlayback || !room || !this.autoRevealOn(room) || !playback || playback.revealed || playback.status === 'stopped' || playback.turnId !== room.turnId || (id !== undefined && playback.id !== id)) return false;
     const sample = this.adapter.progress?.(playback.id);
     const duration = sample?.duration || playback.track.duration;
     return Boolean(sample && Number.isFinite(sample.elapsed) && Number.isFinite(duration) && duration > 0 && sample.elapsed / duration >= AUTO_REVEAL_FRACTION);
@@ -216,13 +231,13 @@ export class Engine extends EventEmitter {
     });
   }
   private room(state = this.state): Room {
-    if (!state.room) throw new AppError(503, 'The listening room is not ready.');
+    if (!state.room) throw new AppError(503, 'The Doom Room is not ready.');
     return state.room;
   }
   private participant(credential: string, room = this.room()) {
     const user = this.userForSession?.(credential);
     const digest = hash(credential); const participant = room.participants.find(p => p.userId ? p.userId === user?.id : p.credentialHash === digest);
-    if (!participant) throw new AppError(401, 'Join the listening room to continue.');
+    if (!participant) throw new AppError(401, 'Join the Doom Room to continue.');
     return participant;
   }
   private current(credential: string, turnId: string, room: Room) {
@@ -293,7 +308,7 @@ export class Engine extends EventEmitter {
     }
     const me = this.participant(role.credential, room); const myTurn = room.currentId === me.id;
     const seat = room.active.indexOf(me.id); const currentSeat = room.active.indexOf(room.currentId ?? '');
-    return { ...base, me: { id: me.id, nickname: me.nickname }, myTurn, catalogue: this.catalogueState,
+    return { ...base, me: { id: me.id, nickname: me.nickname }, myTurn, catalogue: this.catalogueState, secretPlayback: room.secretPlayback?.enabled !== false,
       ...(this.userForSession ? { user: this.userForSession(role.credential) } : {}),
       position: { seat: seat + 1, total: room.active.length, turnsUntil: (seat - currentSeat + room.active.length) % room.active.length },
       ...(myTurn ? { ownPlayback: structuredClone(room.playback), progress: this.progress(room, true), volume: this.adapter.volume } : {}) };
@@ -306,7 +321,7 @@ export class Engine extends EventEmitter {
     const sample = this.adapter.progress?.(playback.id); const duration = sample?.duration || playback.track.duration;
     const fraction = sample && duration > 0 ? Math.round(Math.max(0, Math.min(1, sample.elapsed / duration)) * 1000) / 1000 : null;
     return { id: playback.id, status: playback.status, fraction,
-      ...(room.autoReveal?.enabled !== false && !playback.revealed && playback.status !== 'stopped' && Number.isFinite(duration) && duration > 0 && sample && Number.isFinite(sample.elapsed) ? { autoRevealAt: AUTO_REVEAL_FRACTION } : {}),
+      ...(this.autoRevealOn(room) && !playback.revealed && playback.status !== 'stopped' && Number.isFinite(duration) && duration > 0 && sample && Number.isFinite(sample.elapsed) ? { autoRevealAt: AUTO_REVEAL_FRACTION } : {}),
       ...(times ? { ...(sample ? { elapsed: Math.min(duration || Infinity, Math.max(0, sample.elapsed)) } : {}), duration } : {}) };
   }
   catalogueContext(credential: string): string {
@@ -490,7 +505,7 @@ export class Engine extends EventEmitter {
         await this.transaction(async state => {
           const room = this.room(state); check(room);
           if (epoch !== this.invalidationEpoch) throw new AppError(409, 'Playback changed while the track was starting.');
-          room.playback = { id, turnId, track, status: 'playing', revealed: false };
+          room.playback = { id, turnId, track, status: 'playing', revealed: room.secretPlayback?.enabled === false };
         }, true);
       }
       catch (error) {
@@ -508,6 +523,17 @@ export class Engine extends EventEmitter {
   }
   async stopForHost(turnId: string, playbackId: string): Promise<void> {
     return this.controlPlayback({ kind: 'host' }, turnId, playbackId, 'stop');
+  }
+  /** Speaker routing shares the audio lane, not the room persistence lane during network I/O. */
+  async changeSpeaker<T>(playbackId: string | null, work: () => Promise<T>): Promise<T> {
+    return this.audio(async () => {
+      await this.inspect(room => {
+        if (!this.live || this.concealPlayback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before changing speakers.');
+        const current = room.playback && room.playback.status !== 'stopped' ? room.playback.id : null;
+        if (current !== playbackId) throw new AppError(409, 'The current song changed. Review playback before changing speakers.');
+      });
+      return work();
+    });
   }
   async controlForHost(turnId: string, playbackId: string, action: 'pause' | 'resume'): Promise<void> {
     return this.controlPlayback({ kind: 'host' }, turnId, playbackId, action);

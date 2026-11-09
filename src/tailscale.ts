@@ -49,7 +49,7 @@ export class TailscaleConnector implements TunnelConnector {
   private stopping?: Promise<void>;
   private generation = 0;
   private socket: string;
-  constructor(private directory: string, private runtime = '/run/aoty') { this.socket = join(runtime, 'tailscaled.sock'); }
+  constructor(private directory: string, private runtime = '/run/doom-room') { this.socket = join(runtime, 'tailscaled.sock'); }
   get busy() { return Boolean(this.action); }
   async start() {
     const generation = this.generation;
@@ -97,7 +97,7 @@ export class TailscaleConnector implements TunnelConnector {
   async configured(host: string) { return exactFunnel(JSON.parse(await this.run(['funnel', 'status', '--json'])), host); }
   async netcheck(): Promise<TailNetwork> { return { udp: z.object({ UDP: z.boolean() }).parse(JSON.parse(await this.run(['netcheck', '--format=json']))).UDP }; }
   connect(url: (value: string) => void) {
-    if (!this.busy) void this.run(['up', '--hostname=listening-room', '--accept-dns=false', '--accept-routes=false', '--advertise-tags=', '--ssh=false', '--timeout=10m'], url).catch(() => {});
+    if (!this.busy) void this.run(['up', '--hostname=doom-room', '--accept-dns=false', '--accept-routes=false', '--advertise-tags=', '--ssh=false', '--timeout=10m'], url).catch(() => {});
   }
   publish(url: (value: string) => void) {
     if (this.busy) return;

@@ -57,7 +57,7 @@ export class AppHeader {
     });
     document.addEventListener('pointerdown', this.outside);
     document.addEventListener('fullscreenchange', this.fullscreenChanged);
-    document.addEventListener('aoty-address-changed', this.addressChanged);
+    document.addEventListener('doom-room-address-changed', this.addressChanged);
     if (typeof ResizeObserver !== 'undefined') {
       this.resize = new ResizeObserver(() => {
         const style = document.documentElement.style;
@@ -175,6 +175,6 @@ export class AppHeader {
     this.resize?.disconnect();
     document.removeEventListener('keydown', this.keydown); document.removeEventListener('focusin', this.focusChanged);
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);
-    document.removeEventListener('aoty-address-changed', this.addressChanged);
+    document.removeEventListener('doom-room-address-changed', this.addressChanged);
   }
 }

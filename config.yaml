@@ -1,6 +1,6 @@
-name: Listening Room
-version: "1.2.5"
-slug: albums_of_the_year
+name: Doom Room
+version: "2.0.0"
+slug: doom_room
 url: https://github.com/magnusoverli/aotyassistant
 description: Turn-based music sharing for Home Assistant, powered by Music Assistant.
 arch:
@@ -18,7 +18,7 @@ ingress_port: 8099
 ingress_entry: host
 ingress_stream: true
 panel_icon: mdi:album
-panel_title: Listening Room
+panel_title: Doom Room
 panel_admin: true
 stage: stable
 host_network: false

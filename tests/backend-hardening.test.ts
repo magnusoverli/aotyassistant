@@ -31,7 +31,7 @@ function gate() {
 const selected: SavedSelection = { source: 'demo', trackId: 'demo:aurora', metadata: { title: 'Private', artist: '', album: '', duration: 60, version: '', provider: 'Demo' } };
 const edit = (revision: number) => ({ id: randomUUID(), revision, issuedAt: Date.now() });
 async function live(t: TestContext, afterSave = () => {}) {
-  const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/aoty-hardening-');
+  const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/doom-room-hardening-');
   const file = new IntegrationFileStore(directory);
   const manager = new IntegrationManager({ load: () => file.load(), save: async state => { await file.save(state); afterSave(); } });
   await manager.init(); await manager.save(remote.origin, 'fixture-token', 0); await manager.selectDestination('sonos:room', manager.view().revision);
@@ -82,7 +82,7 @@ test('ambiguous settings commits disable routing until a durable reconciliation 
 });
 
 test('an ambiguous first connection save cannot fall back to demo playback', async t => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-first-save-'); const file = new IntegrationFileStore(directory);
+  const directory = await mkdtemp('/tmp/opencode/doom-room-first-save-'); const file = new IntegrationFileStore(directory);
   let fail = true;
   const manager = new IntegrationManager({ load: () => file.load(), save: async state => { await file.save(state); if (fail) throw new Error('After replacement'); } });
   await manager.init(); const adapter = new ManagedPlayback(new DemoAdapter(), manager);
@@ -124,7 +124,7 @@ test('work queues run a bounded number of jobs at once and drop waiting work who
 });
 
 test('private capture releases the owner lane, coalesces retries and drains the eventual commit', async t => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-capture-'); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp('/tmp/opencode/doom-room-capture-'); t.after(() => rm(directory, { recursive: true, force: true }));
   const manager = new PreparationManager(new PreparationFileStore(directory)); const owner = await manager.createOwner(); const held = gate(); t.after(held.release);
   const operation = edit(0); let captures = 0;
   const capture = () => manager.addCaptured(owner.credential, operation, 'reference', async () => { captures++; held.enter(); await held.pending; return selected; });
@@ -139,7 +139,7 @@ test('private capture releases the owner lane, coalesces retries and drains the 
 });
 
 test('capture reauthorizes and checks the current revision after provider work', async t => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-capture-revocation-'); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp('/tmp/opencode/doom-room-capture-revocation-'); t.after(() => rm(directory, { recursive: true, force: true }));
   const store = new PreparationFileStore(directory); const manager = new PreparationManager(store); const owner = await manager.createOwner();
   const held = gate(); t.after(held.release);
   const adding = manager.addCaptured(owner.credential, edit(0), 'reference', async () => { held.enter(); await held.pending; return selected; });
@@ -154,7 +154,7 @@ test('capture reauthorizes and checks the current revision after provider work',
 });
 
 test('completed upload deletions are not retried; legacy tombstones migrate in bounded durable batches', async t => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-cleanup-batches-'); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp('/tmp/opencode/doom-room-cleanup-batches-'); t.after(() => rm(directory, { recursive: true, force: true }));
   const store = new PreparationFileStore(directory); const manager = new PreparationManager(store); const owner = await manager.createOwner();
   const state = (await store.load(owner.view.ownerId))!; state.deletedUploads = Array.from({ length: 20 }, () => randomUUID()); await store.save(state);
   const calls: string[] = []; const remove = async (_owner: string, asset: string) => { calls.push(asset); };
@@ -199,7 +199,7 @@ test('large metadata buckets retain exact choices and contradictory identity evi
 });
 
 test('backup freeze does not wait for upload analysis; publication waits, and restored staging is disposable', async t => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-backup-staging-'); t.after(() => rm(directory, { recursive: true, force: true }));
+  const directory = await mkdtemp('/tmp/opencode/doom-room-backup-staging-'); t.after(() => rm(directory, { recursive: true, force: true }));
   const held = gate(); t.after(() => { held.release(); durability.thaw(); });
   const assets = new UploadAssets(directory, async () => { held.enter(); await held.pending; return {
     extension: 'mp3', contentType: 'audio/mpeg', artwork: false,

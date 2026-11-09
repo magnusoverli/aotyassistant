@@ -10,7 +10,7 @@ import { DemoAdapter } from '../src/playback.js';
 import { createApp } from '../src/http.js';
 
 test('only hashed public assets are immutable, negotiate precompression and retain correct MIME, length and validators', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-static-'); await mkdir(`${dir}/assets`);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-static-'); await mkdir(`${dir}/assets`);
   const source = '/* public build */\n'.repeat(200);
   await Promise.all([
     writeFile(`${dir}/assets/index-abcd1234.js`, source), writeFile(`${dir}/assets/index-abcd1234.js.gz`, gzipSync(source)),

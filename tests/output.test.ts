@@ -15,7 +15,7 @@ async function eventually(check: () => boolean) {
 }
 async function fixture() {
   const remote = await startMusicAssistantFixture();
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-output-'))); await manager.init();
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-output-'))); await manager.init();
   const adapter = new ManagedPlayback(new DemoAdapter(), manager, 60_000);
   await manager.save(remote.origin, 'fixture-token', 0);
   return { remote, manager, adapter, close() { adapter.close(); remote.close(); } };

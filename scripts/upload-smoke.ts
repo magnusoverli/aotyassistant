@@ -8,8 +8,8 @@ import { docker, image, availablePort } from './container-fixture.js';
 
 /** Real packaged FFprobe/tag/image validation, never a real Music Assistant or speaker. Own temporary container/volume only. */
 const port = await availablePort();
-const origin = `http://127.0.0.1:${port}`; const volume = `aoty-upload-smoke-${randomUUID()}`;
-const restoredVolume = `aoty-backup-restore-${randomUUID()}`;
+const origin = `http://127.0.0.1:${port}`; const volume = `doom-room-upload-smoke-${randomUUID()}`;
+const restoredVolume = `doom-room-backup-restore-${randomUUID()}`;
 let container = '';
 try {
   await docker('volume', 'create', volume);

@@ -1,6 +1,6 @@
 {
-  "name": "albums-of-the-year",
-  "version": "1.2.5",
+  "name": "doom-room",
+  "version": "2.0.0",
   "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {
@@ -24,7 +24,7 @@
     "release": "tsx scripts/release.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:browser": "npm run build && playwright test",
-    "test:container": "docker build -t aotyassistant:smoke . && npm run test:container:built",
+    "test:container": "docker build -t doom-room:smoke . && npm run test:container:built",
     "test:container:built": "tsx scripts/container-smoke.ts && tsx scripts/upload-smoke.ts && tsx scripts/tailscale-smoke.ts",
     "ma:probe": "tsx scripts/ma-probe.ts"
   },

@@ -126,7 +126,7 @@ test('every page uses the shared header with centralized navigation, current-pag
     else await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
     const brand = page.locator('a.brand');
     await expect(brand).toHaveAttribute('href', '/');
-    await expect(brand).toHaveAccessibleName('Listening Room');
+    await expect(brand).toHaveAccessibleName('Doom Room');
     await expect(page.locator('.host-sidebar, .host-nav, .session-navigation, main .back-link, main .display-link')).toHaveCount(0);
     const html = await page.getByRole('banner').innerHTML(); expect(html).not.toContain('#access='); expect(html).not.toContain('#invite=');
     await expect(navigation.locator('a[href*="#"]')).toHaveCount(0);

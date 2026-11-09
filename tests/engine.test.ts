@@ -284,7 +284,7 @@ test('restart restores membership/order, but not playback, reveal, or old action
 });
 
 test('file store persists privately and refuses to overwrite malformed saved state', async () => {
-  const directory = await mkdtemp('/tmp/opencode/aoty-store-'); const store = new FileStore(directory);
+  const directory = await mkdtemp('/tmp/opencode/doom-room-store-'); const store = new FileStore(directory);
   const state: State = { schema: 3, room: null }; await store.save(state);
   assert.deepEqual(await store.load(), state);
   assert.equal((await stat(join(directory, 'state.json'))).mode & 0o777, 0o600);

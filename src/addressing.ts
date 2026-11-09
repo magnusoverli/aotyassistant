@@ -33,7 +33,7 @@ export function setupHostAllowed(host: string, remote: string) {
 /** Browser recovery for a LAN address that has not been configured or verified by Supervisor. */
 export function guestAddressHelp(origin: string, path: string) {
   return errorPage('This address needs setup', `
-<p>The listening room is using a different guest address. Your saved room and lists are still available.</p>
+<p>The Doom Room is using a different guest address. Your saved room and lists are still available.</p>
 <p><a href="${escape(origin + path)}">Continue at the saved address (${escape(origin)})</a></p>
 <p>If that address no longer works, the host can <a href="/host/settings">open address settings</a> and choose <strong>Use this browser address for guest links</strong>.</p>
 `);

@@ -29,11 +29,11 @@ assert.ok(dockerfile.includes(`org.opencontainers.image.description="${productDe
 assert.ok(read('web/index.html').includes(`<title>${productName}</title>`), 'Browser entry title');
 assert.ok(read('web/index.html').includes(`<meta name="description" content="${productDescription}"`), 'Browser description');
 // Rewording must not turn an existing installation into a different app/package.
-assert.equal(pkg.name, 'albums-of-the-year', 'Stable package identity');
+assert.equal(pkg.name, 'doom-room', 'Package identity');
 assert.equal(lock.name, pkg.name, 'Lockfile package identity');
 assert.equal(lock.packages[''].name, pkg.name, 'Lockfile root package identity');
 assert.match(manifest, /^stage: stable$/m);
-assert.match(manifest, /^slug: albums_of_the_year$/m);
+assert.match(manifest, /^slug: doom_room$/m);
 assert.match(manifest, /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);
 assert.match(manifest, /^arch:\n  - amd64\n  - aarch64\n/m);
 

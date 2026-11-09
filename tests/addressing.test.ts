@@ -16,7 +16,7 @@ import { createApp } from '../src/http.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 async function fixture(t: TestContext) {
-  const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/aoty-addressing-');
+  const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/doom-room-addressing-');
   const server = createServer(); server.listen(0, '0.0.0.0'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`; const alternate = `http://127.0.0.2:${port}`;
   const store = new IntegrationFileStore(directory); const manager = new IntegrationManager(store); await manager.init();

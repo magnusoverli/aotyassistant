@@ -34,7 +34,7 @@ export class UploadPanel {
     this.input.accept = '.mp3,.m4a,.flac,.wav,.aif,.aiff,.ogg,.oga,.opus,audio/mpeg,audio/mp4,audio/flac,audio/wav,audio/aiff,audio/ogg,audio/opus';
     this.input.onchange = () => { const file = this.input.files?.[0]; this.input.value = ''; if (file) void this.choose(file); };
   }
-  private key(ownerId: string) { return storageKey(`aoty.upload-draft.v1.${ownerId}${this.replacement ? `.replace.${this.replacement.entryId}` : ''}`); }
+  private key(ownerId: string) { return storageKey(`doom-room.upload-draft.v1.${ownerId}${this.replacement ? `.replace.${this.replacement.entryId}` : ''}`); }
   private persist() {
     if (!this.ownerId) return;
     try {

@@ -9,7 +9,7 @@ import { DemoAdapter } from '../src/playback.js';
 import { AppError } from '../src/model.js';
 
 async function fixture() {
-  const directory = await mkdtemp('/tmp/opencode/aoty-persistent-room-'); const store = new FileStore(directory);
+  const directory = await mkdtemp('/tmp/opencode/doom-room-persistent-room-'); const store = new FileStore(directory);
   const adapter = new DemoAdapter(3600); const engine = new Engine(store, adapter, 'http://app.local:3000'); await engine.init();
   return { directory, store, adapter, engine, host: () => engine.view({ kind: 'host' }),
     participant: (credential: string) => engine.view({ kind: 'participant', credential }) };

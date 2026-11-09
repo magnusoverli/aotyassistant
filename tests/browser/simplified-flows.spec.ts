@@ -60,7 +60,7 @@ test('browser and in-page Back restore private browsing without putting results 
   await page.getByRole('button', { name: 'View albums', exact: true }).click();
   await page.getByRole('button', { name: 'View tracks', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
-  expect(await page.evaluate(() => Object.keys(history.state))).toEqual(['aotyBrowse']);
+  expect(await page.evaluate(() => Object.keys(history.state))).toEqual(['doomRoomBrowse']);
   expect(new URL(page.url()).pathname).toBe('/participant');
   await page.goBack(); await expect(page.getByRole('button', { name: 'View tracks', exact: true })).toBeVisible();
   await page.goBack(); await expect(page.getByRole('button', { name: 'View albums', exact: true })).toBeVisible();
@@ -164,13 +164,13 @@ test('sign-in cancellation and expiry keep saved connection and expose a usable 
 });
 
 test('home, error pages and display invitations provide concrete routes while API errors stay JSON', async ({ page }) => {
-  await page.goto('/'); await expect(page).toHaveTitle('Home · Listening Room');
+  await page.goto('/'); await expect(page).toHaveTitle('Home · Doom Room');
   for (const name of ['Join room', 'Your music', 'Room display', 'Host desk']) await expect(page.locator('main').getByRole('link', { name, exact: true })).toBeVisible();
   const missing = await page.goto('/missing-page'); expect(missing?.status()).toBe(404);
   await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible();
   expect(await page.locator('html').evaluate(node => getComputedStyle(node).backgroundColor)).toBe('rgb(16, 23, 19)');
   const api = await page.request.get('/api/missing'); expect(api.status()).toBe(404); expect(api.headers()['content-type']).toContain('application/json');
-  await page.goto('/display'); await expect(page).toHaveTitle('Room display · Listening Room');
+  await page.goto('/display'); await expect(page).toHaveTitle('Room display · Doom Room');
   await expect(page.locator('.room-qr-link')).toHaveAttribute('href', /\/join$/);
   await expect(page.locator('.room-join-link')).toHaveCount(0);
   await page.locator('.room-qr-link').click(); await expect(page.getByLabel('Display name')).toBeVisible();

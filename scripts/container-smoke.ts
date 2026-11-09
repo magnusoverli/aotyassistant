@@ -9,7 +9,7 @@ import { docker, image, availablePort } from './container-fixture.js';
 
 const port = await availablePort();
 let origin = `http://127.0.0.1:${port}`;
-const volume = `aoty-smoke-${randomUUID()}`;
+const volume = `doom-room-smoke-${randomUUID()}`;
 let container = '';
 try {
   await docker('volume', 'create', volume);

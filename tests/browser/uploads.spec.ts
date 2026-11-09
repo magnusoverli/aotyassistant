@@ -210,7 +210,7 @@ test('unsupported standalone AAC leaves existing lists untouched and allows a fr
 test('failed analysis and old missing uploads leave no residual errors or drafts after refresh', async ({ browser, page: host, isolatedApp }) => {
   const r = await room(browser, host, isolatedApp.origin); const page = r.page;
   try {
-    const owner = (await list(page)).ownerId; const key = `aoty.upload-draft.v1.${owner}`;
+    const owner = (await list(page)).ownerId; const key = `doom-room.upload-draft.v1.${owner}`;
     await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => {
       if (route.request().method() !== 'POST') { await route.continue(); return; }
       await route.fulfill({ status: 503, json: { error: 'File analysis needs FFprobe on the application server. Ask the host to check the installation.' } });

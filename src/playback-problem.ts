@@ -11,6 +11,7 @@ const messages = {
   'pause-unconfirmed': 'Pause could not be confirmed. The speaker may still be playing.',
   'resume-unconfirmed': 'Resume could not be confirmed. Playback may have resumed.',
   'stop-unconfirmed': 'Stop could not be confirmed. The speaker may still be playing. The turn was not advanced.',
+  'transfer-unconfirmed': 'Moving playback could not be confirmed. The song may be on either speaker. Recover playback controls before trying again; your turn was kept.',
   'queue-unverified': 'The playback queue could not be safely verified. The turn was not advanced.',
   'queue-policy': 'The speaker’s queue changed to allow extra tracks, repeat, shuffle or autoplay. Stopping could not be confirmed.',
   'queue-policy-stopped': 'The speaker’s queue changed to allow extra tracks, repeat, shuffle or autoplay. App-owned playback was stopped to prevent unwanted music; your turn was kept. Select a song again when ready.',

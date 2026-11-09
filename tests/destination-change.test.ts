@@ -14,7 +14,7 @@ import { AppError, type CatalogueTrack } from '../src/model.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 async function fixture() {
-  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-destination-');
+  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/doom-room-destination-');
   const file = new IntegrationFileStore(dir); let failStore = false;
   const manager = new IntegrationManager({ load: () => file.load(), save: async state => { if (failStore) throw new PersistenceError('not-committed'); await file.save(state); } });
   await manager.init(); await manager.save(remote.origin, 'fixture-token', 0); await manager.selectDestination('sonos:room', manager.view().revision);
@@ -29,7 +29,7 @@ async function fixture() {
   const participant = (credential: string) => engine.view({ kind: 'participant', credential });
   const context = (credential: string) => engine.catalogueContext(credential);
   const request = (path: string, credential?: string, data?: unknown) => fetch(origin + path, {
-    method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `aoty_participant=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
+    method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `doom_room_participant=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
   assert.equal((await request('/api/host/state')).status, 200); // Complete identity migration before measuring speaker-only changes.
@@ -144,7 +144,7 @@ test('failed persistence changes neither routing/catalogue identity nor cached p
 
 test('in-flight catalogue search survives routing changes but not credential changes', async () => {
   let finish!: (tracks: CatalogueTrack[]) => void;
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-routing-race-')), () => ({
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-routing-race-')), () => ({
     async inspect() { return { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true, players: [{ id: 'speaker', name: 'Speaker', available: true }] }; },
     async activeQueue() { return 'queue'; }, search: () => new Promise(resolve => { finish = resolve; }),
   }));

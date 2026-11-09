@@ -16,7 +16,7 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   const port = (server.address() as AddressInfo).port;
   const base = `http://127.0.0.1:${port}`;
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: base,
-    dataDir: await mkdtemp('/tmp/opencode/aoty-http-'), demoSeconds: 3600 };
+    dataDir: await mkdtemp('/tmp/opencode/doom-room-http-'), demoSeconds: 3600 };
   const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl);
   await engine.init();
   const { app, close } = createApp(engine, config, 'web');
@@ -45,6 +45,13 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   assert.equal((await request('/api/host/autoplay-settings', { enabled: false, revision: 0 })).status, 409);
   assert.deepEqual(await (await request('/api/host/autoplay-settings', { enabled: false, revision: 1 })).json(), { enabled: false, revision: 2 });
   assert.deepEqual(await (await request('/api/host/playback-settings')).json(), { enabled: true, revision: 2 }, 'The two settings are independent.');
+  assert.deepEqual(await (await request('/api/host/secret-playback-settings')).json(), { enabled: true, revision: 0 });
+  assert.equal((await request('/api/host/secret-playback-settings', { enabled: false, revision: 0 }, '', 'https://evil.example')).status, 403);
+  assert.equal((await request('/api/host/secret-playback-settings', { enabled: 'false', revision: 0 })).status, 400);
+  assert.deepEqual(await (await request('/api/host/secret-playback-settings', { enabled: false, revision: 0 })).json(), { enabled: false, revision: 1 });
+  assert.equal((await request('/api/host/secret-playback-settings', { enabled: true, revision: 0 })).status, 409);
+  assert.deepEqual(await (await request('/api/host/secret-playback-settings', { enabled: true, revision: 1 })).json(), { enabled: true, revision: 2 });
+  assert.deepEqual(await (await request('/api/host/playback-settings')).json(), { enabled: true, revision: 2 }, 'Secret playback keeps the automatic reveal choice.');
   const host = await json('/api/host/state');
   assert.equal(host.displayUrl, base + '/display'); assert.equal(host.joinUrl, base + '/join');
   const display = await request('/api/display/state'); assert.equal(display.status, 200); assert.equal(display.headers.get('set-cookie'), null);

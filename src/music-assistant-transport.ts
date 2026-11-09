@@ -45,7 +45,7 @@ export class MusicAssistantTransport {
     if (this.closed) throw new UpstreamError('closed', 503, 'Music Assistant connection was closed. Refresh before trying again.');
     const start = performance.now();
     // MA awaits provider/player startup inside Play/Resume. Reads retain a shorter budget.
-    const timeout = command === 'player_queues/play_media' || command === 'player_queues/resume' ? this.playbackTimeoutMs
+    const timeout = command === 'player_queues/play_media' || command === 'player_queues/resume' || command === 'player_queues/transfer' ? this.playbackTimeoutMs
       // Imports expect to wait their turn behind Music Assistant's per-service request limits.
       : requestPriority() === 'bulk' ? Math.max(this.timeoutMs, 30_000)
       : command === 'music/search' ? Math.max(this.timeoutMs, 12_000) : this.timeoutMs;

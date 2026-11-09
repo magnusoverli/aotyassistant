@@ -72,5 +72,5 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build the app image
-        run: docker build --build-arg BUILD_ARCH=${{ matrix.arch }} -t aotyassistant:smoke .
+        run: docker build --build-arg BUILD_ARCH=${{ matrix.arch }} -t doom-room:smoke .
       - run: npm run test:container:built

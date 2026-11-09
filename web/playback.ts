@@ -283,7 +283,9 @@ export class Playback {
     children(now, cover.update(preview?.artwork, playback?.track.artworkIdentity), track);
     const progress = this.progress; const status = progress.querySelector<HTMLElement>('.playback-status')!;
     const statusLine = v.el('status-line', 'div', undefined, 'player-status-line');
-    const privacy = playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Visible on room display' : 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player';
+    // Without secret playback, every song shows on the room display from the start: nothing to reveal.
+    const secret = view.secretPlayback !== false;
+    const privacy = playback ? !secret || playback.revealed && view.ownPlayback?.revealed ? 'Visible on room display' : playback.revealed ? 'Revealing…' : 'Hidden on room display' : next ? 'First saved selection' : 'Your player';
     const turnReady = Boolean(view.myTurn && !playback && !starting && online && view.connected && !state.error);
     const notice = state.error ? 'Action failed · tap details' : !online ? 'Connection lost' : !view.connected ? 'Player unavailable'
       : !view.myTurn ? 'Waiting for turn' : turnReady ? next ? 'Your turn · play your pick' : 'Your turn · choose a song' : '';
@@ -295,12 +297,13 @@ export class Playback {
     attr(mobileNotice, 'role', state.error ? 'alert' : 'status');
     card.classList.toggle('has-player-notice', Boolean(notice));
     card.classList.toggle('has-player-error', Boolean(state.error));
-    const mobilePrivacy = v.el('mobile-privacy', 'span', playback ? playback.revealed ? view.ownPlayback?.revealed ? 'Revealed' : 'Revealing' : 'Hidden' : '', 'player-mobile-only player-mobile-privacy');
+    const mobilePrivacy = v.el('mobile-privacy', 'span', playback ? !secret || playback.revealed && view.ownPlayback?.revealed ? 'Revealed' : playback.revealed ? 'Revealing' : 'Hidden' : '', 'player-mobile-only player-mobile-privacy');
     prop(mobilePrivacy, 'title', playback ? privacy : '');
     children(statusLine, status, mobileNotice, v.el('privacy', 'span', privacy, 'privacy-tag'), mobilePrivacy);
     if (statusLine.parentElement !== progress) progress.prepend(statusLine);
     card.classList.toggle('has-next-pick', Boolean(next));
     card.classList.toggle('has-active-song', Boolean(playback && playback.status !== 'stopped'));
+    card.classList.toggle('without-reveal', !secret);
     const reveal = this.button('player-reveal', 'Reveal details', () => options.reveal()); reveal.classList.add('reveal-button');
     const revealing = Boolean(playback?.revealed && !view.ownPlayback?.revealed);
     this.decorate(reveal, revealing ? 'Revealing…' : playback?.revealed ? 'Details revealed' : 'Reveal details', 'reveal', revealing ? 'Revealing…' : playback?.revealed ? 'Revealed' : 'Reveal');
@@ -320,7 +323,7 @@ export class Playback {
     this.decorate(finish, playback ? 'Finish turn' : 'Pass turn', 'advance');
     prop(finish, 'title', playback ? 'Finish your turn and pass to the next participant' : 'Pass to the next participant');
     prop(finish, 'disabled', busy || !online || !view.connected || !view.myTurn || starting);
-    const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, reveal, finish);
+    const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, secret && reveal, finish);
     children(card, this.waitingSummary(state), now, this.transport(state), progress, this.footer(ending), details.dialog);
   }
 

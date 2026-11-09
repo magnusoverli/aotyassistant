@@ -18,7 +18,7 @@ import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 import { unlockDisplayArtwork } from '../web/display-artwork.js';
 
 async function fixture() {
-  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-media-');
+  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/doom-room-media-');
   const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
   await manager.save(remote.origin, 'fixture-token', 0);
   // No manual check is needed, including after an application restart.
@@ -33,7 +33,7 @@ async function fixture() {
   const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, demoSeconds: 30 }, 'web', manager);
   server.on('request', http.app);
   const request = (path: string, credential?: string, role = 'participant', data?: unknown) => fetch(`${origin}${path}`, {
-    method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `aoty_${role}=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
+    method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `doom_room_${role}=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
   return { remote, manager, engine, adapter, host, alex, sam, request, origin,
@@ -102,7 +102,7 @@ test('repeated artwork revalidates without transferring pixels and still rejects
   // conditional requests; this models the browser's ordinary revalidation.
   const conditional = (credential?: string) => new Promise<{ status: number; bytes: number }>((resolve, reject) => {
     const req = httpRequest(f.origin + path, { headers: { 'If-None-Match': etag,
-      ...(credential ? { Cookie: `aoty_participant=${credential}` } : {}) } }, res => {
+      ...(credential ? { Cookie: `doom_room_participant=${credential}` } : {}) } }, res => {
       let bytes = 0; res.on('data', chunk => { bytes += chunk.length; });
       res.on('end', () => resolve({ status: res.statusCode!, bytes })); res.on('error', reject);
     }); req.on('error', reject); req.end();

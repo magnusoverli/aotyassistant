@@ -11,7 +11,7 @@ import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 async function directory(t: TestContext) {
   // Background discovery can still save a file while the test ends; retrying lets the removal finish.
-  const dir = await mkdtemp('/tmp/opencode/aoty-integration-recovery-'); t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })); return dir;
+  const dir = await mkdtemp('/tmp/opencode/doom-room-integration-recovery-'); t.after(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 })); return dir;
 }
 async function eventually(check: () => boolean) {
   for (let i = 0; i < 250; i++) { if (check()) return; await delay(10); }
@@ -85,7 +85,7 @@ async function recoveryFixture(t: TestContext) {
   manager.attachMediaChecks({ create(origin: string) { mediaChecks.push(origin); return { url: `${origin}/check.wav`, observed: true, revoke() {} }; } } as never);
   await manager.saveAuthorized(current(), 'saved-token', info.server_id, current(), 0); await manager.selectDestination('speaker', 1);
   const supervisor = { async read(path: string) {
-    if (path === '/addons/self/info') return { hostname: 'aoty-internal', ip_address: '172.30.33.5', network: { '3000/tcp': 4000 } };
+    if (path === '/addons/self/info') return { hostname: 'doom-room-internal', ip_address: '172.30.33.5', network: { '3000/tcp': 4000 } };
     if (path === '/network/info') return { interfaces: [{ primary: true, ipv4: { address: [`${address}/24`] } }] };
     if (path === '/supervisor/info') return enumerate ? { addons: [{ slug: 'official_music_assistant' }] } : {};
     if (path === '/addons/official_music_assistant/info') return { state: 'started', discovery: ['music_assistant'], host_network: true };

@@ -1,6 +1,6 @@
 # Documentation
 
-Listening Room is a Home Assistant app for turn-based music sharing through Music Assistant, with private selections and a shared reveal display.
+Doom Room is a Home Assistant app for turn-based music sharing through Music Assistant, with private selections and a shared reveal display.
 
 ## Using the app
 

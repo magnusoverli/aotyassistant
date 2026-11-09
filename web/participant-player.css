@@ -78,6 +78,8 @@
     #participant-player #player-reveal { background:transparent; color:var(--accent); }
     /* Ending a turn sits apart from Reveal, smaller, and asks before it acts. */
     #participant-player .player-ending { grid-template-columns:minmax(0,1fr) 8rem; gap:1.25rem; }
+    /* Without secret playback there is no Reveal: Finish turn takes the row, as on the host desk. */
+    #participant-player.without-reveal .player-ending { grid-template-columns:minmax(0,1fr); }
     #participant-player #finish-my-turn { width:100%; padding-inline:.5rem; }
     #participant-player.is-turn-ready .player-mobile-notice { color:var(--accent); font-weight:650; }
 

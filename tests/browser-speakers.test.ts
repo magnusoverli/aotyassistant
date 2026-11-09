@@ -73,7 +73,7 @@ async function fixture(t: TestContext) {
   speakers.attach(local.server, req => speakerContext(req, 'lan', local.url, local.port));
   const input = registration(); speakers.register(input, owner, context);
   const connect = (extra: Record<string, string> = {}, path = `/api/browser-speaker/socket?id=${input.id}`) => {
-    const socket = new WebSocket(local.url.replace('http:', 'ws:') + path, { headers: { Origin: local.url, Cookie: `aoty_browser_speaker=${owner}`, ...extra } });
+    const socket = new WebSocket(local.url.replace('http:', 'ws:') + path, { headers: { Origin: local.url, Cookie: `doom_room_browser_speaker=${owner}`, ...extra } });
     t.after(() => socket.terminate()); return socket;
   };
   return { speakers, context, input, connect, auth, commands, local, upstreamSockets: ws.clients, epoch: () => { epoch = 'epoch-2'; },
@@ -151,7 +151,7 @@ test('a browser whose pongs are stuck behind queued audio stays connected while 
   t.mock.timers.enable({ apis: ['setInterval'] });
   // autoPong off models a Funnel link where the ping waits behind megabytes of audio.
   const socket = new WebSocket(f.local.url.replace('http:', 'ws:') + `/api/browser-speaker/socket?id=${f.input.id}`,
-    { headers: { Origin: f.local.url, Cookie: `aoty_browser_speaker=${owner}` }, autoPong: false });
+    { headers: { Origin: f.local.url, Cookie: `doom_room_browser_speaker=${owner}` }, autoPong: false });
   t.after(() => socket.terminate()); await once(socket, 'open');
   let closed = false; socket.once('close', () => { closed = true; });
   const timeSync = async () => { const echoed = once(socket, 'message'); socket.send('{"type":"client/time"}'); await echoed; };
@@ -196,11 +196,11 @@ test('public websocket upgrades require both invitation and device grants; losin
       { headers: { Host: 'room.ts.net', Origin: online.origin!, Cookie: cookie } });
     t.after(() => ws.terminate()); return ws;
   };
-  await assert.rejects(once(connect(`aoty_browser_speaker=${owner}`), 'open'), /403/);
-  await assert.rejects(once(connect('__Host-aoty_online=fixture-grant'), 'open'), /403/);
-  const socket = connect(`__Host-aoty_online=fixture-grant; aoty_browser_speaker=${owner}`); await once(socket, 'open');
+  await assert.rejects(once(connect(`doom_room_browser_speaker=${owner}`), 'open'), /403/);
+  await assert.rejects(once(connect('__Host-doom_room_online=fixture-grant'), 'open'), /403/);
+  const socket = connect(`__Host-doom_room_online=fixture-grant; doom_room_browser_speaker=${owner}`); await once(socket, 'open');
   const closed = once(socket, 'close'); valid = false; f.speakers.sweep(); await closed;
-  await assert.rejects(once(connect(`__Host-aoty_online=fixture-grant; aoty_browser_speaker=${owner}`), 'open'), /403/);
+  await assert.rejects(once(connect(`__Host-doom_room_online=fixture-grant; doom_room_browser_speaker=${owner}`), 'open'), /403/);
 });
 
 test('upstream authentication failure is sanitized and cannot establish a relay', async t => {
@@ -231,7 +231,7 @@ test('speaker contexts reject Ingress and spoofed LAN headers while retaining LA
   assert.equal(speakerContext(trusted, 'ingress', lan.origin, 3000), undefined);
   assert.equal(speakerContext(req({ host: 'room.local:3000' }), 'lan', lan.origin, 3000)?.kind, 'lan');
   let valid = true; const online = { origin: 'https://room.ts.net', authorized: (grant: string) => valid && grant === 'fixture-grant' } as OnlineAccess;
-  const remote = req({ host: 'room.ts.net', cookie: '__Host-aoty_online=fixture-grant' });
+  const remote = req({ host: 'room.ts.net', cookie: '__Host-doom_room_online=fixture-grant' });
   const context = speakerContext(remote, 'public', lan.origin, 3000, online)!; assert.equal(context.kind, 'public'); assert.equal(context.valid(), true);
   valid = false; assert.equal(context.valid(), false); assert.equal(speakerContext(remote, 'public', lan.origin, 3000, online), undefined);
   for (const action of ['register', 'pair', 'stop']) assert.equal(publicRoute('POST', '/api/browser-speaker/' + action), true);
@@ -256,7 +256,7 @@ test('Ingress blocks speaker HTTP routes and websocket upgrades without contacti
   f.speakers.attach(gateway.server, req => speakerContext(req, 'ingress', f.local.url, f.local.port));
   const base = '/api/hassio_ingress/test';
   const headers = { 'x-ingress-path': base, 'x-forwarded-proto': 'https', 'x-forwarded-host': 'ha.example', 'x-remote-user-id': 'user',
-    Origin: 'https://ha.example', Cookie: `aoty_browser_speaker=${owner}`, 'Content-Type': 'application/json' };
+    Origin: 'https://ha.example', Cookie: `doom_room_browser_speaker=${owner}`, 'Content-Type': 'application/json' };
   const audio = { decodedChunks: 0, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 500 };
   const routes = [
     { path: '/api/browser-speaker/info' },

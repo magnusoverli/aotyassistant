@@ -1,6 +1,6 @@
-# Install and manage Listening Room
+# Install and manage Doom Room
 
-Listening Room lets people prepare private track selections, take turns playing through Music Assistant, and reveal track details on a shared display.
+Doom Room lets people prepare private track selections, take turns playing through Music Assistant, and reveal track details on a shared display.
 
 It is distributed and supported as a **Home Assistant app**. Use Home Assistant OS with Core **2026.10.0 or later**, Supervisor, and an **amd64** or **aarch64** system. Music Assistant must be reachable from the app and have a working login, music source, and speaker/group. Playback supports **MA API schema 65**.
 
@@ -9,7 +9,7 @@ It is distributed and supported as a **Home Assistant app**. Use Home Assistant 
 [![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
 
 1. Add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
-2. Install **Listening Room**. Supervisor downloads the published image for the system’s architecture.
+2. Install **Doom Room**. Supervisor downloads the published image for the system’s architecture.
 3. Keep the app’s **Network** port enabled: container port `3000/tcp` is published as port `3000` by default. Choose another free host port if necessary.
 4. Start the app and select **Open web UI**. The host desk opens inside Home Assistant through Ingress. Enable **Show in sidebar** if desired.
 
@@ -22,7 +22,7 @@ It is distributed and supported as a **Home Assistant app**. Use Home Assistant 
 3. Choose an available **Speaker or group**. Selection is checked and saved immediately.
 4. Under **Access & network**, check **Guest access** for local joining, or enable **Online invitations** and follow the Tailscale sign-in/approval prompts. Open the host desk’s join/display links from a guest device.
 
-Discovery, connection checks, speaker selection, and file-access checks do not play audio or change volume. An explicit Play action replaces the selected destination’s queue with one song and may interrupt music already playing there.
+Discovery, connection checks, idle speaker selection, and file-access checks do not play audio or change volume. During a song, selecting another speaker and confirming moves the current playback there; see [changing speakers](docs/using-the-app.md#change-speakers-during-a-song). An explicit Play action replaces the selected destination’s queue with one song and may interrupt music already playing there.
 
 **Advanced: token or separate login address** supports a browser-reachable MA login address when the detected internal hostname is inaccessible from the browser, or manual token entry from MA’s profile settings. A cancelled sign-in keeps existing settings. A Home Assistant access token is not required.
 
@@ -60,13 +60,24 @@ Normal setup takes place in **Settings**. The Home Assistant Configuration tab c
 
 Update the existing installation from the same repository; uninstalling is not required. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue playing independently if playback was active before the restart.
 
-Listening Room was previously named **Albums of the Year**. The display-name change keeps the same installation ID, repository/image addresses, browser credentials, and stored data. It does not require rejoining or reconnecting Music Assistant. Existing Music Assistant tokens may retain the old application label; they remain valid until their normal expiry or revocation.
-
 Room data in legacy schemas 1 and 2 is not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the installed and target versions](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records also stop startup rather than replacing saved state.
+
+## Move from Listening Room
+
+Doom Room was previously named **Listening Room** and, before that, **Albums of the Year**. Doom Room has a new Home Assistant ID, so Home Assistant installs it as a separate app. The installed Listening Room app receives no further updates. Its room, saved lists, uploaded files, sign-ins, and settings do not move to Doom Room.
+
+1. Create a Home Assistant backup including **Listening Room**, in case you need the old room again.
+2. Refresh the app store and install **Doom Room** from the same repository.
+3. Stop **Listening Room**. Both apps use port `3000` by default, so only one can run at a time.
+4. Start Doom Room, then [connect Music Assistant](#connect-music-assistant) and choose a speaker or group.
+5. Share the new guest link or QR code. Participants choose their display name and PIN again, then build **Your playlist**.
+6. If you use online invitations, enable them again and sign in to Tailscale. The guest address becomes `https://doom-room.…ts.net`, so share the new invitation. Remove the old **listening-room** device in the Tailscale admin console.
+7. Browser speakers register again as **Doom Room (…)**. In Music Assistant, remove leftover **Listening Room (…)** web players and revoke the old app's token if you no longer need them.
+8. When Doom Room works, uninstall **Listening Room**.
 
 ## Backups and restore
 
-Include **Listening Room** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
+Include **Doom Room** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
 
 Hot-backup hooks coordinate persistent writes while Supervisor archives the data. Existing read-only pages and audio streams remain available. If a backup fails and writes remain paused, restart the app and retry the backup. Avoid large uploads during backups.
 

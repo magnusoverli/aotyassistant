@@ -34,11 +34,32 @@ export async function startMusicAssistantFixture(port = 0) {
   let catalogueMode = '';
   let metadataArtistName = 'Metallica';
   let itemNumber = 0;
-  const queue = { queue_id: 'fixture-queue', available: true, active: true, items: 0, state: 'idle', ended: false,
+  const primaryQueue = { queue_id: 'fixture-queue', available: true, active: true, items: 0, state: 'idle', ended: false,
     repeat_mode: 'all', autoplay_enabled: true, shuffle_enabled: true, is_dynamic: false, elapsed_time: 0, elapsed_time_last_updated: Date.now() / 1000, resume_pos: 0, current_item: null as null | { queue_item_id: string; media_item: Omit<typeof track, 'album'> & { album: { name: string } }; streamdetails?: { provider: string; item_id: string; audio_format?: Record<string, unknown> | null } }, next_item: null as unknown };
-  const player = { player_id: 'sonos:room', available: true, type: 'player', supported_features: ['volume_set'], volume_control: 'native', volume_level: 30, group_volume: 40, group_members: [] as string[],
+  const primaryPlayer = { player_id: 'sonos:room', available: true, type: 'player', supported_features: ['volume_set'], volume_control: 'native', volume_level: 30, group_volume: 40, group_members: [] as string[],
     playback_state: 'idle', active_source: null as string | null, active_group: null as string | null, synced_to: null as string | null };
   let speakers = [{ player_id: 'sonos:room', name: 'Living room', available: true }, { player_id: 'sonos:bedroom', name: 'Bedroom', available: true }, { player_id: 'sonos:offline', name: 'Offline room', available: false }];
+  // Opt-in multi-queue model for handoff tests; legacy fixtures retain their single queue.
+  let transfers = false;
+  const queues = new Map<string, typeof primaryQueue>([[primaryQueue.queue_id, primaryQueue]]);
+  const players = new Map<string, typeof primaryPlayer>([[primaryPlayer.player_id, primaryPlayer]]);
+  let transferOutcome: 'normal' | 'source-cleared' | 'wrong-position' | 'wrong-source' | 'wrong-policy' = 'normal';
+  let transferGate: { entered(): void; released: Promise<void> } | undefined;
+  const addTransferSpeaker = (id: string, name: string, type = 'player') => {
+    const queue: typeof primaryQueue = { ...structuredClone(primaryQueue), queue_id: id, current_item: null, items: 0, active: false, state: 'idle', elapsed_time: 0, resume_pos: 0, next_item: null, ended: false };
+    const player: typeof primaryPlayer = { ...structuredClone(primaryPlayer), player_id: id, type, playback_state: 'idle', active_source: null, active_group: null, synced_to: null, volume_level: 55 };
+    queues.set(id, queue); players.set(id, player);
+    if (!speakers.some(p => p.player_id === id)) speakers.push({ player_id: id, name, available: true });
+    return { queue, player };
+  };
+  function activeQueue(id: string, visited = new Set<string>()): typeof primaryQueue | undefined {
+    if (visited.has(id)) return undefined;
+    visited.add(id); const player = players.get(id);
+    if (!player) return queues.get(id);
+    const leader = player.synced_to || player.active_group;
+    if (leader && leader !== id) return activeQueue(leader, visited);
+    return queues.get(player.active_source || id) ?? (id === primaryPlayer.player_id ? primaryQueue : undefined);
+  }
   let imageMode: 'png' | 'svg' | 'redirect' | 'oversized' = 'png';
   const imageCalls: string[] = [];
   let imageDelay = 0;
@@ -68,7 +89,7 @@ export async function startMusicAssistantFixture(port = 0) {
   const events = new WebSocketServer({ noServer: true });
   const authenticated = new Set<WebSocket>();
   const websocketCommands: string[] = [];
-  const notify = (event = 'queue_updated', object_id = queue.queue_id, data: unknown = queue) => {
+  const notify = (event = 'queue_updated', object_id = primaryQueue.queue_id, data: unknown = primaryQueue) => {
     for (const socket of authenticated) if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event, object_id, data }));
   };
   const server = createServer(async (req, res) => {
@@ -78,7 +99,7 @@ export async function startMusicAssistantFixture(port = 0) {
     if (req.url?.startsWith('/login?')) {
       const login = new URL(req.url, 'http://fixture'); const callback = new URL(login.searchParams.get('return_url')!); callback.searchParams.set('code', 'browser-login-session');
       res.setHeader('Content-Type', 'text/html'); res.setHeader('Referrer-Policy', 'no-referrer');
-      res.end(`<h1>Music Assistant sign-in</h1><a href="${callback.href.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">Authorize Listening Room</a>`); return;
+      res.end(`<h1>Music Assistant sign-in</h1><a href="${callback.href.replaceAll('&', '&amp;').replaceAll('"', '&quot;')}">Authorize Doom Room</a>`); return;
     }
     if (req.url === '/api-docs') { res.setHeader('Content-Type', 'text/html'); res.end('<h1>Fixture docs</h1>'); return; }
     if (req.url?.startsWith('/imageproxy/')) {
@@ -98,6 +119,8 @@ export async function startMusicAssistantFixture(port = 0) {
     let raw = ''; for await (const chunk of req) raw += chunk;
     if (!authorizations.includes(req.headers.authorization ?? '')) { res.statusCode = 401; res.end('PRIVATE unauthorized details'); return; }
     const { command, args } = JSON.parse(raw); calls.push({ command, args });
+    const queue = transfers ? args.queue_id ? queues.get(args.queue_id) ?? primaryQueue : activeQueue(args.player_id) ?? primaryQueue : primaryQueue;
+    const player = transfers ? players.get(args.player_id ?? args.queue_id) ?? primaryPlayer : primaryPlayer;
     if (command === 'players/all' && inventoryGate) {
       const gate = inventoryGate; inventoryGate = undefined; gate.entered();
       const failed = await gate.result; res.statusCode = failed ? 503 : 200;
@@ -165,7 +188,27 @@ export async function startMusicAssistantFixture(port = 0) {
       } catch { res.statusCode = 400; res.end(`PRIVATE unreachable source ${url}`); return; }
     }
     else if (command === 'music/item_by_uri') result = [...multiTracks, albummate].find(t => t.uri === args.uri) ?? track;
-    else if (command === 'player_queues/get_active_queue') result = queue;
+    else if (command === 'player_queues/get_active_queue') result = transfers ? activeQueue(args.player_id) ?? null : queue;
+    else if (command === 'player_queues/get') result = queues.get(args.queue_id) ?? null;
+    else if (command === 'player_queues/transfer' && transfers) {
+      const source = queues.get(args.source_queue_id); const target = queues.get(args.target_queue_id); const targetPlayer = players.get(args.target_queue_id);
+      if (!source || !target || !targetPlayer || source === target) { res.statusCode = 400; res.end('Invalid transfer'); return; }
+      const position = Math.floor(source.state === 'playing' ? source.elapsed_time : source.resume_pos);
+      const copy = structuredClone(source);
+      Object.assign(source, { state: 'idle', active: false, items: 0, current_item: null, next_item: null, elapsed_time: 0, ended: false });
+      const sourcePlayer = [...players.values()].find(p => p.player_id === source.queue_id || p.active_source === source.queue_id) ?? primaryPlayer;
+      sourcePlayer.playback_state = 'idle'; sourcePlayer.active_source = null;
+      notify('queue_updated', source.queue_id, source);
+      if (transferGate) { const gate = transferGate; transferGate = undefined; gate.entered(); await gate.released; }
+      if (transferOutcome === 'source-cleared') { res.statusCode = 503; res.end('Synthetic partial transfer'); return; }
+      Object.assign(target, copy, { queue_id: target.queue_id, state: args.auto_play ? 'playing' : 'idle', active: Boolean(args.auto_play),
+        elapsed_time: transferOutcome === 'wrong-position' ? 0 : position, elapsed_time_last_updated: Date.now() / 1000, resume_pos: position });
+      if (transferOutcome === 'wrong-source' && target.current_item?.streamdetails) target.current_item.streamdetails.item_id = 'unverified-transfer-source';
+      if (transferOutcome === 'wrong-policy') target.autoplay_enabled = true;
+      targetPlayer.synced_to = null; targetPlayer.active_group = null;
+      targetPlayer.playback_state = target.state; targetPlayer.active_source = args.auto_play ? target.queue_id : null;
+      notify('queue_updated', target.queue_id, target);
+    }
     else if (command === 'player_queues/items') result = queue.current_item ? [queue.current_item] : [];
     else if (command === 'player_queues/autoplay') queue.autoplay_enabled = args.autoplay_enabled;
     else if (command === 'player_queues/clear') {
@@ -196,7 +239,7 @@ export async function startMusicAssistantFixture(port = 0) {
     if (volumeDelay) { await new Promise(resolve => setTimeout(resolve, volumeDelay)); volumeReadPending = false; }
     if (lostAcknowledgement === command) { lostAcknowledgement = undefined; res.destroy(); }
     else res.end(JSON.stringify(result));
-    if (/^player_queues\/(play_media|pause|resume|stop|autoplay|repeat|shuffle)$/.test(command)) notify();
+    if (/^player_queues\/(play_media|pause|resume|stop|autoplay|repeat|shuffle)$/.test(command)) notify('queue_updated', queue.queue_id, queue);
     if (command.startsWith('players/cmd/')) notify('player_updated', player.player_id);
   });
   server.on('upgrade', (request, socket, head) => {
@@ -213,14 +256,22 @@ export async function startMusicAssistantFixture(port = 0) {
   });
   server.on('connection', () => { connections++; });
   server.listen(port, '127.0.0.1'); await once(server, 'listening');
-  return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, calls, info, queue, track, player, imageCalls,
+  return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, calls, info, queue: primaryQueue, track, player: primaryPlayer, imageCalls,
+    enableTransfers() { transfers = true; info.server_version = '2.10.9'; return addTransferSpeaker('sonos:bedroom', 'Bedroom'); },
+    addTransferSpeaker, transferOutcome(value: typeof transferOutcome) { transferOutcome = value; },
+    holdNextTransfer() {
+      let enter!: () => void; let release!: () => void;
+      const entered = new Promise<void>(resolve => { enter = resolve; });
+      const released = new Promise<void>(resolve => { release = resolve; });
+      transferGate = { entered: enter, released }; return { entered, release };
+    },
     requests, get connections() { return connections; },
     websocketCommands, get eventClients() { return authenticated.size; },
     notify, disconnectEvents() { for (const client of events.clients) client.terminate(); },
-    failReads(command: 'player_queues/get_active_queue' | 'player_queues/items' | 'players/get' | 'player_queues/clear', count = 1, status = 503) {
+    failReads(command: 'player_queues/get_active_queue' | 'player_queues/items' | 'players/get' | 'player_queues/clear' | 'player_queues/get' | 'player_queues/transfer', count = 1, status = 503) {
       readFailures.set(command, { remaining: count, status });
     },
-    loseAcknowledgement(command: 'player_queues/play_media' | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/stop', apply = true) {
+    loseAcknowledgement(command: 'player_queues/play_media' | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/stop' | 'player_queues/transfer', apply = true) {
       lostAcknowledgement = command; applyLostCommand = apply;
     },
     holdNextQueueRead() {
@@ -246,8 +297,8 @@ export async function startMusicAssistantFixture(port = 0) {
     delayNextVolumeRead(ms: number) { nextVolumeDelay = ms; },
     get volumeReadPending() { return volumeReadPending; },
     clampVolume(level: number) { volumeClamp = level; },
-    parkPaused() { queue.state = 'idle'; queue.active = false; queue.ended = false; queue.elapsed_time = 0; player.playback_state = 'idle'; player.active_source = null; },
-    finish() { queue.state = 'idle'; queue.ended = true; notify(); }, fail(value: boolean) { failed = value; },
+    parkPaused() { primaryQueue.state = 'idle'; primaryQueue.active = false; primaryQueue.ended = false; primaryQueue.elapsed_time = 0; primaryPlayer.playback_state = 'idle'; primaryPlayer.active_source = null; },
+    finish() { primaryQueue.state = 'idle'; primaryQueue.ended = true; notify(); }, fail(value: boolean) { failed = value; },
     setSpeakers(next: typeof speakers, emit = true) {
       const previous = speakers; speakers = structuredClone(next);
       if (emit) {

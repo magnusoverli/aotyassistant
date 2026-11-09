@@ -7,6 +7,7 @@ import { operationId } from './preparation-controller';
 import { BrowserSpeakerRuntime } from './browser-speaker-runtime';
 import { browserDevice } from './browser-device';
 import { browserSpeakerName } from '../src/browser-speaker-name';
+import { productName } from '../src/product';
 
 let speaker: BrowserSpeakerRuntime | undefined;
 export function initializeBrowserSpeaker() {
@@ -17,11 +18,11 @@ export function initializeBrowserSpeaker() {
     request: (path, data) => requestJson(path, data, 30_000), id: operationId, device,
     schedule: (work, delay) => { const timer = setTimeout(work, delay); return () => clearTimeout(timer); },
     create: (id, scope, reconnected, exhausted) => {
-      const prefix = `aoty.sendspin:${scope}:`;
+      const prefix = `doom-room.sendspin:${scope}:`;
       const storage: SendspinStorage = { getItem: key => localStorage.getItem(prefix + key), setItem: (key, value) => localStorage.setItem(prefix + key, value) };
       const name = browserSpeakerName(device);
       const url = new URL(appPath(`/api/browser-speaker/socket?id=${id}`), location.origin); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return new AutomaticAudioPlayer({ url: url.href, clientName: name, productName: 'Web Player', manufacturer: 'Listening Room', storage,
+      return new AutomaticAudioPlayer({ url: url.href, clientName: name, productName: 'Web Player', manufacturer: productName, storage,
         unpairedAccess: false, reconnect: { maxAttempts: 6, onReconnected: reconnected, onExhausted: exhausted } }, exhausted,
         undefined, isPublic() ? onlineAudio : lanAudio);
     },

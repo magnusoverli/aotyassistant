@@ -19,7 +19,7 @@ export const diagnostics = {
     const loop = monitorEventLoopDelay({ resolution: 20 }); loop.enable();
     const timer = setInterval(() => {
       diagnostics.record('event-loop', loop.max / 1e6); loop.reset();
-      if (process.env.AOTY_DIAGNOSTICS === '1') console.info(JSON.stringify({ type: 'backend-diagnostics', ...diagnostics.snapshot() }));
+      if (process.env.DOOM_ROOM_DIAGNOSTICS === '1') console.info(JSON.stringify({ type: 'backend-diagnostics', ...diagnostics.snapshot() }));
     }, 60_000); timer.unref();
     return () => { clearInterval(timer); loop.disable(); };
   },

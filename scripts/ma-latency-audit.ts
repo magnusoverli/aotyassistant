@@ -19,7 +19,7 @@ const round = (value: number) => Math.round(value * 10) / 10;
 
 async function fixture() {
   const remote = await startMusicAssistantFixture();
-  const directory = await mkdtemp('/tmp/opencode/aoty-latency-');
+  const directory = await mkdtemp('/tmp/opencode/doom-room-latency-');
   const calls: Call[] = [];
   let latency = 0; let start = performance.now(); let measuring = false;
   let gate: Gate | undefined;

@@ -10,9 +10,9 @@ if [ "${HA_ADDON:-0}" = "1" ] && [ -f /data/options.json ]; then
   chmod 600 /data/options.json
 fi
 if [ "${HA_ADDON:-0}" = "1" ]; then
-  mkdir -p /run/aoty
-  chown node:node /run/aoty
-  chmod 700 /run/aoty
+  mkdir -p /run/doom-room
+  chown node:node /run/doom-room
+  chmod 700 /run/doom-room
 fi
 # The web server never runs as root.
 exec su-exec node node dist/server/index.js

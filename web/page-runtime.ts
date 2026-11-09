@@ -338,7 +338,7 @@ function accept(next: View) {
     const position = next.position;
     const turnMessage = next.myTurn ? 'It’s your turn to share.'
       : next.current ? `${next.current.nickname}’s turn. ${position?.turnsUntil === 1 ? 'You are up next.' : position?.turnsUntil != null ? `Your turn is ${position.turnsUntil} turns away.` : ''}`
-      : 'The listening room is ready.';
+      : 'The Doom Room is ready.';
     if (turnAnnouncement.textContent !== turnMessage) turnAnnouncement.textContent = turnMessage;
   }
   if (!next.joinUrl) { qrUrl = ''; qrImage = ''; }
@@ -365,7 +365,7 @@ function subscribe(role: 'host' | 'participant' | 'display') {
   const revoked = () => {
     if (signal.aborted || stream !== connection) return;
     accessEnded = true;
-    turnAnnouncement.textContent = 'You have been removed from the listening room.';
+    turnAnnouncement.textContent = 'You have been removed from the Doom Room.';
     error = '';
     participantAccess.revoke(); music.stopUploads();
   };
@@ -392,7 +392,7 @@ function qrCard() {
   if (!view?.joinUrl) { card.append(el('p', view?.guestAccess?.message ?? 'Preparing guest link…'), link('Guest access settings', '/host/settings#access')); return card; }
   if (view.guestAccess) card.append(el('p', view.guestAccess.message, 'muted small'));
   const qr = el('div', undefined, 'invitation-qr');
-  if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the listening room'; qr.append(img); }
+  if (qrImage) { const img = el('img'); img.src = qrImage; img.alt = 'Scan to join the Doom Room'; qr.append(img); }
   qr.append(el('p', 'Scan the QR code to join.', 'muted')); card.append(qr);
   const address = el('input'); address.value = view.joinUrl; address.readOnly = true; address.setAttribute('aria-label', 'Join link'); address.className = 'join-link-field';
   const sharing = el('div', undefined, 'invitation-sharing'); sharing.append(address, copyButton('Copy join link', address)); card.append(sharing);
@@ -420,7 +420,7 @@ function renderDisplay() {
 function closedRoom() {
   const main = pageFrame('display', 'room-closed');
   const record = el('div', undefined, 'welcome-record'); record.append(vinyl());
-  main.append(record, el('h1', 'Listening room'), el('p', 'Connecting to the room…', 'muted'));
+  main.append(record, el('h1', productName), el('p', 'Connecting to the room…', 'muted'));
   return main;
 }
 function host() {
@@ -476,7 +476,7 @@ function participant() {
   const state = view.myTurn ? 'mine' : position?.turnsUntil === 1 ? 'next' : 'listening';
   attr(main, 'data-turn-state', state);
   const hero = v.el('hero', 'section', undefined, `participant-hero is-${state}`); attr(hero, 'aria-label', 'Your turn status');
-  const title = v.el('title', 'h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : 'Listening room'); prop(title, 'title', title.textContent!);
+  const title = v.el('title', 'h1', view.myTurn ? 'Your turn.' : view.current ? `${view.current.nickname}’s turn.` : productName); prop(title, 'title', title.textContent!);
   const distance = v.el('distance', 'p', !view.myTurn && position ? position.turnsUntil === 1 ? 'You’re next' : `${position.turnsUntil} turns away` : '', 'turn-distance');
   const shortcuts = v.el('shortcuts', 'nav', undefined, 'music-shortcuts'); attr(shortcuts, 'aria-label', 'Your music shortcuts');
   const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));

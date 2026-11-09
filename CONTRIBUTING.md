@@ -1,6 +1,6 @@
 # Contributing
 
-Listening Room is a **Home Assistant app** for turn-based music sharing through Music Assistant. Changes should improve that installation and its guest, host, or display experience. Native Node and standalone Docker/Compose deployments are not supported products.
+Doom Room is a **Home Assistant app** for turn-based music sharing through Music Assistant. Changes should improve that installation and its guest, host, or display experience. Native Node and standalone Docker/Compose deployments are not supported products.
 
 For a bug, use the [issue form](https://github.com/magnusoverli/aotyassistant/issues/new/choose) and include a minimal reproduction with versions and sanitized logs. Discuss substantial architecture or behaviour changes before implementing them. See [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
@@ -67,7 +67,7 @@ For JSON routes, build schemas at registration with `jsonBody`, not inside a req
 
 - Describe product behaviour in the present tense. Use neutral language and direct instructions, such as “Select a speaker”.
 - Use exact interface labels in procedures. Distinguish participant, host, and public-display access.
-- Use **listening room**, **display name**, **Your music**, **Your playlist**, **Play first selection**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
+- Use **Doom Room** for the app and its room. Use **display name**, **Your music**, **Your playlist**, **Play first selection**, and **Reveal details** consistently. Album and release-year fields describe music, not event rules.
 - Describe music discovery and turn-taking, not annual awards, voting, continuous playlist playback, or remote synchronized listening. Scope privacy claims to this app.
 - Keep display copy in `src/product.ts` aligned with app/package/image metadata and the GitHub About description. Preserve installation IDs, API paths, cookies, and storage keys during wording changes.
 - Keep internal discussions, personal accounts, and temporary progress reports out of product documentation.

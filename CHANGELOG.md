@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-11-09
+
+- The app is now called **Doom Room** and installs as a new Home Assistant app. **Action required:** Listening Room receives no further updates, and its room, saved lists, uploaded files, sign-ins and settings do not move over. Install Doom Room from the app store and stop Listening Room first, because both use port 3000. Then connect Music Assistant, choose a speaker and invite everyone again. Online invitations get a new `https://doom-room.…ts.net` address. The installation guide's **Move from Listening Room** section lists every step. SuShe Online's **Share to Listening Room** links import as before.
+
+- Change speakers while a song is playing: choose another speaker or group in **Settings → Playback** and confirm to move the current song at its position, keeping the turn, revealed details and uploaded-file access. Uses Music Assistant's native transfer, with no crossfade or replay fallback; a short interruption is expected. Requires MA 2.10.8 or later with a supported playback API. Paused songs can move to an idle, ungrouped speaker without starting audio. Unconfirmed transfers inspect both speakers during explicit playback recovery rather than retrying the move.
+
+- Secret playback can be switched off: **Settings → Playback → Hide track details until revealed** is on by default and keeps today's hidden-until-revealed workflow. Switch it off and the room display shows each song's title, artist and artwork as soon as it starts. **Reveal details** disappears from participants' players, and the 70% marker and automatic reveal no longer apply, so that setting is greyed out. Switching it off during a hidden song reveals it right away; switching it back on never hides a song already shown. The host desk is unchanged.
+
 ## [1.2.5] — 2026-11-09
 
 - Disable the embedded browser speaker inside Home Assistant Ingress. Playback controls still work there; direct LAN access and Tailscale invitations continue to register browser speakers automatically.

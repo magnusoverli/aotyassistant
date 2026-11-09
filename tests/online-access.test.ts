@@ -24,7 +24,7 @@ import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 import { onlineConnection } from '../web/online-panel.js';
 
-const host = 'listening-room.tail123.ts.net';
+const host = 'doom-room.tail123.ts.net';
 class Connector implements TunnelConnector {
   busy = false; starts = 0; stops = 0; connects = 0; publishes = 0; valid = true;
   state: TailStatus = { BackendState: 'Running', Self: { DNSName: host + '.', Online: true } };
@@ -36,7 +36,7 @@ class Connector implements TunnelConnector {
   publish(url: (value: string) => void) { this.publishes++; url('https://login.tailscale.com/f/funnel?node=test'); }
 }
 async function directory(t: TestContext) {
-  const dir = await mkdtemp(join(tmpdir(), 'aoty-online-')); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
+  const dir = await mkdtemp(join(tmpdir(), 'doom-room-online-')); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
 }
 async function fixture(t: TestContext) {
   const dir = await directory(t); const connector = new Connector();
@@ -170,7 +170,7 @@ test('online artist, album and track artwork reaches MA with participant and inv
   local.server.on('request', http.app);
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   t.after(() => { gateway.close(); http.close(); adapter.close(); });
-  const access = `__Host-aoty_online=${f.online.redeem(invitation(f.online))!}`;
+  const access = `__Host-doom_room_online=${f.online.redeem(invitation(f.online))!}`;
   const request = (path: string, cookies = access, data?: unknown, etag?: string) => new Promise<Response>((resolve, reject) => {
     const req = httpRequest(remote.url + path, { method: data === undefined ? 'GET' : 'POST',
       headers: { Host: host, Cookie: cookies, ...(etag ? { 'If-None-Match': etag } : {}), ...(data === undefined ? {} : { Origin: `https://${host}`, 'Content-Type': 'application/json' }) } }, res => {
@@ -202,7 +202,7 @@ test('online artist, album and track artwork reaches MA with participant and inv
   assert.equal((await request(lastArtwork, participant, undefined, etag)).status, 401, 'An invitation is still required, even with a cached image.');
   assert.equal((await request(lastArtwork, access)).status, 401, 'A participant session is still required.');
   const other = await engine.join('Other listener');
-  assert.equal((await request(lastArtwork, `${access}; aoty_participant=${other}`)).status, 409);
+  assert.equal((await request(lastArtwork, `${access}; doom_room_participant=${other}`)).status, 409);
   const prepared = '/api/display/prepared-artwork/11111111-1111-4111-8111-111111111111';
   assert.equal((await request(prepared)).status, 403, 'Invited displays reach the current-playback preparation guard.');
   assert.equal((await request(prepared, participant)).status, 401, 'Encrypted prefetch still requires an online invitation.');
@@ -230,17 +230,17 @@ test('public listener gates profiles, supports PIN join/private library, rejects
     });
     req.on('error', reject); req.end(data === undefined ? undefined : Buffer.isBuffer(data) ? data : JSON.stringify(data));
   });
-  const shell = await request('/join'); assert.equal(shell.status, 200); assert.match(await shell.text(), /name="aoty-public" content="1"/);
+  const shell = await request('/join'); assert.equal(shell.status, 200); assert.match(await shell.text(), /name="doom-room-public" content="1"/);
   assert.equal((await request('/api/participant/identity')).status, 401);
   assert.equal((await request('/api/display/state')).status, 401);
   assert.equal((await request('/api/online/redeem', { invitation: invitation(f.online) }, '', { Origin: 'https://evil.test' })).status, 403);
   const redeemed = await request('/api/online/redeem', { invitation: invitation(f.online) }); assert.equal(redeemed.status, 200);
-  const set = redeemed.headers.get('set-cookie')!; assert.match(set, /^__Host-aoty_online=/); assert.match(set, /Secure/); assert.match(set, /HttpOnly/); assert.match(set, /SameSite=Strict/);
+  const set = redeemed.headers.get('set-cookie')!; assert.match(set, /^__Host-doom_room_online=/); assert.match(set, /Secure/); assert.match(set, /HttpOnly/); assert.match(set, /SameSite=Strict/);
   const access = set.split(';')[0]!;
   // The shell tells a returning guest their invitation cookie is valid: no session round trip.
-  assert.doesNotMatch(await (await request('/join')).text(), /aoty-online-session/);
-  assert.match(await (await request('/participant', undefined, access)).text(), /<meta name="aoty-online-session" content="1">/);
-  assert.doesNotMatch(await (await request('/participant', undefined, '__Host-aoty_online=1.forged.cookie')).text(), /aoty-online-session/);
+  assert.doesNotMatch(await (await request('/join')).text(), /doom-room-online-session/);
+  assert.match(await (await request('/participant', undefined, access)).text(), /<meta name="doom-room-online-session" content="1">/);
+  assert.doesNotMatch(await (await request('/participant', undefined, '__Host-doom_room_online=1.forged.cookie')).text(), /doom-room-online-session/);
   for (const path of ['/host', '/host/settings', '/api/host/state', '/api/host/events', '/api/host/online', '/api/health', '/api/media/check/not-a-key/track.wav', '/api/host%2fstate']) {
     assert.equal((await request(path, undefined, access, { 'X-Ingress-Path': '/fake', 'X-Remote-User-Id': 'owner', 'X-Forwarded-Host': 'localhost', 'X-Forwarded-Proto': 'https' })).status, 404, path);
   }

@@ -36,7 +36,7 @@ export function sharedListLink(input: string): URL {
   if (url.protocol !== 'https:') throw new AppError(422, 'The link must start with https://. Copy it from SuShe Online’s share window.');
   if (url.username || url.password) throw new AppError(422, notALink);
   const path = url.pathname.replace(/\/$/, '');
-  if (!/\/lr\/[A-Za-z0-9_-]{22}$/.test(path)) throw new AppError(422, `This isn’t a Listening Room link. ${notALink}`);
+  if (!/\/lr\/[A-Za-z0-9_-]{22}$/.test(path)) throw new AppError(422, `This isn’t a SuShe Online share link. ${notALink}`);
   return new URL(`${url.origin}${path}`);
 }
 
@@ -49,9 +49,9 @@ export function publicAddress(address: string) {
 export function parseSharedList(value: unknown): SharedList & { skipped: number } {
   const version = z.object({ format: z.literal('sushe-listening-room'), version: z.number() }).safeParse(value);
   if (!version.success) throw new AppError(502, 'This link didn’t return a SuShe Online list. Copy the link from SuShe Online’s share window.');
-  if (version.data.version !== 1) throw new AppError(422, 'This list comes from a newer SuShe Online. Update Listening Room to import it.');
+  if (version.data.version !== 1) throw new AppError(422, 'This list comes from a newer SuShe Online. Update Doom Room to import it.');
   const parsed = listSchema.safeParse(value);
-  if (!parsed.success) throw new AppError(502, 'SuShe Online returned a list Listening Room can’t read. Try sharing the list again.');
+  if (!parsed.success) throw new AppError(502, 'SuShe Online returned a list Doom Room can’t read. Try sharing the list again.');
   const songs: SharedSong[] = []; let skipped = 0;
   for (const raw of parsed.data.songs) {
     const song = sharedSongSchema.safeParse(raw);
@@ -71,7 +71,7 @@ const httpsTransport: SharedListTransport = (url, address, signal) => new Promis
     if (options.all) callback(null, [address]); else callback(null, address.address, address.family);
   };
   const outgoing = request(url, { method: 'GET', agent: false, lookup, signal,
-    headers: { Accept: 'application/json', 'User-Agent': 'Listening Room (+https://github.com/magnusoverli/aotyassistant)' } }, resolve);
+    headers: { Accept: 'application/json', 'User-Agent': 'Doom Room (+https://github.com/magnusoverli/aotyassistant)' } }, resolve);
   outgoing.on('error', reject); outgoing.end();
 });
 
@@ -94,7 +94,7 @@ export async function fetchSharedList(link: URL, options: Options = {}): Promise
   catch { throw new AppError(422, 'The link’s address could not be found. Check the link and try again.'); }
   // Connect only to public addresses; a host that has none is never contacted.
   const address = addresses.find(candidate => publicAddress(candidate.address));
-  if (!address) throw new AppError(422, 'Listening Room only opens links on the public internet, not on your home network.');
+  if (!address) throw new AppError(422, 'Doom Room only opens links on the public internet, not on your home network.');
   let response: IncomingMessage;
   try { response = await (options.transport ?? httpsTransport)(link, address, signal); }
   catch (error) {
@@ -112,7 +112,7 @@ export async function fetchSharedList(link: URL, options: Options = {}): Promise
     try { value = JSON.parse(await readBody(response, sharedListLimits.bytes)); }
     catch (error) {
       if (error instanceof AppError) throw error;
-      throw new AppError(502, signal.aborted ? 'SuShe Online took too long to answer. Try again.' : 'SuShe Online returned a list Listening Room can’t read.');
+      throw new AppError(502, signal.aborted ? 'SuShe Online took too long to answer. Try again.' : 'SuShe Online returned a list Doom Room can’t read.');
     }
     return parseSharedList(value);
   } finally { response.destroy(); }

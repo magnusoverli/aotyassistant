@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 // Real pinned binaries, as the same non-root user as the app. No login, public tunnel,
 // host privileges or external network is needed for this packaging contract.
-const name = `aoty-tailscale-smoke-${randomUUID()}`;
+const name = `doom-room-tailscale-smoke-${randomUUID()}`;
 try {
 console.log(await docker('run', '--rm', '--name', name, '--network=none', '--user=node', '--entrypoint=node', image, '--input-type=module', '-e', `
   import assert from 'node:assert/strict';
@@ -14,7 +14,7 @@ console.log(await docker('run', '--rm', '--name', name, '--network=none', '--use
   assert.notEqual(process.getuid(), 0);
   assert.match(execFileSync('/usr/local/bin/tailscale', ['version'], { encoding: 'utf8' }), /^1\\.104\\.4/);
   assert.match(await readFile('./licenses/tailscale.txt', 'utf8'), /BSD 3-Clause/);
-  const dir = await mkdtemp('/tmp/listening-room-tailscale-');
+  const dir = await mkdtemp('/tmp/doom-room-tailscale-');
   const connector = new TailscaleConnector(dir, dir + '/run');
   try {
     await connector.start(); let status;

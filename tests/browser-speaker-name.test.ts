@@ -20,9 +20,9 @@ test('device labels distinguish mobile, desktop-mode iPad and desktop operating 
 });
 
 test('friendly names use only username and device type and keep long Unicode names bounded', () => {
-  assert.equal(browserSpeakerName('iPhone', 'Magnus'), 'Listening Room (Magnus · iPhone)');
-  assert.equal(browserSpeakerName('iPhone'), 'Listening Room (iPhone)');
-  assert.equal(browserSpeakerName('iPhone', '  Ma\u0000gnus\n Smith\u202e  '), 'Listening Room (Magnus Smith · iPhone)');
+  assert.equal(browserSpeakerName('iPhone', 'Magnus'), 'Doom Room (Magnus · iPhone)');
+  assert.equal(browserSpeakerName('iPhone'), 'Doom Room (iPhone)');
+  assert.equal(browserSpeakerName('iPhone', '  Ma\u0000gnus\n Smith\u202e  '), 'Doom Room (Magnus Smith · iPhone)');
   for (const device of browserDevices) {
     const long = browserSpeakerName(device, '😀'.repeat(80));
     assert.ok(long.length <= 60); assert.ok(long.endsWith(` · ${device})`));

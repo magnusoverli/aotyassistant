@@ -12,7 +12,7 @@ import { AppError } from '../src/model.js';
 import { operation } from '../src/operation.js';
 
 async function fixture(pollMs = 15) {
-  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-live-');
+  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/doom-room-live-');
   const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
   await manager.save(remote.origin, 'fixture-token', 0); await manager.check(manager.view().revision);
   await manager.selectDestination('sonos:room', manager.view().revision);
@@ -446,7 +446,7 @@ for (const change of ['stop', 'replacement', 'connection-loss'] as const) test(`
 
 test('playback follows configured connection/destination automatically without setup or volume writes', async t => {
   const remote = await startMusicAssistantFixture(); t.after(remote.close);
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/aoty-auto-'))); await manager.init();
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-auto-'))); await manager.init();
   const adapter = new ManagedPlayback(new DemoAdapter(), manager); t.after(() => adapter.close());
   assert.equal(adapter.mode, 'demo'); assert.equal(manager.playbackAvailable, false);
   await manager.save(remote.origin, 'fixture-token', manager.view().revision);
@@ -490,7 +490,7 @@ test('a resolved live recording never falls back to the demo timer after disconn
 });
 
 test('a connection save racing demo Play cannot change source underneath newly owned playback', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-demo-config-race-'); const store = new IntegrationFileStore(dir);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-demo-config-race-'); const store = new IntegrationFileStore(dir);
   const manager = new IntegrationManager(store); await manager.init();
   const demo = new DemoAdapter(3600); const adapter = new ManagedPlayback(demo, manager); t.after(() => adapter.close());
   const track = await adapter.resolve('demo:aurora');

@@ -38,7 +38,7 @@ export class PreparationController {
   constructor(private changed: () => void, private isMember: () => boolean, private request = preparationRequest) {}
   /** List edits wait for an in-flight save, a retained draft, a play review, or connectivity. */
   get locked() { return this.saving || !navigator.onLine || Boolean(this.pending || this.view?.reviewEntryId); }
-  private storageKey(ownerId: string) { return storageKey(`aoty.preparation-pending.v1.${ownerId}`); }
+  private storageKey(ownerId: string) { return storageKey(`doom-room.preparation-pending.v1.${ownerId}`); }
   private persist() {
     if (!this.pending) return;
     try { localStorage.setItem(this.storageKey(this.pending.ownerId), JSON.stringify(this.pending)); }

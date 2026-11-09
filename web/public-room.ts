@@ -105,7 +105,7 @@ export class PublicRoom {
     prop(this.rest, 'hidden', active); prop(this.stage, 'hidden', !active);
     text(this.restTitle, state === 'unavailable' ? 'Playback unavailable.' : 'Nothing playing.');
     text(this.restHint, state === 'unavailable' ? (online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…')
-      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the listening room.');
+      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the Doom Room.');
 
     const revealed = active && view.nowPlaying?.revealed === true ? view.nowPlaying.track : undefined;
     this.revealed = revealed;

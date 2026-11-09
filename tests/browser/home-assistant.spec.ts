@@ -17,7 +17,7 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   await page.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
   const login = await popupPromise;
   await expect(login.getByRole('heading', { name: 'Music Assistant sign-in' })).toBeVisible();
-  await login.getByRole('link', { name: 'Authorize Listening Room' }).click();
+  await login.getByRole('link', { name: 'Authorize Doom Room' }).click();
   await expect(login.locator('.settings-connection .settings-state')).toHaveText('Connected');
   await expect(page.getByText('Music Assistant connected.', { exact: true })).toBeVisible();
   await expect(page.getByText('Waiting for sign-in…', { exact: true })).toHaveCount(0);
@@ -33,7 +33,7 @@ test('Connect signs in through MA, selects a speaker, and reconnects without los
   await login.locator('.settings-navigation a[href="#music-assistant"]').click();
   await login.getByRole('button', { name: 'Change connection', exact: true }).click();
   const reconnectPromise = login.waitForEvent('popup'); await login.getByRole('button', { name: 'Reconnect Music Assistant' }).click();
-  const reconnect = await reconnectPromise; await reconnect.getByRole('link', { name: 'Authorize Listening Room' }).click();
+  const reconnect = await reconnectPromise; await reconnect.getByRole('link', { name: 'Authorize Doom Room' }).click();
   await reconnect.locator('.settings-navigation a[href="#playback"]').click();
   await expect(reconnect.getByText('Active speaker: Living room', { exact: true })).toBeVisible();
   expect(isolatedApp.manager.sourceBindingId).toBe(binding);
@@ -47,15 +47,15 @@ test('unrelated settings changes and another attempt cannot announce successful 
   await page.goto('/host/settings');
   await page.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
   const popup = page.waitForEvent('popup'); await page.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
-  const login = await popup; await expect(login.getByRole('link', { name: 'Authorize Listening Room' })).toBeVisible();
+  const login = await popup; await expect(login.getByRole('link', { name: 'Authorize Doom Room' })).toBeVisible();
   const unrelated = await page.context().newPage(); await unrelated.goto(`${isolatedApp.origin}/host`);
-  await unrelated.evaluate(() => localStorage.setItem('aoty.ma-auth-result', JSON.stringify({ attemptId: 'different-attempt', result: 'connected', at: Date.now() })));
+  await unrelated.evaluate(() => localStorage.setItem('doom-room.ma-auth-result', JSON.stringify({ attemptId: 'different-attempt', result: 'connected', at: Date.now() })));
   await isolatedApp.manager.saveGuestOrigin('http://guest-change.local:3000', isolatedApp.manager.view().revision);
   await expect(page.locator('.settings-addressing')).toContainText('Guest links: http://guest-change.local:3000');
   await expect(page.getByText('Music Assistant connected.', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Waiting for sign-in…', { exact: true })).toBeVisible();
   expect(isolatedApp.manager.configured).toBe(false);
-  await login.getByRole('link', { name: 'Authorize Listening Room' }).click();
+  await login.getByRole('link', { name: 'Authorize Doom Room' }).click();
   await expect(login.getByText(/Music Assistant sign-in could not finish/)).toBeVisible();
   await expect(page.getByText('Sign-in could not finish. Try connecting again.', { exact: true })).toBeVisible();
   expect(isolatedApp.calls.some(call => call.command === 'auth/token/create')).toBe(false);
@@ -119,7 +119,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
   const backend = (ingress.address() as AddressInfo).port;
   const escaped: string[] = [];
   const proxy = createServer((req, res) => {
-    if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(`<iframe title="Listening Room" src="${prefix}/host/settings" style="width:100%;height:100vh;border:0"></iframe>`); return; }
+    if (req.url === '/') { res.setHeader('Content-Type', 'text/html'); res.end(`<iframe title="Doom Room" src="${prefix}/host/settings" style="width:100%;height:100vh;border:0"></iframe>`); return; }
     if (!req.url?.startsWith(`${prefix}/`)) { escaped.push(req.url ?? ''); res.writeHead(404); res.end(); return; }
     const upstream = request({ hostname: '127.0.0.1', port: backend, path: req.url.slice(prefix.length), method: req.method,
       headers: { ...req.headers, 'x-ingress-path': prefix, 'x-forwarded-host': req.headers.host!, 'x-forwarded-proto': 'http', 'x-remote-user-id': 'owner' } }, reply => {
@@ -136,7 +136,7 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     await expect(frame.getByLabel('Guest address', { exact: true })).toHaveValue(guest);
     await frame.getByLabel('Music Assistant URL', { exact: true }).fill(isolatedApp.musicAssistantOrigin);
     const popupPromise = page.waitForEvent('popup'); await frame.getByRole('button', { name: 'Connect Music Assistant', exact: true }).click();
-    const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Listening Room' }).click();
+    const login = await popupPromise; await login.getByRole('link', { name: 'Authorize Doom Room' }).click();
     await expect(login.locator('.settings-connection .settings-state')).toHaveText('Connected');
     await expect(login).toHaveURL(`${origin}${prefix}/host/settings`);
     await openNavigation(login);
@@ -165,8 +165,8 @@ test('HA iframe loads prefixed assets/APIs/SSE, authorizes in a new tab, and sha
     await login.reload(); await showList(login);
     await expect(login.locator('.saved-track strong')).toHaveText('Uploaded song');
     const cookies = await login.context().cookies();
-    expect(cookies.find(cookie => cookie.name === 'aoty_preparation')?.path).toBe(`${prefix}/api/participant/preparations`);
-    expect(cookies.some(cookie => cookie.name === 'aoty_participant' && cookie.path === `${prefix}/api/participant`)).toBe(true);
+    expect(cookies.find(cookie => cookie.name === 'doom_room_preparation')?.path).toBe(`${prefix}/api/participant/preparations`);
+    expect(cookies.some(cookie => cookie.name === 'doom_room_participant' && cookie.path === `${prefix}/api/participant`)).toBe(true);
     await openNavigation(login); await login.getByRole('link', { name: 'Room display', exact: true }).click();
     await expect(login).toHaveURL(`${origin}${prefix}/display`);
     await expect(login.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();

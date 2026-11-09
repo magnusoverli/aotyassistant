@@ -47,7 +47,7 @@ export class OnlinePanel {
   private render() {
     const v = this.nodes;
     const content: Node[] = [v.el('title', 'h2', 'Online invitations'), v.el('intro', 'p', 'Friends scan the room QR code or open your invitation on any Wi-Fi or mobile data. They do not need Tailscale or a Home Assistant account.', 'muted')];
-    if (!inIngress()) { content.push(v.el('ha', 'p', 'Open Listening Room from Home Assistant to enable and manage online invitations.')); children(this.element, ...content); return; }
+    if (!inIngress()) { content.push(v.el('ha', 'p', 'Open Doom Room from Home Assistant to enable and manage online invitations.')); children(this.element, ...content); return; }
     if (this.error) { const error = v.el('error', 'p', this.error, 'error'); attr(error, 'role', 'alert'); content.push(error); }
     const view = this.view;
     if (!view) content.push(v.el('loading', 'p', 'Loading online settings…'));

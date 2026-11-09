@@ -56,8 +56,9 @@ export function mountIntegrations(app: Express, engine: Engine, integrations: In
   app.post('/api/host/integrations/check', jsonBody(z.strictObject({ revision }), async (input, _req, res) => {
     res.json(await integrations.check(input.revision));
   }));
-  app.post('/api/host/integrations/destination', jsonBody(z.strictObject({ id: z.string().min(1).max(500), revision }), async (input, _req, res) => {
-    res.json(await integrations.selectDestination(input.id, input.revision));
+  app.post('/api/host/integrations/destination', jsonBody(z.strictObject({ id: z.string().min(1).max(500), revision, playbackId: z.string().uuid().optional() }), async (input, _req, res) => {
+    res.json(await integrations.selectDestination(input.id, input.revision, input.playbackId,
+      work => engine.changeSpeaker(input.playbackId ?? null, work)));
   }));
   for (const action of ['clear', 'recover'] as const) {
     app.post(`/api/host/integrations/${action}`, jsonBody(z.strictObject({ revision }), async (input, _req, res) => {

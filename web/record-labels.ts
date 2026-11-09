@@ -199,7 +199,7 @@ export const recordLabels = [
   'ANSWERS AFTER THE VIBE',
 ] as const;
 
-export const recordLabelStorageKey = 'aoty.public-record-labels.v1';
+export const recordLabelStorageKey = 'doom-room.public-record-labels.v1';
 type LabelStorage = Pick<Storage, 'getItem' | 'setItem'>;
 type DeckState = {
   version: 1; size: number; remaining: number[];

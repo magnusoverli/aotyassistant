@@ -27,7 +27,7 @@ export async function drainOperations() {
 export async function operation<T>(action: string, work: () => Promise<T>, budgetMs = 45_000, signal?: AbortSignal): Promise<T> {
   if (operations.getStore()?.active) return work();
   const start = performance.now();
-  const operation: Operation = { id: randomUUID(), action, deadline: start + budgetMs, timings: [], active: true, logging: process.env.AOTY_TIMINGS === '1' || process.env.AOTY_MA_TIMINGS === '1', signal };
+  const operation: Operation = { id: randomUUID(), action, deadline: start + budgetMs, timings: [], active: true, logging: process.env.DOOM_ROOM_TIMINGS === '1' || process.env.DOOM_ROOM_MA_TIMINGS === '1', signal };
   const result = operations.run(operation, async () => {
     let ok = false; let status: number | undefined;
     try { const result = await work(); ok = true; return result; }

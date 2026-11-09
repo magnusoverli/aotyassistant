@@ -11,7 +11,7 @@ const selection = (trackId = 'demo:saved'): SavedSelection => ({ source: 'demo',
   metadata: { title: 'Saved song', artist: 'Artist', album: 'Album', version: '', provider: 'Demo', duration: 180 } });
 const operation = (revision: number) => ({ id: randomUUID(), issuedAt: Date.now(), revision });
 async function fixture() {
-  const directory = await mkdtemp('/tmp/opencode/aoty-single-list-');
+  const directory = await mkdtemp('/tmp/opencode/doom-room-single-list-');
   const store = new PreparationFileStore(directory); const manager = new PreparationManager(store);
   return { directory, store, manager, identity: new PreparationIdentity(manager, directory) };
 }

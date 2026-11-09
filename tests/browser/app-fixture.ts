@@ -18,7 +18,7 @@ import type { Express } from 'express';
 // Each workflow has its own room, simulated speakers and join-rate limit; no lifecycle reset endpoint is needed.
 export const test = base.extend<{ isolatedApp: { origin: string; musicAssistantOrigin: string; dataDirectory: string; demo: DemoAdapter; engine: Engine; app: Express; manager: IntegrationManager; remote: Awaited<ReturnType<typeof startMusicAssistantFixture>>; calls: { command: string; args: Record<string, unknown> }[]; setSpeakers: Awaited<ReturnType<typeof startMusicAssistantFixture>>['setSpeakers']; setSchema(schema: number): void } }>({
   isolatedApp: async ({}, use) => {
-    const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-browser-isolated-');
+    const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/doom-room-browser-isolated-');
     const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
     const demo = new DemoAdapter(60); const adapter = new ManagedPlayback(demo, manager);
     const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');

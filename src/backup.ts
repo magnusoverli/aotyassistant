@@ -33,7 +33,7 @@ export class DurabilityBarrier {
   thaw() { const resume = this.resume; this.waiting = undefined; this.resume = undefined; resume?.(); }
 }
 export const durability = new DurabilityBarrier();
-export const backupSocket = '/run/aoty/backup.sock';
+export const backupSocket = '/run/doom-room/backup.sock';
 
 /** Local file permissions, not an HTTP route, protect Supervisor's pre/post hooks. */
 export async function startBackupControl(path = backupSocket, paused?: () => Promise<void>) {

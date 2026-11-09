@@ -24,7 +24,7 @@ const prefix = '/api/participant/preparations';
 const operation = (revision: number) => ({ id: randomUUID(), revision, issuedAt: Date.now() });
 const cookie = (response: Response) => response.headers.get('set-cookie')!.split(';')[0]!;
 async function fixture(t: TestContext) {
-  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/aoty-preparation-http-');
+  const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-http-');
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: dir, demoSeconds: 3600 };
@@ -376,7 +376,7 @@ test('saved artwork revalidates authorization and source after downloads; stale 
 
 test('legacy connection files gain a durable source binding once without changing routing/revisions or making network requests', async t => {
   const remote = await startMusicAssistantFixture(); t.after(remote.close);
-  const dir = await mkdtemp('/tmp/opencode/aoty-preparation-migrate-');
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-migrate-');
   const legacy = { schema: 1, revision: 7, musicAssistant: { url: remote.origin, accessToken: 'fixture-token', destination: { id: 'sonos:room', name: 'Living room' } } };
   await writeFile(join(dir, 'integrations.json'), JSON.stringify(legacy), { mode: 0o600 });
   const first = new IntegrationManager(new IntegrationFileStore(dir)); await first.init(); assert.ok(first.sourceBindingId);

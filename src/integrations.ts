@@ -16,7 +16,7 @@ import { SerialQueue } from './serial.js';
 import { bulkCatalogue, operation } from './operation.js';
 import { CatalogueReferences, artworkPath } from './catalogue-references.js';
 import { OutputMonitor } from './output-monitor.js';
-import { playbackCompatibility, supportsPlaybackSchema } from './music-assistant-policy.js';
+import { playbackCompatibility, supportsPlaybackSchema, supportsQueueTransfer } from './music-assistant-policy.js';
 import type { PlaybackProblem } from './playback-problem.js';
 import { speakerFreshnessMs, type SpeakerInventory } from './speaker-inventory.js';
 import type { IntegrationState, IntegrationStore } from './integration-store.js';
@@ -34,6 +34,10 @@ export type IntegrationView = {
   mediaOrigin?: string | null;
   browserUrl?: string; tokenExpiresAt?: number;
   settingsChangesBlocked?: boolean;
+  speakerChangesBlocked?: boolean;
+  speakerChangeMessage?: string;
+  playbackId?: string;
+  destinationSavePending?: boolean;
   output: OutputState;
   sequence?: number;
   instanceId?: string;
@@ -45,10 +49,13 @@ export type IntegrationView = {
 const uncertainSave = (error: unknown) => !(error instanceof PersistenceError) || error.outcome === 'uncertain';
 export interface PlaybackController {
   readonly ownsPlayback: boolean; readonly issue: string;
+  readonly playbackId?: string;
   readonly problem?: PlaybackProblem;
   readonly requiresRecovery?: boolean;
   configurationChanged(): void;
   recover(): Promise<void>;
+  /** Already inside the integration lane; implementations must not reacquire it. */
+  transfer?(destination: string, playbackId: string): Promise<void>;
 }
 
 export class IntegrationManager implements CatalogueProvider {
@@ -90,6 +97,7 @@ export class IntegrationManager implements CatalogueProvider {
   private lastAddressing = '';
   private authorization?: IntegrationView['authorization'];
   private settingsUncertain = false;
+  private destinationSavePending = false;
   private closed = false;
   private mediaCheck: MediaCheck = { status: 'unchecked', origin: null, checkedAt: null, message: 'Not checked since startup. No audio has been started.' };
   constructor(private store: IntegrationStore, private reader = (url: string, token: string): MusicAssistantReader => new MusicAssistantClient(url, token)) {}
@@ -119,6 +127,7 @@ export class IntegrationManager implements CatalogueProvider {
   }
   assertSetupRevision(revision: number) {
     this.expected(revision);
+    if (this.destinationSavePending) throw new AppError(503, 'Refresh speakers to save the moved playback destination before changing setup.');
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
   }
   get routeConfigured(): boolean { return !this.settingsUncertain && Boolean(this.state.musicAssistant?.destination && this.playback); }
@@ -151,7 +160,7 @@ export class IntegrationManager implements CatalogueProvider {
   stopMonitoring() { this.monitor.stop(); }
   refreshOutputSoon() { if (this.configured && !this.closed) this.monitor.refreshSoon(); }
   playbackChanged() {
-    const key = JSON.stringify([this.playback?.ownsPlayback, this.playback?.requiresRecovery, this.playback?.issue, this.playback?.problem]);
+    const key = JSON.stringify([this.playback?.ownsPlayback, this.playback?.playbackId, this.playback?.requiresRecovery, this.playback?.issue, this.playback?.problem]);
     if (key !== this.playbackKey) { this.playbackKey = key; this.changed(); }
   }
   attachUploads(uploads: UploadAssets, guestUrl: string) { this.uploads = uploads; this.defaultMediaOrigin = guestUrl; }
@@ -488,6 +497,7 @@ export class IntegrationManager implements CatalogueProvider {
   }
   private async commit(next: IntegrationState) {
     if (this.playback?.ownsPlayback) throw new AppError(409, 'Stop or finish the current track before changing connection settings.');
+    if (this.destinationSavePending) throw new AppError(503, 'Refresh speakers to save the moved playback destination before changing setup.');
     try { await this.store.save(next); }
     catch (error) {
       if (uncertainSave(error)) {
@@ -529,11 +539,20 @@ export class IntegrationManager implements CatalogueProvider {
     const missingSpeaker = ma?.destination && report && !this.failure && !report.players.some(player => player.id === ma.destination!.id && player.available);
     const destinationStatus = !ma?.destination ? 'not-selected' : !report || this.failure ? 'not-checked'
       : missingSpeaker ? 'error' : !this.destinationFresh || this.destinationFailure === null ? 'not-checked' : this.destinationFailure ? 'error' : 'checked';
-    const destinationMessage = destinationStatus === 'not-selected' ? 'Choose a speaker or group before playing.'
+    const destinationMessage = this.destinationSavePending ? 'Playback moved, but the speaker choice could not be saved. Refresh speakers before restarting the app.'
+      : destinationStatus === 'not-selected' ? 'Choose a speaker or group before playing.'
       : destinationStatus === 'not-checked' ? this.failure ? 'Speaker status cannot be checked until Music Assistant is connected.' : 'Checking the selected speaker…'
       : missingSpeaker ? this.unavailableSpeaker : this.destinationFailure || 'The selected speaker and its queue are available.';
     const result: IntegrationView = { revision: this.state.revision, url: ma?.url ?? null, tokenConfigured: Boolean(ma?.accessToken), output: this.output,
-      settingsChangesBlocked: Boolean(this.playback?.ownsPlayback),
+      settingsChangesBlocked: Boolean(this.playback?.ownsPlayback || this.destinationSavePending),
+      speakerChangesBlocked: this.destinationSavePending || Boolean(this.playback?.requiresRecovery || this.playback?.ownsPlayback &&
+        (!this.playback.transfer || !report || !supportsQueueTransfer(report.schemaVersion, report.serverVersion))),
+      speakerChangeMessage: this.destinationSavePending ? destinationMessage : this.playback?.requiresRecovery ? 'Recover playback controls before changing speakers.'
+        : this.playback?.ownsPlayback ? report && supportsQueueTransfer(report.schemaVersion, report.serverVersion) && this.playback.transfer
+          ? 'Choosing another speaker moves the current song and keeps your turn. A short interruption is expected.'
+          : 'Moving an active song requires Music Assistant 2.10.8 or later with a supported playback API. Finish the song to change speakers instead.' : '',
+      ...(this.playback?.playbackId ? { playbackId: this.playback.playbackId } : {}),
+      destinationSavePending: this.destinationSavePending,
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
       status: this.settingsUncertain ? 'error' : !ma ? 'not-configured' : this.failure ? 'error' : report ? 'checked' : 'not-checked',
       destinationStatus, destinationMessage,
@@ -612,6 +631,17 @@ export class IntegrationManager implements CatalogueProvider {
     });
   }
   async check(revision: number): Promise<IntegrationView> {
+    if (this.destinationSavePending) {
+      await this.serial(async () => {
+        if (!this.destinationSavePending) return;
+        this.expected(revision);
+        // The physical move was confirmed. Rewrite that route, never load the old preference
+        // over it or repeat an audio command, even after an ambiguous persistence failure.
+        try { await this.store.save(this.state); }
+        catch { throw new AppError(503, 'The moved speaker choice could not be saved. Check the application data directory and refresh speakers again.'); }
+        this.destinationSavePending = false; this.changed();
+      });
+    }
     if (this.settingsUncertain) {
       await this.serial(async () => {
         if (!this.settingsUncertain) return;
@@ -688,10 +718,12 @@ export class IntegrationManager implements CatalogueProvider {
       this.destinationCheckedAt = report && ma.destination ? Date.now() : null; this.changed(); return this.view();
     });
   }
-  async selectDestination(id: string, revision: number): Promise<IntegrationView> {
-    return operation('speaker-selection', () => this.withInventoryCheck(revision, () => this.validateDestination(id, revision)));
+  async selectDestination(id: string, revision: number, playbackId?: string,
+    serialize: (work: () => Promise<IntegrationView>) => Promise<IntegrationView> = work => work()): Promise<IntegrationView> {
+    return operation('speaker-selection', () => this.withInventoryCheck(revision, () => this.validateDestination(id, revision, playbackId, serialize)));
   }
-  private async validateDestination(id: string, revision: number): Promise<IntegrationView> {
+  private async validateDestination(id: string, revision: number, playbackId: string | undefined,
+    serialize: (work: () => Promise<IntegrationView>) => Promise<IntegrationView>): Promise<IntegrationView> {
     this.expected(revision); const ma = this.state.musicAssistant;
     if (!ma) throw new AppError(409, 'Refresh this page and select an available destination.');
     // Discovery must not delay Stop or other playback controls. Revalidate settings
@@ -717,11 +749,32 @@ export class IntegrationManager implements CatalogueProvider {
         throw new AppError(502, message);
       });
     }
-    return this.serial(async () => {
+    return serialize(() => this.serial(async () => {
       this.expected(revision);
-      await this.commit({ ...this.state, schema: 1, revision: this.state.revision + 1, musicAssistant: { ...this.state.musicAssistant!,
-        ...(report.serverId ? { serverId: report.serverId } : {}), destination: { id: player.id, name: player.name } } });
-      this.report = report; this.lastInventoryReport = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed(); return this.view();
-    });
+      if (this.destinationSavePending) throw new AppError(503, 'Refresh speakers to save the current destination before moving playback again.');
+      const next = { ...this.state, schema: 1 as const, revision: this.state.revision + 1, musicAssistant: { ...this.state.musicAssistant!,
+        ...(report.serverId ? { serverId: report.serverId } : {}), destination: { id: player.id, name: player.name } } };
+      let saveFailed = false;
+      if (this.playback?.ownsPlayback) {
+        if (this.playback.requiresRecovery || !playbackId || playbackId !== this.playback.playbackId) throw new AppError(409, 'Review or recover the current song before changing speakers.');
+        if (this.state.musicAssistant?.destination?.id === id) {
+          this.observation++; this.report = report; this.lastInventoryReport = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed();
+          return this.view();
+        }
+        if (!supportsQueueTransfer(report.schemaVersion, report.serverVersion) || !this.playback.transfer) throw new AppError(422, 'Moving playback requires Music Assistant 2.10.8 or later with a supported playback API.');
+        await this.playback.transfer(id, playbackId);
+        try { await this.store.save(next); } catch { saveFailed = true; }
+        // Route controls to the confirmed physical destination even if saving it failed.
+        // Generic configuration installation must not reset file checks/catalogue identity.
+        this.state = next; this.observation++; this.destinationSavePending = saveFailed;
+        this.playback.configurationChanged();
+      } else {
+        if (playbackId) throw new AppError(409, 'The current song changed. Review playback before changing speakers.');
+        await this.commit(next);
+      }
+      this.report = report; this.lastInventoryReport = report; this.failure = ''; this.destinationFailure = ''; this.destinationCheckedAt = Date.now(); this.changed();
+      if (saveFailed) throw new AppError(503, 'Playback moved, but the speaker choice could not be saved. Refresh speakers before restarting the app.');
+      return this.view();
+    }));
   }
 }

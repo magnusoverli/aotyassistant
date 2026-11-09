@@ -101,7 +101,7 @@ test('revealing times preserves the visible bar and ordinary timing corrections 
 });
 
 test('slow Play, Pause and Finish do not occupy the room lane or overwrite concurrent joins/order', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-room-lanes-'); const demo = new DemoAdapter(3600); t.after(() => demo.close());
+  const dir = await mkdtemp('/tmp/opencode/doom-room-room-lanes-'); const demo = new DemoAdapter(3600); t.after(() => demo.close());
   const engine = new Engine(new FileStore(dir), demo, 'http://localhost:3000'); await engine.init();
   const credential = await engine.join('Current'); await engine.join('Waiting');
   const host = () => engine.view({ kind: 'host' }); const turn = host().turnId!;
@@ -127,7 +127,7 @@ test('slow Play, Pause and Finish do not occupy the room lane or overwrite concu
 });
 
 test('private snapshots reuse validated immutable state but detect external replacement/corruption and never share mutable loads', async () => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-list-cache-'); const store = new PreparationFileStore(dir); const manager = new PreparationManager(store);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-list-cache-'); const store = new PreparationFileStore(dir); const manager = new PreparationManager(store);
   const owner = await manager.createOwner(); const first = await store.snapshot(owner.view.ownerId);
   assert.equal(await store.snapshot(owner.view.ownerId), first);
   assert.ok(Object.isFrozen(first)); assert.ok(Object.isFrozen(first!.entries));
@@ -140,7 +140,7 @@ test('private snapshots reuse validated immutable state but detect external repl
 });
 
 test('private reads remain available during a reserved saved Play, but review, edits and duplicate Play cannot release it', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-list-reservation-'); const manager = new PreparationManager(new PreparationFileStore(dir));
+  const dir = await mkdtemp('/tmp/opencode/doom-room-list-reservation-'); const manager = new PreparationManager(new PreparationFileStore(dir));
   const owner = await manager.createOwner();
   const selected: SavedSelection = { source: 'demo', trackId: 'demo:aurora', metadata: { title: 'Private', artist: '', album: '', version: '', provider: 'Demo', duration: 60 } };
   const operation = (revision: number) => ({ id: randomUUID(), issuedAt: Date.now(), revision });
@@ -159,7 +159,7 @@ test('private reads remain available during a reserved saved Play, but review, e
 });
 
 test('private revocation during a saved start cannot disclose a cached list or consume its retained review marker', async t => {
-  const dir = await mkdtemp('/tmp/opencode/aoty-list-revoked-start-'); const store = new PreparationFileStore(dir); const manager = new PreparationManager(store);
+  const dir = await mkdtemp('/tmp/opencode/doom-room-list-revoked-start-'); const store = new PreparationFileStore(dir); const manager = new PreparationManager(store);
   const owner = await manager.createOwner();
   const selected: SavedSelection = { source: 'demo', trackId: 'demo:aurora', metadata: { title: 'Private', artist: '', album: '', version: '', provider: 'Demo', duration: 60 } };
   const added = await manager.add(owner.credential, { id: randomUUID(), issuedAt: Date.now(), revision: 0 }, selected);
