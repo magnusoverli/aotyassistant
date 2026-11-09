@@ -38,13 +38,13 @@ export class PreparationPanel {
   private importer: ListImport;
   /** Empties the playlist and its history after a confirmation, to start from scratch. */
   private clearer: ClearList;
-  /** Swaps a song for another from its album, in the same place. */
+  /** Swaps a song in place, from its album or a new upload. */
   private replacer: ReplaceTrack;
   constructor(private library: PreparationController, private options: Options) {
     this.feedback.setAttribute('role', 'status'); this.feedback.setAttribute('aria-live', 'polite');
     this.importer = new ListImport({ search: query => options.search(query), changed: () => this.refresh() });
     this.clearer = new ClearList(library, () => { this.feedback.textContent = 'Your playlist and its history were cleared.'; this.focusList(); });
-    this.replacer = new ReplaceTrack(library, (from, to) => { this.feedback.textContent = `Replaced ${from} with ${to}.`; });
+    this.replacer = new ReplaceTrack(library, (from, to) => { this.feedback.textContent = `Replaced ${from} with ${to}.`; }, () => Boolean(options.getView()?.me));
     this.uploads = new UploadPanel(library, () => Boolean(options.getView()?.me), () => {
       this.uploads.render(Boolean(options.getView()?.me));
       if (this.uploadDisclosure?.isConnected) { if (this.uploads.hasWork) this.uploadDisclosure.open = true; }
@@ -90,6 +90,7 @@ export class PreparationPanel {
     return button;
   }
   render(search?: HTMLElement, player?: HTMLElement) {
+    this.replacer.refresh();
     this.withSearch = Boolean(search);
     const panel = this.workspace ??= workspaceGrid('music', 'music-workspace');
     attr(panel, 'role', 'region'); attr(panel, 'aria-label', 'Your private music');
@@ -123,6 +124,7 @@ export class PreparationPanel {
     const top = scrollY;
     this.renderList();
     this.uploads.render();
+    this.replacer.refresh();
     const body = this.list?.querySelector('.list-body'); if (body) prop(body, 'scrollTop', scroll);
     const replacement = id ? document.getElementById(id) : key ? [...this.list?.querySelectorAll<HTMLElement>('[data-focus-key]') ?? []].find(node => node.dataset.focusKey === key) : undefined;
     if (focused && replacement && document.activeElement === document.body) replacement.focus({ preventScroll: true });
@@ -131,6 +133,7 @@ export class PreparationPanel {
       this.updateAddButton(button);
     }
   }
+  stopUploads() { this.uploads.stop(); this.replacer.stop(); }
   updateAddButton(button: HTMLButtonElement) {
     const added = this.library.added.has(button.dataset.preparationTrack!);
     text(button, added ? 'Added ✓' : 'Add to list');
@@ -273,10 +276,10 @@ export class PreparationPanel {
       row.querySelector('.result-identity > div:last-child')!.prepend(el('span', 'Your next pick', 'saved-next-label'));
       // Reordering is by dragging the row itself; the row's buttons replace or remove the song.
       const controls = el('div', undefined, 'saved-actions');
-      if (entry.source === 'music-assistant') {
+      if (entry.source === 'music-assistant' || entry.source === 'upload') {
         const replace = this.button('⇄', () => this.replacer.open(entry), true, `replace-${entry.id}`);
         replace.classList.add('saved-replace'); replace.setAttribute('aria-label', `Replace ${entry.title}`); replace.setAttribute('aria-haspopup', 'dialog');
-        replace.title = 'Replace with another song from the album'; controls.append(replace);
+        replace.title = entry.source === 'upload' ? 'Replace with a new audio file' : 'Replace with another song from the album'; controls.append(replace);
       }
       const remove = this.button('✕', () => library.edit('remove', { entryId: entry.id }, entry.title), true, `remove-${entry.id}`);
       remove.classList.add('saved-remove'); remove.setAttribute('aria-label', `Remove ${entry.title}`); remove.title = 'Remove from playlist';
@@ -290,9 +293,9 @@ export class PreparationPanel {
     const label = row.querySelector<HTMLElement>('.saved-next-label')!; if (label.hidden !== (index !== 0)) label.hidden = index !== 0;
     const disabled = library.locked;
     for (const button of row.querySelectorAll('button')) if (button.disabled !== disabled) button.disabled = disabled;
-    // Replacing needs Music Assistant and a source that still plays.
+    // A new upload can replace even an unavailable file; album browsing needs its source.
     const replace = row.querySelector<HTMLButtonElement>('.saved-replace');
-    if (replace) replace.hidden = !catalogue || entry.sourceAvailable === false;
+    if (replace) replace.hidden = entry.source !== 'upload' && (!catalogue || entry.sourceAvailable === false);
     return row;
   }
 

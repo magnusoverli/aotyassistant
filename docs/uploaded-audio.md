@@ -26,6 +26,14 @@ Upload completion alone is not a saved list entry. Uploading does not change the
 
 Files can be prepared while Music Assistant is unavailable. Playback requires a connected, compatible server and speaker, plus successful file-access verification in Settings. The demo timer does not play uploads.
 
+## Replace an uploaded song
+
+Choose **⇄** beside an uploaded song in **Your playlist**. The dialog offers a new audio file, not album tracks. Upload it, review the title, artist and album, then choose **Replace song**. The confirmed replacement takes exactly the original's position and does not start or interrupt playback.
+
+The original remains in **Removed**, or **Previously played** if it has history. Its original audio and artwork remain available; use the separate permanent-delete action to reclaim storage. Selecting the same recording again keeps the existing entry and discards the extra upload.
+
+Closing before saving cancels only the new draft and leaves the playlist untouched. Failed uploads or rejected saves also keep the original. If a save response is uncertain, close the dialog and use the playlist's retry/review controls to confirm the existing operation, rather than uploading again. Its draft is retained until the outcome is known; reopening **⇄** restores the review. Replacements have separate drafts from **Upload a song**.
+
 ## Interrupted uploads
 
 Failed uploads show their error for the current attempt, not again after refreshing. Rejected or missing uploads are forgotten automatically; saved tracks are unaffected.

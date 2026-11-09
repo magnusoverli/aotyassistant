@@ -28,12 +28,13 @@ export class UploadPanel {
   private xhr?: XMLHttpRequest;
   private epoch = 0;
   private nodes = new ViewNodes();
-  constructor(private library: PreparationController, private member: () => boolean, private changed: () => void, private added: () => void) {
-    this.input.type = 'file'; this.input.id = 'track-upload-file'; this.input.hidden = true;
+  constructor(private library: PreparationController, private member: () => boolean, private changed: () => void, private added: (title?: string) => void,
+    private replacement?: { entryId: string }) {
+    this.input.type = 'file'; this.input.id = this.replacement ? `replace-upload-${this.replacement.entryId}-file` : 'track-upload-file'; this.input.hidden = true;
     this.input.accept = '.mp3,.m4a,.flac,.wav,.aif,.aiff,.ogg,.oga,.opus,audio/mpeg,audio/mp4,audio/flac,audio/wav,audio/aiff,audio/ogg,audio/opus';
     this.input.onchange = () => { const file = this.input.files?.[0]; this.input.value = ''; if (file) void this.choose(file); };
   }
-  private key(ownerId: string) { return storageKey(`aoty.upload-draft.v1.${ownerId}`); }
+  private key(ownerId: string) { return storageKey(`aoty.upload-draft.v1.${ownerId}${this.replacement ? `.replace.${this.replacement.entryId}` : ''}`); }
   private persist() {
     if (!this.ownerId) return;
     try {
@@ -147,17 +148,29 @@ export class UploadPanel {
     this.selection = undefined; this.xhr?.abort(); this.xhr = undefined;
     this.recovering = false; this.discarding = false; this.changed();
   }
+  /** Cancel only the new draft, never the saved original or an uncertain list save. */
+  async cancel() {
+    this.stop();
+    if (this.ownerId === this.library.view?.ownerId) await this.discard();
+  }
+  private complete() {
+    const title = this.text.title; const epoch = this.epoch;
+    this.uploadId = undefined; this.preview = undefined; this.persist();
+    this.notice = this.replacement ? 'Replaced in your playlist.' : 'Added to your list.';
+    queueMicrotask(() => { if (epoch === this.epoch) { this.added(title); this.changed(); } });
+  }
   get pending() { return Boolean(this.uploadId); }
   get hasWork() { return Boolean(this.uploadId || this.selection || this.error); }
   render(allowSelection = true) {
     this.syncOwner();
     if (this.uploadId && this.library.lastSavedUploadId === this.uploadId) {
-      this.uploadId = undefined; this.preview = undefined; this.persist(); this.notice = 'Added to your list.';
+      this.complete();
     }
     const available = this.member() && navigator.onLine && !this.library.loading && Boolean(this.ownerId);
     if (available && !this.available) queueMicrotask(() => { if (!this.preview) void this.recover(); });
     this.available = available;
-    const disabled = !this.member() || !navigator.onLine || this.busy || this.recovering || this.discarding || this.library.loading || this.library.saving || Boolean(this.library.pending);
+    const disabled = !this.member() || !navigator.onLine || this.busy || this.recovering || this.discarding || this.library.loading || this.library.saving || Boolean(this.library.pending)
+      || Boolean(this.replacement && !this.library.view?.upcoming.some(entry => entry.id === this.replacement!.entryId));
     const v = this.nodes;
     const button = (key: string, caption: string, action: () => void | Promise<void>, disabled = false) => {
       const control = v.get(key, () => this.button(caption, action));
@@ -171,10 +184,14 @@ export class UploadPanel {
       nodes.push(message, progress);
     } else if (allowSelection) {
       const formats = v.el('formats', 'p', 'Supported formats: MP3, M4A, FLAC, WAV, AIFF, Vorbis and Opus. Standalone AAC files are not supported.', 'muted small');
-      nodes.push(v.el('instructions', 'p', 'Choose one audio file, then review it before adding.', 'muted small'), button('choose', this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled), formats);
+      nodes.push(v.el('instructions', 'p', this.replacement ? 'Choose a new audio file, then review it before replacing. Your original stays unchanged until you save.' : 'Choose one audio file, then review it before adding.', 'muted small'), button('choose', this.uploadId ? 'Choose another file' : 'Choose audio file', () => this.input.click(), disabled), formats);
     }
     if (this.recovering) nodes.push(v.el('recovering', 'p', 'Checking the completed upload…', 'muted small'));
     if (this.error) { const error = v.el('error', 'p', this.error, 'error small'); if (!error.hasAttribute('role')) error.setAttribute('role', 'alert'); nodes.push(error); }
+    if (this.replacement && this.library.error) {
+      const error = v.el('save-error', 'p', `${this.library.error} Close this dialog to review or retry the saved-list change. Your upload draft is kept.`, 'error small');
+      error.setAttribute('role', 'alert'); nodes.push(error);
+    }
     if (this.notice) { const notice = v.el('notice', 'p', this.notice, 'success small'); if (!notice.hasAttribute('role')) notice.setAttribute('role', 'status'); nodes.push(notice); }
     if (this.preview && !this.busy) {
       const preview = this.preview; const form = v.el('preview', 'form', undefined, 'upload-preview');
@@ -183,22 +200,23 @@ export class UploadPanel {
       const fields: Node[] = [];
       for (const [key, caption] of [['title', 'Track title'], ['artist', 'Artist'], ['album', 'Album']] as const) {
         const { group, input } = v.get(`field-${key}`, () => {
-          const field = fieldControl(caption, `upload-${key}`); field.input.maxLength = 1000; field.input.required = key === 'title';
+          const field = fieldControl(caption, this.replacement ? `replace-upload-${this.replacement.entryId}-${key}` : `upload-${key}`); field.input.maxLength = 1000; field.input.required = key === 'title';
           field.input.oninput = () => { this.text[key] = field.input.value; this.persist(); }; return field;
         });
         prop(input, 'value', this.text[key]); prop(input, 'disabled', disabled); fields.push(group);
       }
-      const add = v.get('add', () => { const node = el('button', 'Add to list'); node.type = 'submit'; return node; });
+      const add = v.get('add', () => { const node = el('button', this.replacement ? 'Replace song' : 'Add to list'); node.type = 'submit'; return node; });
       prop(add, 'disabled', disabled || Boolean(this.library.view?.reviewEntryId));
       children(form, v.el('preview-title', 'h3', 'Review uploaded song'), heading, ...fields,
         v.el('unsaved', 'p', 'Uploaded, not yet saved. Artist and album are optional.', 'muted small'), add);
       form.onsubmit = event => {
         event.preventDefault();
+        if (disabled || this.library.saving || this.library.pending || this.library.view?.reviewEntryId || this.uploadId !== preview.id) return;
         void (async () => {
           const epoch = this.epoch;
-          await this.library.edit('add-upload', { uploadId: preview.id, text: { ...this.text } }, this.text.title);
-          if (epoch === this.epoch && !this.library.pending && !this.library.error) {
-            this.preview = undefined; this.uploadId = undefined; this.persist(); this.notice = 'Added to your list.'; this.added(); this.changed();
+          await this.library.edit(this.replacement ? 'replace-upload' : 'add-upload', { ...(this.replacement ? { entryId: this.replacement.entryId } : {}), uploadId: preview.id, text: { ...this.text } }, this.text.title);
+          if (epoch === this.epoch && this.uploadId === preview.id && !this.library.pending && !this.library.error) {
+            this.complete(); this.changed();
           }
         })();
       }; nodes.push(form);

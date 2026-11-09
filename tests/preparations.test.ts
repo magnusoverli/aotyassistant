@@ -397,11 +397,88 @@ test('replacing swaps a song in the same place; the old song leaves the list ins
   assert.deepEqual(titles(restored.view.upcoming), ['4', '3', '1']);
   const again = await f.manager.replaceCaptured(f.owner.credential, await f.op(), first.entryId, 'reference-7', async () => selected(7));
   assert.deepEqual(titles(again.view.upcoming), ['4', '3', '7']); assert.deepEqual(titles(again.view.played), ['1']); assert.equal(again.view.removed.length, 0);
-  // Uploaded songs are removed, not replaced, so their file is never left behind.
+  // Uploaded originals remain referenced in Removed rather than leaving orphaned bytes.
   const upload = await f.manager.add(f.owner.credential, await f.op(), { source: 'upload', assetId: randomUUID(), metadata: { ...selected().metadata, provider: 'Uploaded file' } });
-  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), upload.entryId, 'reference-8', async () => selected(8)), status(409));
+  const uploadReplaced = await f.manager.replaceCaptured(f.owner.credential, await f.op(), upload.entryId, 'reference-8', async () => selected(8));
+  assert.equal(uploadReplaced.view.removed[0]!.id, upload.entryId);
   // Not while a play attempt waits for review.
   const head = (await f.manager.read(f.owner.credential)).upcoming[0]!;
   await assert.rejects(f.manager.playHead(f.owner.credential, head.id, (await f.manager.read(f.owner.credential)).revision, async () => { throw new AppError(502, 'Uncertain start'); }), status(502));
   await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), head.id, 'reference-9', async () => selected(9)), status(409));
+});
+
+const uploaded = (number: number): SavedSelection => ({ source: 'upload', assetId: randomUUID(), sha256: String(number).padStart(64, '0'),
+  metadata: { ...selected(number).metadata, provider: 'Uploaded file' } });
+
+test('uploaded replacements preserve position, original descriptors/history and reference-safe draft cleanup', async () => {
+  const f = await fixture(); const first = await f.add(1); const original = uploaded(2);
+  const old = await f.manager.add(f.owner.credential, await f.op(), original); const last = await f.add(3);
+  const next = uploaded(4); const operation = await f.op();
+  const replaced = await f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'new-upload', async () => next);
+  assert.deepEqual(replaced.view.upcoming.map(entry => entry.id), [first.entryId, replaced.entryId, last.entryId]);
+  assert.deepEqual(replaced.view.removed.map(entry => entry.id), [old.entryId]);
+  assert.deepEqual(await f.manager.selection(f.owner.credential, old.entryId), original);
+  assert.deepEqual(await f.manager.selection(f.owner.credential, replaced.entryId), next);
+  assert.equal((await f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'new-upload', async () => { throw Error('Expired draft'); })).replayed, true);
+  const removed: string[] = []; const discard = async (_owner: string, asset: string) => { removed.push(asset); };
+  for (const selection of [original, next]) {
+    assert.equal(selection.source, 'upload'); if (selection.source !== 'upload') throw Error();
+    assert.equal(await f.manager.discardUpload(f.owner.credential, selection.assetId, discard), false);
+  }
+  assert.deepEqual(removed, []);
+  // A restored, played original returns to history; its old playback identity is never reassigned.
+  await f.manager.move(f.owner.credential, await f.op(), replaced.entryId, first.entryId);
+  const playbackId = randomUUID();
+  await f.manager.playHead(f.owner.credential, replaced.entryId, (await f.op()).revision, async () => ({ playbackId, value: null }));
+  await f.manager.restore(f.owner.credential, await f.op(), replaced.entryId, first.entryId);
+  const again = await f.manager.replaceCaptured(f.owner.credential, await f.op(), replaced.entryId, 'third-upload', async () => uploaded(5));
+  assert.equal(again.view.played[0]!.id, replaced.entryId); assert.equal(again.view.played[0]!.playCount, 1);
+  const saved = (await f.store.load(again.view.ownerId))!;
+  assert.deepEqual(saved.entries.find(entry => entry.id === replaced.entryId)!.playbackIds, [playbackId]);
+  assert.deepEqual(saved.entries.find(entry => entry.id === again.entryId)!.playbackIds, []);
+});
+
+test('uploaded replacement capture errors, revision conflicts and failed saves keep the original; lost acknowledgements replay once', async () => {
+  const store = new MemoryStore(); const f = await fixture(store); const old = await f.manager.add(f.owner.credential, await f.op(), uploaded(1));
+  const next = uploaded(2); const operation = await f.op();
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'new-upload', async () => { throw new AppError(422, 'Invalid file'); }), status(422));
+  assert.deepEqual(await f.manager.read(f.owner.credential), old.view);
+  store.fail = 'before';
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'new-upload', async () => next), status(503));
+  assert.deepEqual(await f.manager.read(f.owner.credential), old.view);
+  store.fail = 'after';
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'new-upload', async () => next), status(503));
+  store.fail = null;
+  const retry = await f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'new-upload', async () => { throw Error('Must not recapture'); });
+  assert.equal(retry.replayed, true); assert.equal(retry.view.upcoming.length, 1); assert.equal(retry.view.removed.length, 1);
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, operation, old.entryId, 'different-upload', async () => next), status(409));
+  const other = await f.manager.createOwner();
+  await assert.rejects(f.manager.replaceCaptured(other.credential, { ...await f.op(), revision: 0 }, retry.entryId, 'new-upload', async () => uploaded(3)), status(404));
+  let release!: (selection: SavedSelection) => void; let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = f.manager.replaceCaptured(f.owner.credential, await f.op(), retry.entryId, 'slow-upload', () => { entered(); return new Promise(resolve => { release = resolve; }); });
+  await started;
+  await assert.rejects(f.manager.discardUpload(f.owner.credential, randomUUID(), async () => {}), status(409));
+  const moved = await f.manager.move(f.owner.credential, await f.op(), retry.entryId, null);
+  release(uploaded(4)); await assert.rejects(pending, status(409));
+  assert.deepEqual(await f.manager.read(f.owner.credential), moved.view);
+});
+
+test('uploaded replacement duplicate, capacity and deletion guards never drop the original', async () => {
+  const store = new MemoryStore(); const f = await fixture(store); const original = uploaded(1);
+  const old = await f.manager.add(f.owner.credential, await f.op(), original); const sameBytes = { ...original, assetId: randomUUID() } as SavedSelection;
+  const same = await f.manager.replaceCaptured(f.owner.credential, await f.op(), old.entryId, 'same-bytes', async () => sameBytes);
+  assert.equal(same.entryId, old.entryId); assert.equal(same.view.removed.length, 0);
+  let discarded = false;
+  if (sameBytes.source !== 'upload') throw Error();
+  assert.equal(await f.manager.discardUpload(f.owner.credential, sameBytes.assetId, async () => { discarded = true; }), true); assert.equal(discarded, true);
+  const other = uploaded(2); await f.manager.add(f.owner.credential, await f.op(), other);
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), old.entryId, 'duplicate', async () => other), status(409));
+  const deleted = uploaded(3); if (deleted.source !== 'upload') throw Error();
+  const state = (await store.load(old.view.ownerId))!; state.deletedUploads = [deleted.assetId]; await store.save(state);
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), old.entryId, 'deleted', async () => deleted), status(410));
+  for (let i = state.entries.length; i < preparationLimits.entries; i++) state.entries.push({ id: randomUUID(), selection: selected(1000 + i), state: 'removed', addedAt: f.now(), removedAt: f.now(), playbackIds: [] });
+  await store.save(state); const before = await f.manager.read(f.owner.credential);
+  await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), old.entryId, 'full', async () => uploaded(4)), status(409));
+  assert.deepEqual(await f.manager.read(f.owner.credential), before);
 });

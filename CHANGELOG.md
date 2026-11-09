@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [1.2.4] — 2026-11-09
+
+- Replace uploaded songs too: **⇄** opens an upload-and-review dialog instead of album tracks. The new file takes the same playlist position only after saving. The original stays in Removed, or Previously played if it has history, with its file retained for separate deletion. Cancelled or rejected uploads leave the original untouched.
+
 ## [1.2.3] — 2026-11-09
 
 - Replace a song in Your playlist with another from the same album: the new **⇄** beside **✕** lists the album's songs, with the current one marked. The chosen song takes the same place in the list. The old song leaves the list; if it was played before, its history stays in Previously played.

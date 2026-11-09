@@ -67,6 +67,63 @@ async function fixture(t: TestContext, analyze = fixtureUploadAnalysis) {
   return { directory, origin, first, second, displayCookie, integrations, adapter, engine, remote, uploads, request, json, upload, add, connect, play, config };
 }
 
+test('uploaded replacement swaps in place, retains the original file and discards only unreferenced new bytes', async t => {
+  const f = await fixture(t); const original = await f.add(); const uploadId = randomUUID();
+  const bytes = Buffer.concat([uploadBytes, Buffer.from('replacement')]);
+  assert.equal((await f.upload(f.first.credentials, uploadId, bytes, 'replacement.mp3')).status, 200);
+  const body = { operation: op(original.view.revision), entryId: original.entryId, uploadId, text: { title: 'Replacement', artist: 'New artist', album: 'New album' } };
+  const replaced = await f.json<PreparationResult>(prefix + '/replace-upload', body, f.first.credentials);
+  assert.deepEqual(replaced.view.upcoming.map(entry => entry.title), ['Replacement']);
+  assert.deepEqual(replaced.view.removed.map(entry => entry.id), [original.entryId]);
+  assert.deepEqual(await readFile(join(f.directory, 'uploads', original.body.uploadId, 'audio')), uploadBytes);
+  assert.deepEqual(await readFile(join(f.directory, 'uploads', uploadId, 'audio')), bytes);
+  const replay = await f.json<PreparationResult>(prefix + '/replace-upload', body, f.first.library);
+  assert.equal(replay.replayed, true); assert.equal(replay.entryId, replaced.entryId);
+  for (const asset of [uploadId, original.body.uploadId]) {
+    assert.deepEqual(await f.json(prefix + `/uploads/${asset}/discard`, {}, f.first.library), { discarded: false, saved: true });
+  }
+  // Re-uploading the exact same recording keeps the entry; its extra file is removed after commit.
+  const duplicate = randomUUID(); assert.equal((await f.upload(f.first.credentials, duplicate, bytes)).status, 200);
+  const same = await f.json<PreparationResult>(prefix + '/replace-upload', { ...body, operation: op(replaced.view.revision), entryId: replaced.entryId, uploadId: duplicate }, f.first.credentials);
+  assert.equal(same.entryId, replaced.entryId); assert.equal(same.view.removed.length, 1);
+  await assert.rejects(stat(join(f.directory, 'uploads', duplicate)), { code: 'ENOENT' });
+  assert.equal(f.remote.calls.filter(call => /play_media|add_track/.test(call.command)).length, 0);
+});
+
+test('uploaded replacement rejects foreign, missing, changed and stale drafts without changing the original; cancellation removes only the draft', async t => {
+  const f = await fixture(t); const original = await f.add(); const uploadId = randomUUID();
+  assert.equal((await f.upload(f.first.credentials, uploadId, Buffer.concat([uploadBytes, Buffer.from('new')]))).status, 200);
+  const body = { operation: op(original.view.revision), entryId: original.entryId, uploadId, text: { title: 'Replacement', artist: '', album: '' } };
+  assert.equal((await f.request(prefix + '/replace-upload', body, f.first.library)).status, 401, 'new captures require room membership');
+  assert.equal((await f.request(prefix + '/replace-upload', { ...body, operation: op(0) }, f.second.credentials)).status, 404);
+  assert.equal((await f.request(prefix + '/replace-upload', { ...body, uploadId: randomUUID() }, f.first.credentials)).status, 404);
+  const foreignResponse = await f.upload(f.second.credentials); const foreign = (await foreignResponse.json() as UploadPreview).id;
+  assert.equal((await f.request(prefix + '/replace-upload', { ...body, uploadId: foreign }, f.first.credentials)).status, 404);
+  assert.equal((await f.request(prefix + '/replace-upload', { ...body, operation: op(0) }, f.first.credentials)).status, 409);
+  await writeFile(join(f.directory, 'uploads', uploadId, 'audio'), Buffer.alloc(uploadBytes.length + 3));
+  assert.equal((await f.request(prefix + '/replace-upload', body, f.first.credentials)).status, 422);
+  assert.deepEqual(await f.json(prefix + '/state', undefined, f.first.library), original.view);
+  assert.deepEqual(await f.json(prefix + `/uploads/${uploadId}/discard`, {}, f.first.library), { discarded: true, saved: false });
+  await assert.rejects(stat(join(f.directory, 'uploads', uploadId)), { code: 'ENOENT' });
+  assert.deepEqual(await readFile(join(f.directory, 'uploads', original.body.uploadId, 'audio')), uploadBytes);
+});
+
+test('replacing a restored upload keeps its playback history, artwork and active media lease on the original recording', async t => {
+  const f = await fixture(t); await f.connect(); const original = await f.add(); const played = await f.play(original);
+  const playback = played.view.ownPlayback!;
+  const restored = await f.json<PreparationResult>(prefix + '/restore', { operation: op(played.preparation.revision), entryId: original.entryId }, f.first.credentials);
+  const uploadId = randomUUID(); assert.equal((await f.upload(f.first.credentials, uploadId, Buffer.concat([uploadBytes, Buffer.from('new')]))).status, 200);
+  const replaced = await f.json<PreparationResult>(prefix + '/replace-upload', { operation: op(restored.view.revision), entryId: original.entryId, uploadId,
+    text: { title: 'New recording', artist: '', album: '' } }, f.first.credentials);
+  assert.equal(replaced.view.played[0]!.id, original.entryId); assert.equal(replaced.view.played[0]!.playCount, 1);
+  assert.equal(replaced.view.upcoming[0]!.playCount, 0); assert.equal(replaced.view.removed.length, 0);
+  const current = await f.json('/api/participant/state', undefined, f.first.membership);
+  assert.equal(current.ownPlayback!.id, playback.id); assert.equal(current.ownPlayback!.track.title, playback.track.title);
+  assert.equal(f.uploads.busy(original.body.uploadId), true);
+  assert.equal((await f.request(replaced.view.played[0]!.artwork!, undefined, f.first.library)).status, 200);
+  assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/play_media').length, 1);
+});
+
 test('uploads stream privately, retry identically, reject changed/foreign IDs and unsupported AAC, and persist original bytes/artwork', async t => {
   const f = await fixture(t); const uploadId = randomUUID();
   assert.equal((await f.upload('', uploadId)).status, 401);

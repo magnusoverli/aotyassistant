@@ -194,13 +194,13 @@ const participantAccess = new ParticipantAccess(
     if (signal.aborted) return;
     if (page === 'join') { view = next; navigate(appPath('/participant'), true); return; }
     const changed = view?.roomId !== next.roomId || view.me?.id !== next.me?.id;
-    if (view?.me && view.me.id !== next.me?.id) library.clearIdentity();
+    if (view?.me && view.me.id !== next.me?.id) { library.clearIdentity(); music.stopUploads(); }
     accept(next); if (!stream || changed) subscribe('participant');
     if (changed || !library.view) void library.start();
   },
   () => {
     if (signal.aborted) return;
-    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.clearIdentity();
+    view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.clearIdentity(); music.stopUploads();
     participantNodes.clear(); playback?.clear(); catalogueRows.clear();
     resetCatalogueTask(); restoreBrowse(undefined, searchText);
     browseHistory?.reset();
@@ -367,7 +367,7 @@ function subscribe(role: 'host' | 'participant' | 'display') {
     accessEnded = true;
     turnAnnouncement.textContent = 'You have been removed from the listening room.';
     error = '';
-    participantAccess.revoke(); music.uploads.stop();
+    participantAccess.revoke(); music.stopUploads();
   };
   const failed = () => {
     if (signal.aborted || stream !== connection) return;
@@ -759,7 +759,7 @@ async function init() {
   }
 }
 void init();
-window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.uploads.stop(); }, { signal });
+window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.stopUploads(); }, { signal });
 window.addEventListener('pageshow', event => { if (event.persisted) void init(); }, { signal });
 window.addEventListener('offline', () => {
   listeningOrder.stop(); listeningOrder.update(view, false);
@@ -767,7 +767,7 @@ window.addEventListener('offline', () => {
   realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); stream = undefined; render();
   if (page === 'participant' || page === 'join') participantAccess.offline();
   library.stop();
-  music.uploads.stop();
+  music.stopUploads();
 }, { signal });
 window.addEventListener('online', () => {
   updateHeader();
@@ -782,7 +782,7 @@ document.addEventListener('visibilitychange', () => {
 return () => {
   lifecycle.abort();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
-  stream?.close(); stream = undefined; library.stop(); music.uploads.stop(); releaseEvents();
+  stream?.close(); stream = undefined; library.stop(); music.stopUploads(); releaseEvents();
   playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); music.bar.destroy(); browseHistory?.destroy();
   turnAnnouncement.remove(); searchAnnouncement.remove();
   root.replaceChildren();

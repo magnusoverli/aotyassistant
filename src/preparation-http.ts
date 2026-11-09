@@ -102,6 +102,20 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.post(`${prefix}/purge-upload`, jsonBody(z.strictObject({ operation: preparationOperationSchema, entryId: uuid }), async (input, req, res) => {
     res.json(await manager.purgeUpload(credential(req), input.operation, input.entryId, assetId => uploads.busy(assetId), (ownerId, assetId) => uploads.remove(ownerId, assetId)));
   }));
+  app.post(`${prefix}/replace-upload`, jsonBody(z.strictObject({ operation: preparationOperationSchema, entryId: uuid, uploadId: uuid, text: uploadTextSchema }), async (input, req, res) => {
+    const owner = await manager.read(credential(req));
+    const result = await manager.replaceCaptured(credential(req), input.operation, input.entryId, JSON.stringify(['upload', input.uploadId, input.text]), async () => {
+      const context = engine.catalogueContext(member(req));
+      const original = await manager.selection(credential(req), input.entryId);
+      if (original.source !== 'upload') throw new AppError(422, 'Choose an uploaded song to replace with a new file.');
+      const saved = await uploads.capture(owner.ownerId, input.uploadId, input.text);
+      if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed. Your playlist was kept.');
+      return saved;
+    });
+    // Same recording: the original entry wins. Only discard extra bytes after a confirmed save.
+    await manager.discardUpload(credential(req), input.uploadId, (ownerId, assetId) => uploads.remove(ownerId, assetId)).catch(() => {});
+    res.json(result);
+  }));
   // Importing a list shared from SuShe Online runs on the server; the page only starts it and follows its progress.
   const imports = new ListImports(manager, song => {
     if (!integrations?.configured) throw new AppError(409, 'Importing a list needs a Music Assistant connection.');

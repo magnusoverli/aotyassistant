@@ -131,7 +131,7 @@ test('every participant action is reachable through an online invitation', () =>
   for (const list of playlist.matchAll(/for \(const action of \[([^\]]+)\]/g)) actions.push(...[...list[1]!.matchAll(/'([a-z-]+)'/g)].map(match => match[1]!));
   paths.push(...actions.map(action => `/api/participant/preparations/${action}`));
   for (const expected of ['/api/participant/search', '/api/participant/preparations/import', '/api/participant/preparations/import/stop',
-    '/api/participant/preparations/clear', '/api/participant/preparations/move']) assert.ok(paths.includes(expected), expected);
+    '/api/participant/preparations/clear', '/api/participant/preparations/move', '/api/participant/preparations/replace-upload']) assert.ok(paths.includes(expected), expected);
   for (const path of paths) assert.equal(publicRoute('POST', path), true, path);
   // Reads too, such as following an import's progress.
   const reads = [...playlist.matchAll(/app\.get\(`\$\{prefix\}\/([a-z/-]+)`/g)].map(match => `/api/participant/preparations/${match[1]!}`);

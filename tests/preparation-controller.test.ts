@@ -24,11 +24,11 @@ function fixture(t: TestContext) {
     Object.defineProperty(globalThis, key, { value, configurable: true });
     t.after(() => { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); });
   }
-  const calls: { path: string; resolve(value: unknown): void; reject(error: Error): void }[] = [];
-  const request: typeof preparationRequest = <T>(path: string) => new Promise<T>((resolve, reject) => calls.push({ path, resolve: value => resolve(value as T), reject }));
+  const calls: { path: string; data?: unknown; resolve(value: unknown): void; reject(error: Error): void }[] = [];
+  const request: typeof preparationRequest = <T>(path: string, data?: unknown) => new Promise<T>((resolve, reject) => calls.push({ path, data, resolve: value => resolve(value as T), reject }));
   const controller = new PreparationController(() => {}, () => true, request);
   t.after(() => controller.stop());
-  return { controller, calls, async start() { const pending = controller.start(); calls.at(-1)!.resolve(view()); await pending; return Stream.all.at(-1)!; } };
+  return { controller, calls, request, async start() { const pending = controller.start(); calls.at(-1)!.resolve(view()); await pending; return Stream.all.at(-1)!; } };
 }
 
 test('a stopped private-list load cannot overwrite a restarted load or clear its loading state', async t => {
@@ -53,4 +53,19 @@ test('automatic startup and the first add share one list initialization', async 
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0]!.path, '/init');
   f.calls[0]!.resolve(view()); await Promise.all([first, second]);
   assert.equal(f.controller.view?.ownerId, 'owner-a'); assert.equal(f.controller.loading, false);
+});
+
+test('uploaded replacement drafts restore their endpoint, target and operation receipt after an uncertain save', async t => {
+  const f = fixture(t); await f.start();
+  const pending = f.controller.edit('replace-upload', { entryId: 'original-entry', uploadId: 'new-file', text: { title: 'New song', artist: '', album: '' } }, 'New song');
+  const sent = f.calls.at(-1)!; assert.equal(sent.path, '/replace-upload');
+  f.calls.at(-1)!.reject(new Error('Connection lost'));
+  await Promise.resolve(); assert.equal(f.calls.at(-1)!.path, '/state');
+  f.calls.at(-1)!.resolve(view('owner-a', 1)); await pending;
+  assert.ok(f.controller.pending); assert.equal(f.controller.lastSavedUploadId, undefined);
+  const restored = new PreparationController(() => {}, () => true, f.request); t.after(() => restored.stop());
+  restored.accept(view('owner-a', 1)); assert.equal(restored.pending?.path, 'replace-upload');
+  const retry = restored.retry(); assert.equal(f.calls.at(-1)!.path, '/replace-upload'); assert.deepEqual(f.calls.at(-1)!.data, sent.data);
+  f.calls.at(-1)!.resolve({ view: view('owner-a', 2), entryId: 'replacement-entry', replayed: true }); await retry;
+  assert.equal(restored.pending, undefined); assert.equal(restored.lastSavedUploadId, 'new-file'); assert.equal(restored.view?.revision, 2);
 });

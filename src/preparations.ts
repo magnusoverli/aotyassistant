@@ -293,8 +293,8 @@ export class PreparationManager {
   addCaptured(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
     return this.track(this.captureOutsideTransaction(credential, operation, reference, capture, 'capture', (state, selection) => this.appendSelection(state, selection)));
   }
-  /** Swaps an upcoming song for another in the same place. The old song leaves the list instead of going to Removed;
-   * one with play history returns to Previously played. */
+  /** Swaps an upcoming song in place. Uploaded originals stay referenced in Removed;
+   * any song with play history returns to Previously played. */
   replaceCaptured(credential: string, operation: PreparationOperation, entryId: string, reference: string, capture: () => Promise<SavedSelection>) {
     entryId = input(id, entryId);
     return this.track(this.captureOutsideTransaction(credential, operation, `${entryId}:${reference}`, capture, 'replace', (state, selection) => this.replaceSelection(state, entryId, selection)));
@@ -349,17 +349,19 @@ export class PreparationManager {
   private replaceSelection(state: PreparationState, entryId: string, selection: SavedSelection) {
     const entry = this.find(state, entryId);
     if (entry.state !== 'upcoming') throw new AppError(409, 'Only songs in your playlist can be replaced. Refresh your list.');
-    // Dropping an uploaded song's entry would leave its file behind; those are removed instead.
-    if (entry.selection.source === 'upload') throw new AppError(409, 'Uploaded songs can’t be replaced. Remove the song instead.');
+    if (selection.source === 'upload' && state.deletedUploads?.includes(selection.assetId)) throw new AppError(410, 'This uploaded file was permanently deleted. Select the file again.');
     const existing = this.upcomingFor(state, selection);
     if (existing?.id === entryId) return entryId; // The same song: nothing changes.
     if (existing) throw new AppError(409, 'That song is already in your playlist.');
-    const kept = entry.playbackIds.length > 0;
+    const played = entry.playbackIds.length > 0;
+    const kept = played || entry.selection.source === 'upload';
     if (kept && state.entries.length >= preparationLimits.entries) throw new AppError(409, 'Your playlist and its history are full (1,000 songs). Use Clear list to start again.');
     const replacement = randomUUID();
     state.order[state.order.indexOf(entryId)] = replacement;
-    // A song that was played before keeps its play history; otherwise the replaced song is simply gone.
-    if (kept) { entry.state = 'played'; entry.playedAt ??= this.now(); }
+    // Never delete uploaded bytes as a side effect of replacing a list entry: artwork,
+    // playback leases and history may still refer to them. Explicit purge owns deletion.
+    if (played) { entry.state = 'played'; entry.playedAt ??= this.now(); }
+    else if (kept) { entry.state = 'removed'; entry.removedAt = this.now(); }
     else state.entries = state.entries.filter(item => item.id !== entryId);
     state.entries.push({ id: replacement, selection, state: 'upcoming', addedAt: this.now(), playbackIds: [] });
     return replacement;

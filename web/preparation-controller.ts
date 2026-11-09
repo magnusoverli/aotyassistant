@@ -5,7 +5,7 @@ import { participantEvents } from './participant-events';
 import { storageKey } from './paths';
 
 const prefix = '/api/participant/preparations';
-type Path = 'add' | 'add-upload' | 'purge-upload' | 'clear' | 'replace' | 'move' | 'remove' | 'restore' | 'review';
+type Path = 'add' | 'add-upload' | 'replace-upload' | 'purge-upload' | 'clear' | 'replace' | 'move' | 'remove' | 'restore' | 'review';
 type Edit = { trackId?: string; entryId?: string; beforeId?: string | null; uploadId?: string; text?: { title: string; artist: string; album: string } };
 type Pending = { ownerId: string; path: Path; body: Edit & { operation: PreparationOperation }; title: string };
 // randomUUID is secure-context-only; guest phones also join over plain HTTP on a trusted LAN.
@@ -50,7 +50,7 @@ export class PreparationController {
     try {
       const raw = localStorage.getItem(this.storageKey(ownerId)); if (!raw || raw.length > 20_000) return;
       const saved = JSON.parse(raw) as Pending;
-      if (saved.ownerId === ownerId && ['add', 'add-upload', 'purge-upload', 'clear', 'replace', 'move', 'remove', 'restore', 'review'].includes(saved.path) && saved.body?.operation?.id && typeof saved.title === 'string') {
+      if (saved.ownerId === ownerId && ['add', 'add-upload', 'replace-upload', 'purge-upload', 'clear', 'replace', 'move', 'remove', 'restore', 'review'].includes(saved.path) && saved.body?.operation?.id && typeof saved.title === 'string') {
         this.pending = saved; this.error = 'A previous list change needs confirmation. Retry it to check whether it was saved.';
       }
     } catch { /* The server list is still authoritative if local draft storage is unavailable. */ }
@@ -150,7 +150,7 @@ export class PreparationController {
       this.pending = undefined;
       try { localStorage.removeItem(this.storageKey(pending.ownerId)); } catch { /* A server receipt still prevents a duplicate if a stale local draft remains. */ }
       if (pending.path === 'add' && pending.body.trackId) { this.added.add(pending.body.trackId); this.addedEntries.set(pending.body.trackId, result.entryId); }
-      if (pending.path === 'add-upload') this.lastSavedUploadId = pending.body.uploadId;
+      if (pending.path === 'add-upload' || pending.path === 'replace-upload') this.lastSavedUploadId = pending.body.uploadId;
       if (result.warning) this.warning = result.warning;
       this.accept(result.view);
     } catch (error) {
