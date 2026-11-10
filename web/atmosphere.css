@@ -1,0 +1,58 @@
+/* The room's atmosphere: two fonts, film grain, darker edges, tapered dividers and the room's logo.
+   Inter and Grenze ship with the app (SIL Open Font License; see licenses/), so every phone, laptop and TV
+   shows the same letters, also without internet access. */
+@font-face { font-family:Inter; font-style:normal; font-display:swap; font-weight:100 900; src:url('./fonts/inter-latin-wght-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family:Inter; font-style:normal; font-display:swap; font-weight:100 900; src:url('./fonts/inter-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family:Grenze; font-style:normal; font-display:swap; font-weight:500; src:url('./fonts/grenze-latin-500-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family:Grenze; font-style:normal; font-display:swap; font-weight:500; src:url('./fonts/grenze-latin-ext-500-normal.woff2') format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family:Grenze; font-style:normal; font-display:swap; font-weight:600; src:url('./fonts/grenze-latin-600-normal.woff2') format('woff2');
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family:Grenze; font-style:normal; font-display:swap; font-weight:600; src:url('./fonts/grenze-latin-ext-600-normal.woff2') format('woff2');
+  unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+
+@layer features {
+  /* Inter carries everything people read closely or act on. Grenze is the room's voice for what they glance at:
+     headings, what is playing and people's names. Settings stays entirely in Inter. */
+  body:not([data-view="settings"]) :is(h1,h2,h3):not(.results-heading,.room-invitation h3),
+  .track-info .artist,.room-album,.rotation-seat strong,.user-choice > span:not(.avatar) {
+    font-family:var(--font-voice); font-weight:600; letter-spacing:-.005em;
+  }
+  .track-info .artist,.room-album { font-weight:500; }
+  .vinyl-label > span { font-family:var(--font-voice); letter-spacing:.05em; }
+
+  /* Film grain and darker edges sit behind every page's content; panels and text stay clean. */
+  body { isolation:isolate; }
+  body::before,body::after { content:''; position:fixed; inset:0; z-index:-1; pointer-events:none; }
+  body::before { background:radial-gradient(ellipse 78% 74% at 50% 44%,transparent 48%,rgb(2 5 3 / .64) 100%); }
+  body::after {
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.92' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 2.6 0 0 0 -1.15'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size:220px 220px; opacity:.05;
+  }
+
+  /* Dividers fade to points at both ends, like the spikes beside a band logo. */
+  .app-header { border-image:linear-gradient(90deg,transparent,#2a392d 16%,#3e5141 50%,#2a392d 84%,transparent) 1; }
+  .app-header::after { border-image:linear-gradient(90deg,transparent,var(--line) 14%,var(--line) 86%,transparent) 1; }
+  .order-bar { border-image:linear-gradient(90deg,transparent,var(--line) 12%,#435641 50%,var(--line) 88%,transparent) 1; }
+  :is(.track-row,.saved-track,.list-disclosure,.join-existing,.host-more-actions,.playback-footer,.player-waiting-pick,
+    .settings-help,.settings-advanced,.settings-address-help,.settings-danger-zone,.settings-user-row,.primary-links > .nav-group-start) {
+    border-image:linear-gradient(90deg,transparent,var(--divider,var(--line)) 12%,var(--divider,var(--line)) 88%,transparent) 1;
+  }
+  .saved-track.is-next { --divider:#84916a; }
+  #music-collection .saved-track.is-next { --divider:#61704c; }
+  #music-collection .saved-track.is-unavailable { --divider:var(--accent); }
+
+  /* The room's logo: one shape in the room's gold. Its places collapse while there is none. */
+  .room-logo { display:none; }
+  :root[data-room-logo] .room-logo {
+    display:block; aspect-ratio:var(--room-logo-ratio); background:var(--accent); opacity:.93;
+    -webkit-mask:var(--room-logo) center / contain no-repeat; mask:var(--room-logo) center / contain no-repeat;
+  }
+  /* Join page: above the form, and only where the logo stays readable. */
+  .entry-layout { container-type:inline-size; }
+  .entry-layout > .join-logo { width:min(100%,318px); margin:10px auto 4px; }
+  @container (max-width:259px) { :root[data-room-logo] .entry-layout > .join-logo { display:none; } }
+}

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile, type AutoplayTarget } from './model.js';
+import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile, type AutoplayTarget, type RoomLogoView } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
@@ -272,11 +272,13 @@ export class Engine extends EventEmitter {
   }
   private onlineSharing?: () => { guestAccess: NonNullable<View['guestAccess']>; joinUrl?: string; displayUrl?: string } | undefined;
   setOnlineSharing(provider: NonNullable<Engine['onlineSharing']>) { this.onlineSharing = provider; }
+  private roomLogo?: () => RoomLogoView | null;
+  setRoomLogo(provider: NonNullable<Engine['roomLogo']>) { this.roomLogo = provider; }
   view(role: Role): View {
     const room = this.room();
     if (role.kind === 'participant') this.participant(role.credential, room);
     const person = this.people(room);
-    const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id,
+    const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id, logo: this.roomLogo?.() ?? null,
       playbackAvailable: this.playbackAvailable, playbackStatus: this.playbackStatus(room),
       ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
       revision: room.revision, turnId: room.turnId, current: person(room.currentId), next: person(this.nextId(room)),

@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.2] — 2026-11-10
+
+- Show your room's logo: upload it in **Settings → Appearance**. It appears at the top right of the room display, whatever is playing, and above the join form on guests' phones, drawn in the room's gold so it suits the display. PNG, JPEG, WebP or SVG up to 10 MB; light-on-dark and dark-on-light artwork is converted automatically. Without a logo, both pages look as before.
+- The room display keeps one layout in every state. The record stays in its place, resting and dimmed while nothing plays, and the title, artist, album, progress and join code no longer move when a song starts or is revealed. Long titles grow upward from the same line.
+- A darker look with two fonts: Grenze for headings, names and what's playing, and Inter for everything you read closely or act on. Settings stays entirely in Inter. Both fonts now ship with the app, so phones, laptops and the TV show the same letters, also offline. Status labels use spaced capitals, and the pages get subtle film grain, darker edges and tapered dividers.
+
 ## [2.0.1] — 2026-11-10
 
 - The repository and image are now named **doom-room** too: `https://github.com/magnusoverli/doom-room`. Nothing to do. If you added the old `aotyassistant` address to the app store, keep it: it redirects and updates continue. Don't add the new address as well, or Home Assistant lists a second, separate Doom Room.

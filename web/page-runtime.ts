@@ -1,7 +1,7 @@
 import type { CatalogueTrack, CatalogueArtist, CatalogueAlbum, View } from '../src/model';
 import { el, link } from './dom';
 import { whenIdle } from './idle';
-import { vinyl } from './visuals';
+import { loadRoomLogo, roomLogoMark, setRoomLogo } from './room-logo';
 import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
 import { pageForPath, pageTitles } from './navigation';
@@ -98,6 +98,7 @@ const pageNodes = new ViewNodes();
 const entryNodes = new ViewNodes();
 const catalogueRows = new Map<string, CatalogueRow>();
 document.body.dataset.view = page;
+void loadRoomLogo(signal);
 const player = new PlayerController({
   role: page === 'host' ? 'host' : 'participant', getView: () => view,
   position: displayedProgress,
@@ -326,6 +327,7 @@ function accept(next: View) {
   const playerOnly = page === 'participant' && view?.me && participantLayoutKey(view) === participantLayoutKey(next);
   const arrived = page === 'participant' && Boolean(view?.me && next.me?.id === view.me.id && !view.myTurn && next.myTurn);
   view = next;
+  setRoomLogo(next.logo);
   updateHeader();
   if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
   player.observe(next);
@@ -402,12 +404,8 @@ function qrCard() {
   }
   return card;
 }
+/** The display keeps one stage from the first paint: connecting, resting and playing share its layout. */
 function renderDisplay() {
-  if (!view) {
-    publicRoom?.destroy(); publicRoom = undefined;
-    const message = notice(error, 'error'); message.hidden = !error;
-    pageContent.replaceChildren(message, closedRoom()); return;
-  }
   if (!publicRoom?.element.isConnected) {
     publicRoom?.destroy();
     publicRoom = new PublicRoom();
@@ -415,13 +413,7 @@ function renderDisplay() {
     pageContent.replaceChildren(message, publicRoom.element);
   }
   const message = document.getElementById('display-notice')!; text(message, error); prop(message, 'hidden', !error);
-  publicRoom.update(view, realtime, qrImage);
-}
-function closedRoom() {
-  const main = pageFrame('display', 'room-closed');
-  const record = el('div', undefined, 'welcome-record'); record.append(vinyl());
-  main.append(record, el('h1', productName), el('p', 'Connecting to the room…', 'muted'));
-  return main;
+  if (view) publicRoom.update(view, realtime, qrImage); else publicRoom.connecting();
 }
 function host() {
   const v = hostNodes;
@@ -673,7 +665,8 @@ function participantEntry() {
     retry.onclick = () => { void participantAccess.check(); };
     children(status, title, message, state !== 'checking' && retry); content = status;
   }
-  children(layout, content); children(main, layout); return main;
+  // The room's logo welcomes guests above the form; CSS hides its place while there is none.
+  children(layout, v.get('logo', () => roomLogoMark('join-logo')), content); children(main, layout); return main;
 }
 function render() {
   if (signal.aborted) return;

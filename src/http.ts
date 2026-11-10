@@ -28,6 +28,7 @@ import { UserManager, pinSchema } from './users.js';
 import { attachAutoplay } from './autoplay.js';
 import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
 import { mountBrowserSpeakers } from './browser-speaker-http.js';
+import { RoomLogo, maxLogoBytes } from './room-logo.js';
 
 const turn = z.uuid();
 const revision = z.number().int().nonnegative();
@@ -48,6 +49,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const users = new UserManager(config.dataDir, preparations, engine);
   uploads.setOwnerPolicy(ownerId => users.ownerAvailable(ownerId));
   attachAutoplay(engine, preparations, users);
+  const roomLogo = new RoomLogo(config.dataDir, () => { engine.emit('change'); });
+  engine.setRoomLogo(() => roomLogo.view());
+  void roomLogo.ready.then(() => { if (roomLogo.view()) engine.emit('change'); });
   const app = express();
   app.disable('x-powered-by');
   const rates = new RateLimiter();
@@ -76,7 +80,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       if (req.path === '/' && ['GET', 'HEAD'].includes(req.method)) {
         res.redirect(`${ingress.base}/host`); return;
       }
-      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path === '/api/listening-order/events')) {
+      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
         return next(new AppError(404, 'Page not found.'));
       }
     }
@@ -88,7 +92,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
     const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
-      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/listening-order/events' || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations' || req.path === '/api/host/integrations/events'));
+      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations' || req.path === '/api/host/integrations/events'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
     if (!known && setup && read && ['/display', '/join', '/participant'].includes(req.path)) {
       res.status(403).type('html').send(guestAddressHelp(config.guestUrl, req.path)); return;
@@ -102,8 +106,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const setupOrigin = setup && setupRoute && origin && [localOrigin, `https://${host}`].includes(origin);
       if (!origin || (remote ? origin !== remote.origin : ingress ? origin !== ingress.origin : origin !== config.guestUrl && origin !== localOrigin && !setupOrigin)) return next(new AppError(403, 'Cross-origin controls are not allowed.'));
       if (req.headers['sec-fetch-site'] === 'cross-site') return next(new AppError(403, 'Cross-site controls are not allowed.'));
-      const fileUpload = req.method === 'POST' && /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(req.path) && req.is('application/octet-stream');
-      if (!req.is('application/json') && !fileUpload) return next(new AppError(415, 'Send an application/json request, or one audio file to the upload endpoint.'));
+      const fileUpload = req.method === 'POST' && (/^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(req.path) || req.path === '/api/host/logo') && req.is('application/octet-stream');
+      if (!req.is('application/json') && !fileUpload) return next(new AppError(415, 'Send an application/json request, or one file to an upload endpoint.'));
     }
     next();
   });
@@ -147,6 +151,22 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.json(await engine.setAutoplay(input.enabled, input.revision));
   }));
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
+  // The room's logo. Readers use the versioned image URL from the view, so each image is cached once.
+  app.get('/api/logo', async (_req, res) => { await roomLogo.ready; res.json({ logo: roomLogo.view() }); });
+  app.get('/api/logo/:version', async (req, res) => {
+    await roomLogo.ready;
+    const image = roomLogo.image(z.string().regex(/^[a-f0-9]{16}$/).parse(req.params.version));
+    res.set('Cache-Control', 'public, max-age=31536000, immutable').type('png').send(image);
+  });
+  const logoBody = express.raw({ type: 'application/octet-stream', limit: maxLogoBytes });
+  app.post('/api/host/logo', (req, res, next) => logoBody(req, res, error => next((error as { status?: number } | undefined)?.status === 413
+    ? new AppError(413, 'The logo file is larger than 10 MB. Export a smaller PNG or SVG.') : error)), async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw new AppError(400, 'Choose an image file to upload.');
+    res.json({ logo: await roomLogo.set(req.body) });
+  });
+  app.post('/api/host/logo/remove', jsonBody(z.strictObject({}), async (_input, _req, res) => {
+    await roomLogo.remove(); res.json({ logo: null });
+  }));
   let closeAuthorization = () => {};
   let closeIntegrations = () => {};
   if (integrations) {
@@ -317,8 +337,13 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const base = requestBase(req);
       let html = await pageShell();
       const remote = publicContext(req);
+      // The logo is known before the first paint, so its place never shifts. An online shell
+      // without a valid invitation holds no room data; it asks for the logo after redeeming.
+      await roomLogo.ready;
+      const logo = !remote || remote.authorized ? roomLogo.view() : null;
+      const logoMeta = logo ? `<meta name="doom-room-logo" content="${escapeHtml(logo.url)}" data-width="${logo.width}" data-height="${logo.height}">` : '';
       // Online pages learn whether their invitation cookie is valid without a separate round trip.
-      html = html.replace('</head>', `<meta name="doom-room-base" content="${escapeHtml(base)}"><meta name="doom-room-guest" content="${escapeHtml(remote?.origin ?? config.guestUrl)}"><meta name="doom-room-public" content="${remote ? '1' : '0'}">${remote?.authorized ? '<meta name="doom-room-online-session" content="1">' : ''}</head>`);
+      html = html.replace('</head>', `<meta name="doom-room-base" content="${escapeHtml(base)}"><meta name="doom-room-guest" content="${escapeHtml(remote?.origin ?? config.guestUrl)}"><meta name="doom-room-public" content="${remote ? '1' : '0'}">${remote?.authorized ? '<meta name="doom-room-online-session" content="1">' : ''}${logoMeta}</head>`);
       html = html.replace(/(src|href)="(?:\.\/|\/)(?!\/)/g, `$1="${base}/`);
       res.type('html').send(html);
     });

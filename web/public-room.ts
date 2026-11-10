@@ -7,10 +7,25 @@ import { pageFrame } from './page-layout';
 import { attr, prop, text } from './view-nodes';
 import { DisplayArtworkLoader, fetchDisplayArtwork, unlockDisplayArtwork } from './display-artwork';
 import { artworkKinds, type DisplayImages, type ArtworkKind } from '../src/display-artwork-format';
+import { roomLogoMark } from './room-logo';
+import { productName } from '../src/product';
 
 export function publicPlaybackState(view: View, online: boolean) {
   if (!online || !view.connected) return 'unavailable';
   return view.progress?.status === 'playing' || view.progress?.status === 'paused' ? view.progress.status : 'idle';
+}
+
+/** The stage's title and hint line. Every state writes into the same places on the screen:
+ * the title where a song's title goes, the hint where its artist goes. */
+export function publicStageText(view: View | undefined, online: boolean): { title: string; hint: string } {
+  if (!view) return { title: productName, hint: 'Connecting to the room…' };
+  const state = publicPlaybackState(view, online);
+  if (state === 'playing' || state === 'paused') {
+    const track = view.nowPlaying?.revealed ? view.nowPlaying.track : undefined;
+    return { title: track?.title ?? 'Track details hidden.', hint: '' };
+  }
+  if (state === 'unavailable') return { title: 'Playback unavailable.', hint: online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…' };
+  return { title: 'Nothing playing.', hint: view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the Doom Room.' };
 }
 
 export function publicStreamDetails(view: View, online: boolean) {
@@ -21,18 +36,19 @@ export function publicStreamDetails(view: View, online: boolean) {
     info?.sampleRate ? `${info.sampleRate / 1000} kHz` : undefined].filter(Boolean).join(' · ');
 }
 
-/** Keep motion on persistent nodes: revealing metadata must never restart or change its rhythm. */
+/** Keep motion on persistent nodes: revealing metadata must never restart or change its rhythm.
+ * One stage serves every state, laid out like a revealed song: the logo, record, turn line, title,
+ * artist and album lines, progress and join code keep their places; only their contents change. */
 export class PublicRoom {
   readonly element = pageFrame('display', 'display-page');
   private turn = el('p', undefined, 'room-turn');
   private invitation = el('aside', undefined, 'room-invitation');
-  private rest = el('section', undefined, 'room-rest');
-  private restTitle = el('h1');
-  private restHint = el('p', undefined, 'muted');
+  private logo = roomLogoMark('room-logo-display');
   private stage = el('section', undefined, 'now-playing');
   private cover = el('div', undefined, 'cover room-cover');
   private record = vinyl();
   private title = el('h1');
+  private hint = el('p', undefined, 'room-hint');
   private credit = el('div', undefined, 'artist-credit');
   private album = el('p', undefined, 'room-album');
   private progress = progressBar(undefined, true);
@@ -78,45 +94,57 @@ export class PublicRoom {
   constructor() {
     const grid = el('div', undefined, 'room-stage');
     const listening = el('section', undefined, 'room-listening'); listening.setAttribute('aria-label', 'Listening stage');
-    this.rest.setAttribute('role', 'status');
-    this.rest.append(this.restTitle, this.restHint);
     this.stage.setAttribute('aria-label', 'Room playback');
+    this.hint.setAttribute('role', 'status');
     const visual = el('div', undefined, 'room-visual');
     const glow = el('div', undefined, 'room-glow'); glow.setAttribute('aria-hidden', 'true');
     this.record.classList.add('room-record'); this.cover.append(this.record);
     visual.append(glow, this.cover);
+    // One title line tall, anchored at its bottom: a longer title grows upward and nothing below it moves.
+    const titleSlot = el('div', undefined, 'room-title-slot'); titleSlot.append(this.title);
     const info = el('div', undefined, 'track-info');
-    info.append(this.title, this.credit, this.album);
+    info.append(titleSlot, this.hint, this.credit, this.album);
     const activity = el('div', undefined, 'room-activity');
     this.technical.title = 'Source audio reported by Music Assistant'; this.technical.hidden = true;
     activity.append(this.progress); info.append(activity, this.technical);
     this.stage.append(visual, info);
-    listening.append(this.turn, this.rest, this.stage);
+    listening.append(this.turn, this.stage);
     this.invitation.setAttribute('aria-label', 'Join room');
-    grid.append(listening, this.invitation); this.element.append(grid);
+    grid.append(this.logo, listening, this.invitation); this.element.append(grid);
+    this.connecting();
+  }
+
+  /** Before the first room update: the same stage, resting, with the app's name in the title. */
+  connecting() {
+    attr(this.element, 'data-playback', 'connecting'); attr(this.element, 'data-stage', 'resting');
+    prop(this.turn, 'hidden', true);
+    const words = publicStageText(undefined, navigator.onLine);
+    text(this.title, words.title); this.title.classList.remove('is-long'); text(this.hint, words.hint);
+    this.revealed = undefined; this.trackKey = ''; this.clearImages(); this.prepared.clear();
+    this.cover.querySelector('.room-artwork')?.remove(); this.credit.replaceChildren(); this.credit.hidden = true;
+    text(this.album, ''); this.album.hidden = true; updateVinylLabel(this.record);
+    updateProgress(this.progress, undefined); text(this.technical, ''); this.technical.hidden = true;
   }
 
   update(view: View, online: boolean, qrImage: string) {
     const state = publicPlaybackState(view, online);
     const active = state === 'playing' || state === 'paused';
     attr(this.element, 'data-playback', state);
+    attr(this.element, 'data-stage', active ? 'playing' : 'resting');
     text(this.turn, view.current ? `Currently playing: ${view.current.nickname}` : '');
     prop(this.turn, 'hidden', state !== 'playing' || !view.current);
-    prop(this.rest, 'hidden', active); prop(this.stage, 'hidden', !active);
-    text(this.restTitle, state === 'unavailable' ? 'Playback unavailable.' : 'Nothing playing.');
-    text(this.restHint, state === 'unavailable' ? (online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…')
-      : view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the Doom Room.');
 
     const revealed = active && view.nowPlaying?.revealed === true ? view.nowPlaying.track : undefined;
     this.revealed = revealed;
+    const words = publicStageText(view, online);
+    text(this.title, words.title); text(this.hint, words.hint);
+    this.title.classList.toggle('is-long', Boolean(revealed && revealed.title.length > 55));
     const trackKey = active ? JSON.stringify([view.progress!.id, view.preparedArtwork?.id, revealed ?? null, revealed ? null : view.current]) : '';
     if (this.trackKey !== trackKey) {
       this.trackKey = trackKey;
       this.clearImages();
       this.cover.querySelector('.room-artwork')?.remove(); this.credit.replaceChildren();
       updateVinylLabel(this.record);
-      this.title.textContent = active ? revealed?.title ?? 'Track details hidden.' : '';
-      this.title.classList.toggle('is-long', Boolean(revealed && revealed.title.length > 55));
       this.album.textContent = active ? revealed?.album ?? '' : '';
       this.album.hidden = !this.album.textContent;
       this.credit.hidden = !revealed?.artist;

@@ -79,7 +79,7 @@ Doom Room was previously named **Listening Room** and, before that, **Albums of 
 
 ## Backups and restore
 
-Include **Doom Room** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
+Include **Doom Room** in the Home Assistant backup selection. Its private `/data` contains the room, integration credentials, settings, the room logo, private lists, and uploaded audio. Protect the backup: it contains a Music Assistant token and private files.
 
 Hot-backup hooks coordinate persistent writes while Supervisor archives the data. Existing read-only pages and audio streams remain available. If a backup fails and writes remain paused, restart the app and retry the backup. Avoid large uploads during backups.
 

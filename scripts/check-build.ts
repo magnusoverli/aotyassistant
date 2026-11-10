@@ -29,6 +29,12 @@ export async function checkBuild(directory = resolve('dist/web')) {
   }
   let checked = 0;
   for (const name of await readdir(resolve(root, 'assets'))) {
+    // Keep aligned with src/static-assets.ts: bundled fonts are served only under a hashed name.
+    if (name.endsWith('.woff2')) {
+      assert.match(name, /^[\w-]+-[\w-]{8}\.woff2$/, `Unservable font: ${name}`);
+      assert.ok(files.has(`assets/${name}`), `Font is missing from the manifest: ${name}`);
+      continue;
+    }
     if (!/\.(js|css)$/.test(name)) continue;
     const file = `assets/${name}`;
     const hashed = /^[\w-]+-[\w-]{8}\.(js|css)$/.test(name);

@@ -12,6 +12,7 @@ import { PlaybackSettingsPanel, autoRevealSetting, autoplaySetting, secretPlayba
 import { UserSettingsPanel } from './user-pin';
 import { SettingsSections, type SettingsSection } from './settings-sections';
 import { OnlinePanel } from './online-panel';
+import { AppearancePanel } from './appearance-settings';
 import { outputStatus } from './output';
 
 const signInNotices = { cancelled: 'Sign-in cancelled. Your saved connection was kept.', expired: 'Sign-in expired. Try connecting again.' };
@@ -28,6 +29,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   secretPlayback.onValue = enabled => playbackSettings.setActive(enabled);
   void secretPlayback.load(); void playbackSettings.load(); void autoplaySettings.load();
   const userPins = new UserSettingsPanel(signal); void userPins.load();
+  const appearance = new AppearancePanel(signal);
   let settings: IntegrationView | undefined;
   let urlDraft = '';
   let tokenDraft = '';
@@ -382,6 +384,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     sections.update('playback', ...(feedbackSection === 'playback' ? feedback : []), ...playbackNodes);
     sections.update('access', ...(feedbackSection === 'access' ? feedback : []), ...accessNodes);
     sections.update('users', userPins.element);
+    sections.update('appearance', appearance.element);
     workspaceNodes.push(sections.element);
     children(workspace, ...workspaceNodes); children(main, workspace);
   }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { View } from '../src/model.js';
-import { publicPlaybackState } from '../web/public-room.js';
+import { publicPlaybackState, publicStageText } from '../web/public-room.js';
 
 const view: View = { mode: 'demo', connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: null, next: null };
 
@@ -26,4 +26,17 @@ test('disconnection or uncertainty is unavailable, not falsely idle or playing',
   assert.equal(publicPlaybackState(active, false), 'unavailable');
   assert.equal(publicPlaybackState({ ...active, connected: false }, true), 'unavailable');
   assert.equal(publicPlaybackState(view, false), 'unavailable');
+});
+
+test('every display state writes its words into the same title and hint places', () => {
+  const ingrid = { id: 'ingrid', nickname: 'Ingrid' };
+  assert.deepEqual(publicStageText(undefined, true), { title: 'Doom Room', hint: 'Connecting to the room…' });
+  assert.deepEqual(publicStageText(view, true), { title: 'Nothing playing.', hint: 'Scan the QR code to join the Doom Room.' });
+  assert.deepEqual(publicStageText({ ...view, current: ingrid }, true), { title: 'Nothing playing.', hint: 'Waiting for the next selection.' });
+  const playing = { ...view, current: ingrid, progress: { id: 'playback', status: 'playing' as const, fraction: .3 } };
+  assert.deepEqual(publicStageText({ ...playing, nowPlaying: { revealed: false } }, true), { title: 'Track details hidden.', hint: '' });
+  const track = { id: 'track', title: 'Northern Lights', artist: 'The Paper Satellites', album: 'After the Winter', duration: 150 };
+  assert.deepEqual(publicStageText({ ...playing, nowPlaying: { revealed: true, track } }, true), { title: 'Northern Lights', hint: '' });
+  assert.deepEqual(publicStageText(playing, false), { title: 'Playback unavailable.', hint: 'Reconnecting to the room…' });
+  assert.deepEqual(publicStageText({ ...playing, connected: false }, true), { title: 'Playback unavailable.', hint: 'Waiting for a reliable playback update.' });
 });

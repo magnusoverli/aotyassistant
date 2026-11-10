@@ -38,6 +38,7 @@
     :is(#participant-player,#host-player) .playback-progress { display:grid; grid-template-rows:1rem .25rem 1rem; gap:.125rem; margin:0; min-width:0; }
     :is(#participant-player,#host-player) .player-status-line { height:1rem; min-height:0; gap:.375rem; line-height:1rem; }
     :is(#participant-player,#host-player) :is(.playback-status,.player-mobile-notice) { font-size:.75rem; line-height:1rem; letter-spacing:0; }
+    :is(#participant-player,#host-player) .playback-status { letter-spacing:.12em; }
     :is(#participant-player,#host-player) .player-mobile-notice { display:none; color:var(--muted); }
     :is(#participant-player,#host-player).has-player-notice .playback-status { display:none; }
     :is(#participant-player,#host-player).has-player-notice .player-mobile-notice { display:block; }

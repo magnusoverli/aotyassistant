@@ -4,6 +4,12 @@
 
 Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**, share its join QR/link, and open **Room display** on a TV or other shared browser. Full screen is available where the browser supports it.
 
+The room display keeps one layout in every state. The record rests, dimmed, while nothing plays, spins during a song and shows the cover when the song is revealed. The title, artist, album, progress and join code keep their places; only their contents change.
+
+### Room logo
+
+Add your room's logo in **Settings → Appearance → Upload logo**. It appears at the top right of the room display in every state, and above the join form on guests' phones. The app draws it as one shape in the room's gold, so any logo suits the display: margins are trimmed, and light-on-dark or dark-on-light artwork is converted automatically. Use a PNG, JPEG, WebP or SVG file up to 10 MB; a transparent PNG or an SVG works best. SVG files that link to other files are refused. **Replace logo** swaps it, and **Remove logo** returns both pages to how they looked without one. Open pages update by themselves.
+
 The speaker list updates automatically from Music Assistant. **Updating…** keeps the previous selection visible while checking again; the help text identifies last-known, expired or failed observations and the last-check time. **Ready** requires fresh inventory and selected-queue checks, not just a saved speaker name. Last-known choices remain visible if a refresh fails, but are not presented as verified. Choosing a target checks it again before saving; discovery never changes the target or starts audio automatically.
 
 The room is always ready. New participants enter a display name and choose a four-digit PIN; returning participants select their name/avatar and enter their PIN on a new browser. Remembered browsers continue automatically. Each user has one playlist across devices and one place in the listening order. New arrivals enter at the end; the first person gets the first turn. Joining never starts music.

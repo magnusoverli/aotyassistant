@@ -19,6 +19,7 @@ const readRoutes = [
   /^\/api\/display\/(?:state|events)$/, /^\/api\/display\/artwork\/[a-f0-9-]{36}\/(?:artwork|artistArtwork)$/,
   /^\/api\/display\/prepared-artwork\/[a-f0-9-]{36}$/,
   /^\/api\/listening-order\/events$/,
+  /^\/api\/logo(?:\/[a-f0-9]{16})?$/,
 ];
 const writeRoutes = [
   /^\/api\/browser-speaker\/(?:register|pair|stop)$/,

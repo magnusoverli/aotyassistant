@@ -139,6 +139,12 @@ test('every participant action is reachable through an online invitation', () =>
   for (const path of reads) assert.equal(publicRoute('GET', path), true, path);
 });
 
+test('online guests may read the room logo, but never change it', () => {
+  for (const path of ['/api/logo', '/api/logo/0123456789abcdef']) assert.equal(publicRoute('GET', path), true, path);
+  for (const path of ['/api/logo/../host/state', '/api/logo/0123456789ABCDEF', '/api/logo/0123', '/api/logo/0123456789abcdef/extra']) assert.equal(publicRoute('GET', path), false, path);
+  for (const path of ['/api/host/logo', '/api/host/logo/remove', '/api/logo']) assert.equal(publicRoute('POST', path), false, path);
+});
+
 async function listen(t: TestContext, handler?: RequestListener) {
   const server = createServer(handler); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => { server.closeAllConnections(); server.close(); });

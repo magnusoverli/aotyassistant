@@ -72,6 +72,23 @@ test('build validation rejects chunks that the immutable asset route cannot serv
   await assert.rejects(checkBuild(f.directory), /Unservable asset/);
 });
 
+test('build validation accepts bundled fonts only under a hashed name the font route can serve', async t => {
+  const f = await fixture(t);
+  const index = f.manifest['index.html'] as typeof f.manifest['index.html'] & { assets?: string[] };
+  index.assets = ['assets/grenze-latin-600-normal-a1B2c3D4.woff2'];
+  await f.write('.vite/manifest.json', JSON.stringify(f.manifest));
+  await f.write('assets/grenze-latin-600-normal-a1B2c3D4.woff2', 'font');
+  assert.equal(await checkBuild(f.directory), 3);
+  await f.write('assets/stray-latin-600-normal-x9Y8z7W6.woff2', 'font');
+  await assert.rejects(checkBuild(f.directory), /Font is missing from the manifest/);
+  await rm(join(f.directory, 'assets/stray-latin-600-normal-x9Y8z7W6.woff2'));
+  await rm(join(f.directory, 'assets/grenze-latin-600-normal-a1B2c3D4.woff2'));
+  index.assets = ['assets/grenze.woff2'];
+  await f.write('.vite/manifest.json', JSON.stringify(f.manifest));
+  await f.write('assets/grenze.woff2', 'font');
+  await assert.rejects(checkBuild(f.directory), /Unservable font/);
+});
+
 test('build validation rejects an HTML entry pointing at stale assets', async t => {
   const f = await fixture(t); await f.write('index.html', '<script type="module" src="./assets/old-1234abcd.js"></script>');
   await assert.rejects(checkBuild(f.directory), /HTML must load/);

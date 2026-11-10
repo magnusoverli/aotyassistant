@@ -82,6 +82,8 @@ export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'sto
 /** Source stream reported by MA; bitrate in kbps and sample rate in Hz. */
 export type StreamInfo = { format?: string; bitRate?: number; sampleRate?: number };
 export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambiguous'; source: 'automatic' | 'manual' | 'legacy' | 'configured' | 'online'; message: string };
+/** The room's logo: one shape drawn in the room's colours. `url` changes whenever the image does. */
+export type RoomLogoView = { url: string; width: number; height: number };
 export type View = {
   mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;
@@ -104,6 +106,7 @@ export type View = {
   rotation?: Person[]; position?: RotationPosition;
   joinUrl?: string; displayUrl?: string;
   guestAccess?: GuestAccess;
+  logo?: RoomLogoView | null;
 };
 
 export class AppError extends Error {

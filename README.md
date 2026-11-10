@@ -18,6 +18,7 @@ People join the Doom Room from their phones, prepare private track selections, a
 - **Play and reveal:** the current participant controls playback and can reveal track details on the shared display, or the host can switch off secret playback to show them as each song starts.
 - **Keep the room moving:** confirmed track completion advances the turn; the next track starts when its participant presses Play, or by itself with optional automatic play.
 - **Use existing devices:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
+- **Make it your room:** add your room's logo to the room display and the join page.
 
 Use it for music discovery, listening clubs, or themed track-sharing. The app manages sharing and playback, not voting, scoring, or rankings.
 

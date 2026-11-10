@@ -5,6 +5,7 @@
 @import './playback.css';
 @import './participant-player.css';
 @import './music-collection.css';
+@import './atmosphere.css';
 
 @layer features {
 html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,90px) + 18px); }
@@ -19,7 +20,7 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 }
 .brand { grid-column:1; grid-row:1; display:flex; align-items:center; gap:13px; min-width:0; color:var(--text); text-decoration:none; }
 .brand > div { display:grid; gap:5px; min-width:0; }
-.brand strong { font-size:16px; font-weight:650; letter-spacing:-.04em; }
+.brand strong { font-family:var(--font-voice); font-size:18px; font-weight:600; letter-spacing:0; }
 .brand-subtitle { display:none; }
 .brand-mark { flex-shrink:0; display:grid; place-items:center; height:38px; width:38px; border:1px solid #645842; border-radius:50%; font-size:29px; line-height:1; color:var(--accent); }
 .header-meta { grid-column:2; grid-row:1; display:flex; align-items:center; gap:12px; min-width:0; }
@@ -55,7 +56,7 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .result-artwork { width:58px; height:58px; flex:0 0 58px; }
 .result-artwork .vinyl-label { font-size:2px; gap:4px; }
 .playback-progress { margin:18px 0 0; }
-.playback-status { display:block; font-size:11px; font-weight:600; color:var(--muted); letter-spacing:.06em; }
+.playback-status { display:block; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.15em; }
 .playback-progress[data-status="playing"] .playback-status { color:var(--accent); }
 .playback-progress progress { display:block; appearance:none; width:100%; height:6px; border:0; border-radius:99px; overflow:hidden; background:#3a4934; margin:12px 0 0; accent-color:var(--accent); }
 .playback-progress progress[hidden] { display:none; }
@@ -68,7 +69,7 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .track-times { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:8px; }
 .track-times:empty { display:none; }
 .public-playback { max-width:440px; margin-top:24px; }
-.public-playback .playback-status { font-size:clamp(12px,1vw,18px); }
+.public-playback .playback-status { font-size:clamp(12px,1vw,18px); height:1.5em; line-height:1.5; }
 .public-playback .track-times { font-size:clamp(12px,.9vw,16px); }
 .volume-control { display:grid; grid-template-columns:1fr auto; align-items:center; gap:6px 12px; margin:18px 0; }
 .volume-control label,.volume-control output { font-size:12px; color:var(--muted); }
@@ -83,13 +84,25 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .host-audio .volume-control input[type="range"] { grid-column:2; grid-row:1; }
 .host-audio .volume-control output { grid-column:3; grid-row:1; }
 
-/* The public room: readable across a room, no administrative chrome. */
+/* The public room: readable across a room, no administrative chrome. One stage serves every state,
+   laid out like a revealed song: the logo, record, turn line, title, artist and album lines, progress
+   and join code keep their places. Only their contents change, so nothing moves between states. */
 body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e; min-height:100vh; }
 .display-page { display:flex; flex-direction:column; gap:40px; }
 .room-stage { flex:1; display:grid; grid-template-columns:minmax(0,1fr) clamp(160px,12vw,220px); gap:clamp(24px,3vw,64px); align-items:center; padding:16px 0; }
+.room-stage > .room-listening { grid-column:1; grid-row:1; }
+.room-stage > .room-invitation { grid-column:2; grid-row:1; }
+/* The room's column: its logo at the top, how to join at the bottom. It widens a little while there is a logo. */
+.room-stage > .room-logo { grid-column:2; grid-row:1; align-self:start; justify-self:end; width:100%; }
+:root[data-room-logo] .room-stage { grid-template-columns:minmax(0,1fr) clamp(232px,17vw,340px); }
 .room-listening { min-width:0; align-self:stretch; display:grid; grid-template-rows:1fr auto 1fr; }
-.room-turn { grid-row:1; align-self:end; color:var(--text); font-size:clamp(18px,1.5vw,26px); margin:0 0 28px; overflow-wrap:anywhere; }
+.room-turn { grid-row:1; align-self:end; color:var(--text); font-size:clamp(13px,.95vw,17px); line-height:1.5; text-transform:uppercase; letter-spacing:.22em; margin:0 0 28px; overflow-wrap:anywhere; }
+.room-turn[hidden] { display:block; visibility:hidden; }
 .now-playing { grid-row:2; display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr); align-items:center; gap:clamp(24px,2.5vw,48px); }
+/* Nothing playing: the record rests, dimmed and still, in its usual place. */
+.room-visual { transition:opacity .6s ease; }
+.display-page[data-stage="resting"] .room-visual { opacity:.5; }
+.display-page[data-stage="resting"] .room-activity { visibility:hidden; }
 .cover { aspect-ratio:1; overflow:hidden; border-radius:12px; }
 .room-cover { position:relative; display:grid; place-items:center; padding:7%; background:linear-gradient(145deg,#30402e,#1b2a20); box-shadow:0 22px 60px #0004; border:1px solid #48604366; width:100%; }
 .room-cover img { width:100%; height:100%; object-fit:cover; position:absolute; inset:0; }
@@ -109,33 +122,36 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .room-activity { display:flex; margin-top:28px; }
 .room-activity .public-playback { flex:1; min-width:0; margin:0; }
 .room-stream-details { margin:8px 0 0; color:var(--muted); font-size:clamp(.7rem,.8vw,.85rem); line-height:1.5; letter-spacing:.02em; }
-.public-playback .track-times { display:flex; min-height:1.2em; }
-.room-rest { grid-row:2; padding:48px 0; }
-.room-rest h1 { font-size:clamp(2.5rem,4.5vw,5rem); margin-bottom:20px; }
-.room-rest p { font-size:clamp(13px,1.1vw,19px); margin:0; }
-.now-playing[hidden],.room-rest[hidden] { display:none; }
+/* Progress keeps its lines when there is nothing to show yet. */
+.public-playback .track-times { display:flex; height:1.5em; min-height:0; line-height:1.5; }
+.public-playback .track-times[hidden] { display:flex; visibility:hidden; }
+.public-playback .progress-rail progress[hidden] { display:block; visibility:hidden; }
+.room-stream-details { min-height:1.5em; }
+.room-stream-details[hidden] { display:block; visibility:hidden; }
 @keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }
 @keyframes room-spin { to { transform:rotate(360deg); } }
 .track-info { min-width:0; align-self:center; }
-/* Leave paint room for system-font descenders below the display headline. */
-.track-info h1 { font-size:clamp(2.3rem,4vw,4.9rem); letter-spacing:-.045em; line-height:1.2; margin:0 0 24px; padding-bottom:.15em; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+/* The title's place is one line tall and anchored at its bottom: a longer title grows upward,
+   so the artist, album and progress below it never move. Leave paint room for descenders. */
+.room-title-slot { display:flex; flex-direction:column; justify-content:flex-end; font-size:clamp(2.3rem,4vw,4.9rem); height:1.35em; margin:0 0 24px; }
+.track-info h1 { flex-shrink:0; font-size:clamp(2.3rem,4vw,4.9rem); letter-spacing:-.045em; line-height:1.2; margin:0; padding-bottom:.15em; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
 .track-info h1.is-long { font-size:clamp(1.75rem,2.5vw,3rem); -webkit-line-clamp:4; }
-.track-info .artist-credit { min-height:38px; }
-.track-info .artist-credit[hidden] { display:none; }
-.track-info .artist { color:#d5d3bf; font-size:clamp(1.2rem,1.75vw,2.2rem); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.room-album { font-size:clamp(13px,.95vw,18px); color:#a0ae9c; margin:10px 0 0; line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* The artist's line, reserved while a song is hidden. While nothing plays, the hint takes it. */
+.track-info .artist-credit,.room-hint { height:max(38px,calc(clamp(1.2rem,1.75vw,2.2rem) * 1.5)); }
+.track-info .artist-credit[hidden] { display:flex; visibility:hidden; }
+.display-page[data-stage="resting"] .track-info .artist-credit { display:none; }
+.room-hint { display:none; margin:0; color:var(--muted); font-size:clamp(1.2rem,1.75vw,2.2rem); line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.display-page[data-stage="resting"] .room-hint { display:block; }
+.track-info .artist { color:#d5d3bf; font-size:clamp(1.2rem,1.75vw,2.2rem); line-height:1.5; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
+.room-album { font-size:clamp(13px,.95vw,18px); color:#a0ae9c; margin:10px 0 0; line-height:1.5; min-height:1.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.room-album[hidden] { display:block; visibility:hidden; }
 .qr-card { text-align:center; }
-.qr-card h3 { font-family:ui-serif,Georgia,serif; font-size:1.7rem; font-weight:400; letter-spacing:-.04em; margin:12px 0 22px; }
 .qr-card img { display:block; width:min(100%,300px); height:auto; margin:0 auto 18px; border-radius:8px; }
 .qr-card p:not(.eyebrow) { font-size:12px; margin:0; }
 .qr-card .button { width:100%; margin-top:18px; font-size:12px; }
 .room-invitation { width:100%; max-width:240px; text-align:center; justify-self:end; align-self:end; }
-.room-invitation h3 { font-size:clamp(14px,1vw,18px); font-weight:500; letter-spacing:0; color:var(--muted); margin:0 0 18px; }
+.room-invitation h3 { font-size:clamp(11px,.75vw,14px); font-weight:500; text-transform:uppercase; letter-spacing:.24em; color:var(--muted); margin:0 0 18px; }
 .room-invitation img { display:block; width:100%; height:auto; border-radius:8px; }
-.room-closed { display:flex; align-items:center; flex-direction:column; justify-content:center; gap:12px; text-align:center; }
-.room-closed .welcome-record { margin-bottom:30px; width:170px; }
-.room-closed h1 { font-size:clamp(2.5rem,4.5vw,5rem); }
-.room-closed p { max-width:45ch; }
 
 /* Host: a control desk, not a music browser. */
 .host-live { display:flex; align-items:center; justify-content:space-between; gap:24px; }
@@ -157,12 +173,10 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .row-actions button { min-height:36px; padding:7px 11px; font-size:11px; }
 .empty-state { padding:24px 16px; border:1px dashed var(--line); border-radius:9px; color:var(--muted); font-size:12px; text-align:center; }
 .host-invitations { position:sticky; top:calc(var(--app-header-height,90px) + 24px); min-width:0; }
-.host-invitations .qr-card h3 { font-size:1.5rem; }
 .host-page.is-empty .host-invitations { position:static; }
 .host-invitations { scroll-margin-top:100px; }
 .join-link-field { display:block; width:100%; margin:12px 0; font-size:.875rem; }
 .host-invitations button { width:100%; }
-.welcome-record { width:190px; }
 
 /* Participant: the host desk's typography and surfaces, with private music tools. */
 .participant-hero { display:grid; gap:4px; padding:0; margin-bottom:8px; }
@@ -275,7 +289,7 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .header-inner { min-height:44px; padding-block:2px; gap:8px; }
   .brand { gap:10px; }
   .brand > div { gap:3px; }
-  .brand strong { font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .brand strong { font-size:17px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .brand-mark { width:30px; height:30px; font-size:24px; }
   .header-meta { gap:8px; }
   .header-meta .secondary,.header-menu-toggle { padding:8px 10px; }
@@ -296,7 +310,6 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .host-live-person h2 { font-size:1.7rem; }
   .host-live-actions { margin-top:23px; }
   .host-live-actions button { min-height:44px; }
-  .welcome-record { width:130px; }
   .participant-page .privacy-tag { font-size:10px; }
   .participant-page .row-actions button { min-height:44px; }
   .private-now-playing { gap:14px; }
@@ -306,22 +319,26 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .room-turn { margin-bottom:24px; }
   .now-playing { grid-template-columns:1fr; gap:28px; }
   .room-visual { max-width:min(70vw,308px); justify-self:center; }
-  .track-info h1 { font-size:2.4rem; margin:0 0 18px; }
-  .track-info .artist { font-size:1.1rem; }
-  .room-rest { padding:30px 0; }
+  .room-title-slot { font-size:2.4rem; margin-bottom:18px; }
+  .track-info h1 { font-size:2.4rem; }
+  .track-info .artist,.room-hint { font-size:1.1rem; }
+  .track-info .artist-credit,.room-hint { height:38px; }
+  .room-stage > :is(.room-logo,.room-listening,.room-invitation) { grid-column:auto; grid-row:auto; }
+  .room-stage > .room-logo { justify-self:center; width:min(70vw,280px); }
+  :root[data-room-logo] .room-stage { grid-template-columns:1fr; }
   .vinyl-label.is-personalized .vinyl-caption { font-size:clamp(3px,2.7cqw,8px); }
   .room-invitation { max-width:180px; }
 }
 @media(max-height:800px) and (min-width:1001px) {
   .display-page { gap:24px; }
   .room-visual { max-width:47vh; }
-  .track-info h1 { font-size:clamp(2.3rem,4vw,4.4rem); }
+  .room-title-slot,.track-info h1 { font-size:clamp(2.3rem,4vw,4.4rem); }
   .public-playback { margin-top:18px; }
 }
 @media(max-width:380px) {
   .header-inner { gap:8px; }
   .brand { gap:8px; }
-  .brand strong { font-size:14px; }
+  .brand strong { font-size:16px; }
   .brand-mark { width:28px; height:28px; font-size:22px; }
 }
 /* One list beside the player and search, or a compact companion above the search panel. */
@@ -339,7 +356,7 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
 .list-meta { display:flex; align-items:baseline; gap:8px; min-height:16px; margin-top:4px; }
 .list-meta .list-preview { min-width:0; margin:0; }
 .list-preview { color:var(--muted); font-size:.875rem; margin:4px 0 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.list-count { flex-shrink:0; color:var(--muted); font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size:12px; letter-spacing:0; white-space:nowrap; }
+.list-count { flex-shrink:0; color:var(--muted); font-family:var(--font-read); font-size:12px; letter-spacing:0; white-space:nowrap; }
 .list-heading .list-expand { display:none; font-size:11px; min-height:44px; padding:8px 10px; }
 .list-body { min-height:0; max-height:55vh; overflow-y:auto; scrollbar-width:thin; padding:0 4px 4px; margin:0 -4px; }
 .preparation-list .saved-track { gap:8px; padding:12px 0; }
@@ -450,7 +467,7 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .playback-card .player-status-line { height:18px; min-height:18px; }
   .playback-card .player-status-line > * { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .playback-card .privacy-tag { flex-shrink:0; font-size:12px; }
-  .playback-card .playback-status { font-size:12px; letter-spacing:0; }
+  .playback-card .playback-status { font-size:12px; letter-spacing:.12em; }
   .playback-card progress { margin-top:4px; height:4px; }
   .playback-card .track-times { font-size:12px; line-height:16px; min-height:16px; margin-top:4px; }
   .volume-control input[type='range'] { min-height:44px; }

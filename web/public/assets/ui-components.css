@@ -20,7 +20,7 @@
   .section-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:var(--space-sm); margin-bottom:var(--workspace-gap); }
   .section-heading h2,.section-heading .eyebrow { margin-bottom:0; }
   .section-heading > div .eyebrow { margin-bottom:7px; }
-  .heading-brand { font-family:ui-serif,Georgia,serif; font-size:3.4rem; font-weight:400; letter-spacing:-.06em; }
+  .heading-brand { font-family:var(--font-voice); font-size:3.4rem; font-weight:600; letter-spacing:-.01em; }
   .actions { display:flex; flex-wrap:wrap; gap:10px; margin:20px 0; }
   .actions[data-layout] { margin:0; }
   .actions[data-layout='form'] > button { flex:1 1 180px; }
@@ -38,7 +38,7 @@
   .connection { background:#30291c; color:#ebcc9b; }
   .success { color:var(--green); }
   .notice.success { background:#253322; color:#d3dbba; border:1px solid #4a6040; }
-  .badge { display:inline-flex; align-items:center; font-size:10px; font-weight:650; padding:7px 10px; border:1px solid var(--line); border-radius:100px; letter-spacing:.08em; line-height:1.2; white-space:nowrap; color:var(--accent); }
+  .badge { display:inline-flex; align-items:center; font-size:10px; font-weight:650; padding:7px 10px; border:1px solid var(--line); border-radius:100px; text-transform:uppercase; letter-spacing:.15em; line-height:1.2; white-space:nowrap; color:var(--accent); }
   @media(max-width:700px) {
     .workspace-heading { align-items:flex-start; }
     .field > button { width:100%; }
