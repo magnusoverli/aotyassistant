@@ -1,14 +1,14 @@
 {
   "name": "doom-room",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/magnusoverli/aotyassistant.git"
+    "url": "git+https://github.com/magnusoverli/doom-room.git"
   },
-  "bugs": "https://github.com/magnusoverli/aotyassistant/issues",
-  "homepage": "https://github.com/magnusoverli/aotyassistant#readme",
+  "bugs": "https://github.com/magnusoverli/doom-room/issues",
+  "homepage": "https://github.com/magnusoverli/doom-room#readme",
   "private": true,
   "type": "module",
   "engines": {

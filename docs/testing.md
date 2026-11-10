@@ -15,7 +15,7 @@ The test suites cover application behaviour with isolated services and disposabl
 | Dependency audit | Known vulnerabilities in runtime and build/test dependencies reported for the locked dependency tree at the time of the check |
 | Published-image verification | Anonymous registry access, both architectures, content digests, and version/license labels |
 
-Commands are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#verify-a-change). CI results are available in [GitHub Actions](https://github.com/magnusoverli/aotyassistant/actions). The image-publishing workflow requires the shared application checks and package tests to pass before publishing images.
+Commands are documented in [CONTRIBUTING.md](../CONTRIBUTING.md#verify-a-change). CI results are available in [GitHub Actions](https://github.com/magnusoverli/doom-room/actions). The image-publishing workflow requires the shared application checks and package tests to pass before publishing images.
 
 `npm run bench:validation` compares per-request schema construction, a reused runtime schema and a reused compiled JSON route. It reports median local parser cost over five samples. It is opt-in and has no timing assertion in CI; network, storage and speaker latency are outside its measurement.
 

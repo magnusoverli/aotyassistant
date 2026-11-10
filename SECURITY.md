@@ -28,6 +28,6 @@ Browsers register automatically as Sendspin players over direct LAN access and o
 
 ## Reporting a vulnerability
 
-Use [GitHub’s private vulnerability report](https://github.com/magnusoverli/aotyassistant/security/advisories/new) for credential disclosure, unauthorized private-list/file access, or other security issues. Include the affected version, prerequisites, and minimal reproduction. Avoid real secrets and other people’s data.
+Use [GitHub’s private vulnerability report](https://github.com/magnusoverli/doom-room/security/advisories/new) for credential disclosure, unauthorized private-list/file access, or other security issues. Include the affected version, prerequisites, and minimal reproduction. Avoid real secrets and other people’s data.
 
-Use ordinary [GitHub issues](https://github.com/magnusoverli/aotyassistant/issues) for non-sensitive bugs. No response-time or support SLA is promised.
+Use ordinary [GitHub issues](https://github.com/magnusoverli/doom-room/issues) for non-sensitive bugs. No response-time or support SLA is promised.

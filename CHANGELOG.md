@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.1] — 2026-11-10
+
+- The repository and image are now named **doom-room** too: `https://github.com/magnusoverli/doom-room`. Nothing to do. If you added the old `aotyassistant` address to the app store, keep it: it redirects and updates continue. Don't add the new address as well, or Home Assistant lists a second, separate Doom Room.
+- Private playlists now use the Doom Room name internally too. Saved playlists and sign-ins stay as they are; a participant page left open during the update may ask for one reload.
+
 ## [2.0.0] — 2026-11-09
 
 - The app is now called **Doom Room** and installs as a new Home Assistant app. **Action required:** Listening Room receives no further updates, and its room, saved lists, uploaded files, sign-ins and settings do not move over. Install Doom Room from the app store and stop Listening Room first, because both use port 3000. Then connect Music Assistant, choose a speaker and invite everyone again. Online invitations get a new `https://doom-room.…ts.net` address. The installation guide's **Move from Listening Room** section lists every step. SuShe Online's **Share to Listening Room** links import as before.

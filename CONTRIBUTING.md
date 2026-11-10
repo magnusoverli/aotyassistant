@@ -2,7 +2,7 @@
 
 Doom Room is a **Home Assistant app** for turn-based music sharing through Music Assistant. Changes should improve that installation and its guest, host, or display experience. Native Node and standalone Docker/Compose deployments are not supported products.
 
-For a bug, use the [issue form](https://github.com/magnusoverli/aotyassistant/issues/new/choose) and include a minimal reproduction with versions and sanitized logs. Discuss substantial architecture or behaviour changes before implementing them. See [SECURITY.md](SECURITY.md) for private vulnerability reports.
+For a bug, use the [issue form](https://github.com/magnusoverli/doom-room/issues/new/choose) and include a minimal reproduction with versions and sanitized logs. Discuss substantial architecture or behaviour changes before implementing them. See [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
 ## Repository layout
 

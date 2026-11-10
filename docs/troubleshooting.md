@@ -44,7 +44,7 @@ If a failed backup leaves writes paused, restart the app and retry when uploads 
 
 ## Report a problem
 
-Use the [issue form](https://github.com/magnusoverli/aotyassistant/issues/new/choose). Include:
+Use the [issue form](https://github.com/magnusoverli/doom-room/issues/new/choose). Include:
 
 - App, Home Assistant Core/Supervisor, and Music Assistant versions; MA schema if shown.
 - Host architecture, browser/device, speaker integration, and whether the page is Ingress or the guest link.

@@ -71,7 +71,7 @@ const httpsTransport: SharedListTransport = (url, address, signal) => new Promis
     if (options.all) callback(null, [address]); else callback(null, address.address, address.family);
   };
   const outgoing = request(url, { method: 'GET', agent: false, lookup, signal,
-    headers: { Accept: 'application/json', 'User-Agent': 'Doom Room (+https://github.com/magnusoverli/aotyassistant)' } }, resolve);
+    headers: { Accept: 'application/json', 'User-Agent': 'Doom Room (+https://github.com/magnusoverli/doom-room)' } }, resolve);
   outgoing.on('error', reject); outgoing.end();
 });
 

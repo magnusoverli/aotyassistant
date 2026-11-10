@@ -1,6 +1,8 @@
 # Publishing Home Assistant releases
 
-The store follows `main`. The published app is `ghcr.io/magnusoverli/aotyassistant`, with a versioned multi-architecture image for **amd64** and **aarch64**. GitHub Actions uses its short-lived package token; no long-lived registry credential is needed.
+The store follows `main`. The published app is `ghcr.io/magnusoverli/doom-room`, with a versioned multi-architecture image for **amd64** and **aarch64**. GitHub Actions uses its short-lived package token; no long-lived registry credential is needed.
+
+Versions up to 2.0.0 were published as `ghcr.io/magnusoverli/aotyassistant`, from the repository's previous name. Keep that package and its versions: restoring a Home Assistant backup downloads the image the backup names. Never create a new repository named `aotyassistant`, because that would end GitHub's redirect, which installations added under the old store address rely on.
 
 ## Release
 

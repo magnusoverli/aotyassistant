@@ -142,7 +142,7 @@ Settings uses `web/settings-sections.ts` for four hash-linked sections (`#playba
 
 ## Storage and lifecycle
 
-The display name is Doom Room, previously Listening Room and Albums of the Year. The Doom Room rename also changed the installation slug to `doom_room`, cookies to `doom_room_*`, browser-storage keys to `doom-room.*` and the Tailscale device name to `doom-room`. Home Assistant therefore installs it as a separate app, and nothing is migrated from earlier installations. Repository/image addresses, the `aoty-selections` owner-ID derivation and SuShe Online's `sushe-listening-room` share format remain unchanged. Diagnostic logging uses `DOOM_ROOM_DIAGNOSTICS`, `DOOM_ROOM_TIMINGS` and `DOOM_ROOM_MA_TIMINGS`.
+The display name is Doom Room, previously Listening Room and Albums of the Year. The Doom Room rename also changed the installation slug to `doom_room`, cookies to `doom_room_*`, browser-storage keys to `doom-room.*`, the Tailscale device name to `doom-room` and the private-list key derivation to `doom-room-selections`. Home Assistant therefore installs it as a separate app, and nothing is migrated from earlier installations. In 2.0.1 the repository and image moved from `magnusoverli/aotyassistant` to `magnusoverli/doom-room`; GitHub redirects the old repository address, and the old image stays published for backup restores. SuShe Online's `sushe-listening-room` share format remains unchanged. Diagnostic logging uses `DOOM_ROOM_DIAGNOSTICS`, `DOOM_ROOM_TIMINGS` and `DOOM_ROOM_MA_TIMINGS`.
 
 - `/data/state.json`: schema-3 persistent room and membership/order; playback is cleared on restart.
 - `/data/integrations.json`: MA token, verified identity/source binding, speaker, and guest/media addressing.

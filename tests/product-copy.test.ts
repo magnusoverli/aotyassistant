@@ -27,6 +27,9 @@ test('documentation and distribution metadata describe the same music-sharing pr
 
 test('installation, browser and draft identities use the Doom Room names', () => {
   assert.match(read('config.yaml'), /^slug: doom_room$/m);
+  assert.match(read('config.yaml'), /^image: ghcr\.io\/magnusoverli\/doom-room$/m);
+  assert.match(read('config.yaml'), /^url: https:\/\/github\.com\/magnusoverli\/doom-room$/m);
+  assert.ok(read('Dockerfile').includes('org.opencontainers.image.source="https://github.com/magnusoverli/doom-room"'));
   assert.ok(read('src/http.ts').includes("cookie(req, 'doom_room_participant')"));
   assert.ok(read('src/preparation-http.ts').includes("const cookieName = 'doom_room_preparation'"));
   assert.ok(read('src/ma-authorization.ts').includes("const cookieName = 'doom_room_ma_login'"));
@@ -37,13 +40,13 @@ test('installation, browser and draft identities use the Doom Room names', () =>
   assert.ok(read('web/record-labels.ts').includes('doom-room.public-record-labels.v1'));
   assert.ok(read('web/browser-speaker.ts').includes('doom-room.sendspin:'));
   assert.ok(read('src/tailscale.ts').includes("'--hostname=doom-room'"));
+  assert.ok(read('src/preparation-identity.ts').includes('doom-room-selections:'));
+  assert.ok(read('src/preparation-identity.ts').includes('doom-room-selections-owner:'));
+  assert.ok(!read('src/preparation-identity.ts').includes('aoty'));
   assert.ok(read('DOCS.md').includes('## Move from Listening Room'));
 });
 
-test('identities owned by other systems or derived into stored data stay unchanged', () => {
-  assert.match(read('config.yaml'), /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);
-  assert.ok(read('src/preparation-identity.ts').includes('aoty-selections:'));
-  assert.ok(read('src/preparation-identity.ts').includes('aoty-selections-owner:'));
+test('identities owned by other systems stay unchanged', () => {
   assert.ok(read('src/shared-list.ts').includes("format: z.literal('sushe-listening-room')"));
 });
 

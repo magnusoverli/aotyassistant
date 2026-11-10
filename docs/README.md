@@ -22,4 +22,4 @@ Doom Room is a Home Assistant app for turn-based music sharing through Music Ass
 - [Testing and validation](testing.md)
 - [Changelog](../CHANGELOG.md)
 
-Documentation for published versions is available through the repository’s [release tags](https://github.com/magnusoverli/aotyassistant/tags).
+Documentation for published versions is available through the repository’s [release tags](https://github.com/magnusoverli/doom-room/tags).

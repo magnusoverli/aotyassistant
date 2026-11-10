@@ -34,7 +34,7 @@ assert.equal(lock.name, pkg.name, 'Lockfile package identity');
 assert.equal(lock.packages[''].name, pkg.name, 'Lockfile root package identity');
 assert.match(manifest, /^stage: stable$/m);
 assert.match(manifest, /^slug: doom_room$/m);
-assert.match(manifest, /^image: ghcr\.io\/magnusoverli\/aotyassistant$/m);
+assert.match(manifest, /^image: ghcr\.io\/magnusoverli\/doom-room$/m);
 assert.match(manifest, /^arch:\n  - amd64\n  - aarch64\n/m);
 
 // The same tested LTS runtime must build, type-check and run the packaged app.
@@ -92,6 +92,6 @@ for (const path of markdown) {
 }
 
 if (process.env.GITHUB_OUTPUT) {
-  appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nimage=ghcr.io/magnusoverli/aotyassistant\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\nimage=ghcr.io/magnusoverli/doom-room\n`);
 }
 console.info(`Release metadata and ${markdown.length} documentation files checked (${version}).`);

@@ -6,9 +6,11 @@ It is distributed and supported as a **Home Assistant app**. Use Home Assistant 
 
 ## Install
 
-[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Fdoom-room)
 
-1. Add `https://github.com/magnusoverli/aotyassistant` under **Settings → Apps → App store → Repositories**.
+1. Add `https://github.com/magnusoverli/doom-room` under **Settings → Apps → App store → Repositories**.
+
+   Already added `https://github.com/magnusoverli/aotyassistant`? Keep it. It redirects to the new address, and updates continue. Don't add the new address as well: Home Assistant would list a second, separate Doom Room.
 2. Install **Doom Room**. Supervisor downloads the published image for the system’s architecture.
 3. Keep the app’s **Network** port enabled: container port `3000/tcp` is published as port `3000` by default. Choose another free host port if necessary.
 4. Start the app and select **Open web UI**. The host desk opens inside Home Assistant through Ingress. Enable **Show in sidebar** if desired.
@@ -60,7 +62,7 @@ Normal setup takes place in **Settings**. The Home Assistant Configuration tab c
 
 Update the existing installation from the same repository; uninstalling is not required. Room membership/order, saved lists, uploaded files, and settings are retained. Restart clears playback ownership and reveal and never starts audio. Music Assistant may continue playing independently if playback was active before the restart.
 
-Room data in legacy schemas 1 and 2 is not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the installed and target versions](https://github.com/magnusoverli/aotyassistant/issues). Corrupt records also stop startup rather than replacing saved state.
+Room data in legacy schemas 1 and 2 is not migrated or silently deleted. If startup reports unsupported stored data, retain a backup and [report the installed and target versions](https://github.com/magnusoverli/doom-room/issues). Corrupt records also stop startup rather than replacing saved state.
 
 ## Move from Listening Room
 

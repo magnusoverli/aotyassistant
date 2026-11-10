@@ -6,8 +6,8 @@ Turn-based music sharing for Home Assistant, powered by Music Assistant.
 
 People join the Doom Room from their phones, prepare private track selections, and take turns playing music. Browse the sources configured in Music Assistant or upload an audio file. Track details stay hidden on the room display until the current participant reveals the title, artist, and artwork.
 
-[![Release](https://img.shields.io/github/v/release/magnusoverli/aotyassistant)](https://github.com/magnusoverli/aotyassistant/releases/latest)
-[![Application checks](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/magnusoverli/aotyassistant/actions/workflows/ci.yaml)
+[![Release](https://img.shields.io/github/v/release/magnusoverli/doom-room)](https://github.com/magnusoverli/doom-room/releases/latest)
+[![Application checks](https://github.com/magnusoverli/doom-room/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/magnusoverli/doom-room/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## What it does
@@ -32,11 +32,11 @@ Use it for music discovery, listening clubs, or themed track-sharing. The app ma
 
 ## Install
 
-[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Faotyassistant)
+[![Add repository to Home Assistant](https://my.home-assistant.io/badges/supervisor_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2Fmagnusoverli%2Fdoom-room)
 
 1. Add this repository to **Settings → Apps → App store → Repositories**:
    ```text
-   https://github.com/magnusoverli/aotyassistant
+   https://github.com/magnusoverli/doom-room
    ```
 2. Install **Doom Room**, start it, and select **Open web UI**.
 3. Open **Settings**, connect Music Assistant, and choose a speaker or group.
@@ -71,6 +71,6 @@ Each user has one automatic private track list across devices. Select your name/
 - [Connection and playback troubleshooting](docs/troubleshooting.md)
 - [All documentation](docs/README.md) · [Changelog](CHANGELOG.md)
 
-For bugs and questions, [open an issue](https://github.com/magnusoverli/aotyassistant/issues). Include the app, Home Assistant, and Music Assistant versions, the affected page, and steps to reproduce. Remove credentials and private music details from logs and screenshots.
+For bugs and questions, [open an issue](https://github.com/magnusoverli/doom-room/issues). Include the app, Home Assistant, and Music Assistant versions, the affected page, and steps to reproduce. Remove credentials and private music details from logs and screenshots.
 
 Contributions are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE). This is an independent project, not an official Home Assistant or Music Assistant product.
