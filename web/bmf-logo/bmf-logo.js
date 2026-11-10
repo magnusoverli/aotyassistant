@@ -47,7 +47,7 @@ const el = (name, attrs, parent) => {
 
 class BmfLogo extends HTMLElement {
   static observedAttributes = ATTRS;
-  #run = 0; #anims = []; #timer = 0; #queued = false; #all; #letters = []; #blooms = [];
+  #run = 0; #anims = []; #timer = 0; #queued = false; #all; #noise; #letters = []; #blooms = [];
 
   constructor() {
     super();
@@ -56,16 +56,23 @@ class BmfLogo extends HTMLElement {
     // Constructed styles work with the app's style-src 'self' policy; no inline style tag.
     const sheet = new CSSStyleSheet();
     sheet.replaceSync(`:host{display:block}svg{display:block;width:100%;height:auto;fill:currentColor}
-      .grow{fill:none;stroke:#fff;stroke-width:5.8;stroke-linejoin:miter;stroke-miterlimit:8}.solid{fill:#fff}
+      .grow{fill:none;stroke:#fff;stroke-width:5.8;stroke-linecap:round;stroke-linejoin:round}.solid{fill:#fff}
       .bloom{transform-box:fill-box;transform-origin:center}`);
     root.adoptedStyleSheets = [sheet];
     const svg = el("svg", { viewBox: `0 0 ${DATA.w} ${DATA.h}`, role: "img", "aria-label": "Bjørgvin Mørkemusikk Forening" }, root);
+    const defs = el("defs", {}, svg);
+    // Distort only the reveal ink, not the artwork: softly irregular tips still end in the exact logo.
+    const filter = el("filter", { id: `${id}-organic`, filterUnits: "userSpaceOnUse",
+      x: -8, y: -8, width: DATA.w + 16, height: DATA.h + 16, "color-interpolation-filters": "sRGB" }, defs);
+    this.#noise = el("feTurbulence", { type: "fractalNoise", baseFrequency: "0.13 0.19", numOctaves: 2, seed: 1, result: "noise" }, filter);
+    el("feDisplacementMap", { in: "SourceGraphic", in2: "noise", scale: 2.2, xChannelSelector: "R", yChannelSelector: "G" }, filter);
     const mask = el("mask", { id, maskUnits: "userSpaceOnUse", x: 0, y: 0, width: DATA.w, height: DATA.h }, svg);
+    const growth = el("g", { filter: `url(#${id}-organic)` }, mask);
     this.#all = el("g", {}, svg);
     const masked = el("g", { mask: `url(#${id})` }, this.#all);
     // Each letter is revealed by its own outline, drawn as a growing line inside a mask.
     for (const letter of DATA.letters) {
-      const strokes = letter.subs.map(s => ({ ...s, node: el("path", { class: "grow", pathLength: 1, d: s.d }, mask) }));
+      const strokes = letter.subs.map(s => ({ ...s, node: el("path", { class: "grow", pathLength: 1, d: s.d }, growth) }));
       const solid = el("path", { class: "solid", d: letter.d }, mask);
       el("path", { d: letter.d }, masked);
       this.#letters.push({ cx: letter.cx, strokes, solid });
@@ -111,6 +118,7 @@ class BmfLogo extends HTMLElement {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return; // show the finished logo, no motion
     const seed = parseFloat(this.getAttribute("seed"));
     const rand = rng(Number.isFinite(seed) ? seed : (Math.random() * 2 ** 32) | 0);
+    this.#noise.setAttribute("seed", 1 + Math.floor(rand() * 10000));
     const order = this.getAttribute("order") || DEFAULTS.order;
     const origin = this.getAttribute("origin") || DEFAULTS.origin;
     const jitter = Math.min(1, Math.max(0, this.#num("jitter")));
@@ -128,11 +136,18 @@ class BmfLogo extends HTMLElement {
       const len = duration * (1 + (rand() - 0.5) * 0.9 * jitter);
       end = Math.max(end, start + len);
       for (const s of letter.strokes) {
-        // "sprouts" evenly spaced dashes grow outwards from their centres until they meet.
+        // Rounded sprouts advance in unequal, smooth pulses. Every stage grows forward;
+        // the fixed seed drives widths, pulse timing and the softly irregular reveal edge.
         const at = origin === "base" ? 0 : origin === "top" ? s.top : rand();
         const step = 1 / sprouts;
-        add(s.node, [{ strokeDasharray: `0 ${step}`, strokeDashoffset: -at },
-                     { strokeDasharray: `${step} 0`, strokeDashoffset: step / 2 - at }], start, len, "cubic-bezier(.45,0,.2,1)");
+        const width = 5.8 * (1 + (rand() - 0.5) * .35 * jitter);
+        const frames = [0, .15, .35, .6, .82, 1].map((offset, i, offsets) => {
+          const amount = i === 0 ? 0 : i === offsets.length - 1 ? 1 : offset + (rand() - .5) * .16 * jitter;
+          return { offset, strokeDasharray: `${step * amount} ${step * (1 - amount)}`,
+            strokeDashoffset: step * amount / 2 - at, strokeWidth: i === 0 ? 0 : width,
+            easing: "ease-in-out" };
+        });
+        add(s.node, frames, start, len, "linear");
       }
       // Fills in the few spots wider than the growing line (junctions, serifs) as the letter completes.
       add(letter.solid, [{ opacity: 0 }, { opacity: 1 }], start + len * 0.7, len * 0.3, "ease-in");

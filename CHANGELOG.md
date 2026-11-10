@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.4] — 2026-11-10
+
+- Move the animated display background just below the listening order and make it 8% shorter without narrowing it. Align the track-details block with the bottom of the artwork and anchor playback near the bottom of the display.
+- Extend **Letter grow time** to 60 seconds. Rounded, softly irregular reveal masks and varied growth pulses give the logo a more organic entrance; a fixed seed keeps the pattern repeatable.
+
 ## [2.0.3] — 2026-11-10
 
 - Add the animated BMF logo behind the room display, enabled and looping by default in the room’s gold. Adjust its growth order, origin, randomness, sprouts, timing, looping, hold, fade, pattern seed, opacity and size in **Settings → Appearance → Animated BMF background**.

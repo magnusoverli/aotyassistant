@@ -4,11 +4,11 @@
 
 Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**, share its join QR/link, and open **Room display** on a TV or other shared browser. Full screen is available where the browser supports it.
 
-The room display keeps one layout in every state. The record rests, dimmed, while nothing plays, spins during a song and shows the cover when the song is revealed. The title, artist, album, progress and join code keep their places; only their contents change.
+The room display keeps one layout in every state. The record rests, dimmed, while nothing plays, spins during a song and shows the cover when the song is revealed. On wide displays, the artwork and track-details block share a bottom edge near the bottom of the screen. The title, artist, album, progress and join code keep their places; only their contents change.
 
 ### Animated display background
 
-**Settings → Appearance → Animated BMF background** controls the logo animation behind the room display. It starts enabled and looping, in room gold at 12% opacity and 80% width. Change growth order, origin, randomness, sprouts, timing, looping, hold, fade, opacity and width in the preview. Leave the pattern seed blank for a new pattern each round, or enter a number (7 matches the supplied demo) for repeatable growth.
+**Settings → Appearance → Animated BMF background** controls the logo animation behind the room display. It starts enabled and looping, in room gold at 12% opacity and 80% width. The logo sits just below the listening order and is compressed vertically by 8%, keeping its chosen width. Change growth order, origin, randomness, sprouts, timing, looping, hold, fade, opacity and width in the preview. **Letter grow time** supports 0.2–60 seconds for slower reveals. Rounded, softly irregular mask edges and varied growth pulses give the entrance an organic appearance. Leave the pattern seed blank for a new pattern each round, or enter a number for repeatable growth.
 
 **Replay preview** restarts the local preview. **Save and replay on display** persists the settings and restarts the animation on connected room displays, including displays on other devices. **Reset to defaults** changes the preview; save to apply it. Uncheck **Enable BMF display background** and save to turn it off. With looping off, it grows once and stays visible. Reduced-motion preferences show the completed logo without animation.
 

@@ -1,4 +1,4 @@
-import { defaultBackgroundSettings, type BackgroundSettings, type BackgroundSnapshot } from '../src/background-settings';
+import { defaultBackgroundSettings, maxBackgroundGrowSeconds, type BackgroundSettings, type BackgroundSnapshot } from '../src/background-settings';
 import { el, link } from './dom';
 import { actionGroup, panel, sectionHeading } from './ui-components';
 import { AnimatedBackground } from './display-background';
@@ -8,7 +8,7 @@ const endpoint = '/api/host/background-settings';
 const ranges = [
   ['jitter', 'Randomness', 0, 1, .05],
   ['sprouts', 'Sprouts per letter', 1, 4, 1],
-  ['duration', 'Letter grow time (s)', .2, 4, .1],
+  ['duration', 'Letter grow time (s)', .2, maxBackgroundGrowSeconds, .1],
   ['spread', 'Spread of start times (s)', 0, 5, .1],
   ['bloomDuration', 'Arrowhead pop time (s)', .1, 2, .05],
   ['hold', 'Loop hold (s)', 0, 30, .1],
@@ -53,7 +53,7 @@ export class BackgroundSettingsPanel {
       if (!seed.validity.valid) return;
       this.draft.seed = seed.value === '' ? null : Number(seed.value); this.changed();
     };
-    const hint = el('p', 'Leave the seed blank for a new pattern each round, or enter 7 to reproduce the supplied demo. Hold and fade apply when looping. Reduced-motion preferences show the finished logo.', 'muted field-hint');
+    const hint = el('p', 'Letter grow time supports up to 60 seconds for slow reveals. Leave the seed blank for a new pattern each round, or enter a number for repeatable organic growth. Hold and fade apply when looping. Reduced-motion preferences show the finished logo.', 'muted field-hint');
     const replay = el('button', 'Replay preview', 'secondary'); replay.type = 'button'; replay.onclick = () => this.preview.replay();
     const reset = el('button', 'Reset to defaults', 'secondary'); reset.type = 'button';
     reset.onclick = () => { this.draft = { ...defaultBackgroundSettings }; this.syncControls(); this.changed(); };

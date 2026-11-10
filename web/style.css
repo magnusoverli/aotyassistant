@@ -89,16 +89,17 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
    and join code keep their places. Only their contents change, so nothing moves between states. */
 body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e; min-height:100vh; }
 .display-page { display:flex; flex-direction:column; gap:40px; }
-.room-stage { flex:1; display:grid; grid-template-columns:minmax(0,1fr) clamp(160px,12vw,220px); gap:clamp(24px,3vw,64px); align-items:center; padding:16px 0; }
+.room-stage { flex:1; display:grid; grid-template-columns:minmax(0,1fr) clamp(160px,12vw,220px); gap:clamp(24px,3vw,64px); align-items:center; padding:16px 0 0; }
 .room-stage > .room-listening { grid-column:1; grid-row:1; }
 .room-stage > .room-invitation { grid-column:2; grid-row:1; }
 /* The room's column: its logo at the top, how to join at the bottom. It widens a little while there is a logo. */
 .room-stage > .room-logo { grid-column:2; grid-row:1; align-self:start; justify-self:end; width:100%; }
 :root[data-room-logo] .room-stage { grid-template-columns:minmax(0,1fr) clamp(232px,17vw,340px); }
-.room-listening { min-width:0; align-self:stretch; display:grid; grid-template-rows:1fr auto 1fr; }
+/* Spare height belongs above playback, keeping the artwork and details at the foot of the screen. */
+.room-listening { min-width:0; align-self:stretch; display:grid; grid-template-rows:1fr auto; }
 .room-turn { grid-row:1; align-self:end; color:var(--text); font-size:clamp(13px,.95vw,17px); line-height:1.5; text-transform:uppercase; letter-spacing:.22em; margin:0 0 28px; overflow-wrap:anywhere; }
 .room-turn[hidden] { display:block; visibility:hidden; }
-.now-playing { grid-row:2; display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr); align-items:center; gap:clamp(24px,2.5vw,48px); }
+.now-playing { grid-row:2; display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr); align-items:end; gap:clamp(24px,2.5vw,48px); }
 /* Nothing playing: the record rests, dimmed and still, in its usual place. */
 .room-visual { transition:opacity .6s ease; }
 .display-page[data-stage="resting"] .room-visual { opacity:.5; }
@@ -130,7 +131,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .room-stream-details[hidden] { display:block; visibility:hidden; }
 @keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }
 @keyframes room-spin { to { transform:rotate(360deg); } }
-.track-info { min-width:0; align-self:center; }
+.track-info { min-width:0; align-self:end; }
 /* The title's place is one line tall and anchored at its bottom: a longer title grows upward,
    so the artist, album and progress below it never move. Leave paint room for descenders. */
 .room-title-slot { display:flex; flex-direction:column; justify-content:flex-end; font-size:clamp(2.3rem,4vw,4.9rem); height:1.35em; margin:0 0 24px; }

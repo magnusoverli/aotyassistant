@@ -20,12 +20,23 @@ async function directory(t: TestContext) {
 const defaults = (): BackgroundSnapshot => ({ revision: 0, settings: { ...defaultBackgroundSettings } });
 
 test('background controls reject nonfinite, out-of-range, unknown and malformed values', () => {
-  for (const change of [{ jitter: 1.1 }, { duration: 0 }, { spread: -1 }, { fade: -1 }, { hold: 31 },
+  for (const change of [{ jitter: 1.1 }, { duration: 0 }, { duration: 60.1 }, { spread: -1 }, { fade: -1 }, { hold: 31 },
     { sprouts: 2.5 }, { sprouts: 5 }, { seed: Infinity }, { seed: -1 }, { seed: 1.5 },
     { opacity: NaN }, { opacity: 2 }, { width: 101 }, { order: 'unknown' }, { loop: 'true' }, { unexpected: true }]) {
     assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, ...change }).success, false);
   }
   assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, seed: 7, loop: false }).success, true);
+});
+
+test('existing and slow-growth settings load without losing their saved controls', async t => {
+  const path = await directory(t); const file = join(path, 'display-background.json');
+  for (const duration of [1.1, 4, 15, 60]) {
+    const saved = { revision: 5, settings: { ...defaultBackgroundSettings, duration, seed: 7 } };
+    assert.deepEqual(backgroundSettingsSchema.parse(saved.settings), saved.settings);
+    await writeFile(file, JSON.stringify(saved));
+    const background = new DisplayBackground(path, () => {});
+    assert.deepEqual(await background.read(), saved);
+  }
 });
 
 test('missing background settings use enabled defaults without writing; callers cannot mutate saved state', async t => {

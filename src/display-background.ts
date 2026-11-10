@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from './model.js';
-import { defaultBackgroundSettings, type BackgroundSettings, type BackgroundSnapshot } from './background-settings.js';
+import { defaultBackgroundSettings, maxBackgroundGrowSeconds, type BackgroundSettings, type BackgroundSnapshot } from './background-settings.js';
 import { readPrivateJson, writePrivateJson } from './store.js';
 import { SerialQueue } from './serial.js';
 
@@ -10,7 +10,7 @@ export const backgroundSettingsSchema = z.object({
   order: z.enum(['random', 'center', 'edges', 'left', 'right']),
   origin: z.enum(['random', 'base', 'top']),
   jitter: z.number().min(0).max(1), sprouts: z.number().int().min(1).max(4),
-  duration: z.number().min(.2).max(4), spread: z.number().min(0).max(5),
+  duration: z.number().min(.2).max(maxBackgroundGrowSeconds), spread: z.number().min(0).max(5),
   bloomDuration: z.number().min(.1).max(2),
   loop: z.boolean(), hold: z.number().min(0).max(30), fade: z.number().min(.05).max(5),
   seed: z.number().int().min(0).max(2147483647).nullable(),

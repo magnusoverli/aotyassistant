@@ -8,6 +8,7 @@ export type BackgroundSettings = {
   opacity: number; width: number;
 };
 export type BackgroundSnapshot = { revision: number; settings: BackgroundSettings };
+export const maxBackgroundGrowSeconds = 60;
 
 export const defaultBackgroundSettings: Readonly<BackgroundSettings> = {
   enabled: true, order: 'random', origin: 'random', jitter: .5, sprouts: 2,

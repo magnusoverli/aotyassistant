@@ -11,7 +11,9 @@ Settings → Appearance provides a local preview and a **Save and replay on disp
 Saved controls update connected displays through the existing room stream and persist in
 `display-background.json` in the app's data directory. The background starts enabled and
 looping, in room gold at 12% opacity and 80% width. A blank seed chooses new patterns;
-seed 7 matches the original demo's repeatable pattern. The `paused` attribute is a
+any fixed seed repeats the same organic growth pattern. Letter grow time in Settings
+supports 0.2–60 seconds. The display and preview place the logo near the top with an
+8% vertical compression that does not change its width. The `paused` attribute is a
 programmatic start gate, not a saved appearance setting; use Replay preview to test intros.
 
 The Bjørgvin Mørkemusikk Forening logo as an animated web component. The letters grow in like vines
@@ -91,5 +93,7 @@ remove the element when the content is ready.
 - Rendering is inline SVG inside a shadow root, animated with the Web Animations API. No CSS needs to
   be added to the application.
 - The growth effect is a mask: each letter's outline is drawn as a growing dashed stroke that reveals
-  the filled letter. The artwork is filled shapes, not centre-line strokes.
+  the filled letter. Rounded caps/joins, seeded width variation, unequal growth pulses and a static
+  turbulence/displacement filter soften the reveal edge. The filter affects only the reveal strokes;
+  the unfiltered solid mask completes each letter exactly. The artwork is filled shapes, not centre-line strokes.
 - Checked in Chromium only. Safari and Firefox have not been tested.
