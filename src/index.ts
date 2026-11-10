@@ -21,6 +21,7 @@ import { TailscaleConnector, onlinePort } from './tailscale.js';
 import { publicListener } from './public-listener.js';
 import { BrowserSpeakers } from './browser-speakers.js';
 import { speakerContext } from './browser-speaker-http.js';
+import { refuseLoopbackPeers } from './http-guards.js';
 
 let cleanup = () => {};
 try {
@@ -49,7 +50,11 @@ try {
   const closeDiagnostics = diagnostics.start();
   const servers: ReturnType<typeof createServer>[] = [];
   cleanup = () => { speakers.close(); void online.close(); publicApp.close(); closeDiagnostics(); setup.close(); closeBackup(); adapter.close(); integrations.close(); close(); for (const server of servers) { server.closeAllConnections(); server.close(); } };
-  const server = createServer(app); server.listen(config.port, config.listenHost);
+  const server = createServer(app);
+  // Nothing inside the app's container uses the LAN listener: Supervisor and guests arrive over
+  // the network. With the connector present, a loopback peer is a device on the host's tailnet.
+  if (connector) refuseLoopbackPeers(server);
+  server.listen(config.port, config.listenHost);
   speakers.attach(server, req => speakerContext(req, 'lan', integrations.guestOrigin || config.guestUrl, config.port));
   servers.push(server);
   await once(server, 'listening'); // Also rejects asynchronous bind/DNS failures.
@@ -60,6 +65,9 @@ try {
   }
   if (connector) {
     const guests = createServer(publicApp.listener); guests.maxConnections = 256; guests.requestTimeout = 120_000; guests.headersTimeout = 15_000;
+    // Tailscale's proxy keeps idle connections to this listener for 90 seconds and reuses them.
+    // Closing one sooner can meet a request already on its way, which the guest sees as a failed action.
+    guests.keepAliveTimeout = 120_000;
     speakers.attach(guests, req => speakerContext(req, 'public', config.guestUrl, config.port, online));
     servers.push(guests); guests.listen(onlinePort, '127.0.0.1'); await once(guests, 'listening');
   }

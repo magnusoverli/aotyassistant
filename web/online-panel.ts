@@ -32,9 +32,12 @@ export class OnlinePanel {
     }
     catch { if (!this.signal.aborted && generation === this.generation && !this.busy) this.error = 'Online status could not be refreshed. Check your connection to Home Assistant.'; }
     finally {
-      if (!this.signal.aborted) { this.render(); this.timer = setTimeout(() => { void this.refresh(); }, 5000); }
+      // Follow sign-in and approval closely, so the next step appears as soon as one is done.
+      const settingUp = Boolean(this.view?.enabled) && this.view?.status !== 'ready';
+      if (!this.signal.aborted) { this.render(); this.poll(settingUp ? 1500 : 5000); }
     }
   }
+  private poll(delay: number) { clearTimeout(this.timer); this.timer = setTimeout(() => { void this.refresh(); }, delay); }
   private async change(action: 'enable' | 'disable' | 'rotate') {
     if (this.busy || !this.view) return;
     if (action === 'rotate' && !confirm('Replace the invitation? Previous links and online access on all guest devices will stop working. Share the new QR code or link; playlists and PINs are kept.')) return;
@@ -42,7 +45,7 @@ export class OnlinePanel {
     this.generation++; this.busy = true; this.error = ''; this.notice = ''; this.render();
     try { this.view = await requestJson<OnlineView>('/api/host/online', { action, revision: this.view.revision }, 15_000, this.signal); }
     catch (error) { if (!this.signal.aborted) this.error = error instanceof Error ? error.message : 'The change was not confirmed. Refresh before trying again.'; }
-    finally { this.busy = false; if (!this.signal.aborted) this.render(); }
+    finally { this.busy = false; if (!this.signal.aborted) { this.render(); this.poll(1000); } }
   }
   private render() {
     const v = this.nodes;

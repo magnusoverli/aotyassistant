@@ -4,12 +4,15 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer, request as httpRequest, type RequestListener } from 'node:http';
+import { Agent, createServer, request as httpRequest, type RequestListener } from 'node:http';
+import { createServer as createNetServer } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Readable } from 'node:stream';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { OnlineAccess, grantLifetime, invitationGraceMs } from '../src/online-access.js';
-import { exactFunnel, funnelTarget, tailscaleApproval, tailscaleHost, type TailStatus, type TunnelConnector } from '../src/tailscale.js';
+import { OnlineAccess, firstReachMs, grantLifetime, invitationGraceMs } from '../src/online-access.js';
+import { exactFunnel, funnelTarget, socketReady, tailscaleApproval, tailscaleHost, type TailStatus, type TunnelConnector } from '../src/tailscale.js';
+import { refuseLoopbackPeers } from '../src/http-guards.js';
 import { publicListener, publicRoute } from '../src/public-listener.js';
 import { createApp } from '../src/http.js';
 import { ingressListener } from '../src/ingress.js';
@@ -32,8 +35,10 @@ class Connector implements TunnelConnector {
   async stop() { this.stops++; }
   async status() { return this.state; }
   async configured() { return this.valid; }
-  connect(url: (value: string) => void) { this.connects++; url('https://login.tailscale.com/a/test'); }
-  publish(url: (value: string) => void) { this.publishes++; url('https://login.tailscale.com/f/funnel?node=test'); }
+  /** Ends the last sign-in or tunnel command, as the real one does when its step is complete. */
+  settled?: () => void;
+  connect(url: (value: string) => void, settled?: () => void) { this.connects++; this.settled = settled; url('https://login.tailscale.com/a/test'); }
+  publish(url: (value: string) => void, settled?: () => void) { this.publishes++; this.settled = settled; url('https://login.tailscale.com/f/funnel?node=test'); }
 }
 async function directory(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'doom-room-online-')); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
@@ -61,7 +66,10 @@ test('online setup requires account and Funnel approval, verified reachability, 
   f.connector.state = { BackendState: 'NeedsMachineAuth' }; await f.online.refresh(); assert.equal(f.online.view().status, 'approval');
   f.connector.state = { BackendState: 'Running', Self: { DNSName: host + '.', Online: true } }; f.connector.valid = false;
   await f.online.refresh(); assert.equal(f.connector.publishes, 1); assert.match(f.online.view().approvalUrl!, /\/f\/funnel/); assert.equal(f.online.origin, undefined);
-  f.connector.valid = true; f.reachable(false); await f.online.refresh(); assert.equal(f.online.view().status, 'offline'); assert.equal(f.online.view().joinUrl, undefined);
+  // A new address is still being set up until it first answers; only later is it reported as unreachable.
+  f.connector.valid = true; f.reachable(false); await f.online.refresh(); assert.equal(f.online.view().status, 'checking'); assert.equal(f.online.view().joinUrl, undefined);
+  assert.match(f.online.view().message, /HTTPS certificate/); assert.equal(f.online.view().approvalUrl, undefined);
+  f.clock(firstReachMs); await f.online.refresh(); assert.equal(f.online.view().status, 'offline'); assert.equal(f.online.view().joinUrl, undefined);
   f.reachable(true); await f.online.refresh(); const url = f.online.view().joinUrl;
   assert.equal(f.online.view().status, 'ready'); assert.ok(url?.startsWith(`https://${host}/join#online=`));
   f.connector.state.Self!.Online = false; await f.online.refresh(); assert.equal(f.online.view().joinUrl, url); assert.equal(f.online.origin, undefined);
@@ -142,7 +150,11 @@ test('invitations survive restart; signed grants expire and rotate/disable revok
   assert.equal(restored.origin, undefined); await restored.refresh(); assert.equal(invitation(restored), code); assert.ok(restored.authorized(grant));
   f.clock(grantLifetime + 1); assert.equal(f.online.authorized(grant), false);
   await assert.rejects(f.online.change('rotate', 0), /changed/);
-  await f.online.change('rotate', f.online.view().revision); await f.online.refresh();
+  const stops = f.connector.stops;
+  await f.online.change('rotate', f.online.view().revision);
+  assert.equal(f.connector.stops, stops, 'Replacing the invitation keeps the tunnel running.');
+  assert.equal(f.online.origin, undefined); assert.equal(f.online.authorized(grant), false);
+  await f.online.refresh();
   assert.equal(f.online.redeem(code), undefined); assert.notEqual(invitation(f.online), code);
   const next = f.online.redeem(invitation(f.online))!; assert.ok(f.online.authorized(next));
   await f.online.change('disable', f.online.view().revision); assert.equal(f.online.origin, undefined); assert.equal(f.online.authorized(next), false); assert.equal(f.online.sharing(), undefined);
@@ -332,4 +344,124 @@ test('public listener gates profiles, supports PIN join/private library, rejects
   await f.online.change('disable', 2);
   assert.equal((await request('/join')).status, 503);
   assert.equal((await fetch(local.url + '/api/host/state')).status, 200);
+});
+
+test('checks begin at once, and a finished sign-in is noticed without waiting for the next poll', { timeout: 15_000 }, async t => {
+  const f = await fixture(t, true); f.connector.state = { BackendState: 'NeedsLogin' };
+  const reached = (status: string) => new Promise<void>(resolve => {
+    const check = () => { if (f.online.view().status !== status) return; f.online.off('change', check); resolve(); };
+    f.online.on('change', check); check();
+  });
+  let began = performance.now(); f.online.start(); await reached('login');
+  assert.ok(performance.now() - began < 1000, 'The first check does not wait for a poll interval.');
+  // Long after setup began, polls are five seconds apart. Let the last one-second poll pass.
+  f.clock(10 * 60_000); await delay(1300);
+  const polled = f.connector.connects;
+  f.connector.state = { BackendState: 'Running', Self: { DNSName: host + '.', Online: true } };
+  began = performance.now(); f.connector.settled!(); await reached('ready');
+  assert.ok(performance.now() - began < 2500, 'The result of a finished step is read at once.');
+  assert.equal(f.connector.connects, polled, 'No further sign-in was started.');
+});
+
+test('tunnel attempts that keep failing are spaced out, and an approval wait is not counted as a failure', async t => {
+  const f = await fixture(t, true); f.connector.valid = false;
+  for (let attempt = 1; attempt <= 3; attempt++) { await f.online.refresh(); assert.equal(f.connector.publishes, attempt); f.connector.settled!(); }
+  await f.online.refresh(); assert.equal(f.connector.publishes, 3, 'The tunnel is not reset on every check.');
+  for (const [wait, attempt] of [[5000, 4], [10_000, 5], [20_000, 6]] as const) {
+    f.clock(wait - 1); await f.online.refresh(); assert.equal(f.connector.publishes, attempt - 1);
+    f.clock(1); await f.online.refresh(); assert.equal(f.connector.publishes, attempt); f.connector.settled!();
+  }
+  await f.online.refresh();
+  assert.equal(f.online.view().status, 'error'); assert.match(f.online.view().message, /could not be set up/);
+  assert.equal(f.online.view().joinUrl, undefined); assert.equal(f.online.origin, undefined);
+  f.connector.valid = true; await f.online.refresh(); assert.equal(f.online.view().status, 'ready');
+  // The host takes several minutes to approve Funnel: the command ends late, and the next attempt follows at once.
+  f.connector.valid = false;
+  for (let attempt = 7; attempt <= 11; attempt++) { await f.online.refresh(); assert.equal(f.connector.publishes, attempt); f.clock(5 * 60_000); f.connector.settled!(); }
+  assert.equal(f.online.view().status, 'approval');
+});
+
+test('the tunnel contract accepts the pinned release’s own output and nothing wider', () => {
+  // `tailscale funnel status --json` prints its ServeConfig. This is that structure for our one
+  // mapping, written out from the definition in the pinned release (ipn/serve.go); empty fields are omitted.
+  const printed = `{
+  "TCP": {
+    "443": {
+      "HTTPS": true
+    }
+  },
+  "Web": {
+    "${host}:443": {
+      "Handlers": {
+        "/": {
+          "Proxy": "${funnelTarget}"
+        }
+      }
+    }
+  },
+  "AllowFunnel": {
+    "${host}:443": true
+  }
+}`;
+  assert.ok(exactFunnel(JSON.parse(printed), host));
+  assert.equal(exactFunnel(JSON.parse(printed), 'other.tail123.ts.net'), false);
+  assert.equal(exactFunnel({}, host), false, 'Nothing published yet.');
+  const widened = (change: (config: any) => void) => { const config = JSON.parse(printed); change(config); return exactFunnel(config, host); };
+  assert.equal(widened(config => { config.TCP['443'].TCPForward = '127.0.0.1:3000'; }), false);
+  assert.equal(widened(config => { config.Web[`${host}:443`].Handlers['/host'] = { Proxy: 'http://127.0.0.1:3000' }; }), false);
+  assert.equal(widened(config => { config.Web[`${host}:443`].Handlers['/'].Path = '/data'; }), false);
+  assert.equal(widened(config => { config.Web[`${host}:8443`] = config.Web[`${host}:443`]; }), false);
+  assert.equal(widened(config => { config.AllowFunnel[`${host}:8443`] = true; }), false);
+  assert.equal(widened(config => { config.Services = { 'svc:other': {} }; }), false);
+  assert.equal(widened(config => { config.Unrecognised = {}; }), false, 'A field this app does not know may expose something.');
+});
+
+test('the wait for the bundled daemon ends when its socket accepts connections', { timeout: 15_000 }, async t => {
+  const dir = await directory(t);
+  const path = process.platform === 'win32' ? `\\\\.\\pipe\\doom-room-${randomUUID()}` : join(dir, 'daemon.sock');
+  assert.equal(await socketReady(path, 150), false, 'Nothing is listening yet.');
+  assert.equal(await socketReady(path, 10_000, () => false), false, 'A daemon that has exited is not waited for.');
+  const waiting = socketReady(path, 10_000);
+  await delay(120);
+  const daemon = createNetServer(socket => socket.destroy()); t.after(() => daemon.close());
+  daemon.listen(path); await once(daemon, 'listening');
+  assert.equal(await waiting, true);
+});
+
+test('a listener that refuses this machine’s own connections cannot be reached through the tailnet', async t => {
+  // The bundled daemon passes a tailnet device's connection on from loopback, on the same port.
+  const answer: RequestListener = (_req, res) => { res.end('host controls'); };
+  const open = await listen(t, answer); const closed = await listen(t, answer); refuseLoopbackPeers(closed.server);
+  assert.equal(await (await fetch(open.url)).text(), 'host controls');
+  await assert.rejects(fetch(closed.url));
+  await assert.rejects(fetch(closed.url.replace('127.0.0.1', 'localhost')));
+});
+
+test('people without an invitation cannot use up the limits that invited guests depend on', { timeout: 30_000 }, async t => {
+  const f = await fixture(t, true); await f.online.refresh(); assert.equal(f.online.view().status, 'ready');
+  let handled = 0;
+  const gateway = publicListener((_req, res) => { handled++; res.end('{}'); }, f.online); const remote = await listen(t, gateway.listener);
+  const agent = new Agent({ keepAlive: true, maxSockets: 16 }); t.after(() => { agent.destroy(); gateway.close(); });
+  const send = (path: string, body: unknown, cookie = '') => new Promise<{ status: number; cookie: string }>((resolve, reject) => {
+    const req = httpRequest(remote.url + path, { method: 'POST', agent, headers: { Host: host, Origin: `https://${host}`, 'Content-Type': 'application/json', Cookie: cookie } },
+      res => { res.resume(); res.once('end', () => resolve({ status: res.statusCode!, cookie: String(res.headers['set-cookie']?.[0]).split(';')[0]! })); });
+    req.on('error', reject); req.end(JSON.stringify(body));
+  });
+  const flood = async (count: number, path: string, body: unknown, cookie = '') => {
+    const seen: Record<number, number> = {};
+    for (let sent = 0; sent < count; sent += 16) {
+      for (const { status } of await Promise.all(Array.from({ length: Math.min(16, count - sent) }, () => send(path, body, cookie)))) seen[status] = (seen[status] ?? 0) + 1;
+    }
+    return seen;
+  };
+  // More than a minute's whole budget of actions and of invitation attempts, from someone who only knows the address.
+  assert.deepEqual(await flood(700, '/api/participant/control', { action: 'pause' }), { 401: 700 });
+  assert.deepEqual(await flood(100, '/api/online/redeem', { invitation: 'x'.repeat(43) }), { 403: 60, 429: 40 });
+  assert.equal(handled, 0);
+  const redeemed = await send('/api/online/redeem', { invitation: invitation(f.online) });
+  assert.equal(redeemed.status, 200, 'A real invitation is still accepted.');
+  assert.equal((await send('/api/participant/control', { action: 'pause' }, redeemed.cookie)).status, 200, 'An invited guest can still act.');
+  assert.equal(handled, 1);
+  // Invited guests stay limited, each within their own allowance.
+  assert.deepEqual(await flood(260, '/api/participant/control', { action: 'pause' }, redeemed.cookie), { 200: 239, 429: 21 });
 });

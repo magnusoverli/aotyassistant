@@ -59,18 +59,18 @@ export function publicListener(handler: RequestListener, online: OnlineAccess) {
       const answer = online.probeResponse(typeof req.query.challenge === 'string' ? req.query.challenge : '');
       res.status(answer ? 200 : 404).type('text/plain').send(answer || 'Not found'); return;
     }
-    if (!['GET', 'HEAD'].includes(req.method)) {
-      if (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site') { res.status(403).json({ error: 'Cross-origin controls are not allowed.' }); return; }
-      if (limited('writes', 600)) { res.status(429).set('Retry-After', '60').json({ error: 'Too many requests. Wait a minute.' }); return; }
-    }
+    const write = !['GET', 'HEAD'].includes(req.method);
+    if (write && (req.headers.origin !== origin || req.headers['sec-fetch-site'] === 'cross-site')) { res.status(403).json({ error: 'Cross-origin controls are not allowed.' }); return; }
     const grant = onlineCookie(req);
     const authorized = online.authorized(grant);
+    // Only invited guests draw on the shared budget for actions. The address is public, so
+    // requests without an invitation are turned away below without spending anything a guest needs.
+    if (write && authorized && limited('writes', 600)) { res.status(429).set('Retry-After', '60').json({ error: 'Too many requests. Wait a minute.' }); return; }
     if (authorized) {
       const expiry = setTimeout(() => res.destroy(), Math.max(1, Number(grant.split('.')[0]) - Date.now())); expiry.unref();
       res.once('close', () => clearTimeout(expiry));
     }
     if (path === '/api/online/redeem' && req.method === 'POST') {
-      if (limited('invites', 60)) { res.status(429).set('Retry-After', '60').json({ error: 'Too many attempts. Wait a minute.' }); return; }
       if (!req.is('application/json')) { res.status(415).json({ error: 'Send JSON.' }); return; }
       next(); return;
     }
@@ -90,8 +90,15 @@ export function publicListener(handler: RequestListener, online: OnlineAccess) {
     handler(req, res);
   });
   gateway.post('/api/online/redeem', express.json({ limit: '1kb' }), (req, res) => {
+    // Checking an invitation is one cheap comparison, so wrong guesses and real invitations are
+    // counted apart: a flood of guesses cannot keep an invited friend out.
+    const busy = () => { res.status(429).set('Retry-After', '60').json({ error: 'Too many attempts. Wait a minute.' }); };
     const grant = typeof req.body?.invitation === 'string' ? online.redeem(req.body.invitation) : undefined;
-    if (!grant) { res.status(403).json({ error: 'This invitation is no longer valid. Ask the host for a new link.' }); return; }
+    if (!grant) {
+      if (limited('rejected-invites', 60)) { busy(); return; }
+      res.status(403).json({ error: 'This invitation is no longer valid. Ask the host for a new link.' }); return;
+    }
+    if (limited('invites', 120)) { busy(); return; }
     res.cookie(cookieName, grant, { httpOnly: true, secure: true, sameSite: 'strict', path: '/', maxAge: grantLifetime }); res.json({ ok: true });
   });
   gateway.use((_error: unknown, _req: Request, res: Response, _next: express.NextFunction) => { res.status(400).json({ error: 'Invalid request.' }); });

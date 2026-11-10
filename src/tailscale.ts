@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
+import { connect } from 'node:net';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { z } from 'zod';
 
 export const onlinePort = 8098;
@@ -14,8 +16,9 @@ export interface TunnelConnector {
   status(): Promise<TailStatus>;
   configured(host: string): Promise<boolean>;
   netcheck?(): Promise<TailNetwork>;
-  connect(url: (value: string) => void): void;
-  publish(url: (value: string) => void): void;
+  /** `settled` runs once the command has exited, so its result can be checked at once. */
+  connect(url: (value: string) => void, settled?: () => void): void;
+  publish(url: (value: string) => void, settled?: () => void): void;
   readonly busy: boolean;
 }
 
@@ -32,6 +35,9 @@ export function tailscaleHost(value: string | undefined): string | undefined {
 }
 export function exactFunnel(config: unknown, host: string): boolean {
   // A dedicated daemon must expose exactly our guest listener, not any LAN/admin port.
+  // This covers every JSON field of ServeConfig in the pinned Tailscale release (ipn/serve.go).
+  // An unknown field may be a new way to expose a port, so it is rejected: compare the two
+  // when updating Tailscale.
   const hp = `${host}:443`;
   return z.object({
     TCP: z.object({ '443': z.object({ HTTPS: z.literal(true) }).strict() }).strict(),
@@ -41,12 +47,29 @@ export function exactFunnel(config: unknown, host: string): boolean {
   }).strict().validate(config);
 }
 
+/** Whether something accepts connections on a local socket path before the wait ends. */
+export async function socketReady(path: string, timeoutMs: number, waiting: () => boolean = () => true): Promise<boolean> {
+  const deadline = performance.now() + timeoutMs;
+  while (waiting()) {
+    const accepted = await new Promise<boolean>(resolve => {
+      const socket = connect(path);
+      socket.once('connect', () => { socket.destroy(); resolve(true); });
+      socket.once('error', () => { socket.destroy(); resolve(false); });
+    });
+    if (accepted) return true;
+    if (performance.now() >= deadline) break;
+    await delay(50);
+  }
+  return false;
+}
+
 /** Pinned bundled binaries; no shell, auth keys, root, TUN, routes, DNS changes, or host networking. */
 export class TailscaleConnector implements TunnelConnector {
   private daemon?: ChildProcess;
   private action?: ChildProcess;
   private children = new Set<ChildProcess>();
   private stopping?: Promise<void>;
+  private ready?: Promise<unknown>;
   private generation = 0;
   private socket: string;
   constructor(private directory: string, private runtime = '/run/doom-room') { this.socket = join(runtime, 'tailscaled.sock'); }
@@ -54,15 +77,18 @@ export class TailscaleConnector implements TunnelConnector {
   async start() {
     const generation = this.generation;
     if (this.stopping) await this.stopping;
-    if (this.daemon) return;
+    // The daemon answers commands only once its socket is listening, shortly after it starts.
+    if (this.daemon) { await this.ready; return; }
     await mkdir(join(this.directory, 'tailscale'), { recursive: true, mode: 0o700 });
     await mkdir(this.runtime, { recursive: true, mode: 0o700 });
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || this.daemon) return;
     const child = spawn('/usr/local/bin/tailscaled', ['--tun=userspace-networking', `--statedir=${join(this.directory, 'tailscale')}`, `--socket=${this.socket}`, '--port=0'],
       { stdio: 'ignore', env: { PATH: process.env.PATH, HOME: this.directory, TS_NO_LOGS_NO_SUPPORT: 'true' } });
     this.daemon = child;
     const clear = () => { if (this.daemon === child) this.daemon = undefined; };
     child.on('error', clear); child.once('exit', clear);
+    this.ready = socketReady(this.socket, 5000, () => this.daemon === child);
+    await this.ready;
   }
   async stop() {
     this.generation++;
@@ -96,10 +122,13 @@ export class TailscaleConnector implements TunnelConnector {
   async status(): Promise<TailStatus> { return JSON.parse(await this.run(['status', '--json', '--peers=false'])); }
   async configured(host: string) { return exactFunnel(JSON.parse(await this.run(['funnel', 'status', '--json'])), host); }
   async netcheck(): Promise<TailNetwork> { return { udp: z.object({ UDP: z.boolean() }).parse(JSON.parse(await this.run(['netcheck', '--format=json']))).UDP }; }
-  connect(url: (value: string) => void) {
-    if (!this.busy) void this.run(['up', '--hostname=doom-room', '--accept-dns=false', '--accept-routes=false', '--advertise-tags=', '--ssh=false', '--timeout=10m'], url).catch(() => {});
+  connect(url: (value: string) => void, settled?: () => void) {
+    if (this.busy) return;
+    const generation = this.generation;
+    void this.run(['up', '--hostname=doom-room', '--accept-dns=false', '--accept-routes=false', '--advertise-tags=', '--ssh=false', '--timeout=10m'], url)
+      .catch(() => {}).finally(() => { if (generation === this.generation) settled?.(); });
   }
-  publish(url: (value: string) => void) {
+  publish(url: (value: string) => void, settled?: () => void) {
     if (this.busy) return;
     const generation = this.generation;
     // This private daemon belongs exclusively to the app. Remove stale mappings,
@@ -107,6 +136,6 @@ export class TailscaleConnector implements TunnelConnector {
     void (async () => {
       await this.run(['funnel', 'reset'], url);
       if (generation === this.generation) await this.run(['funnel', '--bg', '--https=443', funnelTarget], url);
-    })().catch(() => {});
+    })().catch(() => {}).finally(() => { if (generation === this.generation) settled?.(); });
   }
 }

@@ -23,6 +23,14 @@ export default defineConfig({
     } },
   },
   plugins: [{
+    name: 'preloaded-fonts',
+    // The first screen's fonts are named only inside the stylesheet. Ask for them with it,
+    // not one round trip after it, so text does not change typeface once the page is up.
+    transformIndexHtml: { order: 'post', handler(_html, context) {
+      return Object.keys(context.bundle ?? {}).filter(name => /^assets\/(?:inter-latin-wght-normal|grenze-latin-600-normal)-[\w-]+\.woff2$/.test(name)).sort()
+        .map(name => ({ tag: 'link', attrs: { rel: 'preload', as: 'font', type: 'font/woff2', href: `./${name}`, crossorigin: true }, injectTo: 'head' as const }));
+    } },
+  }, {
     name: 'compressed-assets',
     // Compress the files as written. Vite fills in lazy-import placeholders after
     // generateBundle, so compressing earlier would serve unfinished code.

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.0.11] — 2026-11-10
+
+- Security: devices on the host's tailnet can no longer reach the LAN port's unauthenticated host controls through the bundled Tailscale connector. The LAN listener in the Home Assistant app now refuses the connections Tailscale passes on from them.
+- People without an invitation can no longer use up the request limits invited online guests share, and a flood of wrong invitations no longer blocks a real one.
+- Online invitations connect sooner: the first check runs at once instead of after five seconds, waits for the bundled daemon instead of reporting a false failure, and reads the result the moment a Tailscale sign-in or approval completes. Settings follows setup every 1.5 seconds. **Replace invitation** keeps the tunnel running.
+- A new online address that has not answered yet is shown as being set up for up to ten minutes, instead of as unreachable. A tunnel that cannot be set up is retried with growing pauses and reported, instead of being reset every five seconds.
+- Room displays and host desks, including displays opened through an online invitation, are no longer sent the whole room again each time the online connection check runs. Occasional failed actions caused by the app closing idle connections that Tailscale's proxy was about to reuse are fixed.
+- An online guest who scans the room code again enters without waiting, and the first screen's fonts load with the page.
+
 ## [2.0.10] — 2026-11-10
 
 - Fix Android long-press playlist reordering on the participant page by handling touch gestures independently of pointer capture. Preserve the press-and-hold delay, normal swipe-to-scroll, and mouse dragging.

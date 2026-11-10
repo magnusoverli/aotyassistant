@@ -27,6 +27,11 @@ export async function checkBuild(directory = resolve('dist/web')) {
     }
     for (const file of [chunk.file, ...chunk.css ?? [], ...chunk.assets ?? []]) { await read(file); files.add(file); }
   }
+  // A preloaded font that is not the one the stylesheet uses would be downloaded for nothing.
+  for (const [tag, href] of html.matchAll(/<link\b[^>]*\brel="preload"[^>]*\bhref="\.\/([^"]+)"[^>]*>/g)) {
+    assert.ok(files.has(href!), `Preloaded file is not part of the build: ${href}`);
+    assert.match(tag, /\bcrossorigin\b/, `Font preload must be anonymous to match the stylesheet's request: ${href}`);
+  }
   let checked = 0;
   for (const name of await readdir(resolve(root, 'assets'))) {
     // Keep aligned with src/static-assets.ts: bundled fonts are served only under a hashed name.

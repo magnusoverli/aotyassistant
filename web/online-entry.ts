@@ -6,8 +6,13 @@ export async function enterOnline(root: HTMLElement): Promise<boolean> {
   if (!isPublic()) return true;
   let invitation = new URLSearchParams(location.hash.slice(1)).get('online');
   if (invitation !== null) history.replaceState(null, '', location.pathname + location.search);
-  // The page itself says the invitation cookie is valid: no session check needed.
-  else if (hasOnlineSession()) return true;
+  // The page itself says the invitation cookie is valid: no session check needed. A guest who
+  // scans the room code again is let straight in; the scan only renews their seven days.
+  if (hasOnlineSession()) {
+    if (invitation) void fetch('/api/online/redeem', { method: 'POST', credentials: 'same-origin', cache: 'no-store', keepalive: true,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation }) }).catch(() => {});
+    return true;
+  }
   const main = el('main', undefined, 'page stack'); main.id = 'main-content';
   const status = el('p', 'Opening your invitation…'); status.setAttribute('role', 'status');
   main.append(el('h1', 'Join Doom Room'), status); root.replaceChildren(main);
