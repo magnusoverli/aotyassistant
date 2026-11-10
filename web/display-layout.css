@@ -10,7 +10,7 @@
   body[data-view='display'] .app-content > .notice { flex-shrink:0; margin-block:6px; }
   body[data-view='display'] .display-page {
     flex:1; min-height:0; height:100%; display:grid; grid-template-rows:minmax(0,.8fr) minmax(0,1.25fr);
-    gap:clamp(8px,1.5vh,20px); padding:clamp(12px,1.5vh,24px) 3vw clamp(12px,2vh,24px); overflow:hidden;
+    gap:clamp(8px,1.5vh,20px); padding:clamp(12px,1.5vh,24px) 3vw 3vw; overflow:hidden;
   }
   body[data-view='display'] .display-page > .bmf-background {
     position:absolute; inset:0; z-index:-1; grid-row:1 / 2; grid-column:1 / -1;
@@ -21,17 +21,33 @@
   body[data-view='display'] .display-page > .bmf-background > bmf-logo { max-width:min(100%,233cqh); }
   body[data-view='display'] .display-page:not([data-background='on']) > .bmf-background { display:none; }
   body[data-view='display'] .room-stage {
+    --room-side-width:clamp(64px,12vw,220px); --room-stage-gap:clamp(12px,2vw,40px);
+    --playback-gap:50px; --playback-side-clearance:0px;
     position:relative; z-index:1; grid-row:2;
-    min-height:0; min-width:0; padding:0; grid-template-columns:minmax(0,1fr) clamp(64px,12vw,220px);
-    grid-template-rows:minmax(0,1fr); gap:clamp(12px,2vw,40px); container-type:size; overflow:hidden;
+    min-height:0; min-width:0; padding:0; grid-template-columns:minmax(0,1fr) var(--room-side-width);
+    grid-template-rows:minmax(0,1fr); gap:var(--room-stage-gap); container-type:size; overflow:hidden;
+  }
+  /* Reserve matching space on both sides when a right-side QR/logo is present,
+     so it cannot overlap playback or pull playback off the page centre. */
+  :root[data-room-logo] body[data-view='display'] .room-stage,
+  body[data-view='display'] .room-stage:has(> .room-invitation:not([hidden])) {
+    --playback-side-clearance:calc(var(--room-side-width) + var(--room-stage-gap));
   }
   body[data-view='display'] .room-stage > .room-listening {
-    grid-column:1; grid-row:1; min-height:0; height:100%; grid-template-rows:12% minmax(0,1fr); row-gap:2.4cqh;
+    /* Keep the previous artwork/progress sizing targets, but remove the unused
+       trailing quarter of the details column from the width being centred. */
+    --playback-available:calc(100cqw - var(--room-side-width) - var(--room-stage-gap));
+    --playback-artwork:min(82cqh,calc(var(--playback-available) * .425));
+    --playback-details:min(954px,max(0px,calc((var(--playback-available) - var(--playback-artwork) - var(--playback-gap)) * .75)));
+    grid-column:1 / -1; grid-row:1; justify-self:center; min-height:0; height:100%;
+    width:min(calc(var(--playback-artwork) + var(--playback-gap) + var(--playback-details)),max(0px,calc(100% - 2 * var(--playback-side-clearance))));
+    grid-template-rows:12% minmax(0,1fr); row-gap:2.4cqh;
   }
   /* The playback row is 1.25x taller, and the artwork's width limit grows by the same
-     factor. Its bottom-left anchor stays fixed; the first column is its exact width.
+     factor. The first column is the artwork's exact width, with a half-width limit
+     for narrow screens. Artwork, gap and the full details column are centred together.
      Other cqh sizes use 0.8x their former values to preserve typography and QR sizing. */
-  body[data-view='display'] .now-playing { min-height:0; grid-template-columns:min(42.5%,82cqh) minmax(0,1fr); gap:35px; }
+  body[data-view='display'] .now-playing { min-height:0; grid-template-columns:min(var(--playback-artwork),calc((100% - var(--playback-gap)) * .5)) minmax(0,1fr); gap:var(--playback-gap); }
   body[data-view='display'] .room-visual { width:100%; max-width:none; justify-self:start; }
   body[data-view='display'] .track-info { min-height:0; max-height:100%; overflow:hidden; }
   /* Idle copy should meet the artwork's bottom edge, not sit above invisible controls. */
@@ -48,7 +64,7 @@
   body[data-view='display'] .artist-portrait { width:7.2cqh; height:7.2cqh; }
   body[data-view='display'] .room-album { font-size:clamp(15px,4.8cqh,27px); line-height:1.2; margin-top:1.2cqh; }
   body[data-view='display'] .room-activity { margin-top:2.4cqh; }
-  body[data-view='display'] .public-playback { max-width:min(75%,954px); }
+  body[data-view='display'] .public-playback { max-width:100%; }
   body[data-view='display'] .public-playback .playback-status,
   body[data-view='display'] .public-playback .track-times { font-size:clamp(13.5px,4.2cqh,24px); }
   body[data-view='display'] .public-playback .track-times { margin-top:1.2cqh; }

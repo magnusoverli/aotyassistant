@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.9] — 2026-11-10
+
+- Centre the display artwork and details/progress as one combined block, with a 50px gap between them. Use the progress bar's right edge as the block boundary and keep space clear for the bottom-right QR or room logo.
+- Lift display artwork and track details with a bottom margin of 3% of viewport width.
+
 ## [2.0.8] — 2026-11-10
 
 - Enlarge the shared cover-artwork and placeholder-record frame by 25%, growing upward and rightward while keeping its left and bottom margins. Increase the gap to track details from 24px to 35px.
