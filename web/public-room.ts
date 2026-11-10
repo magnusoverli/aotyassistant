@@ -9,6 +9,7 @@ import { DisplayArtworkLoader, fetchDisplayArtwork, unlockDisplayArtwork } from 
 import { artworkKinds, type DisplayImages, type ArtworkKind } from '../src/display-artwork-format';
 import { roomLogoMark } from './room-logo';
 import { productName } from '../src/product';
+import { AnimatedBackground } from './display-background';
 
 export function publicPlaybackState(view: View, online: boolean) {
   if (!online || !view.connected) return 'unavailable';
@@ -41,6 +42,7 @@ export function publicStreamDetails(view: View, online: boolean) {
  * artist and album lines, progress and join code keep their places; only their contents change. */
 export class PublicRoom {
   readonly element = pageFrame('display', 'display-page');
+  private background = new AnimatedBackground();
   private turn = el('p', undefined, 'room-turn');
   private invitation = el('aside', undefined, 'room-invitation');
   private logo = roomLogoMark('room-logo-display');
@@ -66,7 +68,7 @@ export class PublicRoom {
     for (const url of this.objectUrls) URL.revokeObjectURL(url);
     this.objectUrls = [];
   }
-  destroy() { this.prepared.clear(); this.clearImages(); this.revealed = undefined; }
+  destroy() { this.prepared.clear(); this.clearImages(); this.revealed = undefined; this.background.destroy(); }
   private showArtworkNormally(kind?: ArtworkKind) {
     const track = this.revealed; if (!track) return;
     if ((!kind || kind === 'artwork') && track.artwork && !this.cover.querySelector('.room-artwork')) this.cover.append(artwork(track.artwork, 'Current album artwork', 'room-artwork', true));
@@ -110,7 +112,7 @@ export class PublicRoom {
     this.stage.append(visual, info);
     listening.append(this.turn, this.stage);
     this.invitation.setAttribute('aria-label', 'Join room');
-    grid.append(this.logo, listening, this.invitation); this.element.append(grid);
+    grid.append(this.logo, listening, this.invitation); this.element.append(this.background.element, grid);
     this.connecting();
   }
 
@@ -127,6 +129,7 @@ export class PublicRoom {
   }
 
   update(view: View, online: boolean, qrImage: string) {
+    this.background.update(view.background);
     const state = publicPlaybackState(view, online);
     const active = state === 'playing' || state === 'paused';
     attr(this.element, 'data-playback', state);

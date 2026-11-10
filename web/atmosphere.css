@@ -51,6 +51,11 @@
     display:block; aspect-ratio:var(--room-logo-ratio); background:var(--accent); opacity:.93;
     -webkit-mask:var(--room-logo) center / contain no-repeat; mask:var(--room-logo) center / contain no-repeat;
   }
+  /* Decorative animation stays behind the display's content and never captures input. */
+  .display-page { position:relative; isolation:isolate; }
+  .bmf-background { position:absolute; inset:0; z-index:-1; display:grid; place-items:center; overflow:hidden; pointer-events:none; color:var(--accent); }
+  .bmf-background > bmf-logo { max-width:100%; }
+  .bmf-preview { position:relative; z-index:0; width:100%; aspect-ratio:16 / 9; margin-block:20px; border:1px solid var(--line); border-radius:10px; background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e; }
   /* Join page: above the form, and only where the logo stays readable. */
   .entry-layout { container-type:inline-size; }
   .entry-layout > .join-logo { width:min(100%,318px); margin:10px auto 4px; }

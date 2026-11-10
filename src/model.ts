@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { PlaybackProblem } from './playback-problem.js';
+import type { BackgroundSnapshot } from './background-settings.js';
 
 export const trackSchema = z.object({
   id: z.string(), title: z.string(), artist: z.string(), album: z.string(),
@@ -107,6 +108,7 @@ export type View = {
   joinUrl?: string; displayUrl?: string;
   guestAccess?: GuestAccess;
   logo?: RoomLogoView | null;
+  background?: BackgroundSnapshot | null;
 };
 
 export class AppError extends Error {

@@ -29,6 +29,7 @@ import { attachAutoplay } from './autoplay.js';
 import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
 import { mountBrowserSpeakers } from './browser-speaker-http.js';
 import { RoomLogo, maxLogoBytes } from './room-logo.js';
+import { DisplayBackground, backgroundSnapshotSchema } from './display-background.js';
 
 const turn = z.uuid();
 const revision = z.number().int().nonnegative();
@@ -50,6 +51,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   uploads.setOwnerPolicy(ownerId => users.ownerAvailable(ownerId));
   attachAutoplay(engine, preparations, users);
   const roomLogo = new RoomLogo(config.dataDir, () => { engine.emit('change'); });
+  const background = new DisplayBackground(config.dataDir, () => { engine.emit('change'); });
+  void background.ready.then(() => { engine.emit('change'); });
   engine.setRoomLogo(() => roomLogo.view());
   void roomLogo.ready.then(() => { if (roomLogo.view()) engine.emit('change'); });
   const app = express();
@@ -151,6 +154,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.json(await engine.setAutoplay(input.enabled, input.revision));
   }));
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
+  app.get('/api/host/background-settings', async (_req, res) => { res.json(await background.read()); });
+  app.post('/api/host/background-settings', jsonBody(backgroundSnapshotSchema, async (input, _req, res) => {
+    res.json(await background.save(input));
+  }));
   // The room's logo. Readers use the versioned image URL from the view, so each image is cached once.
   app.get('/api/logo', async (_req, res) => { await roomLogo.ready; res.json({ logo: roomLogo.view() }); });
   app.get('/api/logo/:version', async (req, res) => {
@@ -180,9 +187,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   const displayArtwork = integrations ? new DisplayArtwork(() => engine.displayArtworkTarget(), (reference, context, size) => integrations.artwork(reference, context, size)) : undefined;
   const readView = (role: Role) => {
     const view = engine.view(role);
+    if (role.kind === 'display') view.background = background.view();
     return role.kind === 'display' && displayArtwork ? displayArtwork.project(view) : view;
   };
-  app.get('/api/display/state', (_req, res) => res.json(readView({ kind: 'display' })));
+  app.get('/api/display/state', async (_req, res) => { await background.ready; res.json(readView({ kind: 'display' })); });
   if (integrations) {
     app.get('/api/display/prepared-artwork/:id', async (req, res) => {
       const data = await displayArtwork!.read(turn.parse(req.params.id));
@@ -324,7 +332,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   };
   app.get('/api/host/events', (_req, res) => events(res, { kind: 'host' }));
   app.get('/api/participant/events', (req, res) => events(res, participant(req)));
-  app.get('/api/display/events', (_req, res) => events(res, { kind: 'display' }));
+  app.get('/api/display/events', async (_req, res) => { await background.ready; events(res, { kind: 'display' }); });
 
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'Unknown API endpoint.')));
   mountStaticAssets(app, webDirectory);

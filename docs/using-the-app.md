@@ -6,6 +6,12 @@ Connect Music Assistant and choose a speaker in **Settings**. Open **Host desk**
 
 The room display keeps one layout in every state. The record rests, dimmed, while nothing plays, spins during a song and shows the cover when the song is revealed. The title, artist, album, progress and join code keep their places; only their contents change.
 
+### Animated display background
+
+**Settings → Appearance → Animated BMF background** controls the logo animation behind the room display. It starts enabled and looping, in room gold at 12% opacity and 80% width. Change growth order, origin, randomness, sprouts, timing, looping, hold, fade, opacity and width in the preview. Leave the pattern seed blank for a new pattern each round, or enter a number (7 matches the supplied demo) for repeatable growth.
+
+**Replay preview** restarts the local preview. **Save and replay on display** persists the settings and restarts the animation on connected room displays, including displays on other devices. **Reset to defaults** changes the preview; save to apply it. Uncheck **Enable BMF display background** and save to turn it off. With looping off, it grows once and stays visible. Reduced-motion preferences show the completed logo without animation.
+
 ### Room logo
 
 Add your room's logo in **Settings → Appearance → Upload logo**. It appears at the top right of the room display in every state, and above the join form on guests' phones. The app draws it as one shape in the room's gold, so any logo suits the display: margins are trimmed, and light-on-dark or dark-on-light artwork is converted automatically. Use a PNG, JPEG, WebP or SVG file up to 10 MB; a transparent PNG or an SVG works best. SVG files that link to other files are refused. **Replace logo** swaps it, and **Remove logo** returns both pages to how they looked without one. Open pages update by themselves.
@@ -84,6 +90,6 @@ There is no Create/Start/End session step. The room and join/display links persi
 
 Lists, users, settings, and order survive restart, while playback and reveal reset. Include the app in Home Assistant backups. To return on another device, select yourself and enter your PIN. The host can replace forgotten PINs in Settings without deleting songs or changing playback. Lists are automatic; there is no recovery-key or list-switching workflow.
 
-Settings has four sections: **Playback** for the active speaker/group, automatic reveal and automatic play; **Users** for name/avatar rows and account actions; **Music Assistant** for connection setup; and **Access & network** for guest links and uploaded-file connectivity. Initial setup opens Music Assistant; configured installations open Playback. Use the section navigation on the left (above the content on smaller screens); switching sections keeps unfinished form edits. Connection and speaker status appear in their respective sections.
+Settings has five sections: **Playback** for the active speaker/group, automatic reveal and automatic play; **Users** for name/avatar rows and account actions; **Music Assistant** for connection setup; **Access & network** for guest links and uploaded-file connectivity; and **Appearance** for the animated display background and room logo. Initial setup opens Music Assistant; configured installations open Playback. Use the section navigation on the left (above the content on smaller screens); switching sections keeps unfinished form edits. Connection and speaker status appear in their respective sections.
 
 To permanently remove someone and their playlist, use **Host → Settings → Users → Manage → Delete user** and confirm. This deletes their history and uploads, signs out their devices and removes any listening-order seat. A fresh registration can reuse the deleted name and starts with an empty playlist.

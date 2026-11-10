@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.3] — 2026-11-10
+
+- Add the animated BMF logo behind the room display, enabled and looping by default in the room’s gold. Adjust its growth order, origin, randomness, sprouts, timing, looping, hold, fade, pattern seed, opacity and size in **Settings → Appearance → Animated BMF background**.
+- Preview changes locally with **Replay preview**, then select **Save and replay on display** to save them and update connected displays. Settings survive restarts; reduced-motion preferences show the finished logo without animation.
+
 ## [2.0.2] — 2026-11-10
 
 - Show your room's logo: upload it in **Settings → Appearance**. It appears at the top right of the room display, whatever is playing, and above the join form on guests' phones, drawn in the room's gold so it suits the display. PNG, JPEG, WebP or SVG up to 10 MB; light-on-dark and dark-on-light artwork is converted automatically. Without a logo, both pages look as before.
