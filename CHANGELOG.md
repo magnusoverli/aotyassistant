@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.8] — 2026-11-10
+
+- Enlarge the shared cover-artwork and placeholder-record frame by 25%, growing upward and rightward while keeping its left and bottom margins. Increase the gap to track details from 24px to 35px.
+- Enlarge room-display track text by 1.5× while preserving its size hierarchy, including title, artist, album, playback status, times and stream details. Shorten the progress block by 25%.
+- Remove the redundant “Currently playing: [name]” line above the room-display artwork; the current participant remains identified in the play-order bar.
+
 ## [2.0.7] — 2026-11-10
 
 - Round the display QR corners subtly in the play-order bar (4px) and more softly at bottom-right (up to 12px, scaling down on small screens to preserve the white margin).

@@ -86,7 +86,7 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .host-audio .volume-control output { grid-column:3; grid-row:1; }
 
 /* The public room: readable across a room, no administrative chrome. One stage serves every state,
-   laid out like a revealed song: the logo, record, turn line, title, artist and album lines, progress
+   laid out like a revealed song: the logo, record, title, artist and album lines, progress
    and join code keep their places. Only their contents change, so nothing moves between states. */
 body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e; min-height:100vh; }
 .display-page { display:flex; flex-direction:column; gap:40px; }
@@ -98,8 +98,6 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 :root[data-room-logo] .room-stage { grid-template-columns:minmax(0,1fr) clamp(232px,17vw,340px); }
 /* Spare height belongs above playback, keeping the artwork and details at the foot of the screen. */
 .room-listening { min-width:0; align-self:stretch; display:grid; grid-template-rows:1fr auto; }
-.room-turn { grid-row:1; align-self:end; color:var(--text); font-size:clamp(13px,.95vw,17px); line-height:1.5; text-transform:uppercase; letter-spacing:.22em; margin:0 0 28px; overflow-wrap:anywhere; }
-.room-turn[hidden] { display:block; visibility:hidden; }
 .now-playing { grid-row:2; display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr); align-items:end; gap:clamp(24px,2.5vw,48px); }
 /* Idle and unrevealed playback share the same record appearance; only rotation pauses. */
 .display-page[data-stage="resting"] .room-activity { visibility:hidden; }
@@ -315,7 +313,6 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .mini-record { width:58px; flex-basis:58px; }
   .display-page { gap:32px; }
   .room-stage { grid-template-columns:1fr; gap:36px; padding:0; }
-  .room-turn { margin-bottom:24px; }
   .now-playing { grid-template-columns:1fr; gap:28px; }
   .room-visual { max-width:min(70vw,308px); justify-self:center; }
   .room-title-slot { font-size:2.4rem; margin-bottom:18px; }

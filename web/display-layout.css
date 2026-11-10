@@ -9,7 +9,7 @@
   body[data-view='display'] .app-content { min-height:0; display:flex; flex-direction:column; flex:1; }
   body[data-view='display'] .app-content > .notice { flex-shrink:0; margin-block:6px; }
   body[data-view='display'] .display-page {
-    flex:1; min-height:0; height:100%; display:grid; grid-template-rows:minmax(0,1.05fr) minmax(0,1fr);
+    flex:1; min-height:0; height:100%; display:grid; grid-template-rows:minmax(0,.8fr) minmax(0,1.25fr);
     gap:clamp(8px,1.5vh,20px); padding:clamp(12px,1.5vh,24px) 3vw clamp(12px,2vh,24px); overflow:hidden;
   }
   body[data-view='display'] .display-page > .bmf-background {
@@ -26,37 +26,38 @@
     grid-template-rows:minmax(0,1fr); gap:clamp(12px,2vw,40px); container-type:size; overflow:hidden;
   }
   body[data-view='display'] .room-stage > .room-listening {
-    grid-column:1; grid-row:1; min-height:0; height:100%; grid-template-rows:12% minmax(0,1fr); row-gap:3cqh;
+    grid-column:1; grid-row:1; min-height:0; height:100%; grid-template-rows:12% minmax(0,1fr); row-gap:2.4cqh;
   }
-  body[data-view='display'] .room-turn { margin:0; font-size:clamp(10px,4cqh,17px); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  /* The first column is exactly the rendered artwork width, not a larger fractional slot. */
-  body[data-view='display'] .now-playing { min-height:0; grid-template-columns:min(34%,82cqh) minmax(0,1fr); gap:24px; }
+  /* The playback row is 1.25x taller, and the artwork's width limit grows by the same
+     factor. Its bottom-left anchor stays fixed; the first column is its exact width.
+     Other cqh sizes use 0.8x their former values to preserve typography and QR sizing. */
+  body[data-view='display'] .now-playing { min-height:0; grid-template-columns:min(42.5%,82cqh) minmax(0,1fr); gap:35px; }
   body[data-view='display'] .room-visual { width:100%; max-width:none; justify-self:start; }
   body[data-view='display'] .track-info { min-height:0; max-height:100%; overflow:hidden; }
   /* Idle copy should meet the artwork's bottom edge, not sit above invisible controls. */
   body[data-view='display'] .display-page[data-stage='resting'] :is(.room-activity,.room-album[hidden]),
   body[data-view='display'] .room-stream-details[hidden] { display:none; }
   body[data-view='display'] .display-page[data-stage='resting'] .room-hint { height:auto; }
-  body[data-view='display'] .room-title-slot { height:auto; max-height:2.4em; margin:0 0 2cqh; font-size:clamp(16px,9cqh,64px); overflow:hidden; }
+  body[data-view='display'] .room-title-slot { height:auto; max-height:2.4em; margin:0 0 1.6cqh; font-size:clamp(24px,10.8cqh,96px); overflow:hidden; }
   body[data-view='display'] .track-info h1,
   body[data-view='display'] .track-info h1.is-long { font-size:inherit; line-height:1.1; -webkit-line-clamp:2; }
   body[data-view='display'] .track-info .artist-credit,
-  body[data-view='display'] .room-hint { height:7cqh; min-height:16px; }
+  body[data-view='display'] .room-hint { height:8.4cqh; min-height:24px; }
   body[data-view='display'] .track-info .artist,
-  body[data-view='display'] .room-hint { font-size:clamp(11px,5.5cqh,30px); line-height:1.25; }
-  body[data-view='display'] .artist-portrait { width:6cqh; height:6cqh; }
-  body[data-view='display'] .room-album { font-size:clamp(10px,4cqh,18px); line-height:1.2; margin-top:1.5cqh; }
-  body[data-view='display'] .room-activity { margin-top:3cqh; }
-  body[data-view='display'] .public-playback { max-width:1272px; }
+  body[data-view='display'] .room-hint { font-size:clamp(16.5px,6.6cqh,45px); line-height:1.25; }
+  body[data-view='display'] .artist-portrait { width:7.2cqh; height:7.2cqh; }
+  body[data-view='display'] .room-album { font-size:clamp(15px,4.8cqh,27px); line-height:1.2; margin-top:1.2cqh; }
+  body[data-view='display'] .room-activity { margin-top:2.4cqh; }
+  body[data-view='display'] .public-playback { max-width:min(75%,954px); }
   body[data-view='display'] .public-playback .playback-status,
-  body[data-view='display'] .public-playback .track-times { font-size:clamp(9px,3.5cqh,16px); }
-  body[data-view='display'] .public-playback .track-times { margin-top:1.5cqh; }
-  body[data-view='display'] .room-stream-details { font-size:clamp(9px,3cqh,14px); margin-top:1.5cqh; }
-  body[data-view='display'] .room-stage > .room-logo { grid-column:2; grid-row:1; width:100%; max-width:55cqh; justify-self:end; }
-  body[data-view='display'] .room-stage > .room-invitation { grid-column:2; grid-row:1; width:100%; max-width:55cqh; align-self:end; justify-self:end; }
+  body[data-view='display'] .public-playback .track-times { font-size:clamp(13.5px,4.2cqh,24px); }
+  body[data-view='display'] .public-playback .track-times { margin-top:1.2cqh; }
+  body[data-view='display'] .room-stream-details { font-size:clamp(13.5px,3.6cqh,21px); margin-top:1.2cqh; }
+  body[data-view='display'] .room-stage > .room-logo { grid-column:2; grid-row:1; width:100%; max-width:44cqh; justify-self:end; }
+  body[data-view='display'] .room-stage > .room-invitation { grid-column:2; grid-row:1; width:100%; max-width:44cqh; align-self:end; justify-self:end; }
   body[data-view='display'] .room-stage > .room-invitation[hidden] { display:none; }
   body[data-view='display'] .room-qr-link { width:100%; }
-  @container (max-height:190px) {
+  @container (max-height:237.5px) {
     body[data-view='display'] .room-stream-details { display:none; }
   }
 }

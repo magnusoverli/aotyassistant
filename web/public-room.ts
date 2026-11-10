@@ -38,12 +38,11 @@ export function publicStreamDetails(view: View, online: boolean) {
 }
 
 /** Keep motion on persistent nodes: revealing metadata must never restart or change its rhythm.
- * One stage serves every state, laid out like a revealed song: the logo, record, turn line, title,
+ * One stage serves every state, laid out like a revealed song: the logo, record, title,
  * artist and album lines, progress and join code keep their places; only their contents change. */
 export class PublicRoom {
   readonly element = pageFrame('display', 'display-page');
   private background = new AnimatedBackground();
-  private turn = el('p', undefined, 'room-turn');
   private invitation = el('aside', undefined, 'room-invitation');
   private logo = roomLogoMark('room-logo-display');
   private stage = el('section', undefined, 'now-playing');
@@ -110,7 +109,7 @@ export class PublicRoom {
     this.technical.title = 'Source audio reported by Music Assistant'; this.technical.hidden = true;
     activity.append(this.progress); info.append(activity, this.technical);
     this.stage.append(visual, info);
-    listening.append(this.turn, this.stage);
+    listening.append(this.stage);
     this.invitation.setAttribute('aria-label', 'Join room');
     grid.append(this.logo, listening, this.invitation); this.element.append(this.background.element, grid);
     this.connecting();
@@ -119,7 +118,6 @@ export class PublicRoom {
   /** Before the first room update: the same stage, resting, with the app's name in the title. */
   connecting() {
     attr(this.element, 'data-playback', 'connecting'); attr(this.element, 'data-stage', 'resting');
-    prop(this.turn, 'hidden', true);
     const words = publicStageText(undefined, navigator.onLine);
     text(this.title, words.title); this.title.classList.remove('is-long'); text(this.hint, words.hint);
     this.revealed = undefined; this.trackKey = ''; this.clearImages(); this.prepared.clear();
@@ -136,8 +134,6 @@ export class PublicRoom {
     const active = state === 'playing' || state === 'paused';
     attr(this.element, 'data-playback', state);
     attr(this.element, 'data-stage', active ? 'playing' : 'resting');
-    text(this.turn, view.current ? `Currently playing: ${view.current.nickname}` : '');
-    prop(this.turn, 'hidden', state !== 'playing' || !view.current);
 
     const revealed = active && view.nowPlaying?.revealed === true ? view.nowPlaying.track : undefined;
     this.revealed = revealed;
