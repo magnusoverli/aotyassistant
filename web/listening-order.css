@@ -7,7 +7,7 @@
      Reserve its width so the participant list scrolls beside it, never underneath. */
   .has-display-qr .order-bar { position:relative; padding-right:96px; }
   .order-qr { position:absolute; right:0; top:2px; height:calc(100% - 4px); max-height:84px; aspect-ratio:1; display:block; }
-  .order-qr img { display:block; width:100%; height:100%; object-fit:contain; }
+  .order-qr img { display:block; width:100%; height:100%; object-fit:contain; border-radius:4px; }
   .order-empty { flex:1; min-width:0; margin:0; font-size:12px; }
   .rotation-list { --order-gap:26px; display:flex; flex:1; min-width:0; gap:var(--order-gap); list-style:none; margin:0; padding:0; overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
   .rotation-list[hidden],.order-bar > [hidden] { display:none; }

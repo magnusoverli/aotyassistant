@@ -101,9 +101,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .room-turn { grid-row:1; align-self:end; color:var(--text); font-size:clamp(13px,.95vw,17px); line-height:1.5; text-transform:uppercase; letter-spacing:.22em; margin:0 0 28px; overflow-wrap:anywhere; }
 .room-turn[hidden] { display:block; visibility:hidden; }
 .now-playing { grid-row:2; display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr); align-items:end; gap:clamp(24px,2.5vw,48px); }
-/* Nothing playing: the record rests, dimmed and still, in its usual place. */
-.room-visual { transition:opacity .6s ease; }
-.display-page[data-stage="resting"] .room-visual { opacity:.5; }
+/* Idle and unrevealed playback share the same record appearance; only rotation pauses. */
 .display-page[data-stage="resting"] .room-activity { visibility:hidden; }
 .cover { aspect-ratio:1; overflow:hidden; border-radius:12px; }
 .room-cover { position:relative; display:grid; place-items:center; padding:7%; background:linear-gradient(145deg,#30402e,#1b2a20); box-shadow:0 22px 60px #0004; border:1px solid #48604366; width:100%; }
@@ -116,10 +114,10 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .vinyl-label.is-personalized .vinyl-caption { font-size:clamp(5px,2.7cqw,13px); letter-spacing:.035em; }
 .vinyl-label.is-personalized .vinyl-hole { flex-shrink:0; }
 .room-record { animation:room-spin 17.65s linear infinite; animation-play-state:paused; }
+.display-page:not([data-playback="playing"],[data-playback="paused"]) .room-record { animation:none; transform:rotate(0deg); }
 .room-record > .vinyl-label { width:36%; height:36%; gap:7%; }
 .room-visual { position:relative; isolation:isolate; width:100%; max-width:52vh; justify-self:end; }
-.room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; animation-play-state:paused; pointer-events:none; }
-.display-page[data-playback="playing"] .room-glow,
+.room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; pointer-events:none; }
 .display-page[data-playback="playing"] .room-record { animation-play-state:running; }
 .room-activity { display:flex; margin-top:28px; }
 .room-activity .public-playback { flex:1; min-width:0; margin:0; }
@@ -153,7 +151,7 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .qr-card .button { width:100%; margin-top:18px; font-size:12px; }
 .room-invitation { width:100%; max-width:240px; text-align:center; justify-self:end; align-self:end; }
 .room-invitation h3 { font-size:clamp(11px,.75vw,14px); font-weight:500; text-transform:uppercase; letter-spacing:.24em; color:var(--muted); margin:0 0 18px; }
-.room-invitation img { display:block; width:100%; height:auto; border-radius:8px; }
+.room-invitation img { display:block; width:100%; height:auto; border-radius:min(12px,6%); }
 
 /* Host: a control desk, not a music browser. */
 .host-live { display:flex; align-items:center; justify-content:space-between; gap:24px; }

@@ -47,7 +47,7 @@
   body[data-view='display'] .artist-portrait { width:6cqh; height:6cqh; }
   body[data-view='display'] .room-album { font-size:clamp(10px,4cqh,18px); line-height:1.2; margin-top:1.5cqh; }
   body[data-view='display'] .room-activity { margin-top:3cqh; }
-  body[data-view='display'] .public-playback { max-width:748px; }
+  body[data-view='display'] .public-playback { max-width:1272px; }
   body[data-view='display'] .public-playback .playback-status,
   body[data-view='display'] .public-playback .track-times { font-size:clamp(9px,3.5cqh,16px); }
   body[data-view='display'] .public-playback .track-times { margin-top:1.5cqh; }

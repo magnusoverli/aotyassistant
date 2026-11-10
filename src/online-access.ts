@@ -7,6 +7,7 @@ import { SerialQueue } from './serial.js';
 import { durability } from './backup.js';
 import { AppError, type GuestAccess } from './model.js';
 import { tailscaleApproval, tailscaleHost, type TunnelConnector } from './tailscale.js';
+import { diagnostics } from './diagnostics.js';
 
 const secret = () => randomBytes(32).toString('base64url');
 const schema = z.object({ schema: z.literal(1), enabled: z.boolean(), key: z.string().regex(/^[\w-]{43}$/), revision: z.number().int().nonnegative() }).strict();
@@ -16,6 +17,7 @@ export type OnlineView = { available: boolean; enabled: boolean; revision: numbe
   /** This server's own request out through Funnel and back, and whether direct (UDP) connections are possible. */
   network?: { roundTripMs: number; udp?: boolean } };
 const netcheckInterval = 30 * 60_000;
+export const invitationGraceMs = 30_000;
 export const grantLifetime = 7 * 24 * 60 * 60_000;
 const equal = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 
@@ -32,6 +34,8 @@ export class OnlineAccess extends EventEmitter {
   private accepting = false;
   private netcheckedAt = -Infinity;
   private udp?: boolean;
+  private verifiedOrigin?: string;
+  private unavailableSince?: number;
   constructor(private directory: string, private connector?: TunnelConnector, private verify = verifyPublic, private now = Date.now) {
     super(); this.state = { available: Boolean(connector), enabled: false, revision: 0, status: 'disabled', message: 'Enable online invitations to let friends join without your Wi-Fi.' };
   }
@@ -42,13 +46,23 @@ export class OnlineAccess extends EventEmitter {
   }
   get enabled() { return this.saved.enabled && !this.blocked && !this.closed; }
   get origin() { return this.enabled && this.accepting ? this.state.origin : undefined; }
-  view(): OnlineView { return { ...this.state, enabled: this.enabled, revision: this.saved.revision, ...(this.state.status === 'ready' && this.origin ? { joinUrl: this.invitation('/join') } : {}) }; }
+  private get shareable() {
+    return this.enabled && this.state.origin === this.verifiedOrigin && Boolean(this.verifiedOrigin) &&
+      (this.state.status === 'ready' && Boolean(this.origin) ||
+        this.unavailableSince !== undefined && this.now() - this.unavailableSince < invitationGraceMs);
+  }
+  private forgetVerification() { this.verifiedOrigin = undefined; this.unavailableSince = undefined; }
+  private connectionInterrupted() {
+    // Repeated failed checks must not restart the grace period.
+    if (this.verifiedOrigin && this.unavailableSince === undefined) this.unavailableSince = this.now();
+  }
+  view(): OnlineView { return { ...this.state, enabled: this.enabled, revision: this.saved.revision, ...(this.shareable ? { joinUrl: this.invitation('/join') } : {}) }; }
   private invitation(path: string) { return `${this.state.origin}${path}#online=${this.sign('invite')}`; }
   sharing(): { guestAccess: GuestAccess; joinUrl?: string; displayUrl?: string } | undefined {
     if (!this.enabled) return;
     const ready = this.state.status === 'ready' && Boolean(this.origin);
     return { guestAccess: { status: ready ? 'ready' : this.state.status === 'connecting' || this.state.status === 'checking' ? 'checking' : 'unavailable', source: 'online', message: this.state.message },
-      ...(ready ? { joinUrl: this.invitation('/join'), displayUrl: this.invitation('/display') } : {}) };
+      ...(this.shareable ? { joinUrl: this.invitation('/join'), displayUrl: this.invitation('/display') } : {}) };
   }
   private sign(value: string) { return createHmac('sha256', this.saved.key).update(value).digest('base64url'); }
   redeem(invitation: string): string | undefined {
@@ -67,7 +81,7 @@ export class OnlineAccess extends EventEmitter {
       if (revision !== this.saved.revision) throw new AppError(409, 'Online settings changed. Refresh and try again.');
       const next = { ...this.saved, enabled: action === 'enable' || action === 'rotate' && this.saved.enabled, key: secret(), revision: revision + 1 };
       // Close existing public streams before a revocation, including an uncertain disk outcome.
-      this.epoch++; this.accepting = false; this.emit('revoke');
+      this.epoch++; this.accepting = false; this.forgetVerification(); this.emit('revoke');
       try { await writePrivateJson(this.directory, 'online-access.json', next, 4096); }
       catch { this.blocked = true; this.update('error', 'Online settings could not be saved. Restart after checking storage.'); await this.connector.stop(); throw new AppError(503, this.state.message); }
       this.saved = next; this.state = { ...this.state, approvalUrl: undefined, origin: undefined, checkedAt: undefined, network: undefined };
@@ -100,9 +114,11 @@ export class OnlineAccess extends EventEmitter {
       await this.connector.start();
       const status = await this.connector.status(); if (!current()) return;
       if (status.BackendState !== 'Running') {
+        this.connectionInterrupted();
         this.accepting = false; this.emit('revoke');
-        if (status.BackendState === 'NeedsMachineAuth') { this.update('approval', 'Approve this device in the Tailscale admin console.', { approvalUrl: 'https://login.tailscale.com/admin/machines' }); return; }
-        this.update('connecting', 'Connecting to Tailscale…');
+        if (status.BackendState === 'NeedsMachineAuth' || status.BackendState === 'NeedsLogin') this.forgetVerification();
+        if (status.BackendState === 'NeedsMachineAuth') { this.update('approval', 'Approve this device in the Tailscale admin console.', { approvalUrl: 'https://login.tailscale.com/admin/machines', checkedAt: this.now() }); return; }
+        this.update('connecting', 'Connecting to Tailscale…', { checkedAt: this.now() });
         if (status.AuthURL) approval(status.AuthURL);
         this.connector.connect(approval); return;
       }
@@ -110,18 +126,23 @@ export class OnlineAccess extends EventEmitter {
       if (!host || status.Self?.Online !== true) throw new Error('Offline');
       const configured = await this.connector.configured(host); if (!current()) return;
       if (!configured) {
+        this.forgetVerification();
         this.accepting = false; this.emit('revoke');
         if (this.state.status !== 'approval') this.update('checking', 'Preparing the guest-only HTTPS tunnel…');
         this.connector.publish(approval); return;
       }
+      if (this.verifiedOrigin !== `https://${host}`) this.forgetVerification();
       this.accepting = true;
       this.state = { ...this.state, origin: `https://${host}`, approvalUrl: undefined, keyExpiry: status.Self?.KeyExpiry };
       this.probe = secret();
       const check = () => this.verify(this.state.origin!, this.probe, this.sign(`probe:${this.probe}`));
-      let ok = await check(); let roundTripMs = 0;
-      // The first check pays for DNS and TLS; time a second one on the warm connection.
-      if (ok && current()) { const started = performance.now(); ok = await check(); roundTripMs = Math.round(performance.now() - started); }
+      // One end-to-end check supplies both availability and latency. A separate timing
+      // request must not turn a successfully verified connection into a false outage.
+      const started = performance.now(); const ok = await check();
+      const roundTripMs = Math.round(performance.now() - started);
       this.probe = ''; if (!current()) return;
+      if (ok) { this.verifiedOrigin = this.state.origin; this.unavailableSince = undefined; diagnostics.record('online-probe-ms', roundTripMs); }
+      else { this.connectionInterrupted(); diagnostics.record('online-probe-failure', 1); }
       this.update(ok ? 'ready' : 'offline', ok ? 'Online invitations ready. Friends can join using mobile data or any Wi-Fi.' : 'Public reachability could not be confirmed. Check internet access; reconnection is automatic.', { checkedAt: this.now() });
       // Measurements change on every check. Settings polls them, so they never wake room streams.
       if (!ok) { this.netcheckedAt = -Infinity; this.state = { ...this.state, network: undefined }; return; } // The next connection may be on another network.
@@ -131,11 +152,12 @@ export class OnlineAccess extends EventEmitter {
       }
       this.state = { ...this.state, network: { roundTripMs, ...(this.udp === undefined ? {} : { udp: this.udp }) } };
     } catch {
+      this.probe = '';
       this.netcheckedAt = -Infinity;
-      if (current()) { this.accepting = false; this.emit('revoke'); this.update('offline', 'Waiting for the secure connection. Check internet access and Tailscale approval; retrying automatically.', { checkedAt: this.now() }); }
+      if (current()) { this.connectionInterrupted(); diagnostics.record('online-connector-failure', 1); this.accepting = false; this.emit('revoke'); this.update('offline', 'Waiting for the secure connection. Check internet access and Tailscale approval; retrying automatically.', { checkedAt: this.now() }); }
     }
   }
-  async pause() { this.epoch++; this.accepting = false; this.netcheckedAt = -Infinity; this.emit('revoke'); if (this.enabled) this.update('connecting', 'Reconnecting online invitations…'); await this.connector?.stop(); }
+  async pause() { this.epoch++; this.accepting = false; this.forgetVerification(); this.netcheckedAt = -Infinity; this.emit('revoke'); if (this.enabled) this.update('connecting', 'Reconnecting online invitations…'); await this.connector?.stop(); }
   async close() { this.closed = true; clearTimeout(this.timer); await this.pause(); await this.queue.drain(); }
 }
 

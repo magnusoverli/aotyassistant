@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [2.0.7] — 2026-11-10
+
+- Round the display QR corners subtly in the play-order bar (4px) and more softly at bottom-right (up to 12px, scaling down on small screens to preserve the white margin).
+- Keep the last verified online invitation/QR for at least 30 seconds during temporary connectivity failures, without extending the grace period on repeated failed checks. Remove guest-access diagnostics and the Settings link from the room display; it quietly hides an expired QR instead.
+- Use one verified Funnel request for both reachability and latency, removing the second request that could falsely mark a working connection offline. Add bounded probe/connector failure counters for diagnosis.
+- Widen the display progress block by another 1.7×, from a 748px maximum to 1272px, within the available space beside the artwork.
+- Use the same full-brightness vinyl artwork, centre-label styling and glow for idle and unrevealed playback. The idle record resets to its upright 0° starting position; paused playback retains its rotation angle.
+
 ## [2.0.6] — 2026-11-10
 
 - Add a saved **Room display QR placement** setting in Appearance: **Bottom-right** or **Right of play order**. The header QR fits within the existing bar height; neither placement shows a “Join room” caption.

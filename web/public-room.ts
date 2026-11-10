@@ -2,7 +2,7 @@ import type { Track, View } from '../src/model';
 import { el, link } from './dom';
 import { vinyl, updateVinylLabel } from './visuals';
 import { artwork, progressBar, updateProgress } from './media';
-import { publicRecordLabels } from './record-labels';
+import { publicRecordLabels, recordLabels } from './record-labels';
 import { pageFrame } from './page-layout';
 import { attr, prop, text } from './view-nodes';
 import { DisplayArtworkLoader, fetchDisplayArtwork, unlockDisplayArtwork } from './display-artwork';
@@ -124,7 +124,8 @@ export class PublicRoom {
     text(this.title, words.title); this.title.classList.remove('is-long'); text(this.hint, words.hint);
     this.revealed = undefined; this.trackKey = ''; this.clearImages(); this.prepared.clear();
     this.cover.querySelector('.room-artwork')?.remove(); this.credit.replaceChildren(); this.credit.hidden = true;
-    text(this.album, ''); this.album.hidden = true; updateVinylLabel(this.record);
+    text(this.album, ''); this.album.hidden = true;
+    updateVinylLabel(this.record, { owner: 'Mystery DJ', caption: recordLabels[0] });
     updateProgress(this.progress, undefined); text(this.technical, ''); this.technical.hidden = true;
   }
 
@@ -143,19 +144,21 @@ export class PublicRoom {
     const words = publicStageText(view, online);
     text(this.title, words.title); text(this.hint, words.hint);
     this.title.classList.toggle('is-long', Boolean(revealed && revealed.title.length > 55));
-    const trackKey = active ? JSON.stringify([view.progress!.id, view.preparedArtwork?.id, revealed ?? null, revealed ? null : view.current]) : '';
+    const trackKey = JSON.stringify([active, view.roomId, view.turnId, view.progress?.id,
+      view.preparedArtwork?.id, revealed ?? null, revealed ? null : view.current]);
     if (this.trackKey !== trackKey) {
       this.trackKey = trackKey;
       this.clearImages();
       this.cover.querySelector('.room-artwork')?.remove(); this.credit.replaceChildren();
-      updateVinylLabel(this.record);
+      // Idle and hidden playback share the same sticker and styling. A stopped playback
+      // retains its phrase; only the transport state controls whether the record spins.
+      const sticker = revealed ? { owner: revealed.title, caption: revealed.artist }
+        : publicRecordLabels.label(JSON.stringify([view.roomId, view.turnId, view.progress?.id, view.current?.id]), view.current?.nickname);
+      updateVinylLabel(this.record, sticker);
       this.album.textContent = active ? revealed?.album ?? '' : '';
       this.album.hidden = !this.album.textContent;
       this.credit.hidden = !revealed?.artist;
       if (active) {
-        const sticker = revealed ? { owner: revealed.title, caption: revealed.artist }
-          : publicRecordLabels.label(JSON.stringify([view.roomId, view.turnId, view.progress!.id, view.current?.id]), view.current?.nickname);
-        updateVinylLabel(this.record, sticker);
         if (!view.preparedArtwork) this.showArtworkNormally();
         if (revealed?.artist) this.credit.append(el('p', revealed.artist, 'artist'));
       }
@@ -166,15 +169,11 @@ export class PublicRoom {
     const technical = publicStreamDetails(view, online);
     text(this.technical, technical); prop(this.technical, 'hidden', !technical);
 
-    const invitationKey = JSON.stringify([view.joinUrl, qrImage, view.guestAccess]);
-    prop(this.invitation, 'hidden', Boolean(view.joinUrl) && view.background?.settings.qrPlacement === 'play-order');
+    const invitationKey = JSON.stringify([view.joinUrl, qrImage]);
+    prop(this.invitation, 'hidden', !view.joinUrl || !qrImage || view.background?.settings.qrPlacement === 'play-order');
     if (this.invitationKey !== invitationKey) {
       this.invitationKey = invitationKey;
       this.invitation.replaceChildren();
-      if (!view.joinUrl) {
-        if (view.guestAccess) this.invitation.append(el('p', view.guestAccess.message, 'muted small'));
-        this.invitation.append(link('Guest access settings', '/host/settings#access'));
-      }
       if (view.joinUrl) {
         const join = link('', view.joinUrl, 'room-qr-link'); join.setAttribute('aria-label', 'Join room');
         if (qrImage) { const image = el('img'); image.src = qrImage; image.alt = 'Scan to join the room'; join.append(image); this.invitation.append(join); }

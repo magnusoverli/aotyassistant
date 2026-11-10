@@ -8,7 +8,7 @@ import { createServer, request as httpRequest, type RequestListener } from 'node
 import { Readable } from 'node:stream';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { OnlineAccess, grantLifetime } from '../src/online-access.js';
+import { OnlineAccess, grantLifetime, invitationGraceMs } from '../src/online-access.js';
 import { exactFunnel, funnelTarget, tailscaleApproval, tailscaleHost, type TailStatus, type TunnelConnector } from '../src/tailscale.js';
 import { publicListener, publicRoute } from '../src/public-listener.js';
 import { createApp } from '../src/http.js';
@@ -38,12 +38,16 @@ class Connector implements TunnelConnector {
 async function directory(t: TestContext) {
   const dir = await mkdtemp(join(tmpdir(), 'doom-room-online-')); t.after(() => rm(dir, { recursive: true, force: true })); return dir;
 }
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, previouslyEnabled = false) {
   const dir = await directory(t); const connector = new Connector();
-  let now = Date.now(); let reachable = true;
-  const online: OnlineAccess = new OnlineAccess(dir, connector, async (_origin, probe, expected): Promise<boolean> => reachable && online.probeResponse(probe) === expected, () => now);
+  // A pre-existing record lets read-only health tests run on platforms without directory fsync.
+  if (previouslyEnabled) await writeFile(join(dir, 'online-access.json'), JSON.stringify({ schema: 1, enabled: true, key: 'f'.repeat(43), revision: 1 }));
+  let now = Date.now(); let reachable = true; let probes = 0;
+  const online: OnlineAccess = new OnlineAccess(dir, connector, async (_origin, probe, expected): Promise<boolean> => {
+    probes++; return reachable && online.probeResponse(probe) === expected;
+  }, () => now);
   await online.init(); t.after(() => online.close());
-  return { dir, online, connector, clock: (value: number) => { now += value; }, reachable: (value: boolean) => { reachable = value; } };
+  return { dir, online, connector, clock: (value: number) => { now += value; }, reachable: (value: boolean) => { reachable = value; }, probes: () => probes };
 }
 async function enable(online: OnlineAccess) { await online.change('enable', online.view().revision); await online.refresh(); assert.equal(online.view().status, 'ready'); }
 const invitation = (online: OnlineAccess) => new URLSearchParams(new URL(online.view().joinUrl!).hash.slice(1)).get('online')!;
@@ -60,12 +64,58 @@ test('online setup requires account and Funnel approval, verified reachability, 
   f.connector.valid = true; f.reachable(false); await f.online.refresh(); assert.equal(f.online.view().status, 'offline'); assert.equal(f.online.view().joinUrl, undefined);
   f.reachable(true); await f.online.refresh(); const url = f.online.view().joinUrl;
   assert.equal(f.online.view().status, 'ready'); assert.ok(url?.startsWith(`https://${host}/join#online=`));
-  f.connector.state.Self!.Online = false; await f.online.refresh(); assert.equal(f.online.view().joinUrl, undefined); assert.equal(f.online.origin, undefined);
+  f.connector.state.Self!.Online = false; await f.online.refresh(); assert.equal(f.online.view().joinUrl, url); assert.equal(f.online.origin, undefined);
+  f.clock(invitationGraceMs); await f.online.refresh(); assert.equal(f.online.view().joinUrl, undefined);
   f.connector.state.Self!.Online = true; await f.online.refresh(); assert.equal(f.online.view().joinUrl, url);
   await durability.freeze();
   try { await f.online.pause(); const starts = f.connector.starts; await f.online.refresh(); assert.equal(f.connector.starts, starts); assert.equal(f.online.origin, undefined); }
   finally { durability.thaw(); }
   await f.online.refresh(); assert.equal(f.online.view().joinUrl, url);
+});
+
+test('online health uses one verified request for both reachability and round-trip measurement', async t => {
+  const f = await fixture(t, true); await f.online.refresh();
+  assert.equal(f.online.view().status, 'ready'); assert.equal(f.probes(), 1);
+  assert.ok(Number.isInteger(f.online.view().network?.roundTripMs));
+  await f.online.refresh(); assert.equal(f.probes(), 2);
+});
+
+test('online invitation grace retains the same QR for 30 seconds without hiding the outage status or extending on repeated failures', async t => {
+  const f = await fixture(t, true); await f.online.refresh();
+  const url = f.online.view().joinUrl; const displayUrl = f.online.sharing()?.displayUrl;
+  assert.ok(url); assert.ok(displayUrl);
+  f.clock(60_000); f.reachable(false); await f.online.refresh();
+  assert.equal(f.online.view().status, 'offline');
+  assert.equal(f.online.sharing()?.guestAccess.status, 'unavailable');
+  assert.equal(f.online.sharing()?.joinUrl, url);
+  f.clock(invitationGraceMs - 1); await f.online.refresh();
+  assert.equal(f.online.view().joinUrl, url); assert.equal(f.online.sharing()?.displayUrl, displayUrl);
+  f.clock(1); await f.online.refresh();
+  assert.equal(f.online.view().joinUrl, undefined); assert.equal(f.online.sharing()?.joinUrl, undefined);
+  f.reachable(true); await f.online.refresh(); assert.equal(f.online.view().joinUrl, url);
+  f.reachable(false); await f.online.refresh(); f.clock(invitationGraceMs - 1);
+  assert.equal(f.online.sharing()?.joinUrl, url, 'Recovery grants a fresh grace period for a later outage.');
+});
+
+test('online invitation grace never advertises an unverified or changed public origin', async t => {
+  const f = await fixture(t, true); f.reachable(false); await f.online.refresh();
+  assert.equal(f.online.view().joinUrl, undefined);
+  f.reachable(true); await f.online.refresh(); assert.ok(f.online.view().joinUrl);
+  f.connector.state.Self!.DNSName = 'different.tail123.ts.net'; f.reachable(false); await f.online.refresh();
+  assert.equal(f.online.view().joinUrl, undefined); assert.equal(f.online.sharing()?.joinUrl, undefined);
+});
+
+test('online invitation grace tolerates a temporary connector outage but ends for approval, unsafe configuration and maintenance', async t => {
+  const f = await fixture(t, true); await f.online.refresh(); const url = f.online.view().joinUrl;
+  f.connector.state.Self!.Online = false; await f.online.refresh();
+  assert.equal(f.online.origin, undefined, 'Retaining the QR never restores listener authorization.');
+  assert.equal(f.online.view().joinUrl, url);
+  f.connector.state.Self!.Online = true; await f.online.refresh();
+  f.connector.valid = false; await f.online.refresh(); assert.equal(f.online.view().joinUrl, undefined);
+  f.connector.valid = true; await f.online.refresh();
+  f.connector.state.BackendState = 'NeedsMachineAuth'; await f.online.refresh(); assert.equal(f.online.view().joinUrl, undefined);
+  f.connector.state.BackendState = 'Running'; await f.online.refresh(); assert.equal(f.online.view().joinUrl, url);
+  await f.online.pause(); assert.equal(f.online.view().joinUrl, undefined);
 });
 
 test('ready online access reports its Funnel round trip and rechecks UDP on a new connection', async t => {
