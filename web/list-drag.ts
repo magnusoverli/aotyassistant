@@ -4,6 +4,7 @@
  * the DOM, which the playlist owns. */
 type Slot = { node: HTMLElement; id: string; top: number; height: number };
 type Drag = {
+  // For touch gestures, pointer is the Touch.identifier, not a PointerEvent ID.
   id: string; source: HTMLElement; pointer: number; touch: boolean; active: boolean;
   startX: number; startY: number; y: number; offsetY: number;
   slots: Slot[]; from: number; index: number; hold?: ReturnType<typeof setTimeout>;
@@ -24,12 +25,20 @@ export class ListDrag {
     list.addEventListener('pointerdown', this.down);
     list.addEventListener('pointermove', this.move);
     list.addEventListener('pointerup', this.up);
-    list.addEventListener('pointercancel', () => this.cancel());
-    list.addEventListener('lostpointercapture', event => { if (this.drag?.active && event.pointerId === this.drag.pointer) this.cancel(); });
+    list.addEventListener('pointercancel', event => {
+      if (this.drag && !this.drag.touch && event.pointerId === this.drag.pointer) this.cancel();
+    });
+    list.addEventListener('lostpointercapture', event => {
+      if (event.target === list && this.drag && !this.drag.touch && event.pointerId === this.drag.pointer) this.cancel();
+    });
+    // Android can cancel the pointer stream for a native touch gesture. Keep touch
+    // on its own stream; touch events stay targeted at the original row without capture.
+    list.addEventListener('touchstart', this.touchStart, { passive: true });
+    list.addEventListener('touchmove', this.touchMove, { passive: false });
+    list.addEventListener('touchend', this.touchEnd, { passive: false });
+    list.addEventListener('touchcancel', () => { if (this.drag?.touch) this.cancel(); });
     // Never start the browser's own drag of a cover image or text.
     list.addEventListener('dragstart', event => event.preventDefault());
-    // Once a song is picked up, the finger moves it instead of scrolling.
-    list.addEventListener('touchmove', event => { if (this.drag?.active) event.preventDefault(); }, { passive: false });
     list.addEventListener('contextmenu', event => { if (this.drag?.touch) event.preventDefault(); });
   }
 
@@ -46,30 +55,62 @@ export class ListDrag {
   private rows() { return [...this.list.children].filter((node): node is HTMLElement => node instanceof HTMLElement && Boolean(node.dataset.entryId)); }
 
   private down = (event: PointerEvent) => {
-    if (!event.isPrimary || event.button !== 0 || this.drag || !this.options.enabled()) return;
-    if (!(event.target instanceof Element) || event.target.closest('button, a, input, select, textarea, summary')) return;
-    const source = event.target.closest<HTMLElement>('[data-entry-id]');
-    const rows = this.rows(); const from = source ? rows.indexOf(source) : -1;
-    if (!source || from < 0 || rows.length < 2) return;
-    const top = this.list.getBoundingClientRect().top;
-    const slots = rows.map(node => { const box = node.getBoundingClientRect(); return { node, id: node.dataset.entryId!, top: box.top - top, height: box.height }; });
-    const drag: Drag = { id: source.dataset.entryId!, source, pointer: event.pointerId, touch: event.pointerType === 'touch', active: false,
-      startX: event.clientX, startY: event.clientY, y: event.clientY, offsetY: event.clientY - source.getBoundingClientRect().top, slots, from, index: from };
-    this.drag = drag;
-    if (!drag.touch) { this.list.setPointerCapture(event.pointerId); return; }
+    if (event.pointerType === 'touch' || !event.isPrimary || event.button !== 0) return;
+    const drag = this.start(event.target, event.pointerId, event.clientX, event.clientY, false);
+    if (drag) this.list.setPointerCapture(event.pointerId);
+  };
+
+  private touchStart = (event: TouchEvent) => {
+    if (event.touches.length !== 1) { this.cancel(); return; }
+    const touch = event.changedTouches[0]; if (!touch) return;
+    const drag = this.start(event.target, touch.identifier, touch.clientX, touch.clientY, true);
+    if (!drag) return;
     drag.hold = setTimeout(() => {
       if (this.drag !== drag || drag.active) return;
-      try { this.list.setPointerCapture(drag.pointer); } catch { this.clear(); return; }
+      if (!this.options.enabled()) { this.clear(); return; }
       try { navigator.vibrate?.(12); } catch { /* Optional feedback. */ }
       this.begin(drag);
     }, holdMs);
   };
 
+  private start(target: EventTarget | null, pointer: number, x: number, y: number, touch: boolean) {
+    if (this.drag || !this.options.enabled()) return;
+    if (!(target instanceof Element) || target.closest('button, a, input, select, textarea, summary')) return;
+    const source = target.closest<HTMLElement>('[data-entry-id]');
+    const rows = this.rows(); const from = source ? rows.indexOf(source) : -1;
+    if (!source || from < 0 || rows.length < 2) return;
+    const top = this.list.getBoundingClientRect().top;
+    const slots = rows.map(node => { const box = node.getBoundingClientRect(); return { node, id: node.dataset.entryId!, top: box.top - top, height: box.height }; });
+    const drag: Drag = { id: source.dataset.entryId!, source, pointer, touch, active: false,
+      startX: x, startY: y, y, offsetY: y - source.getBoundingClientRect().top, slots, from, index: from };
+    this.drag = drag;
+    return drag;
+  }
+
+  private touchMove = (event: TouchEvent) => {
+    const drag = this.drag; if (!drag?.touch) return;
+    if (event.touches.length !== 1) { this.clear(); return; }
+    const touch = [...event.changedTouches].find(touch => touch.identifier === drag.pointer); if (!touch) return;
+    if (!drag.active) {
+      // A swipe before the hold belongs to native scrolling. Do not prevent it.
+      if (Math.hypot(touch.clientX - drag.startX, touch.clientY - drag.startY) >= touchSlop || !event.cancelable) this.clear();
+      return;
+    }
+    if (!event.cancelable) { this.clear(); return; }
+    event.preventDefault(); drag.y = touch.clientY; this.position(drag);
+  };
+
+  private touchEnd = (event: TouchEvent) => {
+    const drag = this.drag; if (!drag?.touch) return;
+    const touch = [...event.changedTouches].find(touch => touch.identifier === drag.pointer); if (!touch) return;
+    if (drag.active && event.cancelable) event.preventDefault();
+    this.drop(drag, touch.clientY);
+  };
+
   private move = (event: PointerEvent) => {
-    const drag = this.drag; if (!drag || event.pointerId !== drag.pointer) return;
+    const drag = this.drag; if (!drag || drag.touch || event.pointerId !== drag.pointer) return;
     if (!drag.active) {
       const moved = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
-      if (drag.touch) { if (moved >= touchSlop) this.clear(); return; }
       if (moved < mouseSlop) return;
       this.begin(drag);
     }
@@ -77,13 +118,17 @@ export class ListDrag {
   };
 
   private up = (event: PointerEvent) => {
-    const drag = this.drag; if (!drag || event.pointerId !== drag.pointer) return;
+    const drag = this.drag; if (!drag || drag.touch || event.pointerId !== drag.pointer) return;
+    this.drop(drag, event.clientY);
+  };
+
+  private drop(drag: Drag, y: number) {
     if (!drag.active) { this.clear(); return; }
-    drag.y = event.clientY; this.position(drag);
+    drag.y = y; this.position(drag);
     const ids = this.order(drag).map(slot => slot.id);
     this.clear();
     if (drag.index !== drag.from) this.options.commit(drag.id, ids);
-  };
+  }
 
   private begin(drag: Drag) {
     drag.active = true;
@@ -142,6 +187,6 @@ export class ListDrag {
     // Without transitions, so the next render shows the final order without rows sliding back.
     this.list.classList.remove('is-sorting'); drag.source.classList.remove('is-drag-source');
     for (const slot of drag.slots) slot.node.style.removeProperty('transform');
-    if (this.list.hasPointerCapture(drag.pointer)) this.list.releasePointerCapture(drag.pointer);
+    if (!drag.touch && this.list.hasPointerCapture(drag.pointer)) this.list.releasePointerCapture(drag.pointer);
   }
 }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.0.10] — 2026-11-10
+
+- Fix Android long-press playlist reordering on the participant page by handling touch gestures independently of pointer capture. Preserve the press-and-hold delay, normal swipe-to-scroll, and mouse dragging.
+
 ## [2.0.9] — 2026-11-10
 
 - Centre the display artwork and details/progress as one combined block, with a 50px gap between them. Use the progress bar's right edge as the block boundary and keep space clear for the bottom-right QR or room logo.
