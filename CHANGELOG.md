@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.12] — 2026-11-10
+
+- Scale the room display for TVs and high-resolution screens: larger header controls, listener names, avatars and QR codes, with proportional playback text, spacing and width limits. Keep the compact phone layout.
+- Add **Room display → Menu → Display size**, with 85%, 100%, 125% and 150% choices saved in that browser. Keep the current and next listeners at the start of the display's play order as turns advance, without changing the room's saved order.
+- Remove the separate **View albums** and **View tracks** buttons from artist and album results. The rows open directly with a click, Enter or Space; tracks retain **Add to list** and **Play**.
+- Fix speaker selection remaining blocked by “Playback cannot be confirmed” after successful playback recovery or after another app replaces the song. Unconfirmed playback still requires recovery before changing speakers.
+
 ## [2.0.11] — 2026-11-10
 
 - Security: devices on the host's tailnet can no longer reach the LAN port's unauthenticated host controls through the bundled Tailscale connector. The LAN listener in the Home Assistant app now refuses the connections Tailscale passes on from them.

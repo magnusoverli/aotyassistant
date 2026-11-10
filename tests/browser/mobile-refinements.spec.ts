@@ -18,9 +18,9 @@ test('mobile selections remain accessible and source choices fit narrow screens 
   await expect(select).toBeVisible();
   const box = (await select.boundingBox())!;
   expect(box.width).toBeGreaterThan(230); expect(box.x + box.width).toBeLessThanOrEqual(320);
-  await expect(page.getByRole('button', { name: 'View albums', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'View albums' })).toBeDisabled();
   await select.selectOption({ label: 'Tidal' });
-  await page.getByRole('button', { name: 'View albums', exact: true }).click();
+  await page.getByRole('button', { name: 'View albums' }).click();
   await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
   expect(isolatedApp.calls.filter(call => call.command === 'player_queues/play_media')).toHaveLength(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

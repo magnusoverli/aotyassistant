@@ -31,21 +31,25 @@ export class CatalogueRow {
     const art = v.get('art', () => new ArtworkView(kind === 'artist' ? 'Artist image' : 'Album artwork', kind === 'artist' ? 'result-artwork artist-portrait' : 'result-artwork'));
     children(info, art.update(shown.artwork), copy);
     if (kind !== 'track') {
-      const browse = v.el('browse', 'button', kind === 'artist' ? 'View albums' : 'View tracks', 'secondary'); prop(browse, 'type', 'button');
-      prop(browse, 'disabled', !options.online);
-      browse.onclick = () => options.browse(shown as CatalogueAlbum);
-      browse.onpointerdown = event => { if (event.button === 0 && !browse.disabled) options.prepare(shown as CatalogueAlbum); };
+      attr(row, 'role', 'button'); prop(row, 'tabIndex', 0);
+      attr(row, 'aria-label', kind === 'artist' ? `View albums by ${album.name}` : `View tracks on ${album.name}`);
+      attr(row, 'aria-disabled', String(!options.online));
+      row.onclick = () => { if (options.online) options.browse(shown as CatalogueAlbum); };
+      row.onkeydown = event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        if (event.key === 'Enter' && !event.repeat) row.click();
+      };
+      row.onkeyup = event => {
+        if (event.key !== ' ') return;
+        event.preventDefault(); row.click();
+      };
+      row.onpointerdown = event => { if (event.button === 0 && options.online) options.prepare(shown as CatalogueAlbum); };
       // A scroll takes over (cancel), or a held mouse button leaves. Touch also
       // fires pointerleave after lifting the finger; that must not cancel.
-      browse.onpointercancel = () => options.unprepare();
-      browse.onpointerleave = event => { if (event.buttons) options.unprepare(); };
-      // The whole row opens the artist or album; the button stays for keyboards and screen readers.
-      const outside = (event: Event) => !(event.target instanceof Element && event.target.closest('button'));
-      row.onclick = event => { if (outside(event) && !browse.disabled) options.browse(shown as CatalogueAlbum); };
-      row.onpointerdown = event => { if (outside(event) && event.button === 0 && !browse.disabled) options.prepare(shown as CatalogueAlbum); };
-      row.onpointercancel = event => { if (outside(event)) options.unprepare(); };
+      row.onpointercancel = () => options.unprepare();
       row.onpointerleave = event => { if (event.buttons) options.unprepare(); };
-      children(row, info, browse);
+      children(row, info);
     } else {
       const controls = v.el('controls', 'div', undefined, 'row-actions');
       const add = v.get(`add-${track.id}`, () => options.music.addButton(track));

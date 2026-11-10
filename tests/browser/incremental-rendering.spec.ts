@@ -48,8 +48,8 @@ test('artist browsing and playback patch existing regions without detaching unre
   await isolatedApp.manager.selectDestination('sonos:room', isolatedApp.manager.view().revision);
   await join(page, isolatedApp.origin);
   await retain(page, workspace); await search(page, 'multi-provider'); await retained(page);
-  await page.getByRole('button', { name: 'View albums', exact: true }).first().click(); await retained(page);
-  await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click(); await retained(page);
+  await page.getByRole('button', { name: 'View albums' }).first().click(); await retained(page);
+  await page.getByRole('button', { name: 'View tracks on The same release', exact: true }).click(); await retained(page);
   const row = page.locator('.catalogue-results .track-row').first();
   await expect(row.getByRole('combobox')).toHaveCount(0);
   await retain(page, [...workspace, '.catalogue-results', '.catalogue-results .track-row']);

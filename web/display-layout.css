@@ -10,7 +10,7 @@
   body[data-view='display'] .app-content > .notice { flex-shrink:0; margin-block:6px; }
   body[data-view='display'] .display-page {
     flex:1; min-height:0; height:100%; display:grid; grid-template-rows:minmax(0,.8fr) minmax(0,1.25fr);
-    gap:clamp(8px,1.5vh,20px); padding:clamp(12px,1.5vh,24px) 3vw 3vw; overflow:hidden;
+    gap:clamp(8px,1.5vh,calc(20 * var(--display-unit))); padding:clamp(12px,1.5vh,calc(24 * var(--display-unit))) 3vw 3vw; overflow:hidden;
   }
   body[data-view='display'] .display-page > .bmf-background {
     position:absolute; inset:0; z-index:-1; grid-row:1 / 2; grid-column:1 / -1;
@@ -20,9 +20,10 @@
   /* Absolute grid positioning bounds the background without putting it in the content flow. */
   body[data-view='display'] .display-page > .bmf-background > bmf-logo { max-width:min(100%,233cqh); }
   body[data-view='display'] .display-page:not([data-background='on']) > .bmf-background { display:none; }
-  body[data-view='display'] .room-stage {
-    --room-side-width:clamp(64px,12vw,220px); --room-stage-gap:clamp(12px,2vw,40px);
-    --playback-gap:50px; --playback-side-clearance:0px;
+  body[data-view='display'] .room-stage,
+  :root[data-room-logo] body[data-view='display'] .room-stage {
+    --room-side-width:clamp(64px,calc(12vw * var(--display-size,1)),calc(220 * var(--display-unit))); --room-stage-gap:clamp(12px,calc(2vw * var(--display-size,1)),calc(40 * var(--display-unit)));
+    --playback-gap:calc(50 * var(--display-unit)); --playback-side-clearance:0px;
     position:relative; z-index:1; grid-row:2;
     min-height:0; min-width:0; padding:0; grid-template-columns:minmax(0,1fr) var(--room-side-width);
     grid-template-rows:minmax(0,1fr); gap:var(--room-stage-gap); container-type:size; overflow:hidden;
@@ -38,7 +39,7 @@
        trailing quarter of the details column from the width being centred. */
     --playback-available:calc(100cqw - var(--room-side-width) - var(--room-stage-gap));
     --playback-artwork:min(82cqh,calc(var(--playback-available) * .425));
-    --playback-details:min(954px,max(0px,calc((var(--playback-available) - var(--playback-artwork) - var(--playback-gap)) * .75)));
+    --playback-details:min(calc(954 * var(--display-unit)),max(0px,calc((var(--playback-available) - var(--playback-artwork) - var(--playback-gap)) * .75)));
     grid-column:1 / -1; grid-row:1; justify-self:center; min-height:0; height:100%;
     width:min(calc(var(--playback-artwork) + var(--playback-gap) + var(--playback-details)),max(0px,calc(100% - 2 * var(--playback-side-clearance))));
     grid-template-rows:12% minmax(0,1fr); row-gap:2.4cqh;
@@ -54,23 +55,29 @@
   body[data-view='display'] .display-page[data-stage='resting'] :is(.room-activity,.room-album[hidden]),
   body[data-view='display'] .room-stream-details[hidden] { display:none; }
   body[data-view='display'] .display-page[data-stage='resting'] .room-hint { height:auto; }
-  body[data-view='display'] .room-title-slot { height:auto; max-height:2.4em; margin:0 0 1.6cqh; font-size:clamp(24px,10.8cqh,96px); overflow:hidden; }
+  body[data-view='display'] .room-title-slot { height:auto; max-height:2.4em; margin:0 0 1.6cqh; font-size:clamp(24px,calc(10.8cqh * var(--display-text-scale)),calc(96 * var(--display-unit))); overflow:hidden; }
   body[data-view='display'] .track-info h1,
   body[data-view='display'] .track-info h1.is-long { font-size:inherit; line-height:1.1; -webkit-line-clamp:2; }
   body[data-view='display'] .track-info .artist-credit,
-  body[data-view='display'] .room-hint { height:8.4cqh; min-height:24px; }
+  body[data-view='display'] .room-hint { height:calc(8.4cqh * var(--display-text-scale)); min-height:24px; }
   body[data-view='display'] .track-info .artist,
-  body[data-view='display'] .room-hint { font-size:clamp(16.5px,6.6cqh,45px); line-height:1.25; }
+  body[data-view='display'] .room-hint { font-size:clamp(16.5px,calc(6.6cqh * var(--display-text-scale)),calc(45 * var(--display-unit))); line-height:1.25; }
   body[data-view='display'] .artist-portrait { width:7.2cqh; height:7.2cqh; }
-  body[data-view='display'] .room-album { font-size:clamp(15px,4.8cqh,27px); line-height:1.2; margin-top:1.2cqh; }
+  body[data-view='display'] .room-album { font-size:clamp(15px,calc(4.8cqh * var(--display-text-scale)),calc(27 * var(--display-unit))); line-height:1.2; margin-top:1.2cqh; }
   body[data-view='display'] .room-activity { margin-top:2.4cqh; }
   body[data-view='display'] .public-playback { max-width:100%; }
   body[data-view='display'] .public-playback .playback-status,
-  body[data-view='display'] .public-playback .track-times { font-size:clamp(13.5px,4.2cqh,24px); }
+  body[data-view='display'] .public-playback .track-times { font-size:clamp(13.5px,calc(4.2cqh * var(--display-text-scale)),calc(24 * var(--display-unit))); }
   body[data-view='display'] .public-playback .track-times { margin-top:1.2cqh; }
-  body[data-view='display'] .room-stream-details { font-size:clamp(13.5px,3.6cqh,21px); margin-top:1.2cqh; }
-  body[data-view='display'] .room-stage > .room-logo { grid-column:2; grid-row:1; width:100%; max-width:44cqh; justify-self:end; }
-  body[data-view='display'] .room-stage > .room-invitation { grid-column:2; grid-row:1; width:100%; max-width:44cqh; align-self:end; justify-self:end; }
+  body[data-view='display'] .room-stream-details { font-size:clamp(13.5px,calc(3.6cqh * var(--display-text-scale)),calc(21 * var(--display-unit))); margin-top:1.2cqh; }
+  body[data-view='display'] .artist-credit { gap:calc(12 * var(--display-unit)); }
+  body[data-view='display'] .public-playback progress { height:calc(6 * var(--display-unit)); }
+  body[data-view='display'] .auto-reveal-marker { width:calc(2 * var(--display-unit)); height:calc(10 * var(--display-unit)); }
+  body[data-view='display'] .room-stage > .room-logo { grid-column:2; grid-row:1; width:100%; max-width:calc(44cqh * var(--display-size,1)); max-height:calc(44cqh * var(--display-size,1)); justify-self:end; }
+  body[data-view='display'] .room-stage > .room-invitation { grid-column:2; grid-row:1; width:100%; max-width:calc(44cqh * var(--display-size,1)); align-self:end; justify-self:end; }
+  /* A logo and bottom-right QR share a column; reserve distinct vertical slots
+     even at the largest local size or with a tall uploaded logo. */
+  :root[data-room-logo] body[data-view='display'] .room-stage:has(> .room-invitation:not([hidden])) > :is(.room-logo,.room-invitation) { max-width:44cqh; max-height:44cqh; }
   body[data-view='display'] .room-stage > .room-invitation[hidden] { display:none; }
   body[data-view='display'] .room-qr-link { width:100%; }
   @container (max-height:237.5px) {

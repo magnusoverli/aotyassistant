@@ -530,7 +530,9 @@ export class Engine extends EventEmitter {
   async changeSpeaker<T>(playbackId: string | null, work: () => Promise<T>): Promise<T> {
     return this.audio(async () => {
       await this.inspect(room => {
-        if (!this.live || this.concealPlayback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before changing speakers.');
+        // Invalidation conceals then removes the old song. Once it is gone, the
+        // flag must not block idle routing; inspect still rejects pending recovery.
+        if (!this.live || this.concealPlayback && room.playback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before changing speakers.');
         const current = room.playback && room.playback.status !== 'stopped' ? room.playback.id : null;
         if (current !== playbackId) throw new AppError(409, 'The current song changed. Review playback before changing speakers.');
       });

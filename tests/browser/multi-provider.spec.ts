@@ -21,12 +21,12 @@ test('equivalent artists, releases and tracks are selectable without provider dr
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.screenshot({ path: 'test-results/multi-provider-artists-mobile.png', fullPage: true });
-  await artist.getByRole('button', { name: 'View albums' }).click();
+  await artist.click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible(); await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
   const release = page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' });
   await expect(release.getByRole('combobox')).toHaveCount(0);
-  await release.getByRole('button', { name: 'View tracks' }).click();
+  await release.click();
   const recording = page.locator('.catalogue-results .track-row');
   await expect(recording).toHaveCount(1);
   await expect(recording.getByRole('combobox')).toHaveCount(0);
@@ -43,7 +43,7 @@ test('equivalent artists, releases and tracks are selectable without provider dr
   await page.getByRole('button', { name: '← Albums', exact: true }).click();
   await page.getByRole('button', { name: '← Artists', exact: true }).click();
   const before = isolatedApp.calls.length;
-  await artist.getByRole('button', { name: 'View albums' }).click();
+  await artist.click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
   expect(isolatedApp.calls.slice(before).filter(c => c.command === 'music/artists/artist_albums').map(c => c.args.provider_instance_id_or_domain).sort()).toEqual(['spotify', 'tidal']);
   expect(isolatedApp.calls.some(c => c.command.startsWith('player_queues/play_media'))).toBe(false);
@@ -83,7 +83,7 @@ test('ID-less artists combine provider catalogues into unique browse rows', asyn
     await search(name);
     await expect(page.locator('.catalogue-results .track-row')).toHaveCount(1);
     await expect(page.locator('.catalogue-results strong')).toHaveText([name]);
-    await expect(page.getByRole('button', { name: 'View albums', exact: true }).first()).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'View albums' }).first()).toBeEnabled();
     await expect(page.locator('.catalogue-results').getByRole('combobox')).toHaveCount(0);
   }
   const response = await (await post('/api/participant/browse', { kind: 'artists', value: 'Metallica' })).json();
@@ -92,11 +92,11 @@ test('ID-less artists combine provider catalogues into unique browse rows', asyn
   expect(JSON.stringify(response)).not.toMatch(/private-instance|private-multi|spotify:\/\/|external_ids/);
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
   await page.screenshot({ path: 'test-results/metadata-artists-mobile.png', fullPage: true });
-  await page.getByRole('button', { name: 'View albums', exact: true }).click();
+  await page.getByRole('button', { name: 'View albums' }).click();
   await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
-  await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click();
+  await page.getByRole('button', { name: 'View tracks on The same release', exact: true }).click();
   const original = page.locator('.catalogue-results .track-row').nth(1);
   await expect(original.getByRole('combobox')).toHaveCount(0);
   await expect(original.getByRole('button', { name: 'Add to list', exact: true })).toBeEnabled();
@@ -111,7 +111,7 @@ test('metadata-matched releases appear once and browse both provider copies', as
   await page.goto('/host'); const join = await page.getByRole('link', { name: 'Open guest invitation' }).getAttribute('href'); await page.goto(join!);
   await page.getByLabel('Display name').fill('Release choices'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
   await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('multi-provider-metadata-albums'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
+  await page.getByRole('button', { name: 'View albums' }).first().click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);
   await expect(page.getByText('spotify exclusive', { exact: true })).toBeVisible(); await expect(page.getByText('tidal exclusive', { exact: true })).toBeVisible();
   const releases = page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' });
@@ -119,7 +119,7 @@ test('metadata-matched releases appear once and browse both provider copies', as
   const release = releases.first();
   await expect(release.getByRole('combobox')).toHaveCount(0);
   const before = isolatedApp.calls.length;
-  await release.getByRole('button', { name: 'View tracks', exact: true }).click();
+  await release.click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(1);
   expect(isolatedApp.calls.slice(before).filter(c => c.command === 'music/albums/album_tracks').map(c => c.args.provider_instance_id_or_domain).sort()).toEqual(['spotify', 'tidal']);
 });
@@ -136,8 +136,8 @@ test('Play automatically selects the available equivalent once, and reveal remai
     const tv = await tvContext.newPage(); await tv.goto(display!); await page.goto(join!);
     await page.getByLabel('Display name').fill('Exact-source listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await page.getByRole('button', { name: 'Join room' }).click(); await showFind(page);
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('multi-provider'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await page.getByRole('button', { name: 'View albums', exact: true }).first().click();
-    await page.locator('.catalogue-results .track-row').filter({ hasText: 'The same release' }).getByRole('button', { name: 'View tracks' }).click();
+    await page.getByRole('button', { name: 'View albums' }).first().click();
+    await page.getByRole('button', { name: 'View tracks on The same release', exact: true }).click();
     expect(isolatedApp.calls.filter(c => c.command === 'player_queues/play_media')).toHaveLength(0);
     const original = page.locator('.catalogue-results .track-row').first();
     await expect(original.getByRole('combobox')).toHaveCount(0);

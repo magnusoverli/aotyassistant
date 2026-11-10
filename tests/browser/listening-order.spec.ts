@@ -24,11 +24,12 @@ test('every route highlights the current turn, including before playback, while 
       let appearance: string[] | undefined;
       for (const current of pages) {
         await current.setViewportSize({ width, height });
+        const display = new URL(current.url()).pathname === '/display' && width >= 1100;
         await expect(current.locator('.rotation-seat')).toHaveCount(3);
         await expect(current.locator('.seat-number')).toHaveCount(0);
         await expect(current.locator('.listening-order')).toHaveCount(1);
         await expect(current.locator('main .rotation-list, .host-people, .room-turn-order')).toHaveCount(0);
-        await expect(current.locator('.header-inner')).toHaveCSS('height', width < 1100 ? '44px' : '72px');
+        await expect(current.locator('.header-inner')).toHaveCSS('height', width < 1100 ? '44px' : display ? '62px' : '72px');
         const bar = (await current.locator('.header-inner').boundingBox())!;
         const order = (await current.locator('.order-bar').boundingBox())!;
         expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
@@ -37,7 +38,7 @@ test('every route highlights the current turn, including before playback, while 
         await expect(current.locator('.rotation-list')).toBeVisible();
         await expect(current.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(3);
         expect(await current.locator('.rotation-seat').evaluateAll(nodes => nodes.map(node => getComputedStyle(node, '::after').content))).toEqual(['""', '""', 'none']);
-        await expect(current.locator('.rotation-list')).toHaveCSS('column-gap', width < 1100 ? '18px' : '26px');
+        await expect(current.locator('.rotation-list')).toHaveCSS('column-gap', width < 1100 ? '18px' : display ? '19.5px' : '26px');
         await expect(current.getByRole('button', { name: /^(Manage people|Done managing)$/ })).toHaveCount(0);
         await expect(current.locator('.rotation-seat button')).toHaveCount(0);
         await expect(current.locator('.rotation-seat[tabindex="0"]')).toHaveCount(current === page ? 3 : 0);
@@ -56,8 +57,8 @@ test('every route highlights the current turn, including before playback, while 
         expect(await current.locator('.rotation-seat.is-next .seat-state:visible').evaluate(node => getComputedStyle(node, '::before').content)).toBe('none');
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();
         const seat = current.locator('.rotation-seat').first();
-        await expect(seat).toHaveCSS('padding-left', width < 1100 ? '4px' : '6px');
-        expect((await seat.boundingBox())!.width).toBeLessThanOrEqual(width < 1100 ? current === page ? 160 : 140 : 180);
+        await expect(seat).toHaveCSS('padding-left', width < 1100 ? '4px' : display ? '7.5px' : '6px');
+        expect((await seat.boundingBox())!.width).toBeLessThanOrEqual(width < 1100 ? current === page ? 160 : 140 : display ? 210 : 180);
         if (width < 1100) {
           await expect(seat.locator('.avatar')).toBeHidden();
           await expect(seat.locator('strong')).toHaveCSS('grid-column-start', '1');
@@ -77,7 +78,7 @@ test('every route highlights the current turn, including before playback, while 
         if (width < 1100 && current === participant) {
           expect(style.slice(0, 3)).toEqual(['40px', '2px', '2px']);
           expect(style.slice(3)).toEqual(appearance!.slice(3));
-        } else if (appearance) expect(style).toEqual(appearance); else appearance = style;
+        } else if (!display) { if (appearance) expect(style).toEqual(appearance); else appearance = style; }
         await expect(current.locator('.rotation-seat strong')).toHaveText(['First', 'Second', 'My seat']);
         expect(await current.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await current.getByRole('button', { name: 'Menu', exact: true }).click();
@@ -232,7 +233,8 @@ test('mobile keeps Now and Next in the first slots across turns, scrolling and r
     await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
     await assertOrder();
     await page.setViewportSize({ width: 1100, height: 844 });
-    await expect(names).toHaveText(saved.map(person => person.nickname));
+    if (path === '/display') await assertOrder();
+    else await expect(names).toHaveText(saved.map(person => person.nickname));
     await page.setViewportSize({ width: 1099, height: 844 });
     await assertOrder();
     await page.setViewportSize({ width: 320, height: 700 });

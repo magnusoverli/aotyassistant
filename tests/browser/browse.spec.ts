@@ -22,7 +22,7 @@ test('non-current participant browses an artist, prepares a track, then plays/re
     await expect(second.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
     await expect(second.locator('.catalogue-results .track-row')).toHaveCount(0);
     await second.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await second.getByRole('button', { name: 'Search', exact: true }).click();
-    await second.getByRole('button', { name: 'View albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
+    await second.getByRole('button', { name: 'View albums' }).click(); await second.getByRole('button', { name: 'View tracks' }).click();
     await saveChoice(second);
     await expect(second.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeDisabled();
     await expect(first.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);

@@ -1,0 +1,71 @@
+@layer features {
+  /* One design pixel at 1920×1080, two at native 4K. Use the limiting dimension
+     so an ultrawide or short window cannot grow the header out of the viewport.
+     The local preference is independent of devicePixelRatio and OS scaling. */
+  body[data-view='display'] {
+    --display-unit:calc(1px * var(--display-size,1));
+    /* Text can grow within the playback container without clipping a two-line title. */
+    --display-text-scale:clamp(.85,var(--display-size,1),1.2);
+  }
+  .display-size-control { display:grid; gap:8px; padding:12px 4px 4px; margin-top:8px; border-top:1px solid var(--line); }
+  .display-size-control label { font-weight:600; }
+  .display-size-control select { width:100%; }
+  .display-size-control p { margin:0; font-size:.85em; line-height:1.4; }
+  body[data-view='display'] .seat-state { overflow:hidden; text-overflow:ellipsis; }
+
+  @media(min-width:1100px) {
+    body[data-view='display'] { --display-unit:calc(clamp(.75px,min(.052083333vw,.092592593dvh),4px) * var(--display-size,1)); }
+    body[data-view='display'] .header-inner { min-height:calc(72 * var(--display-unit)); gap:calc(16 * var(--display-unit)); padding-block:calc(12 * var(--display-unit)); }
+    body[data-view='display'] .brand { gap:calc(13 * var(--display-unit)); }
+    body[data-view='display'] .brand strong { font-size:calc(24 * var(--display-unit)); }
+    body[data-view='display'] .brand-mark { width:calc(42 * var(--display-unit)); height:calc(42 * var(--display-unit)); font-size:calc(32 * var(--display-unit)); }
+    body[data-view='display'] .header-meta { gap:calc(12 * var(--display-unit)); }
+    body[data-view='display'] :is(.header-meta .secondary,.header-menu-toggle,.header-nav-link) {
+      min-height:max(44px,calc(44 * var(--display-unit))); padding:calc(10 * var(--display-unit)) calc(12 * var(--display-unit));
+      font-size:calc(18 * var(--display-unit)); border-radius:calc(9 * var(--display-unit));
+    }
+    body[data-view='display'] .primary-navigation {
+      width:min(calc(380 * var(--display-unit)),calc(100% - 2 * var(--header-gutter)));
+      padding:calc(10 * var(--display-unit)); border-radius:0 0 calc(12 * var(--display-unit)) calc(12 * var(--display-unit));
+    }
+    body[data-view='display'] .primary-links { gap:calc(4 * var(--display-unit)); }
+    body[data-view='display'] .display-size-control { font-size:calc(18 * var(--display-unit)); gap:calc(8 * var(--display-unit)); padding:calc(12 * var(--display-unit)) calc(4 * var(--display-unit)); }
+    body[data-view='display'] .display-size-control select { font-size:inherit; padding:calc(12 * var(--display-unit)); min-height:44px; }
+    body[data-view='display'] .order-bar { min-height:calc(112 * var(--display-unit)); gap:calc(12 * var(--display-unit)); padding-block:calc(12 * var(--display-unit)); }
+    body[data-view='display'] :is(.order-empty,.order-status) { font-size:calc(16 * var(--display-unit)); }
+    body[data-view='display'] .rotation-list { --order-gap:calc(26 * var(--display-unit)); }
+    body[data-view='display'] .rotation-seat {
+      flex-basis:calc(280 * var(--display-unit)); min-height:calc(88 * var(--display-unit));
+      grid-template-columns:calc(44 * var(--display-unit)) minmax(0,1fr); grid-template-rows:calc(34 * var(--display-unit)) calc(20 * var(--display-unit));
+      column-gap:calc(12 * var(--display-unit)); row-gap:calc(6 * var(--display-unit));
+      padding:calc(12 * var(--display-unit)) calc(10 * var(--display-unit)); border-radius:calc(10 * var(--display-unit));
+    }
+    body[data-view='display'] .rotation-seat .avatar { width:calc(44 * var(--display-unit)); height:calc(44 * var(--display-unit)); font-size:calc(16 * var(--display-unit)); }
+    body[data-view='display'] .rotation-seat strong { font-size:calc(28 * var(--display-unit)); line-height:calc(34 * var(--display-unit)); }
+    body[data-view='display'] .seat-state { font-size:calc(14 * var(--display-unit)); line-height:calc(20 * var(--display-unit)); }
+    body[data-view='display'] .rotation-seat.is-current .seat-state:before { font-size:calc(12 * var(--display-unit)); }
+    body[data-view='display'] .rotation-list > .rotation-seat:not(:last-child)::after { height:calc(12 * var(--display-unit)); mask-size:calc(18 * var(--display-unit)) calc(12 * var(--display-unit)); }
+    body[data-view='display'] .order-trace rect { rx:calc(10 * var(--display-unit) - .5px); }
+    body[data-view='display'] .has-display-qr .order-bar { padding-right:calc(116 * var(--display-unit)); }
+    body[data-view='display'] .order-qr { top:calc(2 * var(--display-unit)); height:calc(100% - 4 * var(--display-unit)); max-height:calc(104 * var(--display-unit)); }
+    body[data-view='display'] .order-qr img { border-radius:calc(4 * var(--display-unit)); }
+    body[data-view='display'] .app-content > .notice { max-width:none; font-size:calc(16 * var(--display-unit)); padding:calc(14 * var(--display-unit)) calc(16 * var(--display-unit)); }
+    body[data-view='display'] .vinyl-label.is-personalized .vinyl-owner { font-size:clamp(7px,4cqw,calc(20 * var(--display-unit))); }
+    body[data-view='display'] .vinyl-label.is-personalized .vinyl-owner.is-long { font-size:clamp(5px,2.4cqw,calc(13 * var(--display-unit))); }
+    body[data-view='display'] .vinyl-label.is-personalized .vinyl-caption { font-size:clamp(5px,2.7cqw,calc(13 * var(--display-unit))); }
+  }
+  /* Retain the compact header on small screens; local size adjustments still
+     enlarge the order, with enough width reserved for both Now and Next. */
+  @media(max-width:1099px) {
+    body[data-view='display'] .rotation-list { --order-gap:calc(18 * var(--display-unit)); }
+    body[data-view='display'] .rotation-seat {
+      flex-basis:min(clamp(calc(96 * var(--display-unit)),calc((100% - 2 * var(--order-gap)) / 3),calc(112 * var(--display-unit))),calc((100% - var(--order-gap)) / 2));
+      grid-template-rows:calc(18 * var(--display-unit)) calc(16 * var(--display-unit));
+      min-height:calc(40 * var(--display-unit)); padding-block:calc(2 * var(--display-unit));
+    }
+    body[data-view='display'] .rotation-seat strong { font-size:calc(13 * var(--display-unit)); line-height:calc(18 * var(--display-unit)); }
+    body[data-view='display'] .seat-state { font-size:calc(9.5 * var(--display-unit)); line-height:calc(16 * var(--display-unit)); }
+    body[data-view='display'] .has-display-qr .order-bar { padding-right:calc(60 * var(--display-unit)); }
+    body[data-view='display'] .order-qr { max-height:calc(48 * var(--display-unit)); }
+  }
+}

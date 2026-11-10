@@ -52,7 +52,8 @@ export class ListeningOrder {
   private key = '';
   private rows = new Map<string, ViewNodes>();
   private mobile = stackedLayout();
-  private presentedMobile = false;
+  private display = false;
+  private presentedTurnFirst = false;
   private presentedCurrent?: string;
 
   constructor(private management?: Management) {
@@ -86,6 +87,12 @@ export class ListeningOrder {
     this.list.classList.toggle('is-editable', Boolean(management));
     if (changed) { this.drag?.cancel(); this.key = ''; this.render(); }
     this.updateControls();
+  }
+
+  /** A shared screen always starts with Now and Next, without changing the saved order. */
+  setDisplay(display: boolean) {
+    if (this.display === display) return;
+    this.display = display; this.render();
   }
 
   /** Authenticated pages already have a room stream; entry/settings use the public order feed. */
@@ -144,7 +151,7 @@ export class ListeningOrder {
 
   private presentedPeople() {
     const people = this.snapshot?.rotation ?? [];
-    return this.mobile ? turnFirst(people, this.snapshot?.current?.id) : people;
+    return this.mobile || this.display ? turnFirst(people, this.snapshot?.current?.id) : people;
   }
 
   private render() {
@@ -153,11 +160,12 @@ export class ListeningOrder {
     text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
     prop(this.empty, 'hidden', people.length > 0); prop(this.list, 'hidden', !people.length);
     prop(this.help, 'hidden', !this.management || people.length < 2);
-    const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id, this.mobile]);
+    const turnFirst = this.mobile || this.display;
+    const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id, this.mobile, this.display]);
     if (key !== this.key) {
       this.key = key;
-      const left = this.mobile && (!this.presentedMobile || this.presentedCurrent !== view?.current?.id) ? 0 : this.list.scrollLeft;
-      this.presentedMobile = this.mobile; this.presentedCurrent = view?.current?.id;
+      const left = turnFirst && (!this.presentedTurnFirst || this.presentedCurrent !== view?.current?.id) ? 0 : this.list.scrollLeft;
+      this.presentedTurnFirst = turnFirst; this.presentedCurrent = view?.current?.id;
       const focused = document.activeElement instanceof HTMLElement && this.list.contains(document.activeElement) ? document.activeElement.dataset.focusKey : undefined;
       children(this.list, ...people.map(person => {
         let nodes = this.rows.get(person.id); if (!nodes) { nodes = new ViewNodes(); this.rows.set(person.id, nodes); } const v = nodes;

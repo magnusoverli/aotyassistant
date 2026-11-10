@@ -98,6 +98,7 @@ const pageNodes = new ViewNodes();
 const entryNodes = new ViewNodes();
 const catalogueRows = new Map<string, CatalogueRow>();
 document.body.dataset.view = page;
+listeningOrder.setDisplay(page === 'display');
 void loadRoomLogo(signal);
 const player = new PlayerController({
   role: page === 'host' ? 'host' : 'participant', getView: () => view,

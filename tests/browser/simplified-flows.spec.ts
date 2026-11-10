@@ -57,16 +57,16 @@ test('browser and in-page Back restore private browsing without putting results 
   await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'browser-test-token', revision: settings.revision });
   await post('/api/participant/join', { pin: '1234', nickname: 'Browse' }); await page.goto('/participant');
   await page.getByRole('searchbox').fill('Fixture'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.getByRole('button', { name: 'View albums', exact: true }).click();
-  await page.getByRole('button', { name: 'View tracks', exact: true }).click();
+  await page.getByRole('button', { name: 'View albums' }).click();
+  await page.getByRole('button', { name: 'View tracks' }).click();
   await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
   expect(await page.evaluate(() => Object.keys(history.state))).toEqual(['doomRoomBrowse']);
   expect(new URL(page.url()).pathname).toBe('/participant');
-  await page.goBack(); await expect(page.getByRole('button', { name: 'View tracks', exact: true })).toBeVisible();
-  await page.goBack(); await expect(page.getByRole('button', { name: 'View albums', exact: true })).toBeVisible();
+  await page.goBack(); await expect(page.getByRole('button', { name: 'View tracks' })).toBeVisible();
+  await page.goBack(); await expect(page.getByRole('button', { name: 'View albums' })).toBeVisible();
   await expect(page.getByRole('searchbox')).toHaveValue('Fixture');
-  await page.goForward(); await expect(page.getByRole('button', { name: 'View tracks', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '← Artists' }).click(); await expect(page.getByRole('button', { name: 'View albums', exact: true })).toBeVisible();
+  await page.goForward(); await expect(page.getByRole('button', { name: 'View tracks' })).toBeVisible();
+  await page.getByRole('button', { name: '← Artists' }).click(); await expect(page.getByRole('button', { name: 'View albums' })).toBeVisible();
   expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });
 

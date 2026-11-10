@@ -24,9 +24,9 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     const prepare = async (page: Page) => {
       await showFind(page);
       await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-      await page.getByRole('button', { name: 'View albums', exact: true }).click();
+      await page.getByRole('button', { name: 'View albums' }).click();
       const response = page.waitForResponse(response => response.url().endsWith('/api/participant/browse') && response.request().postDataJSON().kind === 'tracks');
-      await page.getByRole('button', { name: 'View tracks', exact: true }).click(); const result = await (await response).json();
+      await page.getByRole('button', { name: 'View tracks' }).click(); const result = await (await response).json();
       await saveChoice(page);
       await expect(page.getByAltText('Saved album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
       const saved = await (await page.request.get('/api/participant/preparations/state')).json(); await showFind(page);
@@ -63,7 +63,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     expect((await second.request.get(firstTrack.artwork)).status()).toBe(409);
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0); await expect(host.getByText('Real catalogue fixture')).toHaveCount(0);
     // Old artist/album references must remain genuinely usable, not just visible in a stale UI.
-    await second.getByRole('button', { name: '← Albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks', exact: true }).click();
+    await second.getByRole('button', { name: '← Albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks' }).click();
     await expect(second.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
     await showList(first); await showList(second);
     await expect(first.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeEnabled();

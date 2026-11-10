@@ -213,6 +213,32 @@ test('external source replacement is never transferred or stopped', async t => {
   assert.equal(f.writes().length, 0); assert.equal(f.remote.queue.state, 'playing');
 });
 
+for (const outcome of ['recovered', 'external-replacement'] as const) test(`an idle speaker can be selected after playback is ${outcome}`, async t => {
+  const f = await fixture(t); const turn = f.host().turnId; const previousId = f.participant().ownPlayback!.id;
+  const select = (playbackId?: string) => f.manager.selectDestination('sonos:bedroom', f.manager.view().revision, playbackId,
+    work => f.engine.changeSpeaker(playbackId ?? null, work));
+  if (outcome === 'recovered') {
+    f.remote.transferOutcome('wrong-position');
+    await assert.rejects(operation('test-transfer', () => f.move(), 350), /Moving playback could not be confirmed/);
+    f.remote.calls.length = 0;
+    await assert.rejects(select(), /connectivity is uncertain/);
+    assert.equal(f.writes().length, 0);
+    await f.manager.recoverPlayback(f.manager.view().revision);
+  } else {
+    f.remote.queue.current_item!.queue_item_id = 'external-item';
+    await f.poll();
+  }
+  await f.engine.drain();
+  assert.equal(f.adapter.requiresRecovery, false); assert.equal(f.adapter.ownsPlayback, false);
+  assert.equal(f.participant().ownPlayback, null); assert.equal(f.manager.view().speakerChangesBlocked, false);
+  f.remote.calls.length = 0;
+  const selected = await select();
+  assert.equal(selected.destination?.id, 'sonos:bedroom'); assert.equal(selected.output.state, 'ready');
+  await assert.rejects(select(previousId), /current song changed/);
+  assert.equal(f.writes().length, 0); assert.equal(f.host().turnId, turn); assert.equal(f.participant().ownPlayback, null);
+  if (outcome === 'external-replacement') assert.equal(f.remote.queue.state, 'playing');
+});
+
 test('missing source stream evidence retains the recovery guard and never dispatches transfer', async t => {
   const f = await fixture(t); delete f.remote.queue.current_item!.streamdetails; f.remote.calls.length = 0;
   await assert.rejects(f.move(), /could not confirm/);

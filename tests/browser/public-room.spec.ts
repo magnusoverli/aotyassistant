@@ -82,7 +82,7 @@ test('the display uses the shared listening order without numbers and retains it
     await expect(tv.locator('.rotation-list strong').nth(1)).toHaveText('Jordan');
     await expect(tv.locator('.rotation-list strong').nth(2)).toHaveText('Riley');
     await tv.setViewportSize({ width: 1366, height: 768 });
-    await expect(tv.locator('.rotation-list strong').nth(0)).toHaveText('Alex');
+    await expect(tv.locator('.rotation-list strong').nth(0)).toHaveText('Sam');
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Sam');
   } finally { await f.close(); for (const context of listeners) await context.close(); }
 });

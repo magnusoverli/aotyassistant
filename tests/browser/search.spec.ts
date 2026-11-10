@@ -44,8 +44,8 @@ test('participant searches privately with empty/errors but cannot play until a s
     await expect(alice.getByRole('heading', { name: 'Artists', exact: true })).toBeVisible();
     await expect(alice.getByRole('heading', { name: 'Songs', exact: true })).toBeVisible();
     await expect(alice.locator('.catalogue-results .track-row:not(.browse-row)')).toContainText('Real catalogue fixture');
-    await alice.getByRole('button', { name: 'View albums', exact: true }).click();
-    await alice.getByRole('button', { name: 'View tracks', exact: true }).click();
+    await alice.getByRole('button', { name: 'View albums' }).click();
+    await alice.getByRole('button', { name: 'View tracks' }).click();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toBeVisible();
     await expect(alice.getByText('Fixture artist', { exact: true })).toBeVisible();
     await expect(alice.getByText('Fixture album · Original recording', { exact: true })).toBeVisible();

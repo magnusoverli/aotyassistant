@@ -48,13 +48,14 @@ test('shared mobile header is compact across routes while desktop sizing and tou
     for (const width of [1440, 1100, 1099, 701, 700, 390, 320, 1100]) {
       await page.setViewportSize({ width, height: 844 });
       const mobile = width < 1100;
-      const barHeight = mobile ? '44px' : '72px';
+      const display = path === '/display' && !mobile;
+      const barHeight = mobile ? '44px' : display ? '62px' : '72px';
       await expect(page.locator('.header-inner')).toHaveCSS('height', barHeight);
       await expect(page.locator('.brand-subtitle')).toBeHidden();
-      await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? '49px' : '89px');
-      await expect(page.locator('.brand-mark')).toHaveCSS('width', mobile ? width <= 380 ? '28px' : '30px' : '38px');
-      await expect(page.locator('.brand strong')).toHaveCSS('font-size', mobile ? '14px' : '16px');
-      await expect(page.locator('.rotation-seat strong')).toHaveCSS('font-size', mobile ? '13px' : '14px');
+      await expect(page.locator('.order-bar')).toHaveCSS('height', mobile ? '49px' : display ? '84px' : '89px');
+      await expect(page.locator('.brand-mark')).toHaveCSS('width', mobile ? width <= 380 ? '28px' : '30px' : display ? '31.5px' : '38px');
+      await expect(page.locator('.brand strong')).toHaveCSS('font-size', mobile ? '14px' : display ? '18px' : '16px');
+      await expect(page.locator('.rotation-seat strong')).toHaveCSS('font-size', mobile ? '13px' : display ? '21px' : '14px');
       await expect(page.locator('.header-menu-toggle')).toHaveCSS('color', mobile ? 'rgb(188, 201, 188)' : 'rgb(161, 176, 163)');
       await expect(page.locator('.header-menu-toggle')).toHaveCSS('border-top-color', mobile ? 'rgb(74, 91, 78)' : 'rgb(48, 61, 51)');
       const divider = await page.locator('.app-header').evaluate(node => {

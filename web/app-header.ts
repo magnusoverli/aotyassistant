@@ -5,6 +5,7 @@ import { attr, prop, text } from './view-nodes';
 import { demoPlaybackNotice, productName } from '../src/product';
 import { requestJson } from './request';
 import type { UserDirectory } from '../src/model';
+import { DisplaySize, displaySizes } from './display-size';
 
 /** One persistent, compact header for every route and viewport. */
 export class AppHeader {
@@ -26,6 +27,8 @@ export class AppHeader {
   private resize?: ResizeObserver;
   private fullscreenPending = false;
   private lastState: HeaderState = {};
+  private displaySize = new DisplaySize();
+  private sizeControl = el('div', undefined, 'display-size-control');
 
   constructor(private page: Page, private failed: (message: string) => void) {
     const skip = link('Skip to content', '#main-content', 'skip-link');
@@ -42,6 +45,17 @@ export class AppHeader {
     const wordmark = el('div'); wordmark.append(el('strong', productName), this.subtitle); brand.append(mark, wordmark);
     this.navigation.id = 'app-navigation'; this.navigation.setAttribute('aria-label', 'Primary navigation');
     this.navigation.append(this.primary);
+    const sizeLabel = el('label', 'Display size'); sizeLabel.htmlFor = 'display-size';
+    const sizeSelect = el('select'); sizeSelect.id = 'display-size';
+    for (const size of displaySizes) {
+      const option = el('option', size.label); option.value = String(size.value); sizeSelect.append(option);
+    }
+    sizeSelect.value = String(this.displaySize.current);
+    const sizeHelp = el('p', 'Adjust for your viewing distance. Saved in this browser.', 'muted'); sizeHelp.id = 'display-size-help';
+    sizeSelect.setAttribute('aria-describedby', sizeHelp.id);
+    sizeSelect.onchange = () => { this.displaySize.set(Number(sizeSelect.value)); this.updateDisplaySize(); };
+    this.sizeControl.append(sizeLabel, sizeSelect, sizeHelp); this.navigation.append(this.sizeControl);
+    this.updateDisplaySize();
     this.toggle.type = 'button'; this.toggle.setAttribute('aria-controls', this.navigation.id);
     this.toggle.onclick = () => this.setExpanded(!this.expanded);
     this.fullscreen.type = 'button'; this.fullscreen.onclick = () => { void this.toggleFullscreen(); };
@@ -120,6 +134,7 @@ export class AppHeader {
   }
   setPage(page: Page) {
     this.page = page;
+    this.updateDisplaySize();
     attr(this.element.querySelector('.brand')!, 'aria-current', page === 'home' ? 'page' : undefined);
     if (page !== 'display') this.fullscreen.remove();
     this.setExpanded(false);
@@ -139,6 +154,11 @@ export class AppHeader {
     attr(this.toggle, 'aria-expanded', String(this.expanded));
     text(this.toggle, this.expanded ? 'Close' : 'Menu');
     prop(this.navigation, 'hidden', !this.expanded);
+  }
+  private updateDisplaySize() {
+    prop(this.sizeControl, 'hidden', this.page !== 'display');
+    if (this.page === 'display') document.documentElement.style.setProperty('--display-size', String(this.displaySize.current));
+    else document.documentElement.style.removeProperty('--display-size');
   }
   private keydown = (event: KeyboardEvent) => {
     if (event.key !== 'Escape') return;

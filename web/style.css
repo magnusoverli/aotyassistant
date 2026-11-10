@@ -7,6 +7,7 @@
 @import './music-collection.css';
 @import './atmosphere.css';
 @import './display-layout.css';
+@import './display-sizing.css';
 
 @layer features {
 html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,90px) + 18px); }
@@ -375,14 +376,14 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
 .catalogue-results .results-more { width:100%; margin:12px 0 4px; }
 /* The whole artist or album row opens it. */
 .catalogue-results .browse-row { cursor:pointer; }
-.catalogue-results .browse-row:hover,.catalogue-results .browse-row:active { background:#ffffff06; }
+.catalogue-results .browse-row[aria-disabled='true'] { cursor:default; opacity:.55; }
+.catalogue-results .browse-row:not([aria-disabled='true']):hover,.catalogue-results .browse-row:not([aria-disabled='true']):active { background:#ffffff06; }
 .catalogue-results .row-actions { gap:8px; }
 .catalogue-results .result-identity strong { font-size:1rem; }
 .catalogue-results .result-artist { font-size:.9375rem; color:var(--text); }
 .catalogue-results .result-details { font-size:.875rem; }
 .catalogue-results .browse-row { flex-wrap:nowrap; }
 .catalogue-results .browse-row > .result-identity { flex:1; }
-.browse-row > button { flex-shrink:0; max-width:100px; }
 .catalogue-results > p:last-child { margin-bottom:0; }
 @media(max-width:1099px) {
   html { scroll-padding-top:12px; }
@@ -413,7 +414,6 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .catalogue-results .result-artwork { grid-column:1; grid-row:1 / 4; }
   .catalogue-results .catalogue-source { grid-column:1 / -1; margin-top:8px; }
   .catalogue-results .catalogue-source select { width:100%; }
-  .catalogue-results .browse-row > button { max-width:none; min-height:44px; margin-left:auto; }
   .catalogue-results .row-actions { flex-basis:100%; justify-content:flex-end; }
 }
 @media(max-width:1099px) {

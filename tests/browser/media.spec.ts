@@ -35,10 +35,10 @@ test('automatic speakers, private artist/album artwork, reveal-gated progress/ti
     await first.getByRole('searchbox', { name: 'Search catalogue' }).fill('Fixture'); await first.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(first.getByAltText('Artist image', { exact: true })).toHaveJSProperty('naturalWidth', 1);
     await expect(first.getByAltText('Artist image', { exact: true })).toHaveAttribute('src', /\?size=160$/);
-    await first.getByRole('button', { name: 'View albums', exact: true }).click();
+    await first.getByRole('button', { name: 'View albums' }).click();
     await expect(first.getByAltText('Album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
     await expect(first.getByAltText('Album artwork', { exact: true })).toHaveAttribute('src', /\?size=160$/);
-    await first.getByRole('button', { name: 'View tracks', exact: true }).click();
+    await first.getByRole('button', { name: 'View tracks' }).click();
     await expect(first.getByAltText('Album artwork', { exact: true })).toHaveJSProperty('naturalWidth', 1);
     await expect(first.getByAltText('Album artwork', { exact: true })).toHaveAttribute('src', /\?size=160$/);
     await saveChoice(first);
