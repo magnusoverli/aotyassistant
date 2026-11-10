@@ -7,6 +7,7 @@ export type BackgroundSettings = {
   loop: boolean; hold: number; fade: number; seed: number | null;
   continuous: boolean; coverage: number; cycleDuration: number;
   opacity: number; width: number;
+  qrPlacement: 'bottom-right' | 'play-order';
 };
 export type BackgroundSnapshot = { revision: number; settings: BackgroundSettings };
 export const maxBackgroundGrowSeconds = 60;
@@ -16,4 +17,5 @@ export const defaultBackgroundSettings: Readonly<BackgroundSettings> = {
   duration: 1.1, spread: 1.2, bloomDuration: .6, loop: true, hold: 1.6, fade: .45,
   seed: null, opacity: .12, width: 80,
   continuous: false, coverage: 40, cycleDuration: 20,
+  qrPlacement: 'bottom-right',
 };

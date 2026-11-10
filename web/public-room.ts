@@ -167,9 +167,10 @@ export class PublicRoom {
     text(this.technical, technical); prop(this.technical, 'hidden', !technical);
 
     const invitationKey = JSON.stringify([view.joinUrl, qrImage, view.guestAccess]);
+    prop(this.invitation, 'hidden', Boolean(view.joinUrl) && view.background?.settings.qrPlacement === 'play-order');
     if (this.invitationKey !== invitationKey) {
       this.invitationKey = invitationKey;
-      this.invitation.replaceChildren(el('h3', 'Join room'));
+      this.invitation.replaceChildren();
       if (!view.joinUrl) {
         if (view.guestAccess) this.invitation.append(el('p', view.guestAccess.message, 'muted small'));
         this.invitation.append(link('Guest access settings', '/host/settings#access'));

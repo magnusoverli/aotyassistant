@@ -23,7 +23,8 @@ test('background controls reject nonfinite, out-of-range, unknown and malformed 
   for (const change of [{ jitter: 1.1 }, { duration: 0 }, { duration: 60.1 }, { spread: -1 }, { fade: -1 }, { hold: 31 },
     { sprouts: 2.5 }, { sprouts: 5 }, { seed: Infinity }, { seed: -1 }, { seed: 1.5 },
     { opacity: NaN }, { opacity: 2 }, { width: 101 }, { order: 'unknown' }, { loop: 'true' }, { unexpected: true },
-    { continuous: 'true' }, { coverage: 0 }, { coverage: 96 }, { cycleDuration: 1 }, { cycleDuration: 121 }]) {
+    { continuous: 'true' }, { coverage: 0 }, { coverage: 96 }, { cycleDuration: 1 }, { cycleDuration: 121 },
+    { qrPlacement: 'unknown' }, { qrPlacement: null }]) {
     assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, ...change }).success, false);
   }
   assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, seed: 7, loop: false }).success, true);
@@ -58,6 +59,15 @@ test('pre-continuous saved settings gain defaults without enabling the new mode 
   assert.equal(await readFile(file, 'utf8'), original);
 });
 
+test('older appearance records keep the bottom-right QR placement without rewriting', async t => {
+  const path = await directory(t); const file = join(path, 'display-background.json');
+  const { qrPlacement, ...settings } = defaultBackgroundSettings;
+  const original = JSON.stringify({ revision: 6, settings }); await writeFile(file, original);
+  const background = new DisplayBackground(path, () => {});
+  assert.deepEqual(await background.read(), { revision: 6, settings: { ...settings, qrPlacement } });
+  assert.equal(await readFile(file, 'utf8'), original);
+});
+
 test('unreadable background records stay unavailable and are never overwritten by a save', async t => {
   const path = await directory(t); const file = join(path, 'display-background.json');
   await writeFile(file, '{broken');
@@ -72,6 +82,7 @@ test('saved background settings survive restart, broadcast only committed change
   const background = new DisplayBackground(path, () => changes++);
   const input = defaults(); input.settings.seed = 7; input.settings.loop = false; input.settings.fade = 1.25;
   input.settings.continuous = true; input.settings.coverage = 65; input.settings.cycleDuration = 45;
+  input.settings.qrPlacement = 'play-order';
   const saved = await background.save(input);
   assert.equal(saved.revision, 1); assert.equal(changes, 1);
   const restored = new DisplayBackground(path, () => {});
@@ -87,6 +98,7 @@ test('background API projects saved settings to the display and rejects invalid,
   const dataDir = await directory(t); const saved = { ...defaults(), revision: 3 };
   saved.settings.seed = 7; saved.settings.enabled = false;
   saved.settings.continuous = true; saved.settings.coverage = 65; saved.settings.cycleDuration = 45;
+  saved.settings.qrPlacement = 'play-order';
   await writeFile(join(dataDir, 'display-background.json'), JSON.stringify(saved));
   const server = createServer(); const adapter = new DemoAdapter(3600);
   let closeApp = () => {};

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.6] — 2026-11-10
+
+- Add a saved **Room display QR placement** setting in Appearance: **Bottom-right** or **Right of play order**. The header QR fits within the existing bar height; neither placement shows a “Join room” caption.
+- Widen the display progress block from a 440px maximum to 748px (1.7×), while keeping it responsive on smaller screens.
+- Keep display track details 24px from the actual artwork edge at every viewport size. Remove invisible playback-control spacing beneath idle text so it aligns with the artwork’s bottom edge.
+- Place the animated logo on a clipped background layer behind playback. Enabling or disabling it no longer changes the artwork layout.
+
 ## [2.0.5] — 2026-11-10
 
 - Improve readability with slightly wider letter spacing for listening-order names and the participant player's track title. Playlist titles use the same typeface and styling as the player title. Remove the redundant “Your search” label below **Find music**.

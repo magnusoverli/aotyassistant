@@ -188,6 +188,8 @@ const updateHeader = () => {
   const awaitingView = !view && (page === 'host' || page === 'display' ? !error
     : (page === 'participant' || page === 'join') && participantAccess.state === 'checking');
   if (!awaitingView) listeningOrder.update(view, realtime && navigator.onLine);
+  const headerQr = page === 'display' && view?.background?.settings.qrPlacement === 'play-order';
+  listeningOrder.setDisplayInvitation(headerQr ? view?.joinUrl : undefined, headerQr ? qrImage : undefined);
 };
 const participantAccess = new ParticipantAccess(
   () => api<View>('/api/participant/state'), () => navigator.onLine,
@@ -774,6 +776,7 @@ document.addEventListener('visibilitychange', () => {
 }, { signal });
 return () => {
   lifecycle.abort();
+  listeningOrder.setDisplayInvitation();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
   stream?.close(); stream = undefined; library.stop(); music.stopUploads(); releaseEvents();
   playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); music.bar.destroy(); browseHistory?.destroy();

@@ -38,7 +38,16 @@ export class BackgroundSettingsPanel {
     this.status.setAttribute('role', 'status');
     this.preview.element.classList.add('bmf-preview');
     const form = el('form', undefined, 'form-stack');
-    this.fields.append(el('legend', 'Animation controls', 'sr-only'));
+    this.fields.append(el('legend', 'Display appearance controls', 'sr-only'));
+    const placement = el('select');
+    for (const [value, label] of [['bottom-right', 'Bottom-right'], ['play-order', 'Right of play order']] as const) {
+      const option = el('option', label); option.value = value; placement.append(option);
+    }
+    this.field('qrPlacement', 'Room display QR placement', placement);
+    placement.onchange = () => {
+      this.draft.qrPlacement = placement.value as BackgroundSettings['qrPlacement'];
+      this.report('QR placement updated. Save to apply it to the room display.');
+    };
     this.toggle('enabled', 'Enable BMF display background');
     this.toggle('continuous', 'Continuous reveal');
     this.select('order', 'Order', ['random', 'center', 'edges', 'left', 'right']);
@@ -143,7 +152,7 @@ export class BackgroundSettingsPanel {
       const result = await requestJson<BackgroundSnapshot>(endpoint, { revision: this.revision, settings: this.draft }, 15_000, this.signal);
       if (this.signal.aborted) return;
       this.revision = result.revision; this.draft = { ...result.settings }; this.syncControls();
-      this.report(result.settings.enabled ? 'Saved. Connected room displays now use these settings.' : 'Saved. The animated background is disabled.');
+      this.report('Saved. Connected room displays now use these appearance settings.');
     } catch (error) {
       this.loaded = false;
       if (!this.signal.aborted) this.report(`${error instanceof Error ? error.message : 'The save could not be confirmed.'} Use Reload saved settings before saving again.`, true);

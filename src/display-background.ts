@@ -7,6 +7,7 @@ import { SerialQueue } from './serial.js';
 
 export const backgroundSettingsSchema = z.object({
   enabled: z.boolean(),
+  qrPlacement: z.enum(['bottom-right', 'play-order']).default(defaultBackgroundSettings.qrPlacement),
   order: z.enum(['random', 'center', 'edges', 'left', 'right']),
   origin: z.enum(['random', 'base', 'top']),
   jitter: z.number().min(0).max(1), sprouts: z.number().int().min(1).max(4),

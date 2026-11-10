@@ -1,5 +1,5 @@
 import type { ListeningOrderView, Person, View } from '../src/model';
-import { el } from './dom';
+import { el, link } from './dom';
 import { avatar } from './visuals';
 import { appPath } from './paths';
 import { ViewNodes, children, prop, attr, text } from './view-nodes';
@@ -40,6 +40,8 @@ export class ListeningOrder {
   readonly element = el('div', undefined, 'listening-order');
   private list = el('ol', undefined, 'rotation-list');
   private status = el('span', undefined, 'order-status');
+  private qr = link('', '', 'order-qr');
+  private qrImage = el('img');
   private empty = el('p', 'Loading listening order…', 'muted order-empty');
   private announcement = el('p', undefined, 'sr-only order-announcement');
   private help = el('p', 'Drag cards to reorder. Keyboard: Space to pick up, arrows to move, Enter to drop, Esc to cancel.', 'sr-only order-help');
@@ -58,7 +60,9 @@ export class ListeningOrder {
     this.list.setAttribute('aria-label', 'Participant rotation'); this.list.tabIndex = 0; this.list.id = 'participant-rotation';
     this.list.classList.toggle('is-editable', Boolean(management));
     this.announcement.setAttribute('role', 'status'); this.announcement.setAttribute('aria-atomic', 'true');
-    bar.append(this.empty, this.list, this.status);
+    this.qr.hidden = true; this.qr.setAttribute('aria-label', 'Join room');
+    this.qrImage.alt = 'Scan to join the room'; this.qr.append(this.qrImage);
+    bar.append(this.empty, this.list, this.status, this.qr);
     this.help.id = 'order-drag-help'; this.help.hidden = true;
     this.element.append(bar);
     this.element.append(this.help, this.announcement);
@@ -110,6 +114,15 @@ export class ListeningOrder {
 
   /** Announce keyboard progress without adding visible messages or changing the bar's height. */
   announce(message: string) { text(this.announcement, message); }
+
+  /** Only the room display supplies an invitation; other routes clear the retained header. */
+  setDisplayInvitation(url?: string, image?: string) {
+    const visible = Boolean(url && image);
+    prop(this.qr, 'hidden', !visible);
+    this.element.classList.toggle('has-display-qr', visible);
+    attr(this.qr, 'href', visible ? url : undefined);
+    attr(this.qrImage, 'src', visible ? image : undefined);
+  }
 
   private accept(snapshot: ListeningOrderView) {
     if (this.snapshot?.roomId === snapshot.roomId && this.snapshot.revision > snapshot.revision) return;
