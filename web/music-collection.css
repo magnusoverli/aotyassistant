@@ -5,6 +5,7 @@
   /* Let scrolling continue onto the page when either playlist scroller reaches
      its boundary, including when an empty or short playlist cannot scroll. */
   #music-collection > .preparation-list,#music-collection .list-body { overscroll-behavior:auto; }
+  #music-collection .saved-track .result-identity strong { font-size:1.25rem; line-height:1.25; }
 
   @media(min-width:1100px) {
     .music-workspace.workspace-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'player' 'collection'; }
@@ -37,6 +38,7 @@
   }
 
   @media(max-width:1099px) {
+    #music-collection .saved-track .result-identity strong { font-size:1.125rem; }
     #music-collection { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:var(--radius-panel); background:var(--panel); }
     /* An ordinary card above the search (the playlist bar summarises it while browsing below). */
     #music-collection > .preparation-list { position:relative; top:auto; z-index:auto; width:100%; padding:10px 14px 12px; border:0; border-bottom:1px solid var(--line); border-radius:13px 13px 0 0; background:var(--panel); box-shadow:none; max-height:none; overflow:visible; }
@@ -72,7 +74,6 @@
 
     #music-collection > .catalogue-panel { width:100%; padding:14px; border:0; border-radius:0 0 13px 13px; background:transparent; }
     #music-collection .catalogue-title { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
-    #music-collection .catalogue-title .privacy-tag { display:none; }
     #music-collection .catalogue-toolbar { margin:0; }
     /* Room for the playlist bar above focused results. */
     #music-collection .catalogue-results button,#music-collection .search-form { scroll-margin-top:76px; }

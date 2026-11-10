@@ -13,6 +13,10 @@ export const backgroundSettingsSchema = z.object({
   duration: z.number().min(.2).max(maxBackgroundGrowSeconds), spread: z.number().min(0).max(5),
   bloomDuration: z.number().min(.1).max(2),
   loop: z.boolean(), hold: z.number().min(0).max(30), fade: z.number().min(.05).max(5),
+  // Older saved records keep their intro loop and gain controls for the optional continuous mode.
+  continuous: z.boolean().default(defaultBackgroundSettings.continuous),
+  coverage: z.number().min(5).max(95).default(defaultBackgroundSettings.coverage),
+  cycleDuration: z.number().min(2).max(120).default(defaultBackgroundSettings.cycleDuration),
   seed: z.number().int().min(0).max(2147483647).nullable(),
   opacity: z.number().min(.01).max(1), width: z.number().min(20).max(100),
 }).strict() satisfies z.ZodType<BackgroundSettings>;

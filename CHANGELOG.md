@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.5] — 2026-11-10
+
+- Improve readability with slightly wider letter spacing for listening-order names and the participant player's track title. Playlist titles use the same typeface and styling as the player title. Remove the redundant “Your search” label below **Find music**.
+- Add **Continuous reveal** in **Settings → Appearance**: rounded reveal strokes travel around the letters without a full-logo hold or fade. Adjust **Visible outline** (5–95%) and **Continuous cycle time** (2–120 seconds). Switching it off returns to the saved intro-animation settings.
+- Remove the late solid-letter fade-in. Growing reveal strokes now widen to reach the full letter shapes, clipped to each letter so they cannot reveal neighbours.
+- Keep the room display within the viewport in normal and fullscreen modes. The animation has its own upper area, separate from artwork and track details; the logo scales down to fit instead of overlapping playback or creating page scrolling.
+
 ## [2.0.4] — 2026-11-10
 
 - Move the animated display background just below the listening order and make it 8% shorter without narrowing it. Align the track-details block with the bottom of the artwork and anchor playback near the bottom of the display.

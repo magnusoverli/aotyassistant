@@ -6,6 +6,7 @@
 @import './participant-player.css';
 @import './music-collection.css';
 @import './atmosphere.css';
+@import './display-layout.css';
 
 @layer features {
 html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,90px) + 18px); }
@@ -210,7 +211,6 @@ body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e302
 .catalogue-panel > .muted { font-size:12px; margin:14px 0; }
 .catalogue-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
 .catalogue-title h2 { font-size:18px; line-height:1.3; margin:0 0 2px; }
-.catalogue-title .privacy-tag { display:block; text-align:left; }
 .search-form { display:flex; gap:4px; margin:0; padding:3px; background:var(--field-bg); border:1px solid var(--field-line); border-radius:10px; }
 .search-form:focus-within { border-color:var(--accent); }
 .search-form input { width:100%; flex:1; border:0; background:transparent; }

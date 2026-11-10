@@ -22,6 +22,11 @@
     font-family:var(--font-voice); font-weight:600; letter-spacing:-.005em;
   }
   .track-info .artist,.room-album { font-weight:500; }
+  .listening-order .rotation-seat strong { letter-spacing:.025em; }
+  #participant-player .private-now-playing h2,
+  .preparation-list .saved-track .result-identity strong {
+    font-family:var(--font-voice); font-weight:600; letter-spacing:.025em; color:var(--text);
+  }
   .vinyl-label > span { font-family:var(--font-voice); letter-spacing:.05em; }
 
   /* Film grain and darker edges sit behind every page's content; panels and text stay clean. */

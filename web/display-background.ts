@@ -33,7 +33,8 @@ export class AnimatedBackground {
     if (!s.enabled) { this.logo.remove(); return; }
     this.logo.configure({ order: s.order, origin: s.origin, jitter: s.jitter, sprouts: s.sprouts,
       duration: s.duration, spread: s.spread, 'bloom-duration': s.bloomDuration,
-      loop: s.loop, hold: s.hold, fade: s.fade, seed: s.seed });
+      loop: s.loop, hold: s.hold, fade: s.fade, seed: s.seed,
+      continuous: s.continuous, coverage: s.coverage, 'cycle-duration': s.cycleDuration });
     this.logo.style.width = `${s.width}%`;
     this.logo.style.opacity = String(s.opacity);
     if (this.logo.parentElement !== this.element) this.element.append(this.logo);

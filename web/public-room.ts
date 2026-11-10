@@ -130,6 +130,7 @@ export class PublicRoom {
 
   update(view: View, online: boolean, qrImage: string) {
     this.background.update(view.background);
+    attr(this.element, 'data-background', view.background?.settings.enabled ? 'on' : 'off');
     const state = publicPlaybackState(view, online);
     const active = state === 'playing' || state === 'paused';
     attr(this.element, 'data-playback', state);

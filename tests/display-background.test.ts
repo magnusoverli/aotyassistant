@@ -22,7 +22,8 @@ const defaults = (): BackgroundSnapshot => ({ revision: 0, settings: { ...defaul
 test('background controls reject nonfinite, out-of-range, unknown and malformed values', () => {
   for (const change of [{ jitter: 1.1 }, { duration: 0 }, { duration: 60.1 }, { spread: -1 }, { fade: -1 }, { hold: 31 },
     { sprouts: 2.5 }, { sprouts: 5 }, { seed: Infinity }, { seed: -1 }, { seed: 1.5 },
-    { opacity: NaN }, { opacity: 2 }, { width: 101 }, { order: 'unknown' }, { loop: 'true' }, { unexpected: true }]) {
+    { opacity: NaN }, { opacity: 2 }, { width: 101 }, { order: 'unknown' }, { loop: 'true' }, { unexpected: true },
+    { continuous: 'true' }, { coverage: 0 }, { coverage: 96 }, { cycleDuration: 1 }, { cycleDuration: 121 }]) {
     assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, ...change }).success, false);
   }
   assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, seed: 7, loop: false }).success, true);
@@ -47,6 +48,16 @@ test('missing background settings use enabled defaults without writing; callers 
   await assert.rejects(readFile(join(path, 'display-background.json')), { code: 'ENOENT' });
 });
 
+test('pre-continuous saved settings gain defaults without enabling the new mode or rewriting the record', async t => {
+  const path = await directory(t); const file = join(path, 'display-background.json');
+  const settings: Record<string, unknown> = { ...defaultBackgroundSettings, duration: 30, loop: false, seed: 7 };
+  delete settings.continuous; delete settings.coverage; delete settings.cycleDuration;
+  const original = JSON.stringify({ revision: 8, settings }); await writeFile(file, original);
+  const background = new DisplayBackground(path, () => {});
+  assert.deepEqual(await background.read(), { revision: 8, settings: { ...settings, continuous: false, coverage: 40, cycleDuration: 20 } });
+  assert.equal(await readFile(file, 'utf8'), original);
+});
+
 test('unreadable background records stay unavailable and are never overwritten by a save', async t => {
   const path = await directory(t); const file = join(path, 'display-background.json');
   await writeFile(file, '{broken');
@@ -60,6 +71,7 @@ test('saved background settings survive restart, broadcast only committed change
   const path = await directory(t); let changes = 0;
   const background = new DisplayBackground(path, () => changes++);
   const input = defaults(); input.settings.seed = 7; input.settings.loop = false; input.settings.fade = 1.25;
+  input.settings.continuous = true; input.settings.coverage = 65; input.settings.cycleDuration = 45;
   const saved = await background.save(input);
   assert.equal(saved.revision, 1); assert.equal(changes, 1);
   const restored = new DisplayBackground(path, () => {});
@@ -74,6 +86,7 @@ test('saved background settings survive restart, broadcast only committed change
 test('background API projects saved settings to the display and rejects invalid, cross-origin and stale writes', async t => {
   const dataDir = await directory(t); const saved = { ...defaults(), revision: 3 };
   saved.settings.seed = 7; saved.settings.enabled = false;
+  saved.settings.continuous = true; saved.settings.coverage = 65; saved.settings.cycleDuration = 45;
   await writeFile(join(dataDir, 'display-background.json'), JSON.stringify(saved));
   const server = createServer(); const adapter = new DemoAdapter(3600);
   let closeApp = () => {};

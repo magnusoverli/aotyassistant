@@ -477,7 +477,7 @@ function participant() {
   children(shortcuts, find, list); children(hero, title, distance, shortcuts);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
   const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
-  const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading, el('span', 'Your search', 'privacy-tag')); return node; });
+  const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading); return node; });
   const searchNodes: Node[] = [searchHeading];
   const realCatalogue = view.catalogue?.source === 'music-assistant';
   if (realCatalogue && !view.catalogue?.playbackAvailable) {

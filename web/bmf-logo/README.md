@@ -13,8 +13,16 @@ Saved controls update connected displays through the existing room stream and pe
 looping, in room gold at 12% opacity and 80% width. A blank seed chooses new patterns;
 any fixed seed repeats the same organic growth pattern. Letter grow time in Settings
 supports 0.2–60 seconds. The display and preview place the logo near the top with an
-8% vertical compression that does not change its width. The `paused` attribute is a
+8% vertical compression. On the display, the width setting is a maximum; the logo scales
+to fit a dedicated upper row above playback in both normal and fullscreen mode. The `paused` attribute is a
 programmatic start gate, not a saved appearance setting; use Replay preview to test intros.
+
+**Continuous reveal** is optional and defaults off. It moves partial reveal strokes indefinitely,
+keeping the arrowheads visible. **Visible outline** controls outline coverage (5–95%, default 40),
+and **Continuous cycle time** controls a full outline trip (2–120 seconds, default 20). Jitter
+varies speed, sprouts sets the number of travelling sections, and order sets starting phases.
+These are outline percentages, not exact visible pixel percentages. Intro timings and `loop`
+are ignored while continuous mode is on; reduced motion still shows the finished logo.
 
 The Bjørgvin Mørkemusikk Forening logo as an animated web component. The letters grow in like vines
 and the two side arrowheads pop in at the end. All animation settings are HTML attributes, so the
@@ -22,7 +30,7 @@ application can drive them from its own settings.
 
 ## What to ship
 
-Only **`bmf-logo.js`** goes into the application. It is one self-contained ES module (about 23 KB, no
+Only **`bmf-logo.js`** goes into the application. It is one self-contained ES module (about 27 KB, no
 dependencies, artwork embedded). Everything else in this folder is reference or source.
 
 | File | Purpose |
@@ -67,6 +75,9 @@ Each one is an attribute. Changing any attribute restarts the animation with the
 | `loop` | absent | Present: replay forever (loader mode) |
 | `hold` | `1.6` | Loop only. Seconds the finished logo stays visible |
 | `fade` | `0.45` | Loop only. Seconds of fade-out before the next round |
+| `continuous` | absent | Present: continuously travelling reveal instead of the intro loop |
+| `coverage` | `40` | Continuous only. Percentage of each outline revealed (5–95) |
+| `cycle-duration` | `20` | Continuous only. Seconds per full outline trip (2–120), varied by jitter |
 | `seed` | absent | A number gives the same growth pattern every play. Absent: a new pattern each play |
 | `paused` | absent | Present: stay hidden until `play()` is called |
 
@@ -85,6 +96,9 @@ logo.finish();   // jump straight to the finished logo
 logo.addEventListener("finish", () => { /* fully grown; fires once per round when looping */ });
 ```
 
+Continuous mode does not emit `finish`: it has no completed growth round. `finish()` or removal
+cancels its infinite animations, and removing `continuous` restores the intro behavior.
+
 Typical loader pattern: render `<bmf-logo loop>` while loading, then remove the `loop` attribute or
 remove the element when the content is ready.
 
@@ -94,6 +108,8 @@ remove the element when the content is ready.
   be added to the application.
 - The growth effect is a mask: each letter's outline is drawn as a growing dashed stroke that reveals
   the filled letter. Rounded caps/joins, seeded width variation, unequal growth pulses and a static
-  turbulence/displacement filter soften the reveal edge. The filter affects only the reveal strokes;
-  the unfiltered solid mask completes each letter exactly. The artwork is filled shapes, not centre-line strokes.
+  turbulence/displacement filter soften the reveal edge. Intro strokes widen to a geometry-derived
+  width that reaches the letter's interior; each letter's reveal is clipped to its own artwork.
+  There is no solid-mask opacity fade. `finish()` and reduced motion bypass the animated mask.
+  The artwork is filled shapes, not centre-line strokes.
 - Checked in Chromium only. Safari and Firefox have not been tested.

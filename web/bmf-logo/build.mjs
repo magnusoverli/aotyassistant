@@ -33,6 +33,9 @@ for (const m of src.matchAll(/<path transform="matrix\(([^)]*)\)" d="([^"]*)"/g)
   letters.push({
     cx: n((x0 + x1) / 2),
     d: whole,
+    // A stroke this wide reaches every interior point from the nearest outline,
+    // including a margin for the organic displacement. No solid-mask fade is needed.
+    revealWidth: n(Math.min(x1 - x0, Math.max(...ys) - Math.min(...ys)) + 6),
     // Each outline starts at its lowest point; "top" is how far round the outline its highest point is.
     subs: subs.map(pts => {
       let base = 0;

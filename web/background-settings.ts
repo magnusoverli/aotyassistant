@@ -6,6 +6,8 @@ import { requestJson } from './request';
 
 const endpoint = '/api/host/background-settings';
 const ranges = [
+  ['coverage', 'Visible outline (%)', 5, 95, 1],
+  ['cycleDuration', 'Continuous cycle time (s)', 2, 120, .5],
   ['jitter', 'Randomness', 0, 1, .05],
   ['sprouts', 'Sprouts per letter', 1, 4, 1],
   ['duration', 'Letter grow time (s)', .2, maxBackgroundGrowSeconds, .1],
@@ -38,6 +40,7 @@ export class BackgroundSettingsPanel {
     const form = el('form', undefined, 'form-stack');
     this.fields.append(el('legend', 'Animation controls', 'sr-only'));
     this.toggle('enabled', 'Enable BMF display background');
+    this.toggle('continuous', 'Continuous reveal');
     this.select('order', 'Order', ['random', 'center', 'edges', 'left', 'right']);
     this.select('origin', 'Growth starts at', ['random', 'base', 'top']);
     for (const [key, label, min, max, step] of ranges) {
@@ -46,14 +49,14 @@ export class BackgroundSettingsPanel {
       const group = this.field(key, label, input); group.append(output);
       input.oninput = () => { this.draft[key] = Number(input.value); output.value = input.value; this.changed(); };
     }
-    this.toggle('loop', 'Loop animation');
+    this.toggle('loop', 'Loop intro animation');
     const seed = el('input'); seed.type = 'number'; seed.min = '0'; seed.max = '2147483647'; seed.step = '1'; seed.placeholder = 'Random each time';
     this.field('seed', 'Pattern seed (optional)', seed);
     seed.oninput = () => {
       if (!seed.validity.valid) return;
       this.draft.seed = seed.value === '' ? null : Number(seed.value); this.changed();
     };
-    const hint = el('p', 'Letter grow time supports up to 60 seconds for slow reveals. Leave the seed blank for a new pattern each round, or enter a number for repeatable organic growth. Hold and fade apply when looping. Reduced-motion preferences show the finished logo.', 'muted field-hint');
+    const hint = el('p', 'Continuous reveal keeps rounded reveal strokes travelling around the letters. Visible outline sets how much of each outline is drawn; cycle time sets the time for a full trip (higher is slower). Sprouts controls the number of moving sections, and Order sets their initial phases. Arrowheads stay visible. Intro timing, hold and fade apply when Continuous reveal is off. A fixed seed repeats the pattern; reduced-motion preferences show the finished logo.', 'muted field-hint');
     const replay = el('button', 'Replay preview', 'secondary'); replay.type = 'button'; replay.onclick = () => this.preview.replay();
     const reset = el('button', 'Reset to defaults', 'secondary'); reset.type = 'button';
     reset.onclick = () => { this.draft = { ...defaultBackgroundSettings }; this.syncControls(); this.changed(); };
@@ -75,7 +78,7 @@ export class BackgroundSettingsPanel {
     const caption = el('label', label); caption.htmlFor = input.id = `background-${key}`;
     group.append(caption, input); this.fields.append(group); this.controls.set(key, input); return group;
   }
-  private toggle(key: 'enabled' | 'loop', label: string) {
+  private toggle(key: 'enabled' | 'loop' | 'continuous', label: string) {
     const input = el('input'); input.type = 'checkbox';
     const group = this.field(key, label, input); group.classList.add('background-toggle');
     input.onchange = () => { this.draft[key] = input.checked; this.changed(); };
@@ -98,10 +101,18 @@ export class BackgroundSettingsPanel {
       const output = this.outputs.get(key); if (output) output.value = input.value;
     }
     this.preview.update({ revision: this.revision, settings: this.draft });
+    this.syncModeControls();
   }
   private changed() {
+    this.syncModeControls();
     this.preview.update({ revision: this.revision, settings: this.draft });
     this.report('Preview updated. Save to apply these settings to the room display.');
+  }
+  private syncModeControls() {
+    for (const key of ['duration', 'spread', 'bloomDuration', 'loop', 'hold', 'fade'] as const) {
+      this.controls.get(key)!.disabled = this.draft.continuous;
+    }
+    for (const key of ['coverage', 'cycleDuration'] as const) this.controls.get(key)!.disabled = !this.draft.continuous;
   }
   private report(message: string, failed = false) {
     this.status.textContent = message; this.status.className = failed ? 'field-error' : 'muted small';
