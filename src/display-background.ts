@@ -16,16 +16,23 @@ export const backgroundSettingsSchema = z.object({
   coverage: z.number().min(5).max(95).default(defaultBackgroundSettings.coverage),
   cycleDuration: z.number().min(2).max(120).default(defaultBackgroundSettings.cycleDuration),
   seed: z.number().int().min(0).max(2147483647).nullable(),
-  opacity: z.number().min(.01).max(1), width: z.number().min(20).max(100),
+  opacity: z.number().min(.01).max(1),
 }).strict() satisfies z.ZodType<BackgroundSettings>;
 export const backgroundSnapshotSchema = z.object({
   revision: z.number().int().nonnegative(), settings: backgroundSettingsSchema,
 }).strict() satisfies z.ZodType<BackgroundSnapshot>;
 
+/** Older records included a width preference. Read it without changing the remaining
+ * settings or rewriting storage; new API requests and saves use the current schema. */
+const storedBackgroundSnapshotSchema = backgroundSnapshotSchema.extend({
+  settings: backgroundSettingsSchema.extend({ width: z.number().min(20).max(100).optional() })
+    .transform(({ width: _width, ...settings }) => settings),
+});
+
 /** Appearance has its own durable record; saving it never takes the playback lane. */
 export class DisplayBackground extends SettingsRecord<BackgroundSettings> {
   constructor(directory: string, changed: () => void) {
     super(directory, 'display-background.json', 'Background settings', backgroundSnapshotSchema,
-      () => ({ ...defaultBackgroundSettings }), changed);
+      () => ({ ...defaultBackgroundSettings }), changed, storedBackgroundSnapshotSchema);
   }
 }

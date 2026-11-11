@@ -10,11 +10,12 @@ Only the generated module is bundled at runtime.
 Settings → Appearance provides a local preview and a **Save and replay on display** action.
 Saved controls update connected displays through the existing room stream and persist in
 `display-background.json` in the app's data directory. The background starts enabled and
-looping, in room gold at 12% opacity and 80% width. A blank seed chooses new patterns;
+looping, in room gold at 12% opacity. A blank seed chooses new patterns;
 any fixed seed repeats the same organic growth pattern. Letter grow time in Settings
 supports 0.2–60 seconds. The display and preview place the logo near the top with an
-8% vertical compression. On the display, the width setting is a maximum; the logo scales
-to fit a dedicated upper row above playback in both normal and fullscreen mode. The `paused` attribute is a
+8% vertical compression. Width is automatic: CSS fits the native SVG aspect ratio into both
+dimensions of a dedicated, contained row above playback in normal and fullscreen mode.
+Old width preferences are discarded on read without rewriting other saved settings. The `paused` attribute is a
 programmatic start gate, not a saved appearance setting; use Replay preview to test intros.
 
 **Continuous reveal** is optional and defaults off. It moves partial reveal strokes indefinitely,

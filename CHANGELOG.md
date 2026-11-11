@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.17] — 2026-11-11
+
+- Make the room display's listening order slightly shorter and reduce participant-card width targets to 75% of their previous size.
+- Automatically fit the animated background into a bounded region above playback, retire its width control while retaining saved animation settings, and prevent display scrollbars with a viewport-bounded layout.
+- Centre the track-details column on landscape displays, placing the artwork to its left while retaining space for the side QR.
+- Give track details about 20% more vertical breathing room above their existing bottom edge, and match album-name typography to the artist name.
+
 ## [2.0.16] — 2026-11-11
 
 - Make room-display sizing automatic: adapt artwork, typography, QR placement and optional details to the available width and height, preserve browser text enlargement, and remove the room-wide and per-browser size controls. Previous size preferences no longer affect the layout.

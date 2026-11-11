@@ -14,7 +14,8 @@ export class SettingsRecord<S extends object> {
   private queue = new SerialQueue();
   /** `name` starts the error messages, for example "Background settings". */
   constructor(private directory: string, private file: string, private name: string,
-    private schema: z.ZodType<SettingsSnapshot<S>>, private defaults: () => S, private changed: () => void) {
+    private schema: z.ZodType<SettingsSnapshot<S>>, private defaults: () => S, private changed: () => void,
+    private storedSchema: z.ZodType<SettingsSnapshot<S>> = schema) {
     this.current = { revision: 0, settings: defaults() };
     this.ready = this.load();
   }
@@ -41,7 +42,7 @@ export class SettingsRecord<S extends object> {
   }
   private async load() {
     try {
-      this.current = await readPrivateJson(join(this.directory, this.file), this.schema, 4096)
+      this.current = await readPrivateJson(join(this.directory, this.file), this.storedSchema, 4096)
         ?? { revision: 0, settings: this.defaults() };
       this.unavailable = false;
     } catch { this.unavailable = true; }

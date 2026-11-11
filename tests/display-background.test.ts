@@ -22,7 +22,7 @@ const defaults = (): BackgroundSnapshot => ({ revision: 0, settings: { ...defaul
 test('background controls reject nonfinite, out-of-range, unknown and malformed values', () => {
   for (const change of [{ jitter: 1.1 }, { duration: 0 }, { duration: 60.1 }, { spread: -1 }, { fade: -1 }, { hold: 31 },
     { sprouts: 2.5 }, { sprouts: 5 }, { seed: Infinity }, { seed: -1 }, { seed: 1.5 },
-    { opacity: NaN }, { opacity: 2 }, { width: 101 }, { order: 'unknown' }, { loop: 'true' }, { unexpected: true },
+    { opacity: NaN }, { opacity: 2 }, { width: 80 }, { width: 101 }, { order: 'unknown' }, { loop: 'true' }, { unexpected: true },
     { continuous: 'true' }, { coverage: 0 }, { coverage: 96 }, { cycleDuration: 1 }, { cycleDuration: 121 },
     { qrPlacement: 'unknown' }, { qrPlacement: null }]) {
     assert.equal(backgroundSettingsSchema.safeParse({ ...defaultBackgroundSettings, ...change }).success, false);
@@ -68,6 +68,19 @@ test('older appearance records keep the bottom-right QR placement without rewrit
   assert.equal(await readFile(file, 'utf8'), original);
 });
 
+test('saved background widths are retired without losing animation settings or rewriting the file', async t => {
+  const path = await directory(t); const file = join(path, 'display-background.json');
+  for (const width of [20, 80, 100]) {
+    const settings = { ...defaultBackgroundSettings, continuous: true, duration: 30, seed: 7, opacity: .18 };
+    const original = JSON.stringify({ revision: 9, settings: { ...settings, width } });
+    await writeFile(file, original);
+    const background = new DisplayBackground(path, () => {});
+    assert.deepEqual(await background.read(), { revision: 9, settings });
+    assert.equal('width' in background.view()!.settings, false);
+    assert.equal(await readFile(file, 'utf8'), original);
+  }
+});
+
 test('unreadable background records stay unavailable and are never overwritten by a save', async t => {
   const path = await directory(t); const file = join(path, 'display-background.json');
   await writeFile(file, '{broken');
@@ -99,7 +112,8 @@ test('background API projects saved settings to the display and rejects invalid,
   saved.settings.seed = 7; saved.settings.enabled = false;
   saved.settings.continuous = true; saved.settings.coverage = 65; saved.settings.cycleDuration = 45;
   saved.settings.qrPlacement = 'play-order';
-  await writeFile(join(dataDir, 'display-background.json'), JSON.stringify(saved));
+  const stored = JSON.stringify({ ...saved, settings: { ...saved.settings, width: 80 } });
+  await writeFile(join(dataDir, 'display-background.json'), stored);
   const server = createServer(); const adapter = new DemoAdapter(3600);
   let closeApp = () => {};
   t.after(() => { closeApp(); adapter.close(); server.closeAllConnections(); server.close(); });
@@ -117,6 +131,7 @@ test('background API projects saved settings to the display and rejects invalid,
   assert.deepEqual((await (await fetch(`${base}/api/display/state`)).json() as View).background, saved);
   assert.equal((await post(saved, 'https://other.example')).status, 403);
   assert.equal((await post({ ...saved, settings: { ...saved.settings, duration: -10 } })).status, 400);
+  assert.equal((await post({ ...saved, settings: { ...saved.settings, width: 80 } })).status, 400);
   assert.equal((await post({ ...saved, revision: 2 })).status, 409);
-  assert.deepEqual(JSON.parse(await readFile(join(dataDir, 'display-background.json'), 'utf8')), saved);
+  assert.equal(await readFile(join(dataDir, 'display-background.json'), 'utf8'), stored);
 });

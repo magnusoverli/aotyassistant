@@ -16,7 +16,6 @@ const ranges = [
   ['hold', 'Loop hold (s)', 0, 30, .1],
   ['fade', 'Loop fade-out (s)', .05, 5, .05],
   ['opacity', 'Background opacity', .01, 1, .01],
-  ['width', 'Background width (%)', 20, 100, 1],
 ] as const;
 
 export class BackgroundSettingsPanel {
@@ -76,7 +75,7 @@ export class BackgroundSettingsPanel {
     form.append(this.fields, hint, actions);
     form.onsubmit = event => { event.preventDefault(); void this.save(); };
     this.element.append(sectionHeading('Animated BMF background', 'settings-background-title', 'h3'),
-      el('p', 'Test changes in the preview, then save to update every open room display. Saving also restarts the animation.'),
+      el('p', 'Test changes in the preview, then save to update every open room display. Saving also restarts the animation. Its size automatically fits the space above playback.'),
       this.preview.element, form, this.status, link('Open room display', '/display', 'inline-link'));
     signal.addEventListener('abort', () => this.preview.destroy(), { once: true });
     void this.load();
