@@ -22,12 +22,12 @@
   .rotation-seat.is-current { isolation:isolate; background:#1f2c1c; border-color:#829b6e; }
   .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:hidden; border-radius:inherit; pointer-events:none; }
   .order-spectrum-outline { stroke:#a5caaa; stroke-width:.6px; opacity:.15; }
-  .order-spectrum-bar { stroke-width:1.6px; stroke-linecap:butt; opacity:.05; transform:scaleY(min(.04,var(--order-needle-limit,1))); transform-origin:0 0; }
+  .order-spectrum-bar { stroke-width:1.6px; stroke-linecap:butt; opacity:.05; transform:scaleY(.04); transform-origin:0 0; }
   .listening-order .rotation-seat.is-current .order-trace[data-playing='true'] { display:block; }
   /* Up to 19.5px inward, clipped at the rounded border. Keep names above the needles. */
   .rotation-seat > :is(strong,.avatar) { position:relative; z-index:1; }
   @media(prefers-reduced-motion:reduce) {
-    .order-trace .order-spectrum-bar { transform:scaleY(min(.2,var(--order-needle-limit,1))) !important; opacity:.05 !important; }
+    .order-trace .order-spectrum-bar { transform:scaleY(.2) !important; opacity:.05 !important; }
   }
   /* Touch: swipes scroll the order; a press-and-hold picks a card up (see order-drag.ts). */
   .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:pan-x pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }

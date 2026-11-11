@@ -1,5 +1,5 @@
 import { RoomSpectrum } from './room-spectrum';
-import { spectrumBandHue, spectrumBandPosition, spectrumCornerLength, spectrumNeedleLevel } from './spectrum-presentation';
+import { spectrumBandHue, spectrumBandPosition, spectrumNeedleLevel } from './spectrum-presentation';
 
 const namespace = 'http://www.w3.org/2000/svg';
 const needleSpacing = 3;
@@ -15,7 +15,6 @@ export class TurnSpectrum {
   private outline = svg('rect', { class: 'order-spectrum-outline', fill: 'none' });
   private bars: SVGLineElement[] = [];
   private positions: number[] = [];
-  private limits: number[] = [];
   private feed = new RoomSpectrum();
   private reduced = matchMedia('(prefers-reduced-motion: reduce)');
   private observer: ResizeObserver;
@@ -44,9 +43,9 @@ export class TurnSpectrum {
     const radius = Math.max(2, parseFloat(getComputedStyle(card).borderTopLeftRadius) - .5);
     this.element.setAttribute('viewBox', `0 0 ${width} ${height}`);
     for (const [key, value] of Object.entries({ x: .5, y: .5, width: width - 1, height: height - 1, rx: radius })) this.outline.setAttribute(key, String(value));
-    this.bars = []; this.positions = []; this.limits = []; this.element.replaceChildren(this.outline);
+    this.bars = []; this.positions = []; this.element.replaceChildren(this.outline);
     const needleLength = height < 50 ? 10.5 : 19.5;
-    const points: { x: number; y: number; angle: number; distance: number; limit?: number }[] = [];
+    const points: { x: number; y: number; angle: number; distance: number }[] = [];
     let distance = 0;
     const horizontal = width - 1 - 2 * radius; const vertical = height - 1 - 2 * radius;
     const straight = (length: number, x: number, y: number, dx: number, dy: number, angle: number) => {
@@ -58,10 +57,9 @@ export class TurnSpectrum {
       // Include each corner midpoint so the bass and treble endpoints have their own needle.
       const count = Math.max(2, 2 * Math.round(radius * Math.PI / (4 * needleSpacing)));
       const length = radius * Math.PI / 2;
-      const limit = Math.min(1, spectrumCornerLength(radius, count) / needleLength);
       for (let i = 0; i < count; i++) {
         const angle = from + i / count * 90; const radians = angle * Math.PI / 180;
-        points.push({ x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians), angle: angle + 90, distance: distance + length * i / count, limit });
+        points.push({ x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians), angle: angle + 90, distance: distance + length * i / count });
       }
       distance += length;
     };
@@ -75,8 +73,7 @@ export class TurnSpectrum {
       const group = svg('g', { transform: `translate(${point.x} ${point.y}) rotate(${point.angle})` });
       const bar = svg('line', { class: 'order-spectrum-bar', x1: '0', x2: '0', y1: '0', y2: String(needleLength) });
       bar.style.stroke = `hsl(${spectrumBandHue(position)} 65% 72%)`;
-      if (point.limit !== undefined) bar.style.setProperty('--order-needle-limit', String(point.limit));
-      group.append(bar); this.element.append(group); this.bars.push(bar); this.positions.push(position); this.limits.push(point.limit ?? 1);
+      group.append(bar); this.element.append(group); this.bars.push(bar); this.positions.push(position);
     }
   }
   private motion = () => {
@@ -102,7 +99,7 @@ export class TurnSpectrum {
       const lo = Math.floor(position); const mix = position - lo;
       const level = bins[lo]! * (1 - mix) + (bins[Math.min(bins.length - 1, lo + 1)] ?? 0) * mix;
       const appearance = spectrumNeedleLevel(level, this.positions[i]!);
-      this.bars[i]!.style.transform = `scaleY(${Math.min(appearance.scale, this.limits[i]!)})`;
+      this.bars[i]!.style.transform = `scaleY(${appearance.scale})`;
       this.bars[i]!.style.opacity = String(appearance.opacity);
     }
   };

@@ -56,7 +56,7 @@ On **Host desk**, drag any participant card into a new position. Neighbouring ca
 
 ### Audio-reactive turn border
 
-Corner needles stop before their inward paths meet, retaining a small gap at full input without changing their position or direction. Needle opacity rises linearly from 5% at zero input to 90% at 20% input, then stays at 90%. Needle length continues to react across the full input range.
+Corner needles use the same full length response as the straight edges. Needle opacity rises linearly from 5% at zero input to 90% at 20% input, then stays at 90%. Needle length continues to react across the full input range.
 
 1. In **Settings → Playback → Audio-reactive turn border**, check **Enable Doom Room Visualizer** and save.
 2. In Music Assistant, create a permanent speaker group containing **Doom Room Visualizer** and your speakers.

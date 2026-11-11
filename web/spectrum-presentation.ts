@@ -10,13 +10,6 @@ export function spectrumBandHue(position: number): number {
   return (150 + Math.max(0, Math.min(1, position)) * 300) % 360;
 }
 
-/** Radial corner needles converge. Stop before neighbouring strokes meet, leaving
- * a small gap without changing their anchors, angles, spacing or width. */
-export function spectrumCornerLength(radius: number, count: number, strokeWidth = 1.6, gap = .4): number {
-  const halfAngle = Math.PI / (4 * count);
-  return Math.max(0, radius - (strokeWidth + gap) / (2 * Math.sin(halfAngle)));
-}
-
 /** Length eases above roughly 1 kHz; opacity reaches its plateau at 20% input.
  * Keep brightness independent of frequency and the needle-length response curve. */
 export function spectrumNeedleLevel(level: number, position: number) {

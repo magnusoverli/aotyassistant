@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { frequencyBins, SpectrumAnalyser } from '../src/spectrum-analysis.js';
 import { SpectrumBuffer, spectrumBins, type SpectrumPacket } from '../src/spectrum.js';
 import { SpectrumClock } from '../web/spectrum-clock.js';
-import { spectrumBandHue, spectrumBandPosition, spectrumCornerLength, spectrumNeedleLevel } from '../web/spectrum-presentation.js';
+import { spectrumBandHue, spectrumBandPosition, spectrumNeedleLevel } from '../web/spectrum-presentation.js';
 
 const tone = (hz: number, length = 2048, start = 0, amplitude = .8) => Float32Array.from({ length }, (_, i) => amplitude * Math.sin(2 * Math.PI * hz * (i + start) / 48000));
 
@@ -88,22 +88,6 @@ test('needle opacity rises from 5% to 90% by 20% input and stays there across al
     assert.ok(spectrumNeedleLevel(.2, position).scale < spectrumNeedleLevel(1, position).scale,
       'Length continues responding above the brightness plateau.');
   }
-});
-
-test('corner needles retain a visible gap at full input without moving their anchors or changing their width', () => {
-  for (const radius of [5.5, 9.5, 19.5]) {
-    const count = Math.max(2, 2 * Math.round(radius * Math.PI / 12));
-    const angle = Math.PI / (2 * count);
-    const limit = spectrumCornerLength(radius, count);
-    assert.ok(limit > 0 && limit < radius);
-    for (const fullLength of [10.5, 19.5]) for (const level of [0, .2, .5, 1]) {
-      const length = Math.min(fullLength * spectrumNeedleLevel(level, 1).scale, limit);
-      const innerRadius = radius - length;
-      const separation = Math.hypot(innerRadius - innerRadius * Math.cos(angle), innerRadius * Math.sin(angle));
-      assert.ok(separation >= 1.6 + .4 - 1e-9, 'Adjacent 1.6px strokes must retain at least a 0.4px gap.');
-    }
-  }
-  assert.equal(spectrumCornerLength(1, 2), 0, 'A radius too small for the strokes cannot extend them inward.');
 });
 
 test('spectrum timestamps follow sample positions across arbitrary packet boundaries and reset on seek', () => {

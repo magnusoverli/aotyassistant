@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.0.27] — 2026-11-11
+
+- Revert the corner spectrum needle-length limits, restoring their full reactive extension.
+
 ## [2.0.26] — 2026-11-11
 
 - Ramp spectrum needle opacity from 5% at zero input to 90% at 20% input, holding 90% brightness above that while length continues to react.
