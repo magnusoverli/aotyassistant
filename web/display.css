@@ -90,23 +90,6 @@
   }
   .now-playing { display:grid; align-items:end; column-gap:var(--pair-gap); grid-template-columns:min(var(--art),calc((100% - var(--pair-gap)) * .44)) minmax(0,1fr); }
   .room-visual { position:relative; isolation:isolate; width:100%; container-type:inline-size; }
-  /* Equal side columns keep the narrower details centred. Matching the column gap
-     to the page gutter centres artwork between the actual screen edge and details. */
-  @media(min-width:43.75em) and (orientation:landscape) {
-    .room-listening { width:100%; }
-    .now-playing {
-      column-gap:var(--gutter);
-      grid-template-columns:minmax(0,1fr)
-        calc(.7 * min(24 * var(--display-title),max(0px,50% - var(--pair-gap)),max(0px,100% - 2 * var(--clearance))))
-        minmax(0,1fr);
-    }
-    .room-visual { width:min(100%,var(--art)); justify-self:center; }
-    /* Widen only the title into the spare right column. Its left edge and reserved
-       height stay fixed, so neither the details nor the progress bar move or grow.
-       Half the display plus half the details width reaches the right edge; reserve
-       the QR/logo rail and a gutter before it. cqw refers to room-display. */
-    .room-title-slot { width:max(100%,calc(50cqw + 50% - var(--clearance) - var(--gutter))); }
-  }
   .room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; pointer-events:none; }
   @keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }
   .room-cover { position:relative; display:grid; place-items:center; width:100%; aspect-ratio:1; overflow:hidden; padding:7%; border:1px solid #48604366; border-radius:.75rem; background:linear-gradient(145deg,#30402e,#1b2a20); box-shadow:0 1.375rem 3.75rem #0004; }
@@ -119,8 +102,7 @@
   .room-visual .vinyl-caption { font-size:2.32cqw; letter-spacing:.035em; }
   .vinyl-label.is-personalized .vinyl-hole { flex-shrink:0; }
 
-  /* Grow upward from the shared bottom edge. Distribute the extra height between
-     content rows, while the stage reserves the same space above the artwork. */
+  /* Portrait uses its own text budget; landscape shares the square artwork height. */
   .track-info { min-width:0; min-height:var(--details-height); align-self:end; display:flex; flex-direction:column; justify-content:space-between; }
   .track-info > * { flex-shrink:0; }
   .room-title-slot { display:flex; flex-direction:column; justify-content:flex-end; height:2.35em; margin:0 0 .75rem; font-size:var(--display-title); }
@@ -139,7 +121,7 @@
   .room-activity .public-playback .progress-rail progress[hidden] { display:block; visibility:hidden; }
   .room-activity .public-playback .track-times { display:flex; height:1.5em; min-height:0; margin-top:.5rem; font-size:var(--display-text); line-height:1.5; }
   .room-activity .public-playback .track-times[hidden] { display:flex; visibility:hidden; }
-  .room-stream-details { display:none; height:1.5em; margin:.5rem 0 0; color:var(--muted); font-size:var(--display-text); line-height:1.5; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .room-stream-details { display:none; height:1.5em; margin:.5rem 0 0; color:var(--muted); font-size:calc(var(--display-text) * .85); line-height:1.5; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .room-stream-details[hidden] { visibility:hidden; }
   .display-page[data-stage='resting'] .track-info .artist-credit,
   .display-page[data-stage='resting'] :is(.room-activity,.room-album,.room-stream-details) { display:none; }
@@ -183,6 +165,41 @@
     .room-stream-details { display:none; }
     .room-invitation { max-width:max(0px,100cqh - 1rem); }
     .display-page > .room-logo { grid-row:1; width:clamp(8rem,12vw,25rem); max-width:25%; height:100%; max-height:7.5rem; }
+  }
+  /* One width- and height-bounded square sets both landscape boxes. Keep the text
+     inside that budget even when a narrow side column limits the artwork width. */
+  @media(orientation:landscape) {
+    .room-listening { container-type:inline-size; }
+    .now-playing {
+      --pair-title:var(--display-title); --pair-artist:var(--display-artist); --pair-text:var(--display-text);
+      --pair-height:min(max(var(--art),var(--details-height)),max(0px,calc((100cqw - var(--pair-gap)) * .44)));
+      grid-template-columns:var(--pair-height) minmax(0,1fr); align-items:stretch;
+    }
+    .room-visual { width:var(--pair-height); }
+    .track-info {
+      height:var(--pair-height); min-height:0; align-self:stretch;
+      --display-title:min(var(--pair-title),calc(var(--pair-height) * .14));
+      --display-artist:min(var(--pair-artist),calc(var(--pair-height) * .09));
+      --display-text:min(var(--pair-text),calc(var(--pair-height) * .055));
+    }
+    .room-title-slot { margin-bottom:min(.75rem,calc(var(--pair-height) * .0225)); }
+    .room-album { margin-top:min(.375rem,calc(var(--pair-height) * .01125)); }
+    .room-activity { margin-top:min(1rem,calc(var(--pair-height) * .03)); }
+    .room-activity .public-playback .track-times,.room-stream-details { margin-top:min(.5rem,calc(var(--pair-height) * .015)); }
+    .public-playback .progress-rail progress { height:min(.375rem,calc(var(--pair-height) * .015)); }
+  }
+  /* Equal side columns keep the narrower details centred and the artwork equally
+     spaced from the screen edge and details. Their shared height includes this width cap. */
+  @media(min-width:43.75em) and (orientation:landscape) {
+    .room-listening { width:100%; }
+    .now-playing {
+      --details-width:calc(.7 * min(24 * var(--display-title),max(0px,50cqw - var(--pair-gap)),max(0px,100cqw - 2 * var(--clearance))));
+      --pair-height:min(max(var(--art),var(--details-height)),max(0px,calc((100cqw - var(--details-width) - 2 * var(--gutter)) / 2)));
+      column-gap:var(--gutter); grid-template-columns:minmax(0,1fr) var(--details-width) minmax(0,1fr);
+    }
+    .room-visual { justify-self:center; }
+    /* The title can use spare right-column space without changing either box. */
+    .room-title-slot { width:max(100%,calc(50cqw + 50% - var(--clearance) - var(--gutter))); }
   }
   /* Existing stacked composition for portrait screens. */
   @media(orientation:portrait) {

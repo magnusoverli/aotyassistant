@@ -9,6 +9,7 @@ import { playbackRead } from './playback-read.js';
 import { playbackProblem, playbackFailure, type PlaybackProblem, type PlaybackProblemCode } from './playback-problem.js';
 import { retryableRead } from './upstream-error.js';
 import { matchesReference, sameRecordingEvidence } from './recording-identity.js';
+import { sourceStreamInfo } from './stream-info.js';
 
 type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?: () => void; suspend?: () => void; uploaded?: boolean };
 type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configurationRevision' | 'routeConfigured' | 'playbackAvailable' |
@@ -71,8 +72,12 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     if (!this.available || this.failed || !own || own.appId !== id) return;
     return own.streamInfo ? { ...own.streamInfo } : undefined;
   }
+  private observeStream(own: Ownership, queue: QueueSnapshot) {
+    own.streamInfo = sourceStreamInfo(queue.current_item?.streamdetails,
+      [...(own.identity?.provider_mappings ?? []), ...(queue.current_item?.media_item?.provider_mappings ?? [])]);
+  }
   private observe(own: Ownership, queue: QueueSnapshot) {
-    own.streamInfo = queue.current_item?.streamdetails?.audio_format;
+    this.observeStream(own, queue);
     if (queue.elapsed_time === undefined) { own.position = undefined; return; }
     const correction = queue.state === 'playing' && queue.elapsed_time_last_updated ? Math.max(0, Math.min(5, Date.now() / 1000 - queue.elapsed_time_last_updated)) : 0;
     own.position = { elapsed: queue.elapsed_time + correction, duration: own.track.duration, at: Date.now() };
@@ -557,7 +562,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         }
         if (parked) {
           // MA releases paused streams after ~30s. Retain the exact selection and frozen position, with no pause expiry and no auto-resume.
-          if (q.state === 'paused') own.streamInfo = q.current_item?.streamdetails?.audio_format;
+          if (q.state === 'paused') this.observeStream(own, q);
           background(() => { void this.refreshVolume(own.api, own.destination, false); }); this.onProgress(); return;
         }
         if (q.state === 'idle' && !q.ended && own.status === 'playing' && own.seenPlaying && this.sameQueueItem(q, own) && this.safeQueue(q)) {

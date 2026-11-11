@@ -24,12 +24,12 @@ test('styled QR preserves every encoded module and four clear modules around sho
     const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)];
     for (let row = 0; row < modules.size; row++) for (let col = 0; col < modules.size; col++) {
       const actual = pixel((col + 5) * scale + scale / 2, (row + 5) * scale + scale / 2);
-      assert.deepEqual(actual, modules.get(row, col) ? [24, 36, 27] : [205, 219, 181], `Module ${row},${col}`);
+      assert.deepEqual(actual, modules.get(row, col) ? [205, 219, 181] : [24, 36, 27], `Module ${row},${col}`);
     }
     // Inspect every pixel of the quiet zone, excluding only the outer decorative module.
     for (let y = scale; y < (side - 1) * scale; y++) for (let x = scale; x < (side - 1) * scale; x++) {
       if (x >= 5 * scale && x < (side - 5) * scale && y >= 5 * scale && y < (side - 5) * scale) continue;
-      assert.deepEqual(pixel(x, y), [205, 219, 181], `Quiet zone pixel ${x},${y}`);
+      assert.deepEqual(pixel(x, y), [24, 36, 27], `Quiet zone pixel ${x},${y}`);
     }
   }
 });

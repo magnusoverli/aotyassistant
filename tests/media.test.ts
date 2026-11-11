@@ -200,11 +200,12 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
 
 test('public stream details follow the verified stream independently of reveal and clear on missing data or stop', async t => {
   const f = await fixture(); t.after(f.close);
+  f.remote.track.provider_mappings.push({ item_id: 'tidal-equivalent', provider_domain: 'tidal', available: true });
   const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   const id = f.participant(f.alex).ownPlayback!.id;
-  assert.equal(f.display().streamInfo, undefined);
-  const expected = { format: 'FLAC', bitRate: 1411, sampleRate: 44100 };
+  assert.deepEqual(f.display().streamInfo, { source: 'Spotify' });
+  const expected = { source: 'Spotify', format: 'FLAC', bitRate: 1411, sampleRate: 44100 };
   f.remote.queue.current_item!.streamdetails!.audio_format = { content_type: 'flac', bit_rate: 1411, sample_rate: 44100,
     title: 'PRIVATE stream title', path: 'PRIVATE stream URL' };
   const waitForInfo = async (value: View['streamInfo']) => {
@@ -220,15 +221,17 @@ test('public stream details follow the verified stream independently of reveal a
   await f.engine.control(f.alex, f.host().turnId!, id, 'pause');
   assert.deepEqual(f.display().streamInfo, expected);
   f.remote.queue.current_item!.streamdetails!.audio_format = { content_type: 'aac', bit_rate: 256 };
-  await waitForInfo({ format: 'AAC', bitRate: 256 });
+  await waitForInfo({ source: 'Spotify', format: 'AAC', bitRate: 256 });
   delete f.remote.queue.current_item!.streamdetails!.audio_format;
-  await waitForInfo(undefined);
+  await waitForInfo({ source: 'Spotify' });
+  f.remote.queue.current_item!.streamdetails = { provider: 'tidal', item_id: 'tidal-equivalent' };
+  await waitForInfo({ source: 'Tidal' });
   f.remote.queue.current_item!.streamdetails!.audio_format = { content_type: 'flac', bit_rate: 1411, sample_rate: 44100 };
-  await waitForInfo(expected);
+  await waitForInfo({ ...expected, source: 'Tidal' });
   await f.engine.control(f.alex, f.host().turnId!, id, 'stop');
   assert.equal(f.display().streamInfo, undefined);
   await f.engine.play(f.alex, f.host().turnId!, id, track.id);
-  assert.equal(f.display().streamInfo, undefined, 'A replacement without technical metadata must not inherit the old stream.');
+  assert.deepEqual(f.display().streamInfo, { source: 'Spotify' }, 'A replacement must use its own stream source and technical metadata.');
 });
 
 test('artwork transport rejects arbitrary references, redirects, SVG/HTML, and oversized image responses', async t => {

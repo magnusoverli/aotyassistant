@@ -1,6 +1,29 @@
 import { z } from 'zod';
 import type { StreamInfo } from './model.js';
 
+const sources: Record<string, string> = {
+  spotify: 'Spotify', tidal: 'Tidal', qobuz: 'Qobuz', deezer: 'Deezer', apple_music: 'Apple Music',
+  ytmusic: 'YouTube Music', youtube_music: 'YouTube Music', amazon_music: 'Amazon Music',
+  filesystem: 'Local files', filesystem_local: 'Local files', filesystem_smb: 'Network files',
+  plex: 'Plex', subsonic: 'Subsonic', jellyfin: 'Jellyfin', builtin: 'Direct stream',
+  soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', tunein: 'TuneIn', radiobrowser: 'Radio Browser',
+};
+type SourceMapping = { item_id?: string; provider_instance?: string; provider_domain?: string };
+
+/** Identify the actual stream, not the catalogue service originally selected.
+ * Match opaque instances through exact item mappings; publish only fixed service labels. */
+export function sourceStreamInfo(stream: { provider: string; item_id: string; audio_format?: StreamInfo } | null | undefined,
+  mappings: readonly SourceMapping[] = []): StreamInfo | undefined {
+  if (!stream) return;
+  const domains = new Set(mappings.filter(mapping => mapping.item_id === stream.item_id &&
+    (mapping.provider_instance === stream.provider || mapping.provider_domain === stream.provider))
+    .map(mapping => mapping.provider_domain).filter((domain): domain is string => Boolean(domain)));
+  const domain = Object.hasOwn(sources, stream.provider) ? stream.provider : domains.size === 1 ? [...domains][0]! : '';
+  const source = Object.hasOwn(sources, domain) ? sources[domain] : undefined;
+  const info: StreamInfo = { ...(source ? { source } : {}), ...stream.audio_format };
+  return Object.keys(info).length ? info : undefined;
+}
+
 // MA AudioFormat (schema 65): bit_rate is kbps, sample_rate is Hz.
 // Fixed codec labels allow technical data before reveal without exposing free-form metadata.
 const formats = {

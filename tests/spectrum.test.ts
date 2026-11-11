@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { frequencyBins, SpectrumAnalyser } from '../src/spectrum-analysis.js';
 import { SpectrumBuffer, spectrumBins, type SpectrumPacket } from '../src/spectrum.js';
 import { SpectrumClock } from '../web/spectrum-clock.js';
-import { spectrumBandPosition, spectrumNeedleLevel } from '../web/spectrum-presentation.js';
+import { spectrumBandHue, spectrumBandPosition, spectrumCornerLength, spectrumNeedleLevel } from '../web/spectrum-presentation.js';
 
 const tone = (hz: number, length = 2048, start = 0, amplitude = .8) => Float32Array.from({ length }, (_, i) => amplitude * Math.sin(2 * Math.PI * hz * (i + start) / 48000));
 
@@ -44,14 +44,56 @@ test('bass starts at the lower-left and treble meets at the upper-right on both 
     assert.equal(spectrumBandPosition(treble, perimeter, treble), 1);
     for (let step = 0; step <= 24; step++) {
       const offset = perimeter / 2 * step / 24;
-      for (const direction of [-1, 1]) assert.ok(Math.abs(spectrumBandPosition(bass + direction * offset, perimeter, treble) - step / 24) < 1e-12);
+      for (const direction of [-1, 1]) {
+        const position = spectrumBandPosition(bass + direction * offset, perimeter, treble);
+        assert.ok(Math.abs(position - step / 24) < 1e-12);
+        assert.ok(Math.abs(spectrumBandHue(position) - spectrumBandHue(step / 24)) < 1e-9);
+      }
     }
   }
-  const silent = spectrumNeedleLevel(0); const quiet = spectrumNeedleLevel(.2); const loud = spectrumNeedleLevel(1);
+  const silent = spectrumNeedleLevel(0, 0); const quiet = spectrumNeedleLevel(.2, 0); const loud = spectrumNeedleLevel(1, 0);
   assert.ok(silent.opacity < .1 && silent.scale < .05);
   assert.ok(silent.opacity < quiet.opacity && quiet.opacity < loud.opacity);
   assert.ok(silent.scale < quiet.scale && quiet.scale < loud.scale);
   assert.equal(loud.scale, 1);
+});
+
+test('weak treble survives the full analysis-to-needle path while bass and silence retain their response', () => {
+  const bass = frequencyBins([tone(93.75, 2048, 0, .03)], 48000);
+  const treble = frequencyBins([tone(12000, 2048, 0, .003)], 48000);
+  const appearance = (bins: number[]) => {
+    const peak = bins.indexOf(Math.max(...bins));
+    return spectrumNeedleLevel(bins[peak]! / 255, peak / (spectrumBins - 1));
+  };
+  const highLevel = Math.max(...treble) / 255;
+  const previous = spectrumNeedleLevel(highLevel, 0);
+  const high = appearance(treble);
+  assert.ok(high.scale > previous.scale * 1.5, 'Quiet treble should be visibly longer than in 2.0.24.');
+  assert.ok(high.opacity > previous.opacity * 1.4, 'Quiet treble should also be easier to see.');
+  assert.ok(high.scale < appearance(bass).scale, 'A much quieter treble tone still reflects its lower energy.');
+  const belowFloor = frequencyBins([tone(12000, 2048, 0, .0001)], 48000);
+  for (const position of [0, .25, .5, .75, 1]) {
+    assert.deepEqual(spectrumNeedleLevel(0, position), spectrumNeedleLevel(0, 0));
+    assert.deepEqual(spectrumNeedleLevel(1, position), spectrumNeedleLevel(1, 0));
+    assert.deepEqual(spectrumNeedleLevel(Math.max(...belowFloor) / 255, position), spectrumNeedleLevel(0, 0));
+  }
+  assert.deepEqual(spectrumNeedleLevel(.2, .5), spectrumNeedleLevel(.2, 0), 'Bass and lower mids retain their response.');
+});
+
+test('corner needles retain a visible gap at full input without moving their anchors or changing their width', () => {
+  for (const radius of [5.5, 9.5, 19.5]) {
+    const count = Math.max(2, 2 * Math.round(radius * Math.PI / 12));
+    const angle = Math.PI / (2 * count);
+    const limit = spectrumCornerLength(radius, count);
+    assert.ok(limit > 0 && limit < radius);
+    for (const fullLength of [10.5, 19.5]) for (const level of [0, .2, .5, 1]) {
+      const length = Math.min(fullLength * spectrumNeedleLevel(level, 1).scale, limit);
+      const innerRadius = radius - length;
+      const separation = Math.hypot(innerRadius - innerRadius * Math.cos(angle), innerRadius * Math.sin(angle));
+      assert.ok(separation >= 1.6 + .4 - 1e-9, 'Adjacent 1.6px strokes must retain at least a 0.4px gap.');
+    }
+  }
+  assert.equal(spectrumCornerLength(1, 2), 0, 'A radius too small for the strokes cannot extend them inward.');
 });
 
 test('spectrum timestamps follow sample positions across arbitrary packet boundaries and reset on seek', () => {

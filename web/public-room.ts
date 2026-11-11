@@ -32,7 +32,7 @@ export function publicStreamDetails(view: View, online: boolean) {
   const state = publicPlaybackState(view, online);
   if (state !== 'playing' && state !== 'paused') return '';
   const info = view.streamInfo;
-  return [info?.format, info?.bitRate ? `${info.bitRate} kbps` : undefined,
+  return [info?.source, info?.format, info?.bitRate ? `${info.bitRate} kbps` : undefined,
     info?.sampleRate ? `${info.sampleRate / 1000} kHz` : undefined].filter(Boolean).join(' · ');
 }
 
@@ -113,8 +113,7 @@ export class PublicRoom {
     this.invitation.setAttribute('aria-label', 'Join room'); this.invitation.hidden = true;
     // The logo is the page's own child: it sits beside playback where there is a side column, and above it where there is none.
     grid.append(listening, this.invitation); this.element.append(this.background.element, this.logo, grid);
-    // The actual artwork can be shorter than the text column. Centre the decoration
-    // in the clear space down to the artwork, rather than in the text's reserved row.
+    // Centre the decoration in the clear space down to the actual artwork.
     if (typeof ResizeObserver !== 'undefined') {
       this.backgroundLayout = new ResizeObserver(() => {
         if (!this.element.isConnected) return;

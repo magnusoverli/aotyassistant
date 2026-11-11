@@ -91,7 +91,7 @@ export type AutoplayTarget = { turnId: string; participantId: string; userId: st
 export const AUTO_REVEAL_FRACTION = 0.7;
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
 /** Source stream reported by MA; bitrate in kbps and sample rate in Hz. */
-export type StreamInfo = { format?: string; bitRate?: number; sampleRate?: number };
+export type StreamInfo = { source?: string; format?: string; bitRate?: number; sampleRate?: number };
 export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambiguous'; source: 'automatic' | 'manual' | 'legacy' | 'configured' | 'online'; message: string };
 /** The room's logo: one shape drawn in the room's colours. `url` changes whenever the image does. */
 export type RoomLogoView = { url: string; width: number; height: number };

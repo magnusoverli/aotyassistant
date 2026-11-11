@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.0.25] — 2026-11-11
+
+- Cap corner spectrum needles before their inward paths converge, preventing overlap without moving their anchors or changing their angles.
+- Add the actual stream service (such as Spotify or Tidal) to the display's technical line and make that line slightly smaller.
+- Invert invitation QR codes to bright sage modules on a dark green scanning area, retaining the clear scanning margin and gold frame accents.
+- Match landscape artwork and track-details heights, aligning their top and bottom edges while keeping the artwork square and text within the shared space.
+- Improve weak treble visibility with a gentler high-frequency needle response, preserving faint silence and the existing bass response.
+- Make spectrum colours follow the lower-left-to-upper-right frequency sweeps on both sides of the card.
+
 ## [2.0.24] — 2026-11-11
 
 - Remove participant-card status subtitles, vertically center names and reduce card widths by about 20%, retaining accessible turn labels.

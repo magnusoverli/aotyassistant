@@ -8,6 +8,15 @@ async function fits(page: Page) {
   await expect(page.locator('.rotation-seat.is-next')).toBeInViewport({ ratio: 1 });
   await expect(page.locator('.room-cover')).toBeInViewport({ ratio: 1 });
   await expect(page.locator('.track-info')).toBeInViewport({ ratio: 1 });
+  const artwork = (await page.locator('.room-cover').boundingBox())!;
+  expect(Math.abs(artwork.width - artwork.height)).toBeLessThan(1);
+  if (await page.evaluate(() => matchMedia('(orientation:landscape)').matches)) {
+    const details = (await page.locator('.track-info').boundingBox())!;
+    expect(Math.abs(artwork.height - details.height)).toBeLessThan(1);
+    expect(Math.abs(artwork.y - details.y)).toBeLessThan(1);
+    expect(Math.abs(artwork.y + artwork.height - details.y - details.height)).toBeLessThan(1);
+    expect(await page.locator('.track-info').evaluate(node => node.scrollHeight - node.clientHeight)).toBeLessThanOrEqual(1);
+  }
   const overflow = await page.locator('.app-content').evaluate(node => ({ x: node.scrollWidth - node.clientWidth, y: node.scrollHeight - node.clientHeight }));
   expect(overflow.x).toBeLessThanOrEqual(1); expect(overflow.y).toBeLessThanOrEqual(1);
   await expect(page.locator('.app-content')).toHaveCSS('overflow-y', 'clip');
