@@ -79,10 +79,10 @@ Choose one option under **Settings → Playback → When a song ends**:
 | Option | After a natural ending |
 | --- | --- |
 | **Pass turn and wait** (default) | Move to the next participant; they choose when to start a song. |
-| **Play next participant’s song** | Move to the next participant and play their first upcoming playlist track. Continue in listening order while each participant has a song ready. |
+| **Play the next participant’s song** | Move to the next participant and play their first upcoming playlist track. Continue in listening order while each participant has a song ready. |
 | **Continue current participant’s playlist** | Keep the current participant and play their next upcoming track. If their playlist is empty or the track cannot play, keep their turn and wait. They can choose another song or finish their turn. |
 
-Automatic playback works as if the participant chose **Play first selection**: the track moves to **Previously played**, starts hidden if Secret playback is enabled, and follows the usual reveal settings. Played tracks do not loop. Existing automatic-play preferences carry over: on becomes **Play next participant’s song**, and off becomes **Pass turn and wait**.
+Automatic playback works as if the participant chose **Play first selection**: the track moves to **Previously played**, starts hidden if Secret playback is enabled, and follows the usual reveal settings. Played tracks do not loop. Existing automatic-play preferences carry over: on becomes **Play the next participant’s song**, and off becomes **Pass turn and wait**.
 
 Nothing starts when the selected participant's playlist is empty, a previous play attempt needs review, the song’s source isn’t connected, or the speaker isn’t ready. A song that can’t be found stays first in their playlist; automatic playback does not skip it. **Stop song**, **Finish turn**, **Skip turn** and **Pass turn** never start the next song. Changing the setting does not start or stop the current song; it applies at the next natural ending and cancels a pending automatic start under the previous setting. While an automatic start is in progress, the participant’s playlist shows **Your first song is starting…**. Use **Stop song** to stop playback immediately, or **Pass turn and wait** to prevent automatic playback after the current song ends. Adding a song to an empty playlist while waiting does not start it automatically.
 

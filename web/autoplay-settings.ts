@@ -5,7 +5,7 @@ import { panel, sectionHeading } from './ui-components';
 
 const choices: { mode: AutoplayMode; label: string; help: string }[] = [
   { mode: 'off', label: 'Pass turn and wait', help: 'Move to the next participant. They choose when to start their song.' },
-  { mode: 'next-participant', label: 'Play next participant’s song', help: 'Move to the next participant and play their first upcoming playlist track. If it cannot play, wait for them to choose.' },
+  { mode: 'next-participant', label: 'Play the next participant’s song', help: 'Move to the next participant and play their first upcoming playlist track. If it cannot play, wait for them to choose.' },
   { mode: 'same-participant', label: 'Continue current participant’s playlist', help: 'Keep their turn and play their next upcoming track. If their playlist is empty or the track cannot play, keep their turn and wait.' },
 ];
 const path = '/api/host/autoplay-settings';
