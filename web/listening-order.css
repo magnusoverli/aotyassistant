@@ -50,16 +50,17 @@
   .rotation-seat.order-drag-preview { background:#18251b; }
   .seat-state-compact { display:none; }
   @media(max-width:1099px) {
-    .has-display-qr .order-bar { padding-right:60px; }
-    .order-qr { max-height:48px; }
-    .order-bar { flex-wrap:wrap; gap:4px; min-height:53px; padding-block:4px; }
-    .rotation-list { --order-gap:18px; flex-basis:100%; }
-    .rotation-list > .rotation-seat:not(:last-child)::after { mask-size:12px 10px; }
-    .rotation-seat { flex-basis:clamp(96px,calc((100% - 2 * var(--order-gap)) / 3),112px); grid-template-columns:minmax(0,1fr); min-height:44px; padding:3px 4px; column-gap:6px; row-gap:0; border-radius:6px; }
-    .order-trace rect { rx:5.5px; }
-    .rotation-seat .avatar,.seat-state:not(.seat-state-compact) { display:none; }
-    .rotation-seat strong { grid-column:1; font-size:13px; text-align:center; }
-    .seat-state-compact { display:block; grid-column:1; font-size:9.5px; text-align:center; }
-    .order-status { flex-basis:100%; font-size:13px; }
+    /* The room display is drawn in its own units and keeps the card form at every width (display.css). */
+    :where(body:not([data-view='display'])) .has-display-qr .order-bar { padding-right:60px; }
+    :where(body:not([data-view='display'])) .order-qr { max-height:48px; }
+    :where(body:not([data-view='display'])) .order-bar { flex-wrap:wrap; gap:4px; min-height:53px; padding-block:4px; }
+    :where(body:not([data-view='display'])) .rotation-list { --order-gap:18px; flex-basis:100%; }
+    :where(body:not([data-view='display'])) .rotation-list > .rotation-seat:not(:last-child)::after { mask-size:12px 10px; }
+    :where(body:not([data-view='display'])) .rotation-seat { flex-basis:clamp(96px,calc((100% - 2 * var(--order-gap)) / 3),112px); grid-template-columns:minmax(0,1fr); min-height:44px; padding:3px 4px; column-gap:6px; row-gap:0; border-radius:6px; }
+    :where(body:not([data-view='display'])) .order-trace rect { rx:5.5px; }
+    :where(body:not([data-view='display'])) .rotation-seat .avatar,:where(body:not([data-view='display'])) .seat-state:not(.seat-state-compact) { display:none; }
+    :where(body:not([data-view='display'])) .rotation-seat strong { grid-column:1; font-size:13px; text-align:center; }
+    :where(body:not([data-view='display'])) .seat-state-compact { display:block; grid-column:1; font-size:9.5px; text-align:center; }
+    :where(body:not([data-view='display'])) .order-status { flex-basis:100%; font-size:13px; }
   }
 }

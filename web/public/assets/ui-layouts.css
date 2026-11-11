@@ -7,7 +7,7 @@
   .page { width:100%; margin:0 auto; min-width:0; padding:var(--workspace-padding); }
   .page[data-layout='workspace'] { max-width:var(--workspace-width); }
   .page[data-layout='compact'] { max-width:var(--compact-width); padding-inline:22px; }
-  .page[data-layout='display'] { max-width:none; min-height:calc(100dvh - var(--app-header-height,90px)); padding:36px 3vw 28px; }
+  .page[data-layout='display'] { max-width:none; }
   .workspace-grid { display:grid; grid-template-columns:var(--workspace-columns); gap:var(--workspace-gap); align-items:start; min-width:0; }
   .workspace-grid > * { min-width:0; }
   .workspace-grid[data-composition='sidebar'] { grid-template-areas:'primary secondary'; }
@@ -28,14 +28,5 @@
     .workspace-grid[data-composition='sidebar'] { grid-template-areas:'primary' 'secondary'; }
     .workspace-grid[data-composition='music'] { display:flex; flex-direction:column; }
     .workspace-grid[data-composition='music'] > :not(.sr-only) { width:100%; }
-  }
-  @media(max-width:700px) {
-    .page[data-layout='display'] { padding:28px 20px; }
-  }
-  @media(min-width:1700px) {
-    .page[data-layout='display'] { padding-top:44px; padding-bottom:32px; }
-  }
-  @media(max-height:800px) and (min-width:1001px) {
-    .page[data-layout='display'] { padding-top:24px; padding-bottom:22px; }
   }
 }

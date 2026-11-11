@@ -110,14 +110,16 @@ export class PublicRoom {
     activity.append(this.progress); info.append(activity, this.technical);
     this.stage.append(visual, info);
     listening.append(this.stage);
-    this.invitation.setAttribute('aria-label', 'Join room');
-    grid.append(this.logo, listening, this.invitation); this.element.append(this.background.element, grid);
+    this.invitation.setAttribute('aria-label', 'Join room'); this.invitation.hidden = true;
+    // The logo is the page's own child: it sits beside playback where there is a side column, and above it where there is none.
+    grid.append(listening, this.invitation); this.element.append(this.background.element, this.logo, grid);
     this.connecting();
   }
 
   /** Before the first room update: the same stage, resting, with the app's name in the title. */
   connecting() {
     attr(this.element, 'data-playback', 'connecting'); attr(this.element, 'data-stage', 'resting');
+    if (!this.element.dataset.invitation) attr(this.element, 'data-invitation', 'none');
     const words = publicStageText(undefined, navigator.onLine);
     text(this.title, words.title); this.title.classList.remove('is-long'); text(this.hint, words.hint);
     this.revealed = undefined; this.trackKey = ''; this.clearImages(); this.prepared.clear();
@@ -127,7 +129,8 @@ export class PublicRoom {
     updateProgress(this.progress, undefined); text(this.technical, ''); this.technical.hidden = true;
   }
 
-  update(view: View, online: boolean, qrImage: string) {
+  /** `qrInOrder`: the join code is drawn in the play-order bar, by the setting or because this layout has no side column. */
+  update(view: View, online: boolean, qrImage: string, qrInOrder = false) {
     this.background.update(view.background);
     attr(this.element, 'data-background', view.background?.settings.enabled ? 'on' : 'off');
     const state = publicPlaybackState(view, online);
@@ -166,7 +169,8 @@ export class PublicRoom {
     text(this.technical, technical); prop(this.technical, 'hidden', !technical);
 
     const invitationKey = JSON.stringify([view.joinUrl, qrImage]);
-    prop(this.invitation, 'hidden', !view.joinUrl || !qrImage || view.background?.settings.qrPlacement === 'play-order');
+    const beside = Boolean(view.joinUrl && qrImage) && !qrInOrder;
+    prop(this.invitation, 'hidden', !beside); attr(this.element, 'data-invitation', beside ? 'stage' : 'none');
     if (this.invitationKey !== invitationKey) {
       this.invitationKey = invitationKey;
       this.invitation.replaceChildren();

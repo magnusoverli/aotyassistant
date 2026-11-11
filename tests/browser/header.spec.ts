@@ -42,13 +42,14 @@ test('header logout works across routes, retries explicitly and signs out only t
 
 test('shared mobile header is compact across routes while desktop sizing and touch targets stay unchanged', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Header listener' }, headers: { Origin: isolatedApp.origin } });
-  for (const path of ['/', '/host', '/host/settings', '/participant', '/join', '/display']) {
+  // The room display is drawn in its own design units; display-sizing.spec.ts covers it.
+  for (const path of ['/', '/host', '/host/settings', '/participant', '/join']) {
     await page.goto(path);
     await expect(page.locator('.rotation-seat')).toHaveCount(1);
     for (const width of [1440, 1100, 1099, 701, 700, 390, 320, 1100]) {
       await page.setViewportSize({ width, height: 844 });
       const mobile = width < 1100;
-      const display = path === '/display' && !mobile;
+      const display = false;
       const barHeight = mobile ? '44px' : display ? '62px' : '72px';
       await expect(page.locator('.header-inner')).toHaveCSS('height', barHeight);
       await expect(page.locator('.brand-subtitle')).toBeHidden();

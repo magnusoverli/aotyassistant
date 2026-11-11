@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.14] — 2026-11-11
+
+- Rebuild the room display as one picture designed at 1920×1080 and scaled as a whole: header, play order, artwork, song details, join code and logo now grow together on any screen, including 960×540 TV boxes and 4K, instead of following separate rules. Text read from across the room is at least 24 design pixels.
+- Add **Settings → Appearance → Room display size** (Close, Sofa, Across the room, Back of the room), saved for the room and applied live to every open room display. Larger sizes switch to a compact layout that moves the join code beside the play order and hides stream details. A single screen can still choose its own size from **Room display → Menu → This screen's size**; sizes chosen in 2.0.12 carry over.
+- The play order on the room display shows as many listeners as fit, then "+N more", instead of scrolling. The menu and full-screen buttons float over the display and fade out when idle. Phones and portrait screens get a stacked layout.
+
 ## [2.0.13] — 2026-11-11
 
 - Replace the automatic-play toggle with **Settings → Playback → When a song ends**: pass the turn and wait, play the next participant's song, or continue the current participant's playlist. Continuing a playlist keeps their turn and waits if the list is empty or the next track cannot play. Existing preferences carry over, and changing modes cancels pending automatic starts.

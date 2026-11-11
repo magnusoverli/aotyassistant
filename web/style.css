@@ -6,14 +6,12 @@
 @import './participant-player.css';
 @import './music-collection.css';
 @import './atmosphere.css';
-@import './display-layout.css';
-@import './display-sizing.css';
+@import './display.css';
 
 @layer features {
 html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,90px) + 18px); }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .saved-track [hidden] { display:none; }
-.room-qr-link { display:block; width:75%; margin-inline:auto; }
 .room-join-link { display:block; margin-top:12px; font-size:14px; overflow-wrap:anywhere; }
 .app-header { --header-width:var(--workspace-width); --header-gutter:var(--workspace-gutter); position:sticky; top:0; z-index:30; border-bottom:1px solid #2a392d; background:#101a13fa; }
 .header-inner { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:16px; min-height:72px; max-width:var(--header-width); padding:12px var(--header-gutter); margin:0 auto; }
@@ -70,9 +68,6 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .playback-progress[data-status="paused"] progress,.playback-progress[data-status="stopped"] progress { opacity:.55; }
 .track-times { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:8px; }
 .track-times:empty { display:none; }
-.public-playback { max-width:440px; margin-top:24px; }
-.public-playback .playback-status { font-size:clamp(12px,1vw,18px); height:1.5em; line-height:1.5; }
-.public-playback .track-times { font-size:clamp(12px,.9vw,16px); }
 .volume-control { display:grid; grid-template-columns:1fr auto; align-items:center; gap:6px 12px; margin:18px 0; }
 .volume-control label,.volume-control output { font-size:12px; color:var(--muted); }
 .volume-control input[type="range"] { grid-column:1 / -1; width:100%; min-height:32px; padding:0; border:0; border-radius:0; background:transparent; accent-color:var(--accent); cursor:pointer; }
@@ -86,71 +81,16 @@ html { scroll-behavior:smooth; scroll-padding-top:calc(var(--app-header-height,9
 .host-audio .volume-control input[type="range"] { grid-column:2; grid-row:1; }
 .host-audio .volume-control output { grid-column:3; grid-row:1; }
 
-/* The public room: readable across a room, no administrative chrome. One stage serves every state,
-   laid out like a revealed song: the logo, record, title, artist and album lines, progress
-   and join code keep their places. Only their contents change, so nothing moves between states. */
-body[data-view="display"] { background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e; min-height:100vh; }
-.display-page { display:flex; flex-direction:column; gap:40px; }
-.room-stage { flex:1; display:grid; grid-template-columns:minmax(0,1fr) clamp(160px,12vw,220px); gap:clamp(24px,3vw,64px); align-items:center; padding:16px 0 0; }
-.room-stage > .room-listening { grid-column:1; grid-row:1; }
-.room-stage > .room-invitation { grid-column:2; grid-row:1; }
-/* The room's column: its logo at the top, how to join at the bottom. It widens a little while there is a logo. */
-.room-stage > .room-logo { grid-column:2; grid-row:1; align-self:start; justify-self:end; width:100%; }
-:root[data-room-logo] .room-stage { grid-template-columns:minmax(0,1fr) clamp(232px,17vw,340px); }
-/* Spare height belongs above playback, keeping the artwork and details at the foot of the screen. */
-.room-listening { min-width:0; align-self:stretch; display:grid; grid-template-rows:1fr auto; }
-.now-playing { grid-row:2; display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr); align-items:end; gap:clamp(24px,2.5vw,48px); }
-/* Idle and unrevealed playback share the same record appearance; only rotation pauses. */
-.display-page[data-stage="resting"] .room-activity { visibility:hidden; }
-.cover { aspect-ratio:1; overflow:hidden; border-radius:12px; }
-.room-cover { position:relative; display:grid; place-items:center; padding:7%; background:linear-gradient(145deg,#30402e,#1b2a20); box-shadow:0 22px 60px #0004; border:1px solid #48604366; width:100%; }
-.room-cover img { width:100%; height:100%; object-fit:cover; position:absolute; inset:0; }
-.room-cover > .vinyl { container-type:inline-size; }
-.vinyl-label.is-personalized { width:36%; height:36%; gap:7%; letter-spacing:.06em; }
-.vinyl-label.is-personalized > span { width:86%; line-height:1.15; text-align:center; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-.vinyl-label.is-personalized .vinyl-owner { font-size:clamp(7px,4cqw,20px); text-transform:uppercase; }
-.vinyl-label.is-personalized .vinyl-owner.is-long { font-size:clamp(5px,2.4cqw,13px); }
-.vinyl-label.is-personalized .vinyl-caption { font-size:clamp(5px,2.7cqw,13px); letter-spacing:.035em; }
-.vinyl-label.is-personalized .vinyl-hole { flex-shrink:0; }
+/* The spinning record, shared by the host desk and the room display. The display's own layout is in display.css. */
 .room-record { animation:room-spin 17.65s linear infinite; animation-play-state:paused; }
 .display-page:not([data-playback="playing"],[data-playback="paused"]) .room-record { animation:none; transform:rotate(0deg); }
 .room-record > .vinyl-label { width:36%; height:36%; gap:7%; }
-.room-visual { position:relative; isolation:isolate; width:100%; max-width:52vh; justify-self:end; }
-.room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; pointer-events:none; }
 .display-page[data-playback="playing"] .room-record { animation-play-state:running; }
-.room-activity { display:flex; margin-top:28px; }
-.room-activity .public-playback { flex:1; min-width:0; margin:0; }
-.room-stream-details { margin:8px 0 0; color:var(--muted); font-size:clamp(.7rem,.8vw,.85rem); line-height:1.5; letter-spacing:.02em; }
-/* Progress keeps its lines when there is nothing to show yet. */
-.public-playback .track-times { display:flex; height:1.5em; min-height:0; line-height:1.5; }
-.public-playback .track-times[hidden] { display:flex; visibility:hidden; }
-.public-playback .progress-rail progress[hidden] { display:block; visibility:hidden; }
-.room-stream-details { min-height:1.5em; }
-.room-stream-details[hidden] { display:block; visibility:hidden; }
-@keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }
 @keyframes room-spin { to { transform:rotate(360deg); } }
-.track-info { min-width:0; align-self:end; }
-/* The title's place is one line tall and anchored at its bottom: a longer title grows upward,
-   so the artist, album and progress below it never move. Leave paint room for descenders. */
-.room-title-slot { display:flex; flex-direction:column; justify-content:flex-end; font-size:clamp(2.3rem,4vw,4.9rem); height:1.35em; margin:0 0 24px; }
-.track-info h1 { flex-shrink:0; font-size:clamp(2.3rem,4vw,4.9rem); letter-spacing:-.045em; line-height:1.2; margin:0; padding-bottom:.15em; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
-.track-info h1.is-long { font-size:clamp(1.75rem,2.5vw,3rem); -webkit-line-clamp:4; }
-/* The artist's line, reserved while a song is hidden. While nothing plays, the hint takes it. */
-.track-info .artist-credit,.room-hint { height:max(38px,calc(clamp(1.2rem,1.75vw,2.2rem) * 1.5)); }
-.track-info .artist-credit[hidden] { display:flex; visibility:hidden; }
-.display-page[data-stage="resting"] .track-info .artist-credit { display:none; }
-.room-hint { display:none; margin:0; color:var(--muted); font-size:clamp(1.2rem,1.75vw,2.2rem); line-height:1.5; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.display-page[data-stage="resting"] .room-hint { display:block; }
-.track-info .artist { color:#d5d3bf; font-size:clamp(1.2rem,1.75vw,2.2rem); line-height:1.5; display:-webkit-box; -webkit-line-clamp:1; -webkit-box-orient:vertical; overflow:hidden; }
-.room-album { font-size:clamp(13px,.95vw,18px); color:#a0ae9c; margin:10px 0 0; line-height:1.5; min-height:1.5em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.room-album[hidden] { display:block; visibility:hidden; }
 .qr-card { text-align:center; }
 .qr-card img { display:block; width:min(100%,300px); height:auto; margin:0 auto 18px; border-radius:8px; }
 .qr-card p:not(.eyebrow) { font-size:12px; margin:0; }
 .qr-card .button { width:100%; margin-top:18px; font-size:12px; }
-.room-invitation { width:100%; max-width:240px; text-align:center; justify-self:end; align-self:end; }
-.room-invitation h3 { font-size:clamp(11px,.75vw,14px); font-weight:500; text-transform:uppercase; letter-spacing:.24em; color:var(--muted); margin:0 0 18px; }
-.room-invitation img { display:block; width:100%; height:auto; border-radius:min(12px,6%); }
 
 /* Host: a control desk, not a music browser. */
 .host-live { display:flex; align-items:center; justify-content:space-between; gap:24px; }
@@ -270,16 +210,8 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
 .pin-toggle:focus-visible { outline-offset:-3px; }
 .join-notice { margin:18px 0 0; font-size:13px; }
 
-@media(min-width:1700px) {
-  .display-page { gap:44px; }
-  .room-visual { max-width:54vh; }
-}
 @media(max-width:1250px) {
   .host-live-actions { flex-basis:190px; }
-}
-@media(max-width:1000px) {
-  .room-stage { gap:24px; grid-template-columns:minmax(0,1fr) 160px; }
-  .now-playing { gap:24px; }
 }
 @media(max-width:1099px) {
   .app-header::after { content:''; position:absolute; inset:var(--app-bar-height,56px) 0 auto; border-top:1px solid var(--line); pointer-events:none; }
@@ -312,25 +244,6 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .participant-page .row-actions button { min-height:44px; }
   .private-now-playing { gap:14px; }
   .mini-record { width:58px; flex-basis:58px; }
-  .display-page { gap:32px; }
-  .room-stage { grid-template-columns:1fr; gap:36px; padding:0; }
-  .now-playing { grid-template-columns:1fr; gap:28px; }
-  .room-visual { max-width:min(70vw,308px); justify-self:center; }
-  .room-title-slot { font-size:2.4rem; margin-bottom:18px; }
-  .track-info h1 { font-size:2.4rem; }
-  .track-info .artist,.room-hint { font-size:1.1rem; }
-  .track-info .artist-credit,.room-hint { height:38px; }
-  .room-stage > :is(.room-logo,.room-listening,.room-invitation) { grid-column:auto; grid-row:auto; }
-  .room-stage > .room-logo { justify-self:center; width:min(70vw,280px); }
-  :root[data-room-logo] .room-stage { grid-template-columns:1fr; }
-  .vinyl-label.is-personalized .vinyl-caption { font-size:clamp(3px,2.7cqw,8px); }
-  .room-invitation { max-width:180px; }
-}
-@media(max-height:800px) and (min-width:1001px) {
-  .display-page { gap:24px; }
-  .room-visual { max-width:47vh; }
-  .room-title-slot,.track-info h1 { font-size:clamp(2.3rem,4vw,4.4rem); }
-  .public-playback { margin-top:18px; }
 }
 @media(max-width:380px) {
   .header-inner { gap:8px; }

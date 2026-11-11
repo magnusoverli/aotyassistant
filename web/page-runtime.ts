@@ -12,6 +12,7 @@ import { PlayerReturn } from './player-return';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 import { CatalogueRow } from './catalogue-row';
 import { PublicRoom } from './public-room';
+import { currentStage, onDisplayStage, setRoomDistance } from './display-stage';
 import { PreparationController, operationId } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
 import type { PreparationView } from '../src/preparations';
@@ -179,6 +180,8 @@ function holdBelowPlayer(update: () => void) {
   const shift = card.getBoundingClientRect().bottom - before.bottom;
   if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, behavior: 'instant' });
 }
+/** Layouts without a side column draw the join code in the play-order bar, whatever the placement setting says. */
+const qrInOrder = () => page === 'display' && (currentStage()?.tier !== 'standard' || view?.background?.settings.qrPlacement === 'play-order');
 const updateHeader = () => {
   if (signal.aborted) return;
   updateTitle();
@@ -189,7 +192,7 @@ const updateHeader = () => {
   const awaitingView = !view && (page === 'host' || page === 'display' ? !error
     : (page === 'participant' || page === 'join') && participantAccess.state === 'checking');
   if (!awaitingView) listeningOrder.update(view, realtime && navigator.onLine);
-  const headerQr = page === 'display' && view?.background?.settings.qrPlacement === 'play-order';
+  const headerQr = qrInOrder();
   listeningOrder.setDisplayInvitation(headerQr ? view?.joinUrl : undefined, headerQr ? qrImage : undefined);
 };
 const participantAccess = new ParticipantAccess(
@@ -331,6 +334,7 @@ function accept(next: View) {
   const arrived = page === 'participant' && Boolean(view?.me && next.me?.id === view.me.id && !view.myTurn && next.myTurn);
   view = next;
   setRoomLogo(next.logo);
+  if (page === 'display') setRoomDistance(next.displaySettings?.settings.distance);
   updateHeader();
   if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
   player.observe(next);
@@ -416,7 +420,7 @@ function renderDisplay() {
     pageContent.replaceChildren(message, publicRoom.element);
   }
   const message = document.getElementById('display-notice')!; text(message, error); prop(message, 'hidden', !error);
-  if (view) publicRoom.update(view, realtime, qrImage); else publicRoom.connecting();
+  if (view) publicRoom.update(view, realtime, qrImage, qrInOrder()); else publicRoom.connecting();
 }
 function host() {
   const v = hostNodes;
@@ -754,6 +758,8 @@ async function init() {
     try { await participantAccess.check(); if (!signal.aborted) await library.start(); } finally { releaseEvents(); }
   }
 }
+// A new size or layout changes how many listeners fit and where the join code goes.
+if (page === 'display') onDisplayStage(() => { listeningOrder.refit(); render(); }, signal);
 void init();
 window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.stopUploads(); }, { signal });
 window.addEventListener('pageshow', event => { if (event.persisted) void init(); }, { signal });

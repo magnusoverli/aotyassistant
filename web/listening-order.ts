@@ -6,6 +6,7 @@ import { ViewNodes, children, prop, attr, text } from './view-nodes';
 import { OrderDrag, type OrderMove } from './order-drag';
 import { stackedLayout } from './page-layout';
 import { turnFirst, canonicalInsertion } from './order-presentation';
+import { fittingSeats } from './display-stage';
 
 type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void> };
 
@@ -53,6 +54,9 @@ export class ListeningOrder {
   private rows = new Map<string, ViewNodes>();
   private mobile = stackedLayout();
   private display = false;
+  private more = el('li', undefined, 'rotation-more');
+  private fitObserver?: ResizeObserver;
+  private fit?: { total: number; shown: number };
   private presentedTurnFirst = false;
   private presentedCurrent?: string;
 
@@ -92,7 +96,27 @@ export class ListeningOrder {
   /** A shared screen always starts with Now and Next, without changing the saved order. */
   setDisplay(display: boolean) {
     if (this.display === display) return;
-    this.display = display; this.render();
+    this.display = display;
+    this.fitObserver?.disconnect(); this.fitObserver = undefined; this.fit = undefined;
+    if (display && typeof ResizeObserver !== 'undefined') {
+      this.fitObserver = new ResizeObserver(() => this.refit()); this.fitObserver.observe(this.list);
+    }
+    this.render();
+  }
+
+  /** The display shows the listeners that fit; call this when its size or text size changes. */
+  refit() { this.fit = undefined; if (this.display) this.render(); }
+
+  /** A shared screen cannot be scrolled, so the display's order ends in "+N more" when it is too long. */
+  private seatsShown(total: number) {
+    if (!this.display || !total) return total;
+    if (this.fit?.total === total) return this.fit.shown;
+    const style = getComputedStyle(this.list);
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    // Custom properties keep the unit they were written in; display.css uses rem.
+    const length = (name: string) => { const value = style.getPropertyValue(name).trim(); return parseFloat(value) * (value.endsWith('rem') ? rem : 1); };
+    const shown = fittingSeats(total, this.list.clientWidth, { seat: length('--seat-min'), gap: length('--order-gap'), more: length('--more-width') });
+    this.fit = { total, shown }; return shown;
   }
 
   /** Authenticated pages already have a room stream; entry/settings use the public order feed. */
@@ -156,17 +180,19 @@ export class ListeningOrder {
 
   private render() {
     this.drag?.update();
-    const view = this.snapshot; const people = this.presentedPeople();
+    const view = this.snapshot; const everyone = this.presentedPeople();
     text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
-    prop(this.empty, 'hidden', people.length > 0); prop(this.list, 'hidden', !people.length);
+    prop(this.empty, 'hidden', everyone.length > 0); prop(this.list, 'hidden', !everyone.length);
+    const people = everyone.slice(0, this.seatsShown(everyone.length)); const hidden = everyone.length - people.length;
     prop(this.help, 'hidden', !this.management || people.length < 2);
     const turnFirst = this.mobile || this.display;
-    const key = JSON.stringify([people, view?.current?.id, view?.next?.id, this.me?.id, this.mobile, this.display]);
+    const key = JSON.stringify([people, hidden, view?.current?.id, view?.next?.id, this.me?.id, this.mobile, this.display]);
     if (key !== this.key) {
       this.key = key;
       const left = turnFirst && (!this.presentedTurnFirst || this.presentedCurrent !== view?.current?.id) ? 0 : this.list.scrollLeft;
       this.presentedTurnFirst = turnFirst; this.presentedCurrent = view?.current?.id;
       const focused = document.activeElement instanceof HTMLElement && this.list.contains(document.activeElement) ? document.activeElement.dataset.focusKey : undefined;
+      text(this.more, `+${hidden} more`); attr(this.more, 'aria-label', `${hidden} more ${hidden === 1 ? 'participant' : 'participants'}`);
       children(this.list, ...people.map(person => {
         let nodes = this.rows.get(person.id); if (!nodes) { nodes = new ViewNodes(); this.rows.set(person.id, nodes); } const v = nodes;
         const current = person.id === view?.current?.id; const me = person.id === this.me?.id;
@@ -185,8 +211,8 @@ export class ListeningOrder {
           v.get('turn-border', turnBorder)];
         children(row, ...content);
         return row;
-      }));
-      for (const id of this.rows.keys()) if (!people.some(person => person.id === id)) this.rows.delete(id);
+      }), ...(hidden ? [this.more] : []));
+      for (const id of this.rows.keys()) if (!everyone.some(person => person.id === id)) this.rows.delete(id);
       this.list.scrollLeft = left;
       if (focused) [...this.list.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused)?.focus({ preventScroll: true });
     }

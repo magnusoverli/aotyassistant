@@ -24,16 +24,20 @@ test('every route highlights the current turn, including before playback, while 
       let appearance: string[] | undefined;
       for (const current of pages) {
         await current.setViewportSize({ width, height });
-        const display = new URL(current.url()).pathname === '/display' && width >= 1100;
+        // The room display has its own sizes and layouts; display-sizing.spec.ts covers it.
+        if (new URL(current.url()).pathname === '/display') { await expect(current.locator('.rotation-seat')).toHaveCount(3); continue; }
+        const display = false;
         await expect(current.locator('.rotation-seat')).toHaveCount(3);
         await expect(current.locator('.seat-number')).toHaveCount(0);
         await expect(current.locator('.listening-order')).toHaveCount(1);
         await expect(current.locator('main .rotation-list, .host-people, .room-turn-order')).toHaveCount(0);
-        await expect(current.locator('.header-inner')).toHaveCSS('height', width < 1100 ? '44px' : display ? '62px' : '72px');
-        const bar = (await current.locator('.header-inner').boundingBox())!;
-        const order = (await current.locator('.order-bar').boundingBox())!;
-        expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
-        expect(order.height).toBeLessThanOrEqual(width < 1100 ? 56 : 104);
+        {
+          await expect(current.locator('.header-inner')).toHaveCSS('height', width < 1100 ? '44px' : '72px');
+          const bar = (await current.locator('.header-inner').boundingBox())!;
+          const order = (await current.locator('.order-bar').boundingBox())!;
+          expect(Math.abs(order.y - bar.y - bar.height)).toBeLessThan(1);
+          expect(order.height).toBeLessThanOrEqual(width < 1100 ? 56 : 104);
+        }
         await expect(current.locator('.listening-order details, .listening-order summary')).toHaveCount(0);
         await expect(current.locator('.rotation-list')).toBeVisible();
         await expect(current.getByRole('list', { name: 'Participant rotation' }).getByRole('listitem')).toHaveCount(3);
