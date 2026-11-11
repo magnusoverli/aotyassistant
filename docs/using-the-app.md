@@ -40,7 +40,7 @@ The room is always ready. New participants enter a display name and choose a fou
 
 ### Profile pictures
 
-Open **Your music → Profile picture** to add or change your picture, at any point in the listening order. **Take photo** opens the phone's native camera where supported; **Choose photo** opens the photo/file picker. Drag the preview (or use its arrow keys) to position the picture and adjust **Zoom**, then **Save picture**. The preview adapts to the available screen space, with **Save picture** and **Cancel** kept visible at the bottom. **Cancel** before saving keeps your previous picture. **Remove picture** restores the larger first-letter avatar.
+Open **Menu → User settings → Profile picture** to add or change your picture, locally or through a Tailscale invitation. Sign in first if prompted. You can manage your picture at any point in the listening order, or while you are signed in but outside the order. **Take photo** opens the phone's native camera where supported; **Choose photo** opens the photo/file picker. Drag the preview (or use its arrow keys) to position the picture and adjust **Zoom**, then **Save picture**. The preview adapts to the available screen space, with **Save picture** and **Cancel** kept visible at the bottom. **Cancel** before saving keeps your previous picture. **Remove picture** restores the larger first-letter avatar.
 
 Pictures are visible to everyone in the room and in the existing-user picker. They follow your saved user across devices, survive restarts and are included in the app's data backup. Hosts can also add, replace or remove a user's picture in **Settings → Users → Manage**. Deleting a user deletes their picture; removing someone only from the listening order retains it.
 
@@ -48,7 +48,7 @@ Choose a still JPEG, PNG or WebP image up to 10 MB and 40 megapixels. Camera cap
 
 ### Listening order
 
-In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is, and the current participant's card glows. While their song plays, soft bands of light rise inward from the card's edges at irregular heights, like an old spectrum meter. The motion is decorative: the page does not hear the music, which plays on the speaker. The bands hold, dimmed, while the song is paused or the page is offline. While the participant chooses a song, the card has a slow breathing glow instead. Reduced-motion preferences show a steady glow.
+In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is, and the current participant's card glows. While their song plays, soft bands of light rise inward from the card's edges at irregular heights, like an old spectrum meter. The motion is decorative: the page does not hear the music, which plays on the speaker. The light has two states: at rest, low and still, for the whole turn, including while the participant chooses a song or the song is paused or stopped; and moving while the song plays. Reduced-motion preferences keep it at rest.
 
 On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. Your own card stays highlighted. This presentation does not change the saved turn order or desktop layout.
 

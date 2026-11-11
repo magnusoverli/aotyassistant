@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.21] — 2026-11-11
+
+- Move profile-picture editing to **Menu → User settings**, available locally and through Tailscale. Remove the picture button from **Your music** and allow signed-in users to manage their picture outside the listening order.
+- Simplify the current participant's play-order glow to two states: at rest, low and still, for the whole turn, and moving while their song plays. Paused and offline no longer hold the bands dimmed, and choosing a song no longer breathes. Use the interface's sage greens, with less blur and a softer, shorter glow.
+
 ## [2.0.20] — 2026-11-11
 
 - Fit the profile-picture editor to the available screen height: keep Save and Cancel visible, shrink the crop preview as needed, and use a side-by-side layout on landscape phones.

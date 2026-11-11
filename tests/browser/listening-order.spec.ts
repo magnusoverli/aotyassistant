@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 
-/** The current card carries the EQ light; its bands run only while the song plays and the page is online. */
+/** The current card always carries the EQ light: dormant for the turn, its bands moving only while the song plays. */
 async function expectCurrentTurn(pages: Page[], moving: boolean) {
   for (const page of pages) {
     const card = page.locator('.rotation-seat.is-current');
@@ -12,7 +12,7 @@ async function expectCurrentTurn(pages: Page[], moving: boolean) {
   }
 }
 
-test('every route lights the current turn, moving only while its song plays: still before playback, while paused, stopped and disconnected', async ({ page, browser, isolatedApp }) => {
+test('every route lights the current turn, dormant before playback, while paused, stopped and with the speaker unavailable, and moving while the song plays', async ({ page, browser, isolatedApp }) => {
   test.setTimeout(60_000); // Six routes across six viewport sizes, plus live playback/reconnection checks.
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
@@ -121,7 +121,7 @@ test('every route lights the current turn, moving only while its song plays: sti
     await expectCurrentTurn([page], true);
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
-    await expectCurrentTurn(pages.slice(1, -1), false);
+    await expectCurrentTurn(pages.slice(1, -1), true); // An offline page keeps the last state it was told.
     await guest.setOffline(false); await expectCurrentTurn(pages, true);
     Object.defineProperty(isolatedApp.engine.adapter, 'connected', { configurable: true, value: false }); isolatedApp.engine.emit('change', 'output');
     await expectCurrentTurn(pages, false);

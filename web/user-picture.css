@@ -4,7 +4,9 @@
   .avatar > img[hidden] { display:none; }
   .profile-picture-button { gap:.5rem; }
   .profile-picture-button[hidden] { display:none; }
-  .participant-hero > .profile-picture-button { justify-self:start; max-width:100%; margin-block:.25rem .75rem; }
+  .user-settings-profile .actions { margin-bottom:0; }
+  .user-settings-profile h2 { overflow-wrap:anywhere; }
+  .user-settings-profile [hidden] { display:none; }
   .picture-dialog {
     --picture-height:calc(100dvh - 1rem - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
     --picture-width:calc(100vw - 1rem - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px));

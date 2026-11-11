@@ -20,7 +20,7 @@ export function eqBands(perLongEdge = 9, perShortEdge = 2, seed = 0x5eed): EqBan
     const duration = .55 + random() * .85;
     return { edge, at: Math.round((slot * (index + .5) + (random() - .5) * slot * .35) * 10) / 10,
       width: Math.round(slot * (1.35 + random() * .4) * 10) / 10, low: Math.round((.1 + random() * .12) * 100) / 100,
-      peak: Math.round((.6 + random() * .4) * 100) / 100, duration: Math.round(duration * 100) / 100,
+      peak: Math.round((.55 + random() * .35) * 100) / 100, duration: Math.round(duration * 100) / 100,
       delay: -Math.round(random() * duration * 100) / 100, shape: shapes[Math.floor(random() * shapes.length)]! };
   };
   for (const edge of ['top', 'bottom'] as const) for (let i = 0; i < perLongEdge; i++) bands.push(band(edge, i, perLongEdge));

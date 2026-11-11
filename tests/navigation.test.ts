@@ -15,13 +15,15 @@ test('SPA navigation retains cross-page fragments, queries and Ingress without i
   assert.equal(spaDestination(new URL('/api/hassio_ingress/another/host', current), current, base), undefined);
   assert.equal(spaDestination(new URL('/api/host/state', current), current), undefined);
   assert.equal(spaDestination(new URL('http://room.local/host/settings#access'), new URL('http://room.local/display')), '/host/settings#access');
+  assert.equal(spaDestination(new URL(base + '/user/settings', current), current, base), base + '/user/settings');
+  assert.equal(spaDestination(new URL('https://room.ts.net/user/settings'), new URL('https://room.ts.net/participant')), '/user/settings');
 });
 
 test('all pages use the same central route/navigation definitions with one current page', () => {
   for (const page of Object.keys(routes) as Page[]) {
     assert.equal(pageForPath(routes[page]), page);
     const model = headerModel(page, {});
-    assert.deepEqual(model.primary.map(item => item.id), ['participant', 'display', 'host', 'settings']);
+    assert.deepEqual(model.primary.map(item => item.id), ['participant', 'user-settings', 'display', 'host', 'settings']);
     assert.equal(model.primary.filter(item => item.current).length, ['home', 'join'].includes(page) ? 0 : 1);
   }
   assert.equal(pageForPath('/not-a-page'), 'home');

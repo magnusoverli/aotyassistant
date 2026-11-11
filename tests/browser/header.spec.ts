@@ -16,7 +16,7 @@ test('header logout works across routes, retries explicitly and signs out only t
     const before = await (await page.request.get('/api/host/state')).json();
     const menu = page.getByRole('navigation', { name: 'Primary navigation' });
     const logout = menu.getByRole('button', { name: 'Log out', exact: true });
-    for (const path of ['/participant', '/', '/display', '/host/settings', '/host']) {
+    for (const path of ['/participant', '/user/settings', '/', '/display', '/host/settings', '/host']) {
       await page.goto(path); await openNavigation(page); await expect(logout).toBeVisible();
       await noOverflow(page);
     }
@@ -110,7 +110,7 @@ test('tabbing out of the menu exposes the focused join field and Escape works ou
 
 test('every page uses the shared header with centralized navigation, current-page semantics, and no duplicate body navigation', async ({ page }) => {
   const session = await (await page.request.get('/api/host/state')).json();
-  for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Settings'], ['/participant', 'Your music'], [session.joinUrl, null], [session.displayUrl, 'Room display']] as const) {
+  for (const [path, current] of [['/', null], ['/host', 'Host desk'], ['/host/settings', 'Settings'], ['/participant', 'Your music'], ['/user/settings', 'User settings'], [session.joinUrl, null], [session.displayUrl, 'Room display']] as const) {
     await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto(path);
     await expect(page.getByRole('banner')).toHaveCount(1); await expect(page.locator('header[data-header="shared"]')).toHaveCount(1);
     await expect(page.getByRole('main')).toHaveCount(1);
@@ -118,11 +118,11 @@ test('every page uses the shared header with centralized navigation, current-pag
     await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeHidden();
     await openNavigation(page);
     const navigation = page.getByRole('banner').getByRole('navigation', { name: 'Primary navigation' });
-    await expect(navigation).toBeVisible(); await expect(navigation.locator('.primary-links > li > a')).toHaveCount(4);
+    await expect(navigation).toBeVisible(); await expect(navigation.locator('.primary-links > li > a')).toHaveCount(5);
     await expect(navigation.locator('button:visible, .mode-badge')).toHaveCount(0);
     expect(await navigation.locator('a').evaluateAll(links => links.map(link => ({ text: link.textContent, href: link.getAttribute('href') })))).toEqual([
+      { text: 'Your music', href: '/participant' }, { text: 'User settings', href: '/user/settings' }, { text: 'Room display', href: '/display' },
       { text: 'Host desk', href: '/host' }, { text: 'Settings', href: '/host/settings' },
-      { text: 'Your music', href: '/participant' }, { text: 'Room display', href: '/display' },
     ]);
     if (current) await expect(navigation.getByRole('link', { name: current, exact: true })).toHaveAttribute('aria-current', 'page');
     else await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);

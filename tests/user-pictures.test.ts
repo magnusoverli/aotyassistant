@@ -88,7 +88,7 @@ test('atomic picture files survive restart and account cleanup removes them', { 
   await fresh.remove(id); assert.deepEqual(await files.ids(), []);
 });
 
-async function appFixture(t: TestContext) {
+async function appFixture(t: TestContext, inOrder = true) {
   const dataDir = await directory(t);
   const people = ['First', 'Second'].map(nickname => ({ id: randomUUID(), nickname, token: randomBytes(32).toString('base64url') }));
   await writeFile(join(dataDir, 'users.json'), JSON.stringify({ schema: 1, deleted: [], users: people.map(person => ({
@@ -96,8 +96,8 @@ async function appFixture(t: TestContext) {
     sessions: [{ hash: createHash('sha256').update(person.token).digest('hex'), expires: Date.now() + 60_000 }],
   })) }));
   let state: State = { schema: 3, room: { id: randomUUID(), revision: 0, turnId: randomUUID(),
-    participants: people.map(({ id, nickname }) => ({ id, nickname, userId: id, credentialHash: '' })),
-    active: people.map(person => person.id), currentId: people[0]!.id, playback: null } };
+    participants: inOrder ? people.map(({ id, nickname }) => ({ id, nickname, userId: id, credentialHash: '' })) : [],
+    active: inOrder ? people.map(person => person.id) : [], currentId: inOrder ? people[0]!.id : null, playback: null } };
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const engine = new Engine({ async load() { return structuredClone(state); }, async save(next) { state = structuredClone(next); } }, new DemoAdapter(3600), origin); await engine.init();
@@ -152,6 +152,27 @@ test('host picture management and trusted Ingress reads use the same stored pict
   } });
   assert.equal(response.status, 200);
   assert.equal((await f.post(`/api/host/users/${id}/picture/remove`, { version: pictureVersion(avatarUrl) })).status, 200);
+});
+
+test('user settings supports direct and Ingress links, and picture changes do not rejoin the listening order', async t => {
+  const f = await appFixture(t, false); const before = f.engine.view({ kind: 'host' });
+  assert.equal((await fetch(f.origin + '/user/settings')).status, 200);
+  const ingress = createServer(ingressListener(f.app, '127.0.0.1')); ingress.listen(0, '127.0.0.1'); await once(ingress, 'listening');
+  t.after(() => { ingress.closeAllConnections(); ingress.close(); });
+  const shell = await fetch(`http://127.0.0.1:${(ingress.address() as AddressInfo).port}/user/settings`, { headers: {
+    'X-Ingress-Path': '/api/hassio_ingress/test', 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'ha.example', 'X-Remote-User-Id': 'admin',
+  } });
+  assert.equal(shell.status, 200); assert.match(await shell.text(), /name="doom-room-base" content="\/api\/hassio_ingress\/test"/);
+  const image = await raster();
+  assert.equal((await f.upload(image, { token: '' })).status, 401);
+  const response = await f.upload(image); assert.equal(response.status, 200);
+  const { avatarUrl } = await response.json() as { avatarUrl: string };
+  const identity = await (await fetch(f.origin + '/api/participant/identity', { headers: { Cookie: `doom_room_participant=${f.people[1]!.token}` } })).json() as UserDirectory;
+  assert.equal(identity.current?.id, f.people[1]!.id); assert.equal(identity.current?.avatarUrl, avatarUrl);
+  assert.throws(() => f.engine.view({ kind: 'participant', credential: f.people[1]!.token }), rejects(401));
+  assert.equal((await f.post('/api/participant/picture/remove', { version: pictureVersion(avatarUrl) })).status, 200);
+  const after = f.engine.view({ kind: 'host' });
+  assert.deepEqual(after.rotation, []); assert.equal(after.turnId, before.turnId); assert.equal(after.revision, before.revision);
 });
 
 test('directory and room event streams publish picture replacements without a turn change', { timeout: 10_000 }, async t => {

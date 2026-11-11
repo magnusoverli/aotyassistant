@@ -30,14 +30,15 @@ import { pinInput } from './user-pin';
 import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
 import { panel, pageHeading, notice } from './ui-components';
 import { productName, productTagline } from '../src/product';
-import { UserPictureEditor } from './user-picture';
+import { mountUserSettings } from './user-settings';
 import { watchUserDirectory } from './user-directory';
 
 export function mountPage(root: HTMLElement, appHeader: AppHeader, listeningOrder: ListeningOrder, navigate: (path: string, replace?: boolean) => void) {
-const lifecycle = new AbortController();
-const signal = lifecycle.signal;
 const page = pageForPath(pagePath(location.pathname));
 document.title = `${pageTitles[page]} · ${productName}`;
+if (page === 'user-settings') return mountUserSettings(root, appHeader, listeningOrder);
+const lifecycle = new AbortController();
+const signal = lifecycle.signal;
 const liveRegion = () => {
   const region = el('div', undefined, 'sr-only');
   region.setAttribute('role', 'status'); region.setAttribute('aria-live', 'polite'); region.setAttribute('aria-atomic', 'true');
@@ -103,7 +104,6 @@ const hostNodes = new ViewNodes();
 const pageNodes = new ViewNodes();
 const entryNodes = new ViewNodes();
 const catalogueRows = new Map<string, CatalogueRow>();
-const pictureEditor = page === 'participant' ? new UserPictureEditor(false, signal) : undefined;
 document.body.dataset.view = page;
 listeningOrder.setDisplay(page === 'display');
 void loadRoomLogo(signal);
@@ -481,7 +481,6 @@ function playFirstSelection(confirmReplace = true) {
   playTrack(track, { entryId: entry.id, revision: library.view.revision }, confirmReplace);
 }
 function participant() {
-  pictureEditor?.update(view?.user ?? view?.me);
   if (!view?.me) return participantEntry();
   const v = participantNodes;
   const main = v.get('main', () => pageFrame('workspace', 'participant-page'));
@@ -495,7 +494,7 @@ function participant() {
   const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));
   find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
   const list = v.el('list-shortcut', 'button', 'Your playlist', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.focusList();
-  children(shortcuts, find, list); children(hero, title, distance, shortcuts, pictureEditor?.element);
+  children(shortcuts, find, list); children(hero, title, distance, shortcuts);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
   const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
   const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading); return node; });

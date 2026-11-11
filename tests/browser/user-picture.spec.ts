@@ -6,6 +6,10 @@ test('native camera selection previews a crop, saves across room views and remov
   const joined = await page.request.post('/api/participant/join', { data: { nickname: 'Photo User', pin: '1234' }, headers: { Origin: isolatedApp.origin } });
   expect(joined.ok()).toBe(true);
   await page.goto('/participant');
+  await expect(page.getByRole('button', { name: 'Profile picture', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await page.getByRole('link', { name: 'User settings', exact: true }).click();
+  await expect(page).toHaveURL(isolatedApp.origin + '/user/settings');
   const display = await page.context().newPage(); await display.goto('/display');
   const guest = await browser.newContext();
   try {
@@ -35,7 +39,7 @@ test('native camera selection previews a crop, saves across room views and remov
 
 test('closing a selected picture without saving keeps the existing avatar', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { nickname: 'Cancel Photo', pin: '1234' }, headers: { Origin: isolatedApp.origin } });
-  await page.goto('/participant'); await page.getByRole('button', { name: 'Profile picture', exact: true }).click();
+  await page.goto('/user/settings'); await page.getByRole('button', { name: 'Profile picture', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const image = await sharp({ create: { width: 128, height: 128, channels: 3, background: '#aa2255' } }).png().toBuffer();
   await dialog.locator('input[type=file]:not([capture])').setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: image });

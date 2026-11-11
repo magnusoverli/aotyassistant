@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 import { onlineConnection } from '../web/online-panel.js';
+import type { State } from '../src/model.js';
 
 const host = 'doom-room.tail123.ts.net';
 class Connector implements TunnelConnector {
@@ -205,6 +206,35 @@ test('online guests may read the room logo, but never change it', () => {
   for (const path of ['/api/logo', '/api/logo/0123456789abcdef']) assert.equal(publicRoute('GET', path), true, path);
   for (const path of ['/api/logo/../host/state', '/api/logo/0123456789ABCDEF', '/api/logo/0123', '/api/logo/0123456789abcdef/extra']) assert.equal(publicRoute('GET', path), false, path);
   for (const path of ['/api/host/logo', '/api/host/logo/remove', '/api/logo']) assert.equal(publicRoute('POST', path), false, path);
+});
+
+test('user settings opens through Tailscale while identity and host controls keep their access gates', async t => {
+  const f = await fixture(t, true); await f.online.refresh();
+  const local = await listen(t); const adapter = new DemoAdapter();
+  let state: State = { schema: 3, room: null };
+  const engine = new Engine({ async load() { return structuredClone(state); }, async save(next) { state = structuredClone(next); } }, adapter, local.url);
+  await engine.init();
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, demoSeconds: 30 }, 'web');
+  const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
+  t.after(() => { gateway.close(); http.close(); adapter.close(); });
+  const request = (path: string, cookie = '', method = 'GET') => new Promise<{ status: number; body: string }>((resolve, reject) => {
+    const req = httpRequest(remote.url + path, { method, headers: { Host: host, Cookie: cookie } }, res => {
+      let body = ''; res.setEncoding('utf8'); res.on('data', chunk => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode!, body })); res.on('error', reject);
+    });
+    req.on('error', reject); req.end();
+  });
+  const shell = await request('/user/settings'); assert.equal(shell.status, 200);
+  assert.match(shell.body, /name="doom-room-public" content="1"/); assert.doesNotMatch(shell.body, /doom-room-online-session/);
+  assert.equal((await request('/api/participant/identity')).status, 401);
+  const access = `__Host-doom_room_online=${f.online.redeem(invitation(f.online))!}`;
+  const invited = await request('/user/settings', access); assert.equal(invited.status, 200);
+  assert.match(invited.body, /name="doom-room-online-session" content="1"/);
+  assert.equal((await request('/user/settings', access, 'HEAD')).status, 200);
+  const identity = await request('/api/participant/identity', access); assert.equal(identity.status, 200);
+  assert.equal(JSON.parse(identity.body).current, null, 'An invitation does not sign in as a user.');
+  for (const path of ['/host/settings', '/api/host/users', '/user/settings/extra', '/user/settings%2fextra']) assert.equal((await request(path, access)).status, 404);
+  assert.equal(publicRoute('POST', '/user/settings'), false);
 });
 
 async function listen(t: TestContext, handler?: RequestListener) {

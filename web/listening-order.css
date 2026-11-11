@@ -21,51 +21,45 @@
   .rotation-seat.is-you { border-color:var(--accent); }
   .rotation-seat.is-next { background:#2c2b20; border-color:var(--accent); opacity:.85; }
   .rotation-seat.is-next .seat-state { color:var(--accent); font-weight:700; }
-  /* Current turn: soft light rises inward from the card's edges like an old spectrum meter
-     (seat-eq.ts). Bands are soft gradients moved only by transforms, so no per-frame blur.
-     They move while the song plays, hold dimmed while it is paused or the page is offline,
-     and give way to a slow breathing glow while a song is being chosen. */
-  .rotation-seat.is-current { isolation:isolate; container-type:inline-size; background:#1f2c1c; border-color:#8fae78; box-shadow:0 0 .875rem #9fcf6a2e; }
+  /* Current turn: soft light along the card's edges like an old spectrum meter (seat-eq.ts).
+     Two states only. Dormant for the whole turn: the bands rest, low and still. Playing: they
+     rise and fall inward. Bands are soft gradients moved only by transforms. */
+  .rotation-seat.is-current { isolation:isolate; container-type:inline-size; background:#1f2c1c; border-color:#829b6e; box-shadow:0 0 .75rem #b9d99f1a; }
   .rotation-seat.is-current .seat-state { color:#c9e8b1; font-weight:700; }
   .rotation-seat.is-current > :not(.seat-eq) { position:relative; z-index:1; }
   /* One blur for the whole layer, scaled to the card, turns the bands into a soft moving glow. */
-  .seat-eq { position:absolute; inset:0; z-index:0; overflow:hidden; border-radius:inherit; pointer-events:none; filter:blur(1cqi); }
-  .seat-eq::before { content:''; position:absolute; inset:0; border-radius:inherit; box-shadow:inset 0 0 1.25em .125em #b5dc8a55; opacity:.55; }
+  .seat-eq { position:absolute; inset:0; z-index:0; overflow:hidden; border-radius:inherit; pointer-events:none; filter:blur(.55cqi); }
+  .seat-eq::before { content:''; position:absolute; inset:0; border-radius:inherit; box-shadow:inset 0 0 1em .0625em #b9d99f40; opacity:.5; }
   .eq-band {
-    --tint:radial-gradient(ellipse 50% 100% at 50% 0,#eef6b4f0 0%,#b0de78c0 24%,#7cc25270 52%,transparent 82%);
-    position:absolute; top:0; left:calc(var(--at) - var(--w) / 2); width:var(--w); height:80%;
-    background:var(--tint); transform-origin:50% 0; transform:scaleY(var(--low)); opacity:0; transition:opacity .6s ease;
+    --tint:radial-gradient(ellipse 50% 100% at 50% 0,#c9e8b1cc 0%,#b9d99f88 26%,#829b6e48 54%,transparent 80%);
+    position:absolute; top:0; left:calc(var(--at) - var(--w) / 2); width:var(--w); height:68%;
+    background:var(--tint); transform-origin:50% 0; transform:scaleY(calc(var(--low) * 1.5)); opacity:.55; transition:opacity .6s ease;
   }
   .eq-band[data-edge='bottom'] {
-    --tint:radial-gradient(ellipse 50% 100% at 50% 100%,#eef6b4f0 0%,#b0de78c0 24%,#7cc25270 52%,transparent 82%);
+    --tint:radial-gradient(ellipse 50% 100% at 50% 100%,#c9e8b1cc 0%,#b9d99f88 26%,#829b6e48 54%,transparent 80%);
     top:auto; bottom:0; transform-origin:50% 100%;
   }
   .eq-band:is([data-edge='left'],[data-edge='right']) {
-    --tint:radial-gradient(ellipse 100% 50% at 0 50%,#eef6b4e0 0%,#b0de78b0 24%,#7cc25266 52%,transparent 82%);
-    top:calc(var(--at) - var(--w) / 2); left:0; width:22%; height:var(--w); transform-origin:0 50%; transform:scaleX(var(--low));
+    --tint:radial-gradient(ellipse 100% 50% at 0 50%,#c9e8b1bc 0%,#b9d99f80 26%,#829b6e42 54%,transparent 80%);
+    top:calc(var(--at) - var(--w) / 2); left:0; width:16%; height:var(--w); transform-origin:0 50%; transform:scaleX(calc(var(--low) * 1.5));
   }
   .eq-band[data-edge='right'] {
-    --tint:radial-gradient(ellipse 100% 50% at 100% 50%,#eef6b4e0 0%,#b0de78b0 24%,#7cc25266 52%,transparent 82%);
+    --tint:radial-gradient(ellipse 100% 50% at 100% 50%,#c9e8b1bc 0%,#b9d99f80 26%,#829b6e42 54%,transparent 80%);
     left:auto; right:0; transform-origin:100% 50%;
   }
-  .listening-order:is([data-playback='playing'],[data-playback='paused']) .eq-band {
-    opacity:.85; animation:var(--eq) var(--d) ease-in-out var(--delay) infinite alternate;
-  }
+  .listening-order[data-playback='playing'] .eq-band { opacity:.75; animation:var(--eq) var(--d) ease-in-out var(--delay) infinite alternate; }
   .listening-order[data-playback='playing'] .seat-eq::before { animation:seat-eq-level 1.7s ease-in-out infinite alternate; }
-  .listening-order:is([data-playback='paused'],[data-online='false']) .eq-band { animation-play-state:paused; opacity:.4; }
-  .listening-order:is([data-playback='paused'],[data-online='false']) .seat-eq::before { animation-play-state:paused; }
-  .listening-order:not([data-playback='playing'],[data-playback='paused']) .seat-eq::before { animation:seat-eq-breathe 3.6s ease-in-out infinite; }
   @keyframes seat-eq-a { 0% { transform:scaleY(var(--low)); } 22% { transform:scaleY(var(--peak)); } 41% { transform:scaleY(calc(var(--low) + (var(--peak) - var(--low)) * .3)); } 66% { transform:scaleY(calc(var(--peak) * .82)); } 100% { transform:scaleY(calc(var(--low) * 1.4)); } }
   @keyframes seat-eq-b { 0% { transform:scaleY(calc(var(--peak) * .55)); } 30% { transform:scaleY(var(--low)); } 48% { transform:scaleY(calc(var(--peak) * .9)); } 72% { transform:scaleY(calc(var(--low) * 1.8)); } 100% { transform:scaleY(var(--peak)); } }
   @keyframes seat-eq-c { 0% { transform:scaleY(var(--low)); } 15% { transform:scaleY(calc(var(--peak) * .7)); } 35% { transform:scaleY(calc(var(--low) * 1.5)); } 58% { transform:scaleY(var(--peak)); } 100% { transform:scaleY(calc(var(--peak) * .45)); } }
   @keyframes seat-eq-a-x { 0% { transform:scaleX(var(--low)); } 22% { transform:scaleX(var(--peak)); } 41% { transform:scaleX(calc(var(--low) + (var(--peak) - var(--low)) * .3)); } 66% { transform:scaleX(calc(var(--peak) * .82)); } 100% { transform:scaleX(calc(var(--low) * 1.4)); } }
   @keyframes seat-eq-b-x { 0% { transform:scaleX(calc(var(--peak) * .55)); } 30% { transform:scaleX(var(--low)); } 48% { transform:scaleX(calc(var(--peak) * .9)); } 72% { transform:scaleX(calc(var(--low) * 1.8)); } 100% { transform:scaleX(var(--peak)); } }
   @keyframes seat-eq-c-x { 0% { transform:scaleX(var(--low)); } 15% { transform:scaleX(calc(var(--peak) * .7)); } 35% { transform:scaleX(calc(var(--low) * 1.5)); } 58% { transform:scaleX(var(--peak)); } 100% { transform:scaleX(calc(var(--peak) * .45)); } }
-  @keyframes seat-eq-level { from { opacity:.4; } to { opacity:.95; } }
-  @keyframes seat-eq-breathe { 0%,100% { opacity:.3; } 50% { opacity:.75; } }
+  @keyframes seat-eq-level { from { opacity:.3; } to { opacity:.7; } }
+  /* Reduced motion keeps the dormant state while a song plays. */
   @media(prefers-reduced-motion:reduce) {
-    .listening-order .eq-band { animation:none; opacity:0; }
-    .listening-order .seat-eq::before { animation:none; opacity:.8; }
+    .listening-order .eq-band { animation:none; opacity:.55; }
+    .listening-order .seat-eq::before { animation:none; }
   }
   /* Touch: swipes scroll the order; a press-and-hold picks a card up (see order-drag.ts). */
   .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:pan-x pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }

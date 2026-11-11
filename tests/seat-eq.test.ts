@@ -21,11 +21,15 @@ test('the current card’s light is one fixed pattern of bands along every edge,
   assert.deepEqual(top, [...top].sort((a, b) => a - b), 'Bands stay in order along an edge.');
 });
 
-test('the light only moves while a song plays, holds when paused or offline, and respects reduced motion', async () => {
+test('the light has two states: dormant for the whole turn, moving only while the song plays', async () => {
   const css = await readFile(new URL('../web/listening-order.css', import.meta.url), 'utf8');
-  assert.match(css, /\.listening-order:is\(\[data-playback='playing'\],\[data-playback='paused'\]\) \.eq-band \{[^}]*animation:var\(--eq\)/);
-  assert.match(css, /\.listening-order:is\(\[data-playback='paused'\],\[data-online='false'\]\) \.eq-band \{ animation-play-state:paused;/);
-  assert.match(css, /@media\(prefers-reduced-motion:reduce\) \{\s*\.listening-order \.eq-band \{ animation:none; opacity:0; \}/);
+  // Dormant: visible, resting low and still.
+  assert.match(css, /\.eq-band \{[^}]*transform:scaleY\(calc\(var\(--low\) \* 1\.5\)\); opacity:\.55;/);
+  // Moving: only while playing. No paused, offline or breathing variants.
+  const animated = [...css.matchAll(/([^{}]+)\{[^}]*animation:var\(--eq\)/g)].map(match => match[1]!.trim());
+  assert.deepEqual(animated, [".listening-order[data-playback='playing'] .eq-band"]);
+  assert.doesNotMatch(css, /data-playback='paused'|data-online='false'|seat-eq-breathe/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\) \{\s*\.listening-order \.eq-band \{ animation:none; opacity:\.55; \}/);
   for (const shape of ['a', 'b', 'c']) for (const axis of ['', '-x']) assert.match(css, new RegExp(`@keyframes seat-eq-${shape}${axis} \\{`));
   // Bands move by transform only; the single blur is on their shared layer, not on each band.
   const bandRules = [...css.matchAll(/\.eq-band[^{]*\{([^}]*)\}/g)].map(match => match[1]!);

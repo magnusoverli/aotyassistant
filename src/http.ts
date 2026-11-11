@@ -89,7 +89,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       if (req.path === '/' && ['GET', 'HEAD'].includes(req.method)) {
         res.redirect(`${ingress.base}/host`); return;
       }
-      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
+      if (!(['/host', '/host/settings', '/join', '/participant', '/user/settings', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
         return next(new AppError(404, 'Page not found.'));
       }
     }
@@ -103,7 +103,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
       (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations' || req.path === '/api/host/integrations/events'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
-    if (!known && setup && read && ['/display', '/join', '/participant'].includes(req.path)) {
+    if (!known && setup && read && ['/display', '/join', '/participant', '/user/settings'].includes(req.path)) {
       res.status(403).type('html').send(guestAddressHelp(config.guestUrl, req.path)); return;
     }
     // The synthetic diagnostic handler performs its own exact Host/capability/expiry checks, including revocation/404.
@@ -351,7 +351,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   // The built shell never changes while the process runs; a failed read is retried on the next request.
   let shell: Promise<string> | undefined;
   const pageShell = () => shell ??= readFile(resolve(webDirectory, 'index.html'), 'utf8').catch(error => { shell = undefined; throw error; });
-  for (const path of ['/', '/join', '/participant', '/display', '/host', '/host/settings']) {
+  for (const path of ['/', '/join', '/participant', '/user/settings', '/display', '/host', '/host/settings']) {
     app.get(path, async (req, res) => {
       const base = requestBase(req);
       let html = await pageShell();
