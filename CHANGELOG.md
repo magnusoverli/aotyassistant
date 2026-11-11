@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.16] — 2026-11-11
+
+- Make room-display sizing automatic: adapt artwork, typography, QR placement and optional details to the available width and height, preserve browser text enlargement, and remove the room-wide and per-browser size controls. Previous size preferences no longer affect the layout.
+- Keep desktop workspace padding bounded on large monitors and render join QR codes as sharp vector images.
+
 ## [2.0.15] — 2026-11-11
 
 - Move within your song: during your turn, drag the progress bar in **Your music** (or use the arrow and Page Up/Down keys). A bubble shows the chosen time, the speaker moves when you let go, and the handle waits at that point until Music Assistant confirms. Moving a hidden song past the automatic-reveal marker reveals it, and the bubble warns before you let go. Only the participant whose song is playing can do this, and only while it plays.

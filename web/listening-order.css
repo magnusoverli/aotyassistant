@@ -50,7 +50,7 @@
   .rotation-seat.order-drag-preview { background:#18251b; }
   .seat-state-compact { display:none; }
   @media(max-width:1099px) {
-    /* The room display is drawn in its own units and keeps the card form at every width (display.css). */
+    /* The room display owns its presentation rules in display.css. */
     :where(body:not([data-view='display'])) .has-display-qr .order-bar { padding-right:60px; }
     :where(body:not([data-view='display'])) .order-qr { max-height:48px; }
     :where(body:not([data-view='display'])) .order-bar { flex-wrap:wrap; gap:4px; min-height:53px; padding-block:4px; }

@@ -55,6 +55,9 @@ export class ListeningOrder {
   private mobile = stackedLayout();
   private display = false;
   private more = el('li', undefined, 'rotation-more');
+  private measure = el('div', undefined, 'order-measure');
+  private seatMeasure = el('span', undefined, 'order-measure-seat');
+  private moreMeasure = el('span', undefined, 'order-measure-more');
   private fitObserver?: ResizeObserver;
   private fit?: { total: number; shown: number };
   private presentedTurnFirst = false;
@@ -71,6 +74,9 @@ export class ListeningOrder {
     this.help.id = 'order-drag-help'; this.help.hidden = true;
     this.element.append(bar);
     this.element.append(this.help, this.announcement);
+    // Resolve fluid CSS lengths without measuring already-flexed participant cards.
+    this.measure.setAttribute('aria-hidden', 'true'); this.measure.hidden = true;
+    this.measure.append(this.seatMeasure, this.moreMeasure); this.element.append(this.measure);
     this.drag = new OrderDrag(this.list, {
       state: () => ({ enabled: Boolean(this.management && !this.management.disabled()) && this.element.dataset.online === 'true',
         roomId: this.snapshot?.roomId ?? null, revision: this.snapshot?.revision ?? 0, people: this.presentedPeople() }),
@@ -97,9 +103,11 @@ export class ListeningOrder {
   setDisplay(display: boolean) {
     if (this.display === display) return;
     this.display = display;
+    this.measure.hidden = !display;
     this.fitObserver?.disconnect(); this.fitObserver = undefined; this.fit = undefined;
     if (display && typeof ResizeObserver !== 'undefined') {
-      this.fitObserver = new ResizeObserver(() => this.refit()); this.fitObserver.observe(this.list);
+      this.fitObserver = new ResizeObserver(() => this.refit());
+      for (const node of [this.list, this.seatMeasure, this.moreMeasure]) this.fitObserver.observe(node);
     }
     this.render();
   }
@@ -112,10 +120,10 @@ export class ListeningOrder {
     if (!this.display || !total) return total;
     if (this.fit?.total === total) return this.fit.shown;
     const style = getComputedStyle(this.list);
-    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
-    // Custom properties keep the unit they were written in; display.css uses rem.
-    const length = (name: string) => { const value = style.getPropertyValue(name).trim(); return parseFloat(value) * (value.endsWith('rem') ? rem : 1); };
-    const shown = fittingSeats(total, this.list.clientWidth, { seat: length('--seat-min'), gap: length('--order-gap'), more: length('--more-width') });
+    const shown = fittingSeats(total, this.list.clientWidth, {
+      seat: this.seatMeasure.getBoundingClientRect().width,
+      gap: parseFloat(style.columnGap), more: this.moreMeasure.getBoundingClientRect().width,
+    });
     this.fit = { total, shown }; return shown;
   }
 

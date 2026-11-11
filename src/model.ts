@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { PlaybackProblem } from './playback-problem.js';
 import type { BackgroundSnapshot } from './background-settings.js';
-import type { DisplaySnapshot } from './viewing-distance.js';
 
 export const trackSchema = z.object({
   id: z.string(), title: z.string(), artist: z.string(), album: z.string(),
@@ -122,8 +121,6 @@ export type View = {
   guestAccess?: GuestAccess;
   logo?: RoomLogoView | null;
   background?: BackgroundSnapshot | null;
-  /** Room displays only: how large the display is drawn. */
-  displaySettings?: DisplaySnapshot | null;
 };
 
 export class AppError extends Error {

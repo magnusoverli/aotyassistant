@@ -4,68 +4,62 @@ import { test } from './app-fixture';
 const fontSize = (page: Page, selector: string) => page.locator(selector).first().evaluate(node => parseFloat(getComputedStyle(node).fontSize));
 
 async function fits(page: Page) {
-  const bounds = await page.evaluate(() => ({ width: innerWidth, height: innerHeight,
-    contentWidth: document.documentElement.scrollWidth, contentHeight: document.documentElement.scrollHeight }));
-  expect(bounds.contentWidth).toBeLessThanOrEqual(bounds.width + 1);
-  expect(bounds.contentHeight).toBeLessThanOrEqual(bounds.height + 1);
   await expect(page.locator('.rotation-seat.is-current')).toBeInViewport({ ratio: 1 });
   await expect(page.locator('.rotation-seat.is-next')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('.room-cover')).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('.track-info')).toBeInViewport({ ratio: 1 });
+  const overflow = await page.locator('.app-content').evaluate(node => ({ x: node.scrollWidth - node.clientWidth, y: node.scrollHeight - node.clientHeight }));
+  expect(overflow.x).toBeLessThanOrEqual(1); expect(overflow.y).toBeLessThanOrEqual(1);
+  await expect(page.locator('.room-invitation:not([hidden]), .order-qr:not([hidden])')).toHaveCount(1);
 }
 
-async function setDistance(page: Page, origin: string, distance: string) {
-  const current = await (await page.request.get('/api/host/display-settings')).json();
-  const response = await page.request.post('/api/host/display-settings', { data: { revision: current.revision, settings: { distance } }, headers: { Origin: origin } });
-  expect(response.ok()).toBe(true);
+for (const [width, height] of [[960, 540], [1024, 768], [1280, 720], [1366, 768], [1920, 1080], [1920, 540], [2560, 1440], [3440, 1440], [3840, 2160], [5120, 1440], [1080, 1920]]) {
+  test(`display automatically fits ${width}×${height} and keeps Now and Next across turns`, async ({ browser, isolatedApp }) => {
+    for (let i = 0; i < 20; i++) await isolatedApp.engine.join(`Listener ${i} with a long name`);
+    const saved = isolatedApp.engine.view({ kind: 'host' }).rotation;
+    const context = await browser.newContext({ viewport: { width: width!, height: height! } });
+    try {
+      const page = await context.newPage(); await page.goto(isolatedApp.origin + '/display');
+      await expect(page.locator('.rotation-more')).toBeVisible();
+      expect(await fontSize(page, '.seat-state-compact')).toBeGreaterThanOrEqual(16);
+      expect(await fontSize(page, '.rotation-seat strong')).toBeGreaterThanOrEqual(22);
+      expect(await page.locator('html').evaluate(node => node.style.fontSize)).toBe('');
+      await fits(page);
+      for (let turn = 0; turn < 3; turn++) {
+        await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
+        const state = isolatedApp.engine.view({ kind: 'host' });
+        await expect(page.locator('.rotation-seat').first().locator('strong')).toHaveText(state.current!.nickname);
+        await expect(page.locator('.rotation-seat').nth(1).locator('strong')).toHaveText(state.next!.nickname);
+        await fits(page); expect(state.rotation).toEqual(saved);
+      }
+    } finally { await context.close(); }
+  });
 }
 
-for (const screen of [
-  { width: 1920, height: 1080, name: '1080p', name32: 32, root: 16 },
-  { width: 3840, height: 2160, name: 'native 4K', name32: 64, root: 32 },
-  { width: 960, height: 540, name: 'a 960×540 TV box', name32: 16, root: 8 },
-]) test(`the ${screen.name} display is one scaled picture, and keeps Now and Next visible across turns`, async ({ browser, isolatedApp }) => {
-  for (let i = 0; i < 20; i++) await isolatedApp.engine.join(`Listener ${i} with a long name`);
-  const saved = isolatedApp.engine.view({ kind: 'host' }).rotation;
-  const context = await browser.newContext({ viewport: { width: screen.width, height: screen.height } });
-  try {
-    const page = await context.newPage(); await page.goto(isolatedApp.origin + '/display');
-    await expect(page.locator('.rotation-seat').first()).toBeVisible();
-    await expect(page.locator('html')).toHaveAttribute('data-display-tier', 'standard');
-    expect(await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))).toBeCloseTo(screen.root, 1);
-    expect(await fontSize(page, '.rotation-seat strong')).toBeCloseTo(screen.name32, 1);
-    await expect(page.locator('.rotation-more')).toBeVisible(); await fits(page);
-    for (let turn = 0; turn < 3; turn++) {
-      await isolatedApp.engine.advance(isolatedApp.engine.view({ kind: 'host' }).turnId!);
-      const state = isolatedApp.engine.view({ kind: 'host' });
-      await expect(page.locator('.rotation-seat').first().locator('strong')).toHaveText(state.current!.nickname);
-      await expect(page.locator('.rotation-seat').nth(1).locator('strong')).toHaveText(state.next!.nickname);
-      await fits(page); expect(state.rotation).toEqual(saved);
-    }
-  } finally { await context.close(); }
-});
-
-test('the room size applies live, a screen can override it, and other pages are unchanged', async ({ page, isolatedApp }) => {
+test('resizing relocates the QR without rebuilding playback, and old size choices have no effect', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Next');
+  await page.addInitScript(() => localStorage.setItem('doom-room.display-size', 'back'));
   await page.setViewportSize({ width: 1920, height: 1080 }); await page.goto('/display');
-  const header = await page.locator('header').elementHandle();
-  await expect(page.locator('html')).toHaveAttribute('data-display-tier', 'standard');
-  await setDistance(page, isolatedApp.origin, 'back');
-  await expect(page.locator('html')).toHaveAttribute('data-display-tier', 'compact');
-  expect(await fontSize(page, '.rotation-seat strong')).toBeCloseTo(48, 1); await fits(page);
-  expect(await header!.evaluate(node => node === document.querySelector('header'))).toBe(true);
+  await expect(page.locator('.room-invitation')).toBeVisible();
+  const record = await page.locator('.room-record').elementHandle();
+  const title = await fontSize(page, '.track-info h1');
+  await page.setViewportSize({ width: 960, height: 540 });
+  await expect(page.locator('.order-qr')).toBeVisible(); await expect(page.locator('.room-invitation')).toBeHidden();
+  await fits(page);
+  // A smaller viewport loses optional structure rather than halving the text size.
+  expect(await fontSize(page, '.track-info h1')).toBeGreaterThan(title * .6);
+  await page.setViewportSize({ width: 3840, height: 2160 });
+  await expect(page.locator('.room-invitation')).toBeVisible(); await fits(page);
+  expect(await fontSize(page, '.track-info h1')).toBeGreaterThan(title);
+  expect(await record!.evaluate(node => node === document.querySelector('.room-record'))).toBe(true);
   await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await page.getByLabel('This screen’s size', { exact: true }).selectOption('close');
-  await expect(page.locator('html')).toHaveAttribute('data-display-tier', 'standard');
-  expect(await fontSize(page, '.rotation-seat strong')).toBeCloseTo(27.2, 1);
-  await page.reload();
-  await page.getByRole('button', { name: 'Menu', exact: true }).click();
-  await expect(page.getByLabel('This screen’s size', { exact: true })).toHaveValue('close');
+  await expect(page.getByLabel('This screen’s size', { exact: true })).toHaveCount(0);
   await page.getByRole('navigation').getByRole('link', { name: 'Host desk', exact: true }).click();
   await expect(page.locator('body')).toHaveAttribute('data-view', 'host');
-  await expect(page.locator('html')).not.toHaveAttribute('data-display-tier', /.*/);
-  expect(await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))).toBe(16);
+  expect(await page.locator('html').evaluate(node => node.style.fontSize)).toBe('');
 });
 
-test('long playback details fit both QR placements and every viewing distance', async ({ page, isolatedApp }) => {
+test('long playback details fit both QR preferences and preserve geometry through reveal', async ({ page, isolatedApp }) => {
   const credential = await isolatedApp.engine.join('A listener with a long name'); await isolatedApp.engine.join('Next listener');
   const track = isolatedApp.demo.catalogue[0]!;
   track.title = 'A very long track title that wraps across the available playback space';
@@ -74,39 +68,67 @@ test('long playback details fit both QR placements and every viewing distance', 
   await isolatedApp.engine.play(credential, turn, null, track.id);
   const playbackId = isolatedApp.engine.view({ kind: 'participant', credential }).ownPlayback!.id;
   await isolatedApp.engine.control(credential, turn, playbackId, 'pause');
+  await page.goto('/display'); await expect(page.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
+  const cover = await page.locator('.room-cover').boundingBox();
   await isolatedApp.engine.reveal(credential, turn, playbackId);
-  await page.goto('/display');
+  await expect(page.locator('.track-info h1')).toHaveText(track.title);
+  expect(await page.locator('.room-cover').boundingBox()).toEqual(cover);
   for (const placement of ['bottom-right', 'play-order']) {
     const settings = await (await page.request.get('/api/host/background-settings')).json();
     settings.settings.qrPlacement = placement;
     expect((await page.request.post('/api/host/background-settings', { data: settings, headers: { Origin: isolatedApp.origin } })).ok()).toBe(true);
-    for (const [width, height] of [[1366, 768], [1920, 1080], [3440, 1440], [3840, 2160], [960, 540]]) {
-      await page.setViewportSize({ width: width!, height: height! });
-      for (const distance of ['close', 'sofa', 'room', 'back']) {
-        await setDistance(page, isolatedApp.origin, distance);
-        await expect(page.locator('.room-invitation:not([hidden]), .order-qr:not([hidden])')).toBeVisible();
-        await fits(page);
-        const info = await page.locator('.track-info').evaluate(node => ({ height: node.clientHeight, content: node.scrollHeight }));
-        expect(info.content).toBeLessThanOrEqual(info.height + 1);
-        const picture = (await page.locator('.room-visual').boundingBox())!;
-        const details = (await page.locator('.track-info').boundingBox())!;
-        expect(picture.x + picture.width).toBeLessThan(details.x);
-        const code = page.locator('.room-invitation:not([hidden])');
-        if (await code.count()) {
-          const box = (await code.boundingBox())!;
-          expect(details.x + details.width).toBeLessThanOrEqual(box.x); expect(box.y + box.height).toBeLessThanOrEqual(height! + 1);
-        }
-      }
+    for (const [width, height] of [[960, 540], [1366, 768], [1920, 540], [1920, 1080], [3440, 1440], [3840, 2160]]) {
+      await page.setViewportSize({ width: width!, height: height! }); await fits(page);
+      const picture = (await page.locator('.room-visual').boundingBox())!;
+      const details = (await page.locator('.track-info').boundingBox())!;
+      expect(picture.x + picture.width).toBeLessThan(details.x);
+      const code = page.locator('.room-invitation:not([hidden])');
+      if (await code.count()) expect(details.x + details.width).toBeLessThanOrEqual((await code.boundingBox())!.x);
+      await expect(page.locator('.room-invitation:not([hidden]) img, .order-qr:not([hidden]) img')).toHaveAttribute('src', /^data:image\/svg\+xml/);
     }
   }
 });
 
-test('phones use the stacked layout and keep readable text', async ({ page, isolatedApp }) => {
+test('enlarged text survives resize and essential content remains reachable in a short window', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Next');
+  await page.setViewportSize({ width: 1920, height: 1080 }); await page.goto('/display');
+  await expect(page.locator('.track-info h1')).toBeVisible();
+  const before = await fontSize(page, '.track-info h1');
+  await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+  await page.setViewportSize({ width: 1600, height: 450 });
+  expect(await fontSize(page, '.track-info h1')).toBeGreaterThan(before);
+  expect(await fontSize(page, 'html')).toBe(32);
+  const info = page.locator('.track-info'); await info.scrollIntoViewIfNeeded(); await expect(info).toBeInViewport();
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await expect(page.getByRole('navigation')).toBeVisible();
+});
+
+test('larger desktop windows never reduce workspace content width', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('Listener');
+  for (const path of ['/host', '/host/settings']) {
+    await page.goto(path); let previous = 0;
+    for (const width of [1100, 1200, 1320, 1440, 1920, 2560, 3840, 5120]) {
+      await page.setViewportSize({ width, height: 1080 });
+      const available = await page.locator('main.page').evaluate(node => {
+        const style = getComputedStyle(node); return node.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      });
+      expect(available).toBeGreaterThanOrEqual(previous - 1); previous = available;
+    }
+  }
+});
+
+test('small-screen display retains Now and Next and the existing stacked portrait composition', async ({ page, isolatedApp }) => {
   await isolatedApp.engine.join('First listener'); await isolatedApp.engine.join('Next listener');
   for (const [width, height] of [[320, 700], [390, 844], [844, 390]]) {
     await page.setViewportSize({ width: width!, height: height! }); await page.goto('/display');
-    await expect(page.locator('html')).toHaveAttribute('data-display-tier', width! < height! ? 'portrait' : 'compact');
-    await expect(page.locator('.order-qr')).toBeVisible(); await fits(page);
+    await expect(page.locator('.order-qr')).toBeVisible();
+    await expect(page.locator('.rotation-seat.is-current')).toBeInViewport({ ratio: 1 });
+    await expect(page.locator('.rotation-seat.is-next')).toBeInViewport({ ratio: 1 });
     expect(await fontSize(page, '.seat-state-compact')).toBeGreaterThanOrEqual(12);
+    if (width! < height!) {
+      const picture = (await page.locator('.room-visual').boundingBox())!;
+      const details = (await page.locator('.track-info').boundingBox())!;
+      expect(details.y).toBeGreaterThanOrEqual(picture.y + picture.height);
+    }
   }
 });

@@ -12,7 +12,8 @@ import { PlayerReturn } from './player-return';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 import { CatalogueRow } from './catalogue-row';
 import { PublicRoom } from './public-room';
-import { currentStage, onDisplayStage, setRoomDistance } from './display-stage';
+import { displayHasSideRail, observeDisplayLayout } from './display-stage';
+import { joinQrImage } from './join-qr';
 import { PreparationController, operationId } from './preparation-controller';
 import { PreparationPanel } from './preparation-panel';
 import type { PreparationView } from '../src/preparations';
@@ -187,7 +188,7 @@ function holdBelowPlayer(update: () => void) {
   if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, behavior: 'instant' });
 }
 /** Layouts without a side column draw the join code in the play-order bar, whatever the placement setting says. */
-const qrInOrder = () => page === 'display' && (currentStage()?.tier !== 'standard' || view?.background?.settings.qrPlacement === 'play-order');
+const qrInOrder = () => page === 'display' && (!displayHasSideRail() || view?.background?.settings.qrPlacement === 'play-order');
 const updateHeader = () => {
   if (signal.aborted) return;
   updateTitle();
@@ -340,7 +341,6 @@ function accept(next: View) {
   const arrived = page === 'participant' && Boolean(view?.me && next.me?.id === view.me.id && !view.myTurn && next.myTurn);
   view = next;
   setRoomLogo(next.logo);
-  if (page === 'display') setRoomDistance(next.displaySettings?.settings.distance);
   updateHeader();
   if (next.joinUrl) setGuestOrigin(new URL(next.joinUrl).origin);
   player.observe(next);
@@ -361,7 +361,7 @@ function accept(next: View) {
     qrUrl = next.joinUrl; qrImage = '';
     const url = qrUrl;
     // Only the host desk and display draw QR codes; guests never load the encoder.
-    void import('qrcode').then(({ default: QRCode }) => QRCode.toDataURL(url, { width: 360, margin: 3 })).then(image => {
+    void joinQrImage(url).then(image => {
       if (qrUrl === url) { qrImage = image; render(); }
     }).catch(() => {});
   }
@@ -765,8 +765,8 @@ async function init() {
     try { await participantAccess.check(); if (!signal.aborted) await library.start(); } finally { releaseEvents(); }
   }
 }
-// A new size or layout changes how many listeners fit and where the join code goes.
-if (page === 'display') onDisplayStage(() => { listeningOrder.refit(); render(); }, signal);
+// CSS decides QR placement; the listening order measures its own available space.
+if (page === 'display') observeDisplayLayout(() => { updateHeader(); renderDisplay(); }, signal);
 void init();
 window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.stopUploads(); }, { signal });
 window.addEventListener('pageshow', event => { if (event.persisted) void init(); }, { signal });

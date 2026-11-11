@@ -1,199 +1,167 @@
-/* The room display is one picture, designed at 1920×1080 design pixels and read from across a room.
-   display-stage.ts sizes the root font so that 1rem is 16 design pixels on this screen, times the
-   viewing-distance setting, and names the layout that fits in data-display-tier:
-     standard  artwork and details, with a side column for the room's logo and the join code
-     compact   the same without the side column or stream details, for larger text or short screens
-     portrait  artwork above details, for phones and screens turned on their side
-   Every length is in rem or relative to one, so the play order, artwork and text scale together and
-   nothing here depends on the window's pixel size. Only hairlines and the touch floors are in px.
-   Text read from across the room is at least 24 design pixels (1.5rem). */
+/* Automatic room display. CSS owns sizing and composition; rem remains the browser's
+   normal text unit. Width decides whether a side rail fits, height decides how much
+   decoration/detail fits. Neither decision is a room setting or device classification. */
 @layer features {
-  :root[data-display-tier] {
-    height:100%; overflow:hidden;
-    --gutter:3.625rem; --foot:3.625rem;
-    /* The artwork is the flexible part: it takes the height the text leaves, within these bounds.
-       Its lower bound is the height of the details beside it with a two-line title. */
-    --art:clamp(24.5rem,42dvh,30rem); --pair-gap:3.125rem;
-    --rail:13.75rem; --rail-gap:2.5rem;
-    /* Read by listening-order.ts to decide how many listeners fit. */
-    --seat-min:15rem; --more-width:8.5rem;
+  body[data-view='display'] {
+    --display-side-rail:0;
+    --gutter:clamp(1.25rem,3vw,5rem); --foot:clamp(1.25rem,3dvh,3.625rem);
+    --pair-gap:clamp(1.5rem,2.6vw,5rem);
+    --art:clamp(14rem,40dvh,56rem); --rail:0px; --rail-gap:0px;
+    /* A rem contribution preserves text enlargement; viewport-only type cancels zoom. */
+    --display-title:clamp(2.25rem,1.5rem + 3vmin,7rem);
+    --display-artist:clamp(1.5rem,1rem + 1.85vmin,4rem);
+    --display-album:clamp(1.125rem,.875rem + 1.2vmin,3rem);
+    --display-text:clamp(1rem,.75rem + 1vmin,2.5rem);
+    --display-name:clamp(1.375rem,1rem + 1.5vmin,3.5rem);
+    --display-avatar:clamp(2rem,2.7vw,5.5rem);
+    --seat-min:clamp(12rem,15vw,30rem); --more-width:calc(7 * var(--display-text));
+    --order-qr:clamp(6rem,9vmin,13rem);
+    --stream-height:0px;
+    /* Reserve the same playback block through idle, reveal, pause and reconnect.
+       This is a minimum, never a clipping boundary for enlarged text. */
+    --details-height:calc(2.35 * var(--display-title) + 1.25 * var(--display-artist) + 1.25 * var(--display-album) + 3 * var(--display-text) + 3.5rem + var(--stream-height));
+    height:100vh; height:100dvh; min-height:0; overflow:hidden;
+    background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e;
   }
-  :root[data-display-tier='compact'] { --foot:2.5rem; --art:clamp(21.5rem,42dvh,27.5rem); --rail:0rem; --rail-gap:0rem; }
-  :root[data-display-tier='portrait'] {
-    --gutter:1.5rem; --foot:2.5rem; --art:min(100vw - 2 * var(--gutter),40dvh,48rem); --rail:0rem; --rail-gap:0rem;
-    --seat-min:12rem;
-  }
-
-  /* The display owns a fixed viewport, including native fullscreen. */
-  body[data-view='display'] { height:100vh; height:100dvh; min-height:0; overflow:hidden; background:radial-gradient(ellipse at 18% 40%,#1e3022 0,transparent 58%),#0c120e; }
   body[data-view='display'] #app { height:100%; display:grid; grid-template-rows:auto minmax(0,1fr); }
-  body[data-view='display'] #app > div,
-  body[data-view='display'] .app-content { min-height:0; display:flex; flex-direction:column; flex:1; }
-  body[data-view='display'] .app-content > .notice { flex-shrink:0; width:auto; max-width:none; margin:.75rem var(--gutter) 0; padding:.875rem 1rem; font-size:1.5rem; border-radius:.5625rem; }
+  body[data-view='display'] #app > div { min-height:0; display:flex; flex-direction:column; }
+  /* Normal sizes fit one screen. Exceptional text enlargement or very short windows
+     can scroll the content, rather than losing playback or an error below a clip. */
+  body[data-view='display'] .app-content { flex:1; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); overflow:auto; }
+  body[data-view='display'] .app-content > .notice { grid-row:1; width:auto; max-width:none; margin:.75rem var(--gutter) 0; padding:.875rem 1rem; font-size:var(--display-text); }
 
-  /* Host controls float over the play order and rest out of sight (display-chrome.ts), so the
-     room's picture never moves when they appear. They stay focusable and clickable while resting. */
+  /* Controls float over the order without moving it. Their text stays at normal UI
+     size; the large room typography belongs to the presentation, not the menu. */
   body[data-view='display'] .app-header { position:relative; }
   body[data-view='display'] .app-header::after { content:none; }
   body[data-view='display'] .header-inner {
-    position:absolute; z-index:3; inset:0 0 auto; max-width:none; min-height:4.5rem; gap:1rem; padding:.75rem var(--gutter);
+    position:absolute; z-index:3; inset:0 0 auto; max-width:none; min-height:3.5rem; gap:.75rem; padding:.5rem var(--gutter);
     border-bottom:1px solid var(--line); background:#101a13f7; box-shadow:0 .5rem 1.5rem #0006; transition:opacity .25s ease;
   }
   :root[data-display-chrome='resting'] body[data-view='display'] .header-inner { opacity:0; }
   :root[data-display-chrome='resting'] body[data-view='display'] { cursor:none; }
-  body[data-view='display'] .brand { gap:.8125rem; }
-  body[data-view='display'] .brand strong { font-size:max(12px,1.5rem); }
-  body[data-view='display'] .brand-mark { width:2.625rem; height:2.625rem; font-size:2rem; }
-  body[data-view='display'] .header-meta { gap:.75rem; }
-  body[data-view='display'] :is(.header-meta .secondary,.header-menu-toggle,.header-nav-link) {
-    min-height:max(44px,2.75rem); padding:.625rem .75rem; font-size:max(12px,1.125rem); border-radius:.5625rem;
-  }
-  body[data-view='display'] .header-menu-toggle { width:auto; min-width:5.5em; }
-  body[data-view='display'] .primary-navigation {
-    right:var(--gutter); width:min(max(240px,23.75rem),calc(100% - 2 * var(--gutter))); max-height:calc(100dvh - 5.5rem);
-    padding:.625rem; border-radius:0 0 .75rem .75rem;
-  }
-  body[data-view='display'] .primary-links { gap:.25rem; }
-  .display-size-control { display:grid; gap:.5em; margin-top:.5em; padding:.75em .25em .25em; border-top:1px solid var(--line); font-size:max(12px,1.125rem); }
-  .display-size-control label { font-weight:600; }
-  .display-size-control select { width:100%; min-height:max(44px,2.75rem); padding:.5em .75em; font-size:inherit; }
-  .display-size-control p { margin:0; font-size:.85em; line-height:1.4; }
+  body[data-view='display'] :is(.header-meta .secondary,.header-menu-toggle,.header-nav-link) { min-height:44px; font-size:.875rem; }
+  body[data-view='display'] .primary-navigation { right:var(--gutter); max-height:calc(100dvh - var(--app-bar-height,4rem) - 1rem); }
 
-  /* The play order: Now and Next first, then as many listeners as fit, then "+N more".
-     A shared screen cannot be scrolled. */
+  /* Now and Next stay first. Only the count of additional listeners needs JS. */
   body[data-view='display'] .listening-order { max-width:none; padding-inline:var(--gutter); }
-  body[data-view='display'] .order-bar { min-height:7rem; gap:.75rem; padding-block:.75rem; border-top:0; }
-  body[data-view='display'] :is(.order-empty,.order-status) { font-size:1.5rem; }
-  body[data-view='display'] .has-display-qr .order-bar { padding-right:7.25rem; }
-  body[data-view='display'] .order-qr { top:.125rem; height:calc(100% - .25rem); max-height:6.5rem; }
+  body[data-view='display'] .order-bar { min-height:calc(var(--order-qr) + 1rem); gap:.75rem; padding-block:.5rem; border-top:0; }
+  body[data-view='display'] :is(.order-empty,.order-status) { font-size:var(--display-text); }
+  body[data-view='display'] .has-display-qr .order-bar { padding-right:calc(var(--order-qr) + 1rem); }
+  body[data-view='display'] .order-qr { top:50%; transform:translateY(-50%); width:var(--order-qr); height:var(--order-qr); max-height:none; }
   body[data-view='display'] .order-qr img { border-radius:.25rem; }
-  body[data-view='display'] .rotation-list { --order-gap:1.625rem; flex:1 1 0; overflow:hidden; }
+  body[data-view='display'] .rotation-list { --order-gap:clamp(.75rem,1.35vw,2.5rem); flex:1 1 0; overflow:hidden; }
   body[data-view='display'] .rotation-seat {
-    flex:1 1 var(--seat-min); max-width:20rem; min-height:5.5rem;
-    grid-template-columns:3.25rem minmax(0,1fr); grid-template-rows:2.375rem 1.75rem; column-gap:.75rem; row-gap:.125rem;
-    padding:.625rem; border-radius:.625rem;
+    flex:1 1 var(--seat-min); max-width:calc(1.25 * var(--seat-min));
+    min-height:calc(var(--order-qr) - .5rem); padding:.5rem; border-radius:.625rem;
+    grid-template-columns:var(--display-avatar) minmax(0,1fr); grid-template-rows:auto auto; column-gap:.75rem; row-gap:.125rem;
   }
-  body[data-view='display'] .rotation-seat .avatar { width:3.25rem; height:3.25rem; font-size:1.1875rem; }
-  body[data-view='display'] .rotation-seat strong { font-size:2rem; line-height:2.375rem; }
-  /* A name without a label is centred beside its avatar. */
+  body[data-view='display'] .rotation-seat .avatar { width:var(--display-avatar); height:var(--display-avatar); font-size:calc(var(--display-avatar) * .36); }
+  body[data-view='display'] .rotation-seat strong { font-size:var(--display-name); line-height:1.2; }
   body[data-view='display'] .rotation-seat:not(.is-current,.is-next) strong { grid-row:1 / 3; }
-  /* The short labels (Now, Next) stay readable at this size. */
   body[data-view='display'] .seat-state:not(.seat-state-compact) { display:none; }
-  body[data-view='display'] .seat-state-compact { display:block; font-size:1.5rem; line-height:1.75rem; letter-spacing:.1em; overflow:hidden; text-overflow:ellipsis; }
+  body[data-view='display'] .seat-state-compact { display:block; font-size:var(--display-text); line-height:1.2; letter-spacing:.08em; overflow:hidden; text-overflow:ellipsis; }
   body[data-view='display'] .seat-state-compact:empty { display:none; }
-  body[data-view='display'] .rotation-seat.is-current .seat-state::before { font-size:1.125rem; }
-  body[data-view='display'] .rotation-list > .rotation-seat:not(:last-child)::after { height:.75rem; mask-size:1.125rem .75rem; }
+  body[data-view='display'] .rotation-seat.is-current .seat-state::before { font-size:.75em; }
   body[data-view='display'] .order-trace rect { rx:calc(.625rem - .5px); }
-  @media(prefers-reduced-motion:no-preference) {
-    body[data-view='display'] .order-trace-light { stroke-width:4rem; filter:blur(.75rem); }
-    body[data-view='display'] .order-trace-halo { filter:blur(.1875rem); }
-  }
-  .rotation-more { flex:0 0 var(--more-width); align-self:center; color:var(--muted); font-size:1.5rem; font-weight:600; text-align:center; white-space:nowrap; }
-  :root[data-display-tier='portrait'] body[data-view='display'] .rotation-seat { grid-template-columns:minmax(0,1fr); }
-  :root[data-display-tier='portrait'] body[data-view='display'] .rotation-seat .avatar { display:none; }
-  :root[data-display-tier='portrait'] body[data-view='display'] .rotation-seat :is(strong,.seat-state) { grid-column:1; }
+  .rotation-more { flex:0 0 var(--more-width); align-self:center; color:var(--muted); font-size:var(--display-text); font-weight:600; text-align:center; white-space:nowrap; }
+  .order-measure { position:absolute; top:0; left:0; visibility:hidden; pointer-events:none; }
+  .order-measure[hidden] { display:none; }
+  .order-measure > span { display:block; height:1px; }
+  .order-measure-seat { width:var(--seat-min); }
+  .order-measure-more { width:var(--more-width); }
 
-  /* The page: the animated background takes the spare height above playback, which keeps
-     its place at the foot of the screen. */
+  /* The free upper row belongs to the animation. The playback row has a stable
+     minimum based on its content, independent of the animation and artwork load. */
   .display-page {
-    flex:1; min-height:0; height:100%; max-width:none; display:grid; grid-template-columns:minmax(0,1fr);
-    grid-template-rows:minmax(0,1fr) auto; gap:1rem; padding:1rem var(--gutter) var(--foot); overflow:hidden;
+    grid-row:2; height:100%; min-height:min-content; max-width:none; display:grid; grid-template-columns:minmax(0,1fr);
+    grid-template-rows:minmax(0,1fr) auto; gap:1rem; padding:1rem var(--gutter) var(--foot);
   }
-  /* Absolute grid positioning bounds the background without putting it in the content flow. */
-  .display-page > .bmf-background { position:absolute; inset:0; z-index:-1; grid-row:1 / 2; grid-column:1 / 2; min-height:0; width:auto; height:auto; padding:0; container-type:size; }
+  .display-page > .bmf-background { position:absolute; inset:0; z-index:-1; grid-row:1; grid-column:1; min-height:0; width:auto; height:auto; padding:0; container-type:size; }
   .display-page > .bmf-background > bmf-logo { max-width:min(100%,233cqh); }
   .display-page:not([data-background='on']) > .bmf-background { display:none; }
-
-  /* Playback: artwork, gap and details are centred together. The side column's width is kept
-     clear on both sides while it holds the logo or the join code, so nothing overlaps. */
   .room-stage {
-    --clearance:0px;
-    --room:calc(100vw - 2 * var(--gutter) - var(--rail) - var(--rail-gap));
-    --details:min(59.625rem,max(0px,calc((var(--room) - var(--art) - var(--pair-gap)) * .75)));
-    position:relative; z-index:1; grid-row:2; grid-column:1; min-width:0; height:var(--art);
-    display:grid; grid-template-columns:minmax(0,1fr) var(--rail); column-gap:var(--rail-gap);
+    --clearance:calc(var(--rail) + var(--rail-gap));
+    position:relative; z-index:1; grid-row:2; grid-column:1; min-width:0; min-height:max(var(--art),var(--details-height));
+    display:grid; grid-template-columns:minmax(0,1fr) var(--rail); column-gap:var(--rail-gap); align-items:end;
   }
-  :root[data-room-logo] .room-stage,
-  .display-page[data-invitation='stage'] .room-stage { --clearance:calc(var(--rail) + var(--rail-gap)); }
   .room-listening {
-    grid-column:1 / -1; grid-row:1; justify-self:center; min-width:0; height:100%;
-    width:min(calc(var(--art) + var(--pair-gap) + var(--details)),max(0px,calc(100% - 2 * var(--clearance))));
+    grid-column:1 / -1; grid-row:1; justify-self:center; min-width:0;
+    width:min(calc(var(--art) + var(--pair-gap) + 24 * var(--display-title)),max(0px,calc(100% - 2 * var(--clearance))));
   }
-  .now-playing {
-    height:100%; min-height:0; display:grid; align-items:end; column-gap:var(--pair-gap);
-    grid-template-columns:min(var(--art),calc((100% - var(--pair-gap)) * .5)) minmax(0,1fr);
-  }
-  .room-visual { position:relative; isolation:isolate; width:100%; }
+  .now-playing { display:grid; align-items:end; column-gap:var(--pair-gap); grid-template-columns:min(var(--art),calc((100% - var(--pair-gap)) * .44)) minmax(0,1fr); }
+  .room-visual { position:relative; isolation:isolate; width:100%; container-type:inline-size; }
   .room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; pointer-events:none; }
   @keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }
-  .room-cover {
-    position:relative; display:grid; place-items:center; width:100%; aspect-ratio:1; overflow:hidden; padding:7%;
-    border:1px solid #48604366; border-radius:.75rem; background:linear-gradient(145deg,#30402e,#1b2a20); box-shadow:0 1.375rem 3.75rem #0004;
-  }
+  .room-cover { position:relative; display:grid; place-items:center; width:100%; aspect-ratio:1; overflow:hidden; padding:7%; border:1px solid #48604366; border-radius:.75rem; background:linear-gradient(145deg,#30402e,#1b2a20); box-shadow:0 1.375rem 3.75rem #0004; }
   .room-cover img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
-  /* The record's grooves, rim and sticker scale with the picture. */
-  .room-cover > .vinyl {
-    background:repeating-radial-gradient(circle at center,#19201c 0,#19201c .125rem,#2a342c .1875rem,#19201c .25rem,#19201c .5rem);
-    box-shadow:0 1.125rem 3.125rem #0005,inset 0 0 0 .75rem #141a16;
-  }
-  .room-cover .vinyl-hole { box-shadow:0 0 0 .25rem #b68e56; }
+  /* Sticker lettering follows the actual artwork width, not its preferred width. */
   .vinyl-label.is-personalized { width:36%; height:36%; gap:7%; letter-spacing:.06em; }
   .vinyl-label.is-personalized > span { width:86%; line-height:1.15; text-align:center; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-  .vinyl-label.is-personalized .vinyl-owner { font-size:calc(var(--art) * .0344); text-transform:uppercase; }
-  .vinyl-label.is-personalized .vinyl-owner.is-long { font-size:calc(var(--art) * .0206); }
-  .vinyl-label.is-personalized .vinyl-caption { font-size:calc(var(--art) * .0232); letter-spacing:.035em; }
+  .room-visual .vinyl-owner { font-size:3.44cqw; text-transform:uppercase; }
+  .room-visual .vinyl-owner.is-long { font-size:2.06cqw; }
+  .room-visual .vinyl-caption { font-size:2.32cqw; letter-spacing:.035em; }
   .vinyl-label.is-personalized .vinyl-hole { flex-shrink:0; }
 
-  /* Details share the artwork's bottom edge. The title's place is anchored at its bottom: a longer
-     title grows upward, so the artist, album and progress below it never move. */
-  .track-info { min-width:0; max-height:100%; align-self:end; overflow:hidden; }
-  .room-title-slot { display:flex; flex-direction:column; justify-content:flex-end; max-height:2.4em; margin:0 0 1rem; font-size:3.5rem; overflow:hidden; }
-  .track-info h1 {
-    flex-shrink:0; margin:0; padding-bottom:.15em; font-size:inherit; line-height:1.1; letter-spacing:-.045em; overflow-wrap:anywhere;
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
-  }
-  /* The artist's line, reserved while a song is hidden. While nothing plays, the hint takes it. */
-  .track-info .artist-credit { height:2.8125rem; gap:.75rem; }
+  .track-info { min-width:0; align-self:end; }
+  .room-title-slot { display:flex; flex-direction:column; justify-content:flex-end; height:2.35em; margin:0 0 .75rem; font-size:var(--display-title); }
+  .track-info h1 { flex-shrink:0; margin:0; padding-bottom:.15em; font-size:inherit; line-height:1.1; letter-spacing:-.045em; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+  .track-info .artist-credit { height:1.25em; font-size:var(--display-artist); gap:.5em; }
   .track-info .artist-credit[hidden] { display:flex; visibility:hidden; }
-  .track-info .artist-portrait { width:2.5rem; height:2.5rem; }
-  .track-info .artist { color:#d5d3bf; font-size:2.25rem; line-height:1.25; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; overflow:hidden; }
-  .room-hint { display:none; margin:0; color:var(--muted); font-size:2.25rem; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .room-album { min-height:1.2em; margin:.375rem 0 0; color:#a0ae9c; font-size:1.75rem; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .track-info .artist-portrait { width:1.1em; height:1.1em; }
+  .track-info .artist { color:#d5d3bf; font-size:inherit; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .room-hint { display:none; margin:0; color:var(--muted); font-size:var(--display-artist); line-height:1.25; overflow-wrap:anywhere; }
+  .room-album { height:1.25em; margin:.375rem 0 0; color:#a0ae9c; font-size:var(--display-album); line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .room-album[hidden] { display:block; visibility:hidden; }
-  .room-activity { display:flex; margin-top:1.25rem; }
+  .room-activity { display:flex; margin-top:1rem; }
   .room-activity .public-playback { flex:1; min-width:0; max-width:100%; margin:0; }
-  .public-playback .playback-status { height:1.5em; font-size:1.5rem; line-height:1.5; }
+  .public-playback .playback-status { height:1.5em; font-size:var(--display-text); line-height:1.5; }
   .public-playback .progress-rail progress { height:.375rem; }
-  .public-playback .auto-reveal-marker { width:.125rem; height:.625rem; border-radius:.0625rem; }
-  /* Progress keeps its lines when there is nothing to show yet. */
   .room-activity .public-playback .progress-rail progress[hidden] { display:block; visibility:hidden; }
-  .room-activity .public-playback .track-times { display:flex; height:1.5em; min-height:0; margin-top:.5rem; font-size:1.5rem; line-height:1.5; }
+  .room-activity .public-playback .track-times { display:flex; height:1.5em; min-height:0; margin-top:.5rem; font-size:var(--display-text); line-height:1.5; }
   .room-activity .public-playback .track-times[hidden] { display:flex; visibility:hidden; }
-  .room-stream-details { min-height:1.5em; margin:.5rem 0 0; color:var(--muted); font-size:1.5rem; line-height:1.5; letter-spacing:.02em; }
-  .room-stream-details[hidden] { display:none; }
-  /* Idle copy meets the artwork's bottom edge, not invisible playback controls. */
+  .room-stream-details { display:none; height:1.5em; margin:.5rem 0 0; color:var(--muted); font-size:var(--display-text); line-height:1.5; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .room-stream-details[hidden] { visibility:hidden; }
   .display-page[data-stage='resting'] .track-info .artist-credit,
-  .display-page[data-stage='resting'] :is(.room-activity,.room-album[hidden]) { display:none; }
+  .display-page[data-stage='resting'] :is(.room-activity,.room-album,.room-stream-details) { display:none; }
   .display-page[data-stage='resting'] .room-hint { display:block; }
 
-  /* The side column: the room's logo at the top, the join code at the bottom. */
   .room-invitation { grid-column:2; grid-row:1; align-self:end; justify-self:end; width:100%; }
   .room-invitation[hidden] { display:none; }
   .room-qr-link { display:block; width:100%; }
   .room-invitation img { display:block; width:100%; height:auto; border-radius:min(.75rem,6%); }
-  .display-page > .room-logo { grid-row:2; grid-column:1; z-index:1; justify-self:end; align-self:start; width:var(--rail); max-height:var(--art); }
-  .display-page[data-invitation='stage'] > .room-logo { max-height:calc(var(--art) - var(--rail) - 1.5rem); }
+  .display-page > .room-logo { grid-row:1; grid-column:1; z-index:1; justify-self:end; align-self:start; width:clamp(8rem,12vw,25rem); max-width:25%; height:100%; max-height:7.5rem; min-height:0; }
 
-  /* Without a side column the join code is drawn in the play order (page-runtime.ts), the logo
-     moves to the corner above playback, and the stream details make way for larger text. */
-  :root:not([data-display-tier='standard']) .display-page > .room-logo { grid-row:1; width:auto; height:min(100%,7.5rem); max-width:13.75rem; max-height:none; }
-  :root:not([data-display-tier='standard']) .room-stream-details { display:none; }
-
-  /* Portrait: artwork above details. The details keep a fixed height, so the artwork stays put
-     whatever the title's length. */
-  :root[data-display-tier='portrait'] .room-stage { height:auto; }
-  :root[data-display-tier='portrait'] .room-listening { width:100%; height:auto; }
-  :root[data-display-tier='portrait'] .now-playing { height:auto; grid-template-columns:minmax(0,1fr); row-gap:1.5rem; justify-items:center; }
-  :root[data-display-tier='portrait'] .room-visual { width:var(--art); }
-  :root[data-display-tier='portrait'] .track-info { display:flex; flex-direction:column; justify-content:flex-end; width:100%; height:21.5rem; }
+  /* Width and height are separate capabilities. A short ultrawide may retain its
+     side QR even while technical details and large branding make way for playback. */
+  @media(min-width:90em) and (orientation:landscape) {
+    body[data-view='display'] { --display-side-rail:1; --rail:clamp(10rem,11.5vw,25rem); --rail-gap:clamp(1.25rem,2vw,4rem); }
+  }
+  @media(min-height:50em) and (min-width:70em) {
+    body[data-view='display'] { --stream-height:calc(1.5 * var(--display-text) + .5rem); }
+    .room-stream-details { display:block; }
+  }
+  @media(min-width:90em) and (min-height:50em) and (orientation:landscape) {
+    .display-page > .room-logo { grid-row:2; width:var(--rail); max-width:none; height:auto; max-height:calc(max(var(--art),var(--details-height)) - var(--rail) - 1.5rem); }
+  }
+  /* Existing stacked composition for portrait screens. */
+  @media(orientation:portrait) {
+    body[data-view='display'] { --art:min(38dvh,100vw - 2 * var(--gutter),48rem); }
+    .room-stage { min-height:0; }
+    .room-listening { width:min(100%,72rem); }
+    .now-playing { grid-template-columns:minmax(0,1fr); row-gap:1.5rem; justify-items:center; }
+    .room-visual { width:var(--art); }
+    .track-info { width:100%; min-height:var(--details-height); display:flex; flex-direction:column; justify-content:flex-end; }
+  }
+  /* Keep the small-screen presentation compact; mobile interaction design is separate. */
+  @media(max-width:43.75em) {
+    body[data-view='display'] {
+      --gutter:.75rem; --foot:1.25rem; --pair-gap:1rem; --order-qr:3.25rem;
+      --display-title:1.75rem; --display-artist:1.125rem; --display-album:.875rem;
+      --display-name:1rem; --display-text:.75rem; --seat-min:6rem; --more-width:3.5rem;
+    }
+    body[data-view='display'] .rotation-seat { grid-template-columns:minmax(0,1fr); padding:.25rem; }
+    body[data-view='display'] .rotation-seat .avatar { display:none; }
+    body[data-view='display'] .rotation-seat :is(strong,.seat-state) { grid-column:1; }
+  }
 }

@@ -6,7 +6,7 @@ export const settingsSections = [
   { id: 'users', title: 'Users', description: 'Help people return, or manage who uses the room.' },
   { id: 'music-assistant', title: 'Music Assistant', description: 'Connect your music library and speakers.' },
   { id: 'access', title: 'Access & network', description: 'Guest links and uploaded-file connectivity.' },
-  { id: 'appearance', title: 'Appearance', description: 'Room display size, animated background and the room’s logo.' },
+  { id: 'appearance', title: 'Appearance', description: 'Animated background and the room’s logo.' },
 ] as const;
 export type SettingsSection = typeof settingsSections[number]['id'];
 const fromHash = () => settingsSections.find(section => `#${section.id}` === location.hash)?.id;

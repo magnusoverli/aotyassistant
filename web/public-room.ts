@@ -101,7 +101,7 @@ export class PublicRoom {
     const glow = el('div', undefined, 'room-glow'); glow.setAttribute('aria-hidden', 'true');
     this.record.classList.add('room-record'); this.cover.append(this.record);
     visual.append(glow, this.cover);
-    // One title line tall, anchored at its bottom: a longer title grows upward and nothing below it moves.
+    // A reserved two-line slot keeps the artwork and details steady when metadata is revealed.
     const titleSlot = el('div', undefined, 'room-title-slot'); titleSlot.append(this.title);
     const info = el('div', undefined, 'track-info');
     info.append(titleSlot, this.hint, this.credit, this.album);

@@ -5,10 +5,7 @@ import { attr, prop, text } from './view-nodes';
 import { demoPlaybackNotice, productName } from '../src/product';
 import { requestJson } from './request';
 import type { UserDirectory } from '../src/model';
-import { DisplaySize } from './display-size';
 import { DisplayChrome } from './display-chrome';
-import { onDisplayStage, roomDistance, setScreenDistance, showDisplayStage } from './display-stage';
-import { isViewingDistance, viewingDistance, viewingDistances } from '../src/viewing-distance';
 
 /** One persistent, compact header for every route and viewport. */
 export class AppHeader {
@@ -30,10 +27,6 @@ export class AppHeader {
   private resize?: ResizeObserver;
   private fullscreenPending = false;
   private lastState: HeaderState = {};
-  private displaySize = new DisplaySize();
-  private sizeControl = el('div', undefined, 'display-size-control');
-  private sizeSelect = el('select');
-  private roomOption = el('option');
   private chrome = new DisplayChrome(() => this.expanded || this.keyboardFocus());
 
   constructor(private page: Page, private failed: (message: string) => void) {
@@ -51,22 +44,7 @@ export class AppHeader {
     const wordmark = el('div'); wordmark.append(el('strong', productName), this.subtitle); brand.append(mark, wordmark);
     this.navigation.id = 'app-navigation'; this.navigation.setAttribute('aria-label', 'Primary navigation');
     this.navigation.append(this.primary);
-    const sizeLabel = el('label', 'This screen’s size'); sizeLabel.htmlFor = this.sizeSelect.id = 'display-size';
-    this.roomOption.value = ''; this.sizeSelect.append(this.roomOption);
-    for (const distance of viewingDistances) {
-      const option = el('option', distance.label); option.value = distance.id; this.sizeSelect.append(option);
-    }
-    this.sizeSelect.value = this.displaySize.current ?? '';
-    const sizeHelp = el('p', 'The room’s size is set in Settings → Appearance. A choice here is saved in this browser only.', 'muted'); sizeHelp.id = 'display-size-help';
-    this.sizeSelect.setAttribute('aria-describedby', sizeHelp.id);
-    this.sizeSelect.onchange = () => {
-      const chosen = this.sizeSelect.value;
-      this.displaySize.set(isViewingDistance(chosen) ? chosen : undefined); setScreenDistance(this.displaySize.current);
-    };
-    this.sizeControl.append(sizeLabel, this.sizeSelect, sizeHelp); this.navigation.append(this.sizeControl);
-    setScreenDistance(this.displaySize.current);
-    onDisplayStage(() => this.updateRoomOption(), this.lifetime.signal);
-    this.updateRoomOption(); this.updateDisplay();
+    this.updateDisplay();
     this.toggle.type = 'button'; this.toggle.setAttribute('aria-controls', this.navigation.id);
     this.toggle.onclick = () => this.setExpanded(!this.expanded);
     this.fullscreen.type = 'button'; this.fullscreen.onclick = () => { void this.toggleFullscreen(); };
@@ -91,6 +69,7 @@ export class AppHeader {
         }
       });
       this.resize.observe(this.element);
+      this.resize.observe(inner);
     }
     this.update({});
     this.logout.type = 'button'; this.logout.onclick = () => { void this.logOut(); };
@@ -166,16 +145,10 @@ export class AppHeader {
     text(this.toggle, this.expanded ? 'Close' : 'Menu');
     prop(this.navigation, 'hidden', !this.expanded);
   }
-  /** The room display is drawn in design pixels and rests its controls; other pages are unchanged. */
+  /** Display controls rest out of sight while the room listens. */
   private updateDisplay() {
     const display = this.page === 'display';
-    prop(this.sizeControl, 'hidden', !display);
-    showDisplayStage(display);
     if (display) this.chrome.start(); else this.chrome.stop();
-  }
-  private updateRoomOption() {
-    const room = roomDistance();
-    text(this.roomOption, room ? `Same as the room (${viewingDistance(room).label})` : 'Same as the room');
   }
   private keyboardFocus() {
     try { return Boolean(this.element.querySelector('.header-inner :focus-visible')); } catch { return false; }
@@ -212,7 +185,7 @@ export class AppHeader {
   }
   destroy() {
     this.lifetime.abort(); this.identityRequest?.abort();
-    this.chrome.stop(); showDisplayStage(false);
+    this.chrome.stop();
     this.resize?.disconnect();
     document.removeEventListener('keydown', this.keydown); document.removeEventListener('focusin', this.focusChanged);
     document.removeEventListener('pointerdown', this.outside); document.removeEventListener('fullscreenchange', this.fullscreenChanged);

@@ -42,10 +42,10 @@
   .settings-workspace > .settings-notice { margin-bottom:20px; }
   .setting-toggle { display:flex; align-items:center; gap:12px; min-height:44px; margin:12px 0; cursor:pointer; }
   .setting-toggle input { width:18px; height:18px; min-height:0; flex:0 0 18px; accent-color:var(--accent); }
-  .autoplay-options,.display-size-options { min-width:0; margin:0; padding:0; border:0; }
-  :is(.autoplay-option,.display-size-option) > span { display:grid; gap:4px; min-width:0; }
-  :is(.autoplay-option,.display-size-option) .small { line-height:1.6; }
-  .autoplay-options:disabled .autoplay-option,.display-size-options:disabled .display-size-option { cursor:default; opacity:.65; }
+  .autoplay-options { min-width:0; margin:0; padding:0; border:0; }
+  .autoplay-option > span { display:grid; gap:4px; min-width:0; }
+  .autoplay-option .small { line-height:1.6; }
+  .autoplay-options:disabled .autoplay-option { cursor:default; opacity:.65; }
   .speaker-refresh { position:relative; padding-inline:40px; }
   .speaker-refresh[aria-busy='true'] { opacity:.8; cursor:progress; }
   .speaker-refresh[aria-busy='true']:before { content:''; position:absolute; left:16px; top:calc(50% - 8px); width:16px; height:16px; border:2px dotted var(--accent); border-right-color:transparent; border-radius:50%; animation:speaker-refresh-spin 1.2s linear infinite; }
@@ -82,7 +82,7 @@
     .settings-user-details { padding:14px; }
   }
   /* Appearance: the logo's two places, drawn small, with the logo as it will look. */
-  .settings-logo [hidden],.settings-display-size [hidden] { display:none; }
+  .settings-logo [hidden] { display:none; }
   .settings-logo .logo-previews { display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px; margin:22px 0 8px; }
   .settings-logo .logo-preview { display:grid; gap:8px; min-width:0; margin:0; }
   .settings-logo figcaption { font-size:12px; color:var(--muted); }

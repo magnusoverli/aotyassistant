@@ -1,7 +1,8 @@
 @layer layouts {
   :root {
     --workspace-width:1320px; --compact-width:660px; --workspace-columns:minmax(0,1fr) 360px;
-    --workspace-gap:22px; --workspace-gutter:3.5vw; --workspace-padding:34px var(--workspace-gutter) 50px;
+    /* Stop gutter growth before the workspace hits its width cap. */
+    --workspace-gap:22px; --workspace-gutter:clamp(24px,3vw,36px); --workspace-padding:34px var(--workspace-gutter) 50px;
     --workspace-panel-padding:24px; --layout-stacked:0;
   }
   .page { width:100%; margin:0 auto; min-width:0; padding:var(--workspace-padding); }
