@@ -35,7 +35,7 @@ test('menu navigation and Back retain the actual header and order cards', async 
     expect(await card!.evaluate(node => node === document.querySelector('.rotation-seat'))).toBe(true);
     await expect(page.locator('.header-inner')).toHaveCSS('height', '44px');
     await expect(page.getByRole('navigation')).toBeHidden();
-    await expect(page.locator('.seat-state-compact')).toHaveText('Now · You');
+    await expect(page.locator('.rotation-seat.is-current.is-you')).toHaveAttribute('aria-label', /, current turn, you$/);
     await expect.poll(() => page.evaluate(() => (window as unknown as { shellSources: { closed: boolean }[] }).shellSources.filter(source => !source.closed).length)).toBe(path === '/host/settings' ? 2 : 1);
   }
   await page.goBack(); await expect(page).toHaveURL(isolatedApp.origin + '/host');

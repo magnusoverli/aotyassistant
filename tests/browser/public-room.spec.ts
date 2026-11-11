@@ -36,7 +36,7 @@ test('the display uses the shared listening order without numbers and retains it
     await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.locator('.room-topline, .room-next, .room-meter, .reveal-label')).toHaveCount(0);
     await expect(tv.getByText('Scan the QR code to join.', { exact: true })).toHaveCount(0);
-    await expect(tv.locator('.rotation-seat.is-current .seat-state:visible')).toHaveText('Current turn');
+    await expect(tv.locator('.rotation-seat.is-current')).toHaveAttribute('aria-label', 'Alex, current turn');
     await expect(tv.locator('.rotation-seat.is-next')).toHaveCount(0);
     expect((await tv.locator('.rotation-seat').boundingBox())!.width).toBeLessThan(240);
     await expect(tv.getByRole('button', { name: 'Menu', exact: true })).toBeVisible();
@@ -73,7 +73,7 @@ test('the display uses the shared listening order without numbers and retains it
       await tv.screenshot({ path: `test-results/display-airy-${width}x${height}.png`, fullPage: true });
       if (width! > 700) await fits(tv);
     }
-    await f.control('stop'); await expect(tv.locator('.rotation-seat.is-current .seat-state:visible')).toHaveText('Now');
+    await f.control('stop'); await expect(tv.locator('.rotation-seat.is-current .order-trace')).toBeHidden();
     await expect(tv.locator('.room-turn')).toBeHidden();
     await f.finish(); await expect(tv.locator('.room-turn')).toBeHidden();
     await expect(tv.locator('.rotation-seat.is-current strong')).toHaveText('Sam');

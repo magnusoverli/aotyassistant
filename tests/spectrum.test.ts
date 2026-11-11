@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { frequencyBins, SpectrumAnalyser } from '../src/spectrum-analysis.js';
 import { SpectrumBuffer, spectrumBins, type SpectrumPacket } from '../src/spectrum.js';
 import { SpectrumClock } from '../web/spectrum-clock.js';
+import { spectrumBandPosition, spectrumNeedleLevel } from '../web/spectrum-presentation.js';
 
 const tone = (hz: number, length = 2048, start = 0, amplitude = .8) => Float32Array.from({ length }, (_, i) => amplitude * Math.sin(2 * Math.PI * hz * (i + start) / 48000));
 
@@ -16,13 +17,41 @@ test('real frequency analysis distinguishes bass and treble, silence and anti-ph
   assert.ok(Math.max(...frequencyBins([tone(1000, 2048, 0, .08)], 48000)) < Math.max(...frequencyBins([mono], 48000)));
 });
 
-test('spectrum includes deep bass and upper treble through 13 kHz while excluding a 16 kHz tone', () => {
-  const bass = frequencyBins([tone(30)], 48000);
+test('spectrum includes 50 Hz bass and upper treble through 15 kHz while excluding a 16 kHz tone', () => {
+  const bass = frequencyBins([tone(50)], 48000);
   assert.equal(bass.indexOf(Math.max(...bass)), 0);
-  const treble = frequencyBins([tone(12500)], 48000);
+  const treble = frequencyBins([tone(14500)], 48000);
   assert.equal(treble.indexOf(Math.max(...treble)), spectrumBins - 1);
   assert.ok(Math.max(...bass) > 200 && Math.max(...treble) > 200);
   assert.deepEqual(frequencyBins([tone(16000)], 48000), Array(spectrumBins).fill(0));
+});
+
+test('a gentle treble lift gives equal-amplitude high frequencies more presence without raising the noise floor', () => {
+  // Exact FFT-bin tones avoid differences due to spectral leakage.
+  const peak = (hz: number, amplitude: number) => Math.max(...frequencyBins([tone(hz, 2048, 0, amplitude)], 48000));
+  const middle = peak(937.5, .03); const high = peak(12000, .03);
+  assert.ok(high > middle + 12 && high < middle + 25);
+  assert.equal(peak(12000, .0001), 0, 'Input below the original noise floor remains invisible.');
+});
+
+test('bass starts at the lower-left and treble meets at the upper-right on both perimeter paths', () => {
+  for (const [width, height, radius] of [[144, 64, 9.5], [90, 40, 5.5], [216, 88, 9.5]]) {
+    const horizontal = width! - 1 - 2 * radius!; const vertical = height! - 1 - 2 * radius!;
+    const perimeter = 2 * (horizontal + vertical) + 2 * Math.PI * radius!;
+    const treble = horizontal + Math.PI * radius! / 4;
+    const bass = treble + perimeter / 2;
+    assert.ok(Math.abs(spectrumBandPosition(bass, perimeter, treble)) < 1e-12);
+    assert.equal(spectrumBandPosition(treble, perimeter, treble), 1);
+    for (let step = 0; step <= 24; step++) {
+      const offset = perimeter / 2 * step / 24;
+      for (const direction of [-1, 1]) assert.ok(Math.abs(spectrumBandPosition(bass + direction * offset, perimeter, treble) - step / 24) < 1e-12);
+    }
+  }
+  const silent = spectrumNeedleLevel(0); const quiet = spectrumNeedleLevel(.2); const loud = spectrumNeedleLevel(1);
+  assert.ok(silent.opacity < .1 && silent.scale < .05);
+  assert.ok(silent.opacity < quiet.opacity && quiet.opacity < loud.opacity);
+  assert.ok(silent.scale < quiet.scale && quiet.scale < loud.scale);
+  assert.equal(loud.scale, 1);
 });
 
 test('spectrum timestamps follow sample positions across arbitrary packet boundaries and reset on seek', () => {

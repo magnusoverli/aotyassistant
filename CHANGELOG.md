@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.24] — 2026-11-11
+
+- Remove participant-card status subtitles, vertically center names and reduce card widths by about 20%, retaining accessible turn labels.
+- Show the spectrum only during playback, hide it when paused, stopped or offline, and make quiet needles shorter and fainter.
+- Analyse 50–15,000 Hz at 60 frames per second, sweeping from lower-left bass to upper-right treble along both sides of the card, with a gentle visual treble lift for more balanced response.
+- Give invitation QR codes a more distinctive Doom Room design: a sage scanning tile, dark forest frame, gold corner accents and softer locator shapes, retaining the clear four-module scanning margin.
+
 ## [2.0.23] — 2026-11-11
 
 - Analyse 30–13,000 Hz at 60 spectrum frames per second and animate the border at the screen’s refresh rate.

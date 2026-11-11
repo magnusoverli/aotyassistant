@@ -28,14 +28,19 @@ export function frequencyBins(channels: Float32Array[], sampleRate: number): num
     }
     for (let i = 1; i < power.length; i++) power[i] = power[i]! + (re[i]! ** 2 + im[i]! ** 2) / channels.length;
   }
-  const minHz = 30; const maxHz = Math.min(13000, sampleRate / 2);
+  const minHz = 50; const maxHz = Math.min(15000, sampleRate / 2);
   return Array.from({ length: spectrumBins }, (_, band) => {
     const low = Math.max(1, Math.floor(minHz * (maxHz / minHz) ** (band / spectrumBins) * size / sampleRate));
     const high = Math.min(power.length, Math.max(low + 1, Math.ceil(minHz * (maxHz / minHz) ** ((band + 1) / spectrumBins) * size / sampleRate)));
     let peak = 0;
     for (let bin = low; bin < high; bin++) peak = Math.max(peak, power[bin]!);
     const db = 20 * Math.log10(Math.max(1e-9, Math.sqrt(peak) * 4 / size));
-    return Math.round(Math.max(0, Math.min(1, (db + 65) / 65)) * 255);
+    // A gentle visual treble lift offsets music's bass-heavy energy distribution.
+    // Keep the original noise floor so this never lights a band with no usable input.
+    if (db <= -65) return 0;
+    const centerHz = minHz * (maxHz / minHz) ** ((band + .5) / spectrumBins);
+    const trebleLiftDb = 6 * Math.max(0, Math.min(1, Math.log(centerHz / 1000) / Math.log(maxHz / 1000)));
+    return Math.round(Math.max(0, Math.min(1, (db + trebleLiftDb + 65) / 65)) * 255);
   });
 }
 

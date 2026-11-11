@@ -1,18 +1,19 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 
-/** The current card keeps its spectrum border at rest and animates during playback. */
-async function expectCurrentTurn(pages: Page[], moving: boolean) {
+/** The spectrum is visible only during confirmed playback. */
+async function expectCurrentTurn(pages: Page[], playing: boolean) {
   for (const page of pages) {
     const card = page.locator('.rotation-seat.is-current');
     await expect(card).toHaveAttribute('aria-current', 'step');
     await expect(page.locator('.order-trace')).toHaveCount(1); await expect(card.locator('.order-trace')).toHaveCount(1);
-    await expect.poll(() => card.evaluate(node => node.getAnimations({ subtree: true })
-      .some(animation => animation.playState === 'running' && (animation as CSSAnimation).animationName === 'order-spectrum-breathe'))).toBe(moving);
+    await expect(card.locator('.order-trace')).toHaveAttribute('data-playing', String(playing));
+    if (playing) await expect(card.locator('.order-trace')).toBeVisible();
+    else await expect(card.locator('.order-trace')).toBeHidden();
   }
 }
 
-test('every route lights the current turn, dormant before playback, while paused, stopped and with the speaker unavailable, and moving while the song plays', async ({ page, browser, isolatedApp }) => {
+test('every route shows the spectrum only while playing, hiding it before playback, paused, stopped or unavailable', async ({ page, browser, isolatedApp }) => {
   test.setTimeout(60_000); // Six routes across six viewport sizes, plus live playback/reconnection checks.
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
@@ -63,17 +64,17 @@ test('every route lights the current turn, dormant before playback, while paused
         const nameOffsets = await current.locator('.rotation-seat').evaluateAll(rows => rows.map(row =>
           row.querySelector('strong')!.getBoundingClientRect().top - row.getBoundingClientRect().top));
         for (const offset of nameOffsets) expect(offset).toBeCloseTo(nameOffsets[0]!, 2);
-        expect(await current.locator('.rotation-seat.is-next .seat-state:visible').evaluate(node => getComputedStyle(node, '::before').content)).toBe('none');
+         await expect(current.locator('.seat-state')).toHaveCount(0);
         await expect(current.locator('.rotation-seat').first()).toBeInViewport();
         const seat = current.locator('.rotation-seat').first();
         await expect(seat).toHaveCSS('padding-left', width < 1100 ? '4px' : display ? '7.5px' : '6px');
-        expect((await seat.boundingBox())!.width).toBeLessThanOrEqual(width < 1100 ? current === page ? 160 : 140 : display ? 210 : 180);
+         expect((await seat.boundingBox())!.width).toBeLessThanOrEqual(width < 1100 ? 89.6 : 144);
+         const cardBox = (await seat.boundingBox())!; const nameBox = (await seat.locator('strong').boundingBox())!;
+         expect(Math.abs(nameBox.y + nameBox.height / 2 - cardBox.y - cardBox.height / 2)).toBeLessThan(1);
         if (width < 1100) {
           await expect(seat.locator('.avatar')).toBeHidden();
           await expect(seat.locator('strong')).toHaveCSS('grid-column-start', '1');
-          await expect(seat.locator('.seat-state-compact')).toHaveCSS('grid-column-start', '1');
           await expect(current.locator('.rotation-seat').nth(1)).toBeInViewport({ ratio: 1 });
-          await expect(seat.locator('.seat-state:visible')).toHaveText('Now');
         } else {
           await expect(seat.locator('.avatar')).toHaveCSS('grid-column-start', '1');
           await expect(seat.locator('strong')).toHaveCSS('grid-column-start', '2');
@@ -99,7 +100,7 @@ test('every route lights the current turn, dormant before playback, while paused
       }
     }
     await expect(participant.locator('.rotation-seat.is-you strong')).toHaveText('My seat');
-    await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('You');
+    await expect(participant.locator('.rotation-seat.is-you')).toHaveAttribute('aria-label', 'My seat, you');
     for (const current of pages.slice(0, -1)) await expect(current.locator('.rotation-seat.is-you')).toHaveCount(0);
     const state = isolatedApp.engine.view({ kind: 'participant', credential: first });
     await expectCurrentTurn(pages, false);
@@ -115,13 +116,14 @@ test('every route lights the current turn, dormant before playback, while paused
       await page.locator('.listening-order').screenshot({ path: `test-results/listening-order-playing-${width}.png` });
     }
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await expectCurrentTurn([page], false);
+    await expectCurrentTurn([page], true);
+    await expect(page.locator('.order-trace')).toHaveAttribute('data-reactive', 'false');
     await expect(page.locator('.rotation-seat.is-current')).toHaveAttribute('aria-current', 'step');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await expectCurrentTurn([page], true);
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
-    await expectCurrentTurn(pages.slice(1, -1), true); // An offline page keeps the last state it was told.
+    await expectCurrentTurn(pages.slice(1, -1), false);
     await guest.setOffline(false); await expectCurrentTurn(pages, true);
     Object.defineProperty(isolatedApp.engine.adapter, 'connected', { configurable: true, value: false }); isolatedApp.engine.emit('change', 'output');
     await expectCurrentTurn(pages, false);
@@ -142,7 +144,7 @@ test('every route lights the current turn, dormant before playback, while paused
       await expect(current.locator('.rotation-seat:not(.is-current):not(.is-next) .seat-state:visible')).toHaveCount(0);
     }
     await expectCurrentTurn(pages, false);
-    await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('Next · You');
+    await expect(participant.locator('.rotation-seat.is-you')).toHaveAttribute('aria-label', 'My seat, up next, you');
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
     await guest.setOffline(false);
@@ -150,7 +152,7 @@ test('every route lights the current turn, dormant before playback, while paused
   } finally { await guest.close(); await member.close(); }
 });
 
-test('card names, avatars and controls stay in their slots as status labels appear and disappear', async ({ page, browser, isolatedApp }) => {
+test('centered card names and avatars stay in their slots as turns change', async ({ page, browser, isolatedApp }) => {
   await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const member = await browser.newContext({ baseURL: isolatedApp.origin });
   try {
@@ -175,14 +177,14 @@ test('card names, avatars and controls stay in their slots as status labels appe
         for (const card of await current.locator('.rotation-seat').all()) {
           const box = (await card.boundingBox())!;
           if (width < 1100) {
-            expect(box.width).toBeLessThanOrEqual(112);
+             expect(box.width).toBeLessThanOrEqual(89.6);
             expect(box.height).toBe(40);
             await expect(card.locator('strong')).toHaveCSS('text-align', 'center');
-            await expect(card.locator('.seat-state-compact')).toHaveCSS('text-align', 'center');
+             await expect(card.locator('.seat-state')).toHaveCount(0);
             await expect(card).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
             await expect(card).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
           } else {
-            expect(box.width).toBe(180);
+             expect(box.width).toBe(144);
             await expect(card.locator('strong')).toHaveCSS('text-align', 'start');
           }
         }
@@ -249,8 +251,10 @@ test('mobile keeps Now and Next in the first slots across turns, scrolling and r
 });
 
 test('the spectrum follows the actual rounded card with bounded inward needles at desktop and mobile sizes', async ({ page, isolatedApp }) => {
-  await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
+  const credential = await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectCurrentTurn([page], false);
+  await isolatedApp.engine.play(credential, isolatedApp.engine.view({ kind: 'host' }).turnId!, null, 'demo:aurora');
+  await expectCurrentTurn([page], true);
   const seat = page.locator('.rotation-seat.is-current');
   await expect(page.locator('.order-trace')).toHaveCount(1);
   for (const width of [1440, 390, 320]) {
@@ -273,6 +277,8 @@ test('the spectrum follows the actual rounded card with bounded inward needles a
     await expect(seat.locator('.order-trace')).toHaveCSS('overflow', 'hidden');
     await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('stroke-width', '1.6px');
     await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('stroke-linecap', 'butt');
+    await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('opacity', '0.08');
+    await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('animation-name', 'none');
     await seat.screenshot({ path: `test-results/order-spectrum-${width}.png` });
     expect(await seat.boundingBox()).toEqual(bounds);
   }

@@ -14,7 +14,7 @@
     --display-name:clamp(1.375rem,1rem + 1.5vmin,3.5rem);
     --seat-inset:.5rem;
     --display-avatar:calc(var(--order-qr) - .5rem - 2 * var(--seat-inset) - 2px);
-    --seat-min:clamp(9rem,11.25vw,22.5rem); --more-width:calc(7 * var(--display-text));
+    --seat-min:clamp(7.2rem,9vw,18rem); --more-width:calc(7 * var(--display-text));
     --order-qr:clamp(5.5rem,8.25vmin,11.9rem);
     --stream-height:0px;
     height:100vh; height:100dvh; min-height:0; overflow:hidden;
@@ -51,14 +51,10 @@
   body[data-view='display'] .rotation-seat {
     flex:0 1 calc(1.25 * var(--seat-min));
     min-height:calc(var(--order-qr) - .5rem); padding:var(--seat-inset); border-radius:.625rem; align-content:center;
-    grid-template-columns:var(--display-avatar) minmax(0,1fr); grid-template-rows:auto auto; column-gap:.75rem; row-gap:.125rem;
+    grid-template-columns:var(--display-avatar) minmax(0,1fr); grid-template-rows:1fr; column-gap:.75rem;
   }
   body[data-view='display'] .rotation-seat .avatar { width:var(--display-avatar); height:var(--display-avatar); font-size:calc(var(--display-avatar) * .45); }
   body[data-view='display'] .rotation-seat strong { font-size:var(--display-name); line-height:1.2; }
-  body[data-view='display'] .rotation-seat:not(.is-current,.is-next) strong { grid-row:1 / 3; }
-  body[data-view='display'] .seat-state:not(.seat-state-compact) { display:none; }
-  body[data-view='display'] .seat-state-compact { display:block; font-size:calc(var(--display-text) * .95); line-height:1.2; letter-spacing:.08em; overflow:hidden; text-overflow:ellipsis; }
-  body[data-view='display'] .seat-state-compact:empty { display:none; }
   .rotation-more { flex:0 0 var(--more-width); align-self:center; color:var(--muted); font-size:var(--display-text); font-weight:600; text-align:center; white-space:nowrap; }
   .order-measure { position:absolute; top:0; left:0; visibility:hidden; pointer-events:none; }
   .order-measure[hidden] { display:none; }
@@ -205,10 +201,10 @@
     body[data-view='display'] {
       --gutter:.75rem; --foot:1.25rem; --pair-gap:1rem; --order-qr:3.25rem;
       --display-title:1.75rem; --display-artist:1.125rem;
-      --display-name:1rem; --display-text:.75rem; --seat-min:6rem; --more-width:3.5rem;
+      --display-name:1rem; --display-text:.75rem; --seat-min:4.8rem; --more-width:3.5rem;
     }
     body[data-view='display'] .rotation-seat { grid-template-columns:minmax(0,1fr); padding:.25rem; }
     body[data-view='display'] .rotation-seat .avatar { display:none; }
-    body[data-view='display'] .rotation-seat :is(strong,.seat-state) { grid-column:1; }
+    body[data-view='display'] .rotation-seat strong { grid-column:1; }
   }
 }

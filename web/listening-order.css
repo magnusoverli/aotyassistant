@@ -11,29 +11,23 @@
   .order-empty { flex:1; min-width:0; margin:0; font-size:12px; }
   .rotation-list { --order-gap:26px; display:flex; flex:1; min-width:0; gap:var(--order-gap); list-style:none; margin:-2px; padding:2px; overflow-x:auto; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
   .rotation-list[hidden],.order-bar > [hidden] { display:none; }
-  .rotation-seat { position:relative; flex:0 0 180px; display:grid; grid-template-columns:32px minmax(0,1fr); grid-template-rows:18px 16px; align-items:center; column-gap:8px; row-gap:4px; min-width:0; min-height:64px; padding:10px 6px; border:1px solid var(--line); border-radius:10px; background:#18251b; }
+  .rotation-seat { position:relative; flex:0 0 144px; display:grid; grid-template-columns:32px minmax(0,1fr); grid-template-rows:1fr; align-items:center; column-gap:8px; min-width:0; min-height:64px; padding:10px 6px; border:1px solid var(--line); border-radius:10px; background:#18251b; }
   .rotation-list > .rotation-seat:not(:last-child)::after { content:''; position:absolute; top:50%; right:calc(-1 * var(--order-gap) - 1px); width:var(--order-gap); height:12px; transform:translateY(-50%); background:linear-gradient(90deg,#83937366,#c6b58bcc); mask:url('./order-arrow.svg') center / 18px 12px no-repeat; pointer-events:none; }
-  .rotation-seat .avatar { grid-column:1; grid-row:1 / 3; width:32px; height:32px; font-size:14px; }
+  .rotation-seat .avatar { grid-column:1; grid-row:1; width:32px; height:32px; font-size:14px; }
   .rotation-seat strong { grid-column:2; grid-row:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; line-height:18px; }
-  .seat-state { grid-column:2; grid-row:2; font-size:9px; line-height:16px; color:var(--muted); font-weight:400; white-space:nowrap; text-transform:uppercase; letter-spacing:.13em; }
-  .rotation-seat .seat-state:empty { display:none; }
   .rotation-seat:not(.is-current):not(.is-next):not(.is-you) { opacity:.55; }
   .rotation-seat.is-you { border-color:var(--accent); }
   .rotation-seat.is-next { background:#2c2b20; border-color:var(--accent); opacity:.85; }
-  .rotation-seat.is-next .seat-state { color:var(--accent); }
-  /* The current card keeps a quiet edge at rest and a narrow spectrum while playing. */
+  /* The card marks the turn; the spectrum appears only during confirmed playback. */
   .rotation-seat.is-current { isolation:isolate; background:#1f2c1c; border-color:#829b6e; }
-  .rotation-seat.is-current .seat-state { color:#c9e8b1; }
   .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:hidden; border-radius:inherit; pointer-events:none; }
-  .order-spectrum-outline { stroke:#a5caaa; stroke-width:.6px; opacity:.35; }
-  .order-spectrum-bar { stroke-width:1.6px; stroke-linecap:butt; opacity:.65; transform:scaleY(.3); transform-origin:0 0; }
-  .listening-order .rotation-seat.is-current .order-trace { display:block; }
-  .listening-order[data-playback='playing'] .order-trace:not([data-reactive='true']) .order-spectrum-bar { animation:order-spectrum-breathe 3.5s ease-in-out infinite; }
-  @keyframes order-spectrum-breathe { 0%,100% { transform:scaleY(.18); } 50% { transform:scaleY(.48); } }
+  .order-spectrum-outline { stroke:#a5caaa; stroke-width:.6px; opacity:.15; }
+  .order-spectrum-bar { stroke-width:1.6px; stroke-linecap:butt; opacity:.08; transform:scaleY(.04); transform-origin:0 0; }
+  .listening-order .rotation-seat.is-current .order-trace[data-playing='true'] { display:block; }
   /* Up to 19.5px inward, clipped at the rounded border. Keep names above the needles. */
-  .rotation-seat > :is(strong,.avatar,.seat-state) { position:relative; z-index:1; }
+  .rotation-seat > :is(strong,.avatar) { position:relative; z-index:1; }
   @media(prefers-reduced-motion:reduce) {
-    .order-trace .order-spectrum-bar { animation:none !important; transform:scaleY(.2) !important; opacity:.45; }
+    .order-trace .order-spectrum-bar { transform:scaleY(.2) !important; opacity:.12 !important; }
   }
   /* Touch: swipes scroll the order; a press-and-hold picks a card up (see order-drag.ts). */
   .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:pan-x pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
@@ -46,7 +40,6 @@
   .order-drag-preview.is-invalid-drop { opacity:.5; }
   .order-drag-preview .order-trace { display:none; }
   .rotation-seat.order-drag-preview { background:#18251b; }
-  .seat-state-compact { display:none; }
   @media(max-width:1099px) {
     /* The room display owns its presentation rules in display.css. */
     :where(body:not([data-view='display'])) .has-display-qr .order-bar { padding-right:60px; }
@@ -54,10 +47,9 @@
     :where(body:not([data-view='display'])) .order-bar { flex-wrap:wrap; gap:4px; min-height:53px; padding-block:4px; }
     :where(body:not([data-view='display'])) .rotation-list { --order-gap:18px; flex-basis:100%; }
     :where(body:not([data-view='display'])) .rotation-list > .rotation-seat:not(:last-child)::after { mask-size:12px 10px; }
-    :where(body:not([data-view='display'])) .rotation-seat { flex-basis:clamp(96px,calc((100% - 2 * var(--order-gap)) / 3),112px); grid-template-columns:minmax(0,1fr); min-height:44px; padding:3px 4px; column-gap:6px; row-gap:0; border-radius:6px; }
-    :where(body:not([data-view='display'])) .rotation-seat .avatar,:where(body:not([data-view='display'])) .seat-state:not(.seat-state-compact) { display:none; }
+    :where(body:not([data-view='display'])) .rotation-seat { flex-basis:clamp(76.8px,calc((100% - 2 * var(--order-gap)) / 3 * .8),89.6px); grid-template-columns:minmax(0,1fr); min-height:44px; padding:3px 4px; column-gap:6px; border-radius:6px; }
+    :where(body:not([data-view='display'])) .rotation-seat .avatar { display:none; }
     :where(body:not([data-view='display'])) .rotation-seat strong { grid-column:1; font-size:13px; text-align:center; }
-    :where(body:not([data-view='display'])) .seat-state-compact { display:block; grid-column:1; font-size:9px; text-align:center; }
     :where(body:not([data-view='display'])) .order-status { flex-basis:100%; font-size:13px; }
   }
 }

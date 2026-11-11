@@ -9,8 +9,8 @@ test('join invitations produce a scalable self-contained image with a quiet zone
   assert.ok(image.startsWith('data:image/svg+xml;charset=utf-8,'));
   const svg = decodeURIComponent(image.slice(image.indexOf(',') + 1));
   assert.match(svg, /<svg[^>]+viewBox="0 0 \d+ \d+"/);
-  assert.match(svg, /fill="#faf7ef"/);
-  assert.match(svg, /fill="#173c2c"/);
+  assert.match(svg, /fill="#cddbb5"/);
+  assert.match(svg, /fill="#18241b"/);
   assert.doesNotMatch(svg, /<(?:script|image)|href=/);
   assert.notEqual(await joinQrImage('https://room.example/join?invitation=other'), image);
 });
@@ -24,12 +24,12 @@ test('styled QR preserves every encoded module and four clear modules around sho
     const pixel = (x: number, y: number) => [...data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)];
     for (let row = 0; row < modules.size; row++) for (let col = 0; col < modules.size; col++) {
       const actual = pixel((col + 5) * scale + scale / 2, (row + 5) * scale + scale / 2);
-      assert.deepEqual(actual, modules.get(row, col) ? [23, 60, 44] : [250, 247, 239], `Module ${row},${col}`);
+      assert.deepEqual(actual, modules.get(row, col) ? [24, 36, 27] : [205, 219, 181], `Module ${row},${col}`);
     }
     // Inspect every pixel of the quiet zone, excluding only the outer decorative module.
     for (let y = scale; y < (side - 1) * scale; y++) for (let x = scale; x < (side - 1) * scale; x++) {
       if (x >= 5 * scale && x < (side - 5) * scale && y >= 5 * scale && y < (side - 5) * scale) continue;
-      assert.deepEqual(pixel(x, y), [250, 247, 239], `Quiet zone pixel ${x},${y}`);
+      assert.deepEqual(pixel(x, y), [205, 219, 181], `Quiet zone pixel ${x},${y}`);
     }
   }
 });

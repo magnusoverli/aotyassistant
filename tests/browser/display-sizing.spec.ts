@@ -22,7 +22,7 @@ for (const [width, height] of [[960, 540], [1024, 768], [1280, 720], [1366, 768]
     try {
       const page = await context.newPage(); await page.goto(isolatedApp.origin + '/display');
       await expect(page.locator('.rotation-more')).toBeVisible();
-      expect(await fontSize(page, '.seat-state-compact')).toBeGreaterThanOrEqual(16);
+      await expect(page.locator('.seat-state')).toHaveCount(0);
       expect(await fontSize(page, '.rotation-seat strong')).toBeGreaterThanOrEqual(22);
       expect(await page.locator('html').evaluate(node => node.style.fontSize)).toBe('');
       await fits(page);
@@ -153,7 +153,7 @@ test('small-screen display retains Now and Next and the existing stacked portrai
     await expect(page.locator('.order-qr')).toBeVisible();
     await expect(page.locator('.rotation-seat.is-current')).toBeInViewport({ ratio: 1 });
     await expect(page.locator('.rotation-seat.is-next')).toBeInViewport({ ratio: 1 });
-    expect(await fontSize(page, '.seat-state-compact')).toBeGreaterThanOrEqual(12);
+    await expect(page.locator('.seat-state')).toHaveCount(0);
     if (width! < height!) {
       const picture = (await page.locator('.room-visual').boundingBox())!;
       const details = (await page.locator('.track-info').boundingBox())!;

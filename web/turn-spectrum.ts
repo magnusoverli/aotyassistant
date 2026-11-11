@@ -1,4 +1,5 @@
 import { RoomSpectrum } from './room-spectrum';
+import { spectrumBandPosition, spectrumNeedleLevel } from './spectrum-presentation';
 
 const namespace = 'http://www.w3.org/2000/svg';
 const needleSpacing = 3;
@@ -13,6 +14,7 @@ export class TurnSpectrum {
   readonly element = svg('svg', { class: 'order-trace', 'aria-hidden': 'true', focusable: 'false' });
   private outline = svg('rect', { class: 'order-spectrum-outline', fill: 'none' });
   private bars: SVGLineElement[] = [];
+  private positions: number[] = [];
   private feed = new RoomSpectrum();
   private reduced = matchMedia('(prefers-reduced-motion: reduce)');
   private observer: ResizeObserver;
@@ -30,6 +32,7 @@ export class TurnSpectrum {
     window.addEventListener('pageshow', this.motion);
   }
   update(roomId: string | null, participantId: string | null, playing: boolean) {
+    if (this.roomId !== roomId || this.participantId !== participantId) this.resetBars();
     this.roomId = roomId; this.participantId = participantId; this.playing = playing; this.motion();
   }
   private layout() {
@@ -40,19 +43,24 @@ export class TurnSpectrum {
     const radius = Math.max(2, parseFloat(getComputedStyle(card).borderTopLeftRadius) - .5);
     this.element.setAttribute('viewBox', `0 0 ${width} ${height}`);
     for (const [key, value] of Object.entries({ x: .5, y: .5, width: width - 1, height: height - 1, rx: radius })) this.outline.setAttribute(key, String(value));
-    this.bars = []; this.element.replaceChildren(this.outline);
-    const points: { x: number; y: number; angle: number }[] = [];
+    this.bars = []; this.positions = []; this.element.replaceChildren(this.outline);
+    const points: { x: number; y: number; angle: number; distance: number }[] = [];
+    let distance = 0;
     const horizontal = width - 1 - 2 * radius; const vertical = height - 1 - 2 * radius;
     const straight = (length: number, x: number, y: number, dx: number, dy: number, angle: number) => {
       const count = Math.max(1, Math.round(length / needleSpacing));
-      for (let i = 0; i < count; i++) points.push({ x: x + dx * length * i / count, y: y + dy * length * i / count, angle });
+      for (let i = 0; i < count; i++) points.push({ x: x + dx * length * i / count, y: y + dy * length * i / count, angle, distance: distance + length * i / count });
+      distance += length;
     };
     const corner = (cx: number, cy: number, from: number) => {
-      const count = Math.max(2, Math.round(radius * Math.PI / (2 * needleSpacing)));
+      // Include each corner midpoint so the bass and treble endpoints have their own needle.
+      const count = Math.max(2, 2 * Math.round(radius * Math.PI / (4 * needleSpacing)));
+      const length = radius * Math.PI / 2;
       for (let i = 0; i < count; i++) {
         const angle = from + i / count * 90; const radians = angle * Math.PI / 180;
-        points.push({ x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians), angle: angle + 90 });
+        points.push({ x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians), angle: angle + 90, distance: distance + length * i / count });
       }
+      distance += length;
     };
     straight(horizontal, radius + .5, .5, 1, 0, 0); corner(width - radius - .5, radius + .5, -90);
     straight(vertical, width - .5, radius + .5, 0, 1, 90); corner(width - radius - .5, height - radius - .5, 0);
@@ -60,33 +68,38 @@ export class TurnSpectrum {
     straight(vertical, .5, height - radius - .5, 0, -1, 270); corner(radius + .5, radius + .5, 180);
     for (let i = 0; i < points.length; i++) {
       const point = points[i]!;
+      const position = spectrumBandPosition(point.distance, distance, horizontal + radius * Math.PI / 4);
       const group = svg('g', { transform: `translate(${point.x} ${point.y}) rotate(${point.angle})` });
       const bar = svg('line', { class: 'order-spectrum-bar', x1: '0', x2: '0', y1: '0', y2: height < 50 ? '10.5' : '19.5' });
       bar.style.stroke = `hsl(${(150 + i / points.length * 300) % 360} 65% 72%)`;
-      bar.style.animationDelay = `${-i * .137}s`; bar.style.animationDuration = `${3.2 + .7 * Math.sin(i * 1.7)}s`;
-      group.append(bar); this.element.append(group); this.bars.push(bar);
+      group.append(bar); this.element.append(group); this.bars.push(bar); this.positions.push(position);
     }
   }
   private motion = () => {
+    this.element.dataset.playing = String(this.playing && Boolean(this.participantId));
     const running = this.playing && this.participantId && !this.reduced.matches && !document.hidden;
     if (running) { this.feed.start(); if (!this.frame) this.frame = requestAnimationFrame(this.draw); }
     else {
-      this.feed.stop(); cancelAnimationFrame(this.frame); this.frame = 0; this.element.dataset.reactive = 'false';
-      for (const bar of this.bars) bar.style.removeProperty('transform');
+      this.feed.stop(); cancelAnimationFrame(this.frame); this.frame = 0; this.resetBars();
     }
   };
+  private resetBars() {
+    this.element.dataset.reactive = 'false';
+    for (const bar of this.bars) { bar.style.removeProperty('transform'); bar.style.removeProperty('opacity'); }
+  }
   private draw = (now: number) => {
     this.frame = requestAnimationFrame(this.draw);
     // Interpolate the 60 Hz analysis on each display refresh instead of limiting motion to 30 fps.
     const bins = this.feed.clock.sample(now, this.roomId, this.participantId);
-    this.element.dataset.reactive = String(Boolean(bins));
-    if (!bins) return;
+    if (!bins) { if (this.element.dataset.reactive === 'true') this.resetBars(); return; }
+    this.element.dataset.reactive = 'true';
     for (let i = 0; i < this.bars.length; i++) {
-      // Mirror low-to-high frequencies around the perimeter, keeping both halves coherent.
-      const position = Math.abs(2 * i / this.bars.length - 1) * (bins.length - 1);
+      const position = this.positions[i]! * (bins.length - 1);
       const lo = Math.floor(position); const mix = position - lo;
       const level = bins[lo]! * (1 - mix) + (bins[Math.min(bins.length - 1, lo + 1)] ?? 0) * mix;
-      this.bars[i]!.style.transform = `scaleY(${.12 + .88 * level ** 1.5})`;
+      const appearance = spectrumNeedleLevel(level);
+      this.bars[i]!.style.transform = `scaleY(${appearance.scale})`;
+      this.bars[i]!.style.opacity = String(appearance.opacity);
     }
   };
 }

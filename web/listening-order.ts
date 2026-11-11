@@ -191,6 +191,7 @@ export class ListeningOrder {
         const next = !current && person.id === view?.next?.id;
         const row = v.el('row', 'li', undefined, `rotation-seat${current ? ' is-current' : ''}${me ? ' is-you' : ''}${next ? ' is-next' : ''}`);
         attr(row, 'data-person-id', person.id); attr(row, 'aria-current', current ? 'step' : undefined);
+        attr(row, 'aria-label', `${person.nickname}${current ? ', current turn' : next ? ', up next' : ''}${me ? ', you' : ''}`);
         attr(row, 'data-focus-key', `person-${person.id}`); attr(row, 'tabindex', this.management ? '0' : undefined);
         attr(row, 'aria-roledescription', this.management ? 'draggable participant' : undefined);
         attr(row, 'aria-describedby', this.management ? this.help.id : undefined);
@@ -198,9 +199,7 @@ export class ListeningOrder {
         const image = v.get('avatar', () => ({ key: '', node: avatar(person) }));
         const imageKey = JSON.stringify(person); if (image.key !== imageKey) { image.key = imageKey; image.node = avatar(person); }
         // The light sits first, behind the avatar and name; it is kept, mid-motion, across updates.
-        const content: Node[] = [...(current ? [this.spectrum.element] : []), image.node, name,
-          v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : '', 'seat-state'),
-          v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : '', 'seat-state seat-state-compact')];
+        const content: Node[] = [...(current ? [this.spectrum.element] : []), image.node, name];
         children(row, ...content);
         return row;
       }), ...(hidden ? [this.more] : []));
