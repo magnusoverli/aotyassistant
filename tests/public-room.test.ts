@@ -32,7 +32,7 @@ test('every display state writes its words into the same title and hint places',
   const ingrid = { id: 'ingrid', nickname: 'Ingrid' };
   assert.deepEqual(publicStageText(undefined, true), { title: 'Doom Room', hint: 'Connecting to the room…' });
   assert.deepEqual(publicStageText(view, true), { title: 'Nothing playing.', hint: 'Scan the QR code to join the Doom Room.' });
-  assert.deepEqual(publicStageText({ ...view, current: ingrid }, true), { title: 'Nothing playing.', hint: 'Waiting for the next selection.' });
+  assert.deepEqual(publicStageText({ ...view, current: ingrid }, true), { title: 'Nothing playing.', hint: '' });
   const playing = { ...view, current: ingrid, progress: { id: 'playback', status: 'playing' as const, fraction: .3 } };
   assert.deepEqual(publicStageText({ ...playing, nowPlaying: { revealed: false } }, true), { title: 'Track details hidden.', hint: '' });
   const track = { id: 'track', title: 'Northern Lights', artist: 'The Paper Satellites', album: 'After the Winter', duration: 150 };

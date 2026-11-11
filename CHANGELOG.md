@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.18] — 2026-11-11
+
+- Keep the participant seek handle visible as a small dot, enlarging it when the progress bar is hovered, focused or dragged.
+- Narrow the landscape display's centred track-details column to 70% of its previous width, with equal gaps on either side of the artwork between the screen edge and track details.
+- Remove the idle display's redundant waiting-for-selection text and move “Nothing playing.” to the bottom of the details column.
+- Use only the first letter of each participant's name in avatars and enlarge the letter for clearer recognition.
+
 ## [2.0.17] — 2026-11-11
 
 - Make the room display's listening order slightly shorter and reduce participant-card width targets to 75% of their previous size.

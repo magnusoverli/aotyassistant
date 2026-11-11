@@ -16,8 +16,7 @@ export function publicPlaybackState(view: View, online: boolean) {
   return view.progress?.status === 'playing' || view.progress?.status === 'paused' ? view.progress.status : 'idle';
 }
 
-/** The stage's title and hint line. Every state writes into the same places on the screen:
- * the title where a song's title goes, the hint where its artist goes. */
+/** Shared title and optional hint for the persistent display stage. */
 export function publicStageText(view: View | undefined, online: boolean): { title: string; hint: string } {
   if (!view) return { title: productName, hint: 'Connecting to the room…' };
   const state = publicPlaybackState(view, online);
@@ -26,7 +25,7 @@ export function publicStageText(view: View | undefined, online: boolean): { titl
     return { title: track?.title ?? 'Track details hidden.', hint: '' };
   }
   if (state === 'unavailable') return { title: 'Playback unavailable.', hint: online ? 'Waiting for a reliable playback update.' : 'Reconnecting to the room…' };
-  return { title: 'Nothing playing.', hint: view.current ? 'Waiting for the next selection.' : 'Scan the QR code to join the Doom Room.' };
+  return { title: 'Nothing playing.', hint: view.current ? '' : 'Scan the QR code to join the Doom Room.' };
 }
 
 export function publicStreamDetails(view: View, online: boolean) {

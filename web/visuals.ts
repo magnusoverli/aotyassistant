@@ -3,9 +3,9 @@ import { el } from './dom';
 
 export function avatar(person: Person | null | undefined, size = '', variant = '') {
   const value = person?.nickname ?? '?';
-  const initials = value.trim().split(/\s+/u).map(word => Array.from(word)[0] ?? '').slice(0, 2).join('').toLocaleUpperCase();
+  const initial = Array.from(value.trim().toLocaleUpperCase())[0] ?? '?';
   let hash = 0; for (const char of value) hash = ((hash << 5) - hash + char.codePointAt(0)!) | 0;
-  const a = el('span', initials, `avatar avatar-${Math.abs(hash % 5)} ${size} ${variant}`);
+  const a = el('span', initial, `avatar avatar-${Math.abs(hash % 5)} ${size} ${variant}`);
   a.setAttribute('aria-hidden', 'true'); return a;
 }
 

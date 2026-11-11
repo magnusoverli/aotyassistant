@@ -4,10 +4,10 @@
   .playback-progress .progress-rail progress[hidden] { display:none; }
   .auto-reveal-marker { position:absolute; top:50%; width:2px; height:10px; transform:translate(-50%,-50%); border-radius:1px; background:var(--text); opacity:.55; }
   .auto-reveal-marker[hidden] { display:none; }
-  /* Drag to move within your song (seek-bar.ts). At rest the bar looks as it always has; pointing
-     at it, focusing it or dragging thickens it and shows a handle. The hit area is taller than the bar. */
+  /* Drag to move within your song (seek-bar.ts). A small handle stays visible at rest;
+     hovering the rail, focusing it or dragging enlarges it. The hit area is taller than the bar. */
   .playback-progress .progress-rail progress { transition:transform .12s ease; }
-  .playback-progress.is-seekable:is(:hover,:focus-within) .progress-rail progress,
+  .playback-progress.is-seekable .progress-rail:is(:hover,:focus-within) progress,
   .playback-progress[data-seeking] .progress-rail progress { transform:scaleY(1.67); }
   .playback-progress .seek-input {
     --thumb:1rem;
@@ -23,15 +23,15 @@
   .playback-progress .seek-input::-moz-range-progress { background:transparent; }
   .playback-progress .seek-input::-webkit-slider-thumb {
     -webkit-appearance:none; appearance:none; width:var(--thumb); height:var(--thumb); margin-top:calc((2.25rem - var(--thumb)) / 2);
-    border:2px solid #101a13; border-radius:50%; background:var(--accent); box-shadow:0 1px 4px #0009; transform:scale(0); transition:transform .12s ease;
+    border:2px solid #101a13; border-radius:50%; background:var(--accent); box-shadow:0 1px 4px #0009; transform:scale(.5); transition:transform .12s ease;
   }
   .playback-progress .seek-input::-moz-range-thumb {
     width:var(--thumb); height:var(--thumb); border:2px solid #101a13; border-radius:50%; background:var(--accent);
-    box-shadow:0 1px 4px #0009; transform:scale(0); transition:transform .12s ease;
+    box-shadow:0 1px 4px #0009; transform:scale(.5); transition:transform .12s ease;
   }
-  .playback-progress.is-seekable:is(:hover,:focus-within) .seek-input::-webkit-slider-thumb,
+  .playback-progress.is-seekable .progress-rail:is(:hover,:focus-within) .seek-input::-webkit-slider-thumb,
   .playback-progress[data-seeking] .seek-input::-webkit-slider-thumb { transform:scale(1); }
-  .playback-progress.is-seekable:is(:hover,:focus-within) .seek-input::-moz-range-thumb,
+  .playback-progress.is-seekable .progress-rail:is(:hover,:focus-within) .seek-input::-moz-range-thumb,
   .playback-progress[data-seeking] .seek-input::-moz-range-thumb { transform:scale(1); }
   .playback-progress .seek-input:focus-visible::-webkit-slider-thumb { box-shadow:0 0 0 4px #e9bd7966; }
   .playback-progress .seek-input:focus-visible::-moz-range-thumb { box-shadow:0 0 0 4px #e9bd7966; }

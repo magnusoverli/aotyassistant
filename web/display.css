@@ -52,7 +52,7 @@
     min-height:calc(var(--order-qr) - .5rem); padding:.375rem .5rem; border-radius:.625rem;
     grid-template-columns:var(--display-avatar) minmax(0,1fr); grid-template-rows:auto auto; column-gap:.75rem; row-gap:.125rem;
   }
-  body[data-view='display'] .rotation-seat .avatar { width:var(--display-avatar); height:var(--display-avatar); font-size:calc(var(--display-avatar) * .36); }
+  body[data-view='display'] .rotation-seat .avatar { width:var(--display-avatar); height:var(--display-avatar); font-size:calc(var(--display-avatar) * .45); }
   body[data-view='display'] .rotation-seat strong { font-size:var(--display-name); line-height:1.2; }
   body[data-view='display'] .rotation-seat:not(.is-current,.is-next) strong { grid-row:1 / 3; }
   body[data-view='display'] .seat-state:not(.seat-state-compact) { display:none; }
@@ -94,16 +94,17 @@
   }
   .now-playing { display:grid; align-items:end; column-gap:var(--pair-gap); grid-template-columns:min(var(--art),calc((100% - var(--pair-gap)) * .44)) minmax(0,1fr); }
   .room-visual { position:relative; isolation:isolate; width:100%; container-type:inline-size; }
-  /* Equal side columns centre the details on the screen. Artwork sits against the
-     left of that column; the matching space on the right also clears the side QR. */
+  /* Equal side columns keep the narrower details centred. Matching the column gap
+     to the page gutter centres artwork between the actual screen edge and details. */
   @media(min-width:43.75em) and (orientation:landscape) {
     .room-listening { width:100%; }
     .now-playing {
+      column-gap:var(--gutter);
       grid-template-columns:minmax(0,1fr)
-        min(calc(24 * var(--display-title)),max(0px,calc(50% - var(--pair-gap))),max(0px,calc(100% - 2 * var(--clearance))))
+        calc(.7 * min(24 * var(--display-title),max(0px,50% - var(--pair-gap)),max(0px,100% - 2 * var(--clearance))))
         minmax(0,1fr);
     }
-    .room-visual { width:min(100%,var(--art)); justify-self:end; }
+    .room-visual { width:min(100%,var(--art)); justify-self:center; }
   }
   .room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; pointer-events:none; }
   @keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }
@@ -141,8 +142,9 @@
   .room-stream-details[hidden] { visibility:hidden; }
   .display-page[data-stage='resting'] .track-info .artist-credit,
   .display-page[data-stage='resting'] :is(.room-activity,.room-album,.room-stream-details) { display:none; }
-  .display-page[data-stage='resting'] .room-hint { display:block; }
+  .display-page[data-stage='resting'] .room-hint:not(:empty) { display:block; }
   .display-page[data-stage='resting'] .track-info { justify-content:flex-end; }
+  .display-page[data-stage='resting'] .track-info:has(.room-hint:empty) .room-title-slot { margin-bottom:0; }
 
   .room-invitation { grid-column:2; grid-row:1; align-self:end; justify-self:end; width:100%; }
   .room-invitation[hidden] { display:none; }
