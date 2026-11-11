@@ -16,6 +16,7 @@ import { OnlinePanel } from './online-panel';
 import { AppearancePanel } from './appearance-settings';
 import { BackgroundSettingsPanel } from './background-settings';
 import { outputStatus } from './output';
+import { VisualizerSettingsPanel } from './visualizer-settings';
 
 const signInNotices = { cancelled: 'Sign-in cancelled. Your saved connection was kept.', expired: 'Sign-in expired. Try connecting again.' };
 
@@ -33,6 +34,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   const userPins = new UserSettingsPanel(signal); void userPins.load();
   const appearance = new AppearancePanel(signal);
   const background = new BackgroundSettingsPanel(signal);
+  const visualizer = new VisualizerSettingsPanel(signal);
   let settings: IntegrationView | undefined;
   let urlDraft = '';
   let tokenDraft = '';
@@ -382,7 +384,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
       children(playback, playback.firstElementChild!, v.el('recovery-note', 'p', explanation, 'warning'), requiresRecovery && recovery, requiresRecovery && details);
       playbackNodes.push(playback);
     }
-    playbackNodes.push(destination, secretPlayback.element, playbackSettings.element, autoplaySettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
+    playbackNodes.push(destination, visualizer.element, secretPlayback.element, playbackSettings.element, autoplaySettings.element); accessNodes.push(onlineInvitations.element, addresses.render());
     sections.update('music-assistant', ...(feedbackSection === 'music-assistant' ? feedback : []), connection);
     sections.update('playback', ...(feedbackSection === 'playback' ? feedback : []), ...playbackNodes);
     sections.update('access', ...(feedbackSection === 'access' ? feedback : []), ...accessNodes);

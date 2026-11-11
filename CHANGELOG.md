@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.22] — 2026-11-11
+
+- Replace the active participant’s broad EQ glow with a compact multicolour spectrum border, extending mostly inward and respecting reduced-motion preferences.
+- Add an optional persistent, silent **Doom Room Visualizer** Sendspin client in **Settings → Playback**. Group it with your speakers in Music Assistant and select the group to send real, timestamped frequency data to every room screen. Includes connection status and a ±5-second visual timing adjustment; Universal Groups remain best-effort rather than synchronized playback.
+- Enlarge room-display avatars to fill the participant card’s inner height with consistent inset spacing.
+
 ## [2.0.21] — 2026-11-11
 
 - Move profile-picture editing to **Menu → User settings**, available locally and through Tailscale. Remove the picture button from **Your music** and allow signed-in users to manage their picture outside the listening order.

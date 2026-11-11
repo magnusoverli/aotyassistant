@@ -6,10 +6,11 @@ RUN npm ci
 COPY tsconfig*.json vite.config.ts ./
 COPY src ./src
 COPY web ./web
+COPY scripts/build-sendspin.mjs ./scripts/build-sendspin.mjs
 RUN npm run build && npm prune --omit=dev
 
 FROM node:26.13.0-alpine3.24@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
-ARG BUILD_VERSION=2.0.21
+ARG BUILD_VERSION=2.0.22
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="$BUILD_VERSION" io.hass.type="app" io.hass.arch="$BUILD_ARCH" \
       org.opencontainers.image.source="https://github.com/magnusoverli/doom-room" \

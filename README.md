@@ -19,6 +19,7 @@ People join the Doom Room from their phones, prepare private track selections, a
 - **Keep the room moving:** choose whether a finished song passes the turn and waits, automatically plays the next participant's song, or continues the current participant's playlist.
 - **Use existing devices:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
 - **Make it your room:** add your room's logo to the room display and the join page.
+- **See the music:** group the optional silent Doom Room Visualizer with your speakers for an audio-reactive turn border on every screen.
 
 Use it for music discovery, listening clubs, or themed track-sharing. The app manages sharing and playback, not voting, scoring, or rankings.
 

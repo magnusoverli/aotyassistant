@@ -19,6 +19,7 @@ const readRoutes = [
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/artwork)?$/,
   /^\/api\/participant\/preparations\/artwork\/[a-f0-9-]{36}\/(?:artwork|artistArtwork)$/,
   /^\/api\/display\/(?:state|events)$/, /^\/api\/display\/artwork\/[a-f0-9-]{36}\/(?:artwork|artistArtwork)$/,
+  /^\/api\/display\/spectrum\/(?:clock|events)$/,
   /^\/api\/display\/prepared-artwork\/[a-f0-9-]{36}$/,
   /^\/api\/listening-order\/events$/,
   /^\/api\/logo(?:\/[a-f0-9]{16})?$/,

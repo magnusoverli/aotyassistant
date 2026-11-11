@@ -32,6 +32,7 @@ import { RoomLogo, maxLogoBytes } from './room-logo.js';
 import { DisplayBackground, backgroundSnapshotSchema } from './display-background.js';
 import { UserPictures, UserPictureFiles } from './user-pictures.js';
 import { mountUserPictures, mountUserDirectoryEvents } from './user-picture-http.js';
+import { RoomVisualizer, visualizerSettingsSchema } from './room-visualizer.js';
 
 const turn = z.uuid();
 const revision = z.number().int().nonnegative();
@@ -58,6 +59,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   attachAutoplay(engine, preparations, users);
   const roomLogo = new RoomLogo(config.dataDir, () => { engine.emit('change'); });
   const background = new DisplayBackground(config.dataDir, () => { engine.emit('change'); });
+  const visualizer = new RoomVisualizer(config.dataDir, {
+    connection: () => { if (!integrations) throw new AppError(409, 'Connect Music Assistant first.'); return integrations.browserSpeakerConnection(); },
+    target: () => {
+      const view = engine.view({ kind: 'display' });
+      return { roomId: view.roomId, participantId: view.current?.id ?? null, playbackId: view.progress?.id ?? null,
+        playing: view.connected && view.playbackStatus === 'playing', destination: integrations?.view().destination?.id ?? null };
+    },
+  });
   void background.ready.then(() => { engine.emit('change'); });
   engine.setRoomLogo(() => roomLogo.view());
   void roomLogo.ready.then(() => { if (roomLogo.view()) engine.emit('change'); });
@@ -161,6 +170,10 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.json(await engine.setAutoplay(input.mode, input.revision));
   }));
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
+  app.get('/api/host/visualizer', async (_req, res) => { await visualizer.ready; res.json(visualizer.view()); });
+  app.post('/api/host/visualizer', jsonBody(visualizerSettingsSchema, async (input, _req, res) => {
+    res.json(await visualizer.save(input));
+  }));
   app.get('/api/host/background-settings', async (_req, res) => { res.json(await background.read()); });
   app.post('/api/host/background-settings', jsonBody(backgroundSnapshotSchema, async (input, _req, res) => {
     res.json(await background.save(input));
@@ -303,6 +316,12 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
 
   const streams = new EventStreams(500, 'Too many live connections. Close unused tabs and try again.');
   mountUserDirectoryEvents(app, users, engine, streams, participantCredential);
+  app.get('/api/display/spectrum/clock', (_req, res) => res.json({ now: performance.now() }));
+  app.get('/api/display/spectrum/events', (_req, res) => {
+    const stream = streams.reserve(res); if (!stream.open()) return;
+    const send = () => stream.send('state', visualizer.packet());
+    send(); stream.every(send, 200);
+  });
   app.get('/api/listening-order/events', (_req, res) => {
     const snapshot = (): ListeningOrderView => engine.listeningOrder();
     const initial = snapshot(); const stream = streams.reserve(res); if (!stream.open()) return;
@@ -386,5 +405,6 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, close: () => { engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); } };
+  return { app, close: () => { visualizer.close(); engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); },
+    stopVisualizer: () => visualizer.close(), drainVisualizer: () => visualizer.drain() };
 }

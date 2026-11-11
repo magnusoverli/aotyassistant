@@ -44,7 +44,7 @@ try {
     void integrations.check(integrations.view().revision).catch(() => {});
   });
   online.on('revoke', () => speakers.revokePublic());
-  const { app, close } = createApp(engine, config, undefined, integrations, preparations, uploads, setup, online, speakers);
+  const { app, close, stopVisualizer, drainVisualizer } = createApp(engine, config, undefined, integrations, preparations, uploads, setup, online, speakers);
   const publicApp = publicListener(app, online);
   let closeBackup = () => {};
   const closeDiagnostics = diagnostics.start();
@@ -78,7 +78,7 @@ try {
   let stopping = false;
   const shutdown = () => {
     if (stopping) return; stopping = true;
-    engine.beginShutdown(); speakers.close(); setup.close(); integrations.stopMonitoring(); adapter.beginShutdown(); uploads.stopReceiving();
+    engine.beginShutdown(); speakers.close(); stopVisualizer(); setup.close(); integrations.stopMonitoring(); adapter.beginShutdown(); uploads.stopReceiving();
     // Reject new HTTP work, then let admitted commands/commits settle before disposing
     // their transports. The final bound covers an unavailable upstream or stuck disk.
     for (const server of servers) server.close();
@@ -86,7 +86,7 @@ try {
     void (async () => {
       try {
         await online.close();
-        await drainOperations(); await engine.drain(); await preparations.drain(); await integrations.drain(); await uploads.drain();
+        await drainOperations(); await engine.drain(); await preparations.drain(); await integrations.drain(); await uploads.drain(); await drainVisualizer();
         cleanup(); process.exitCode = 0;
       } catch { cleanup(); process.exitCode = 1; }
       finally { clearTimeout(deadline); }

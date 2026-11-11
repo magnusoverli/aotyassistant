@@ -48,11 +48,23 @@ Choose a still JPEG, PNG or WebP image up to 10 MB and 40 megapixels. Camera cap
 
 ### Listening order
 
-In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is, and the current participant's card glows. While their song plays, soft bands of light rise inward from the card's edges at irregular heights, like an old spectrum meter. The motion is decorative: the page does not hear the music, which plays on the speaker. The light has two states: at rest, low and still, for the whole turn, including while the participant chooses a song or the song is paused or stopped; and moving while the song plays. Reduced-motion preferences keep it at rest.
+In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is. A compact multicolour spectrum border marks the current participant, with fine needles extending mostly inside the card. With the visualizer configured, they react to the room’s audio; otherwise a restrained decorative animation accompanies playback. The border stays still while choosing a song or while playback is paused or stopped. Reduced-motion preferences keep it static throughout.
 
 On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. Your own card stays highlighted. This presentation does not change the saved turn order or desktop layout.
 
 On **Host desk**, drag any participant card into a new position. Neighbouring cards slide aside to preview the new order; dropping saves it. Drag near either edge of the list to scroll through longer orders. On a touch screen, press and hold a card to pick it up; an ordinary swipe scrolls the order. With a keyboard, focus a card and press **Space**, use the arrow keys to choose its position, then **Enter** or **Space** to drop; **Escape** cancels. Reordering does not replace the current listener or interrupt their song. Advancing a turn stops only playback still owned by this app, then gives the next person control. To delete a user, open **Settings → Users → Manage → Delete user**; this also removes their place in the order. Names and turn order are public; private song lists are not.
+
+### Audio-reactive turn border
+
+1. In **Settings → Playback → Audio-reactive turn border**, check **Enable Doom Room Visualizer** and save.
+2. In Music Assistant, create a permanent speaker group containing **Doom Room Visualizer** and your speakers.
+3. Select that group as Doom Room’s **Speaker or group**, then play a song. The visualizer status should report that it is receiving real audio spectrum.
+
+The visualizer is a persistent silent receiver on the app server. It reconnects after restart and sends timestamped frequency data to every room screen, including `/display`; screens need no microphone or browser audio permission. Track titles and artwork are not included in the spectrum feed.
+
+Sendspin-compatible groups share playback timing. For supported Sonos devices, use Music Assistant’s [AirPlay/Sendspin bridging](https://www.music-assistant.io/player-support/sonos/#airplay-functionality) for synchronized grouping. A native Sonos player can instead share a [Universal Group](https://www.music-assistant.io/faq/groups/) with the receiver, but Universal Groups do **not** guarantee synchronized playback.
+
+Start with **Visual timing adjustment** at **0 ms**. Positive values show the spectrum later; negative values show it earlier, up to 5000 ms in either direction. This can compensate for a steady offset, but cannot correct drift between unsynchronized speakers. If the receiver is disconnected or outside the selected playback group, the border returns to its decorative animation.
 
 ## Prepare selections
 

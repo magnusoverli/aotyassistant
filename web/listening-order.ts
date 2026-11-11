@@ -7,7 +7,7 @@ import { OrderDrag, type OrderMove } from './order-drag';
 import { stackedLayout } from './page-layout';
 import { turnFirst, canonicalInsertion } from './order-presentation';
 import { fittingSeats } from './display-stage';
-import { seatEq } from './seat-eq';
+import { TurnSpectrum } from './turn-spectrum';
 
 type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void> };
 
@@ -37,6 +37,7 @@ export class ListeningOrder {
   private fit?: { total: number; shown: number };
   private presentedTurnFirst = false;
   private presentedCurrent?: string;
+  private spectrum = new TurnSpectrum();
 
   constructor(private management?: Management) {
     const bar = el('section', undefined, 'order-bar'); bar.setAttribute('aria-label', 'Listening order');
@@ -147,6 +148,7 @@ export class ListeningOrder {
   private connection(online: boolean) {
     text(this.status, online ? '' : navigator.onLine ? 'Reconnecting…' : 'Offline');
     attr(this.element, 'data-online', String(online));
+    this.updateSpectrum();
     this.updateControls();
   }
 
@@ -154,6 +156,11 @@ export class ListeningOrder {
     const disabled = !this.management || this.management.disabled() || this.element.dataset.online !== 'true';
     for (const row of this.list.querySelectorAll<HTMLElement>('.rotation-seat')) attr(row, 'aria-disabled', this.management ? String(disabled) : undefined);
     this.drag?.update();
+  }
+
+  private updateSpectrum() {
+    this.spectrum.update(this.snapshot?.roomId ?? null, this.snapshot?.current?.id ?? null,
+      this.snapshot?.playbackStatus === 'playing' && this.element.dataset.online === 'true');
   }
 
   private presentedPeople() {
@@ -191,7 +198,7 @@ export class ListeningOrder {
         const image = v.get('avatar', () => ({ key: '', node: avatar(person) }));
         const imageKey = JSON.stringify(person); if (image.key !== imageKey) { image.key = imageKey; image.node = avatar(person); }
         // The light sits first, behind the avatar and name; it is kept, mid-motion, across updates.
-        const content: Node[] = [...(current ? [v.get('eq', seatEq)] : []), image.node, name,
+        const content: Node[] = [...(current ? [this.spectrum.element] : []), image.node, name,
           v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : '', 'seat-state'),
           v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : '', 'seat-state seat-state-compact')];
         children(row, ...content);
@@ -202,6 +209,7 @@ export class ListeningOrder {
       if (focused) [...this.list.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused)?.focus({ preventScroll: true });
     }
     this.updateControls();
+    this.updateSpectrum();
   }
 
   stop() { this.source?.close(); this.source = undefined; }

@@ -12,7 +12,8 @@
     --display-artist:clamp(1.5rem,1rem + 1.85vmin,4rem);
     --display-text:clamp(1rem,.75rem + 1vmin,2.5rem);
     --display-name:clamp(1.375rem,1rem + 1.5vmin,3.5rem);
-    --display-avatar:clamp(2rem,2.7vw,5.5rem);
+    --seat-inset:.5rem;
+    --display-avatar:calc(var(--order-qr) - .5rem - 2 * var(--seat-inset) - 2px);
     --seat-min:clamp(9rem,11.25vw,22.5rem); --more-width:calc(7 * var(--display-text));
     --order-qr:clamp(5.5rem,8.25vmin,11.9rem);
     --stream-height:0px;
@@ -49,7 +50,7 @@
   body[data-view='display'] .rotation-list { --order-gap:clamp(.75rem,1.35vw,2.5rem); flex:1 1 0; overflow:hidden; }
   body[data-view='display'] .rotation-seat {
     flex:0 1 calc(1.25 * var(--seat-min));
-    min-height:calc(var(--order-qr) - .5rem); padding:.375rem .5rem; border-radius:.625rem;
+    min-height:calc(var(--order-qr) - .5rem); padding:var(--seat-inset); border-radius:.625rem; align-content:center;
     grid-template-columns:var(--display-avatar) minmax(0,1fr); grid-template-rows:auto auto; column-gap:.75rem; row-gap:.125rem;
   }
   body[data-view='display'] .rotation-seat .avatar { width:var(--display-avatar); height:var(--display-avatar); font-size:calc(var(--display-avatar) * .45); }

@@ -1,6 +1,6 @@
 {
   "name": "doom-room",
-  "version": "2.0.21",
+  "version": "2.0.22",
   "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {
@@ -15,7 +15,7 @@
     "node": ">=26.13.0 <27"
   },
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.server.json",
+    "build": "vite build && tsc -p tsconfig.server.json && node scripts/build-sendspin.mjs",
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json",
     "check:release": "node scripts/check-release.mjs",

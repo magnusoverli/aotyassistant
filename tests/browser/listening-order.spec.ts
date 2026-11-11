@@ -1,14 +1,14 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 
-/** The current card always carries the EQ light: dormant for the turn, its bands moving only while the song plays. */
+/** The current card keeps its spectrum border at rest and animates during playback. */
 async function expectCurrentTurn(pages: Page[], moving: boolean) {
   for (const page of pages) {
     const card = page.locator('.rotation-seat.is-current');
     await expect(card).toHaveAttribute('aria-current', 'step');
-    await expect(page.locator('.seat-eq')).toHaveCount(1); await expect(card.locator('.seat-eq')).toHaveCount(1);
+    await expect(page.locator('.order-trace')).toHaveCount(1); await expect(card.locator('.order-trace')).toHaveCount(1);
     await expect.poll(() => card.evaluate(node => node.getAnimations({ subtree: true })
-      .some(animation => animation.playState === 'running' && /^seat-eq-[abc](-x)?$/.test((animation as CSSAnimation).animationName)))).toBe(moving);
+      .some(animation => animation.playState === 'running' && (animation as CSSAnimation).animationName === 'order-spectrum-breathe'))).toBe(moving);
   }
 }
 
@@ -246,6 +246,33 @@ test('mobile keeps Now and Next in the first slots across turns, scrolling and r
     await assertOrder();
   }
   expect(writes.filter(url => !url.endsWith('/api/participant/preparations/init'))).toEqual([]);
+});
+
+test('the spectrum follows the actual rounded card with bounded inward needles at desktop and mobile sizes', async ({ page, isolatedApp }) => {
+  await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
+  await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectCurrentTurn([page], false);
+  const seat = page.locator('.rotation-seat.is-current');
+  await expect(page.locator('.order-trace')).toHaveCount(1);
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect.poll(() => seat.locator('.order-spectrum-bar').count()).toBeGreaterThan(30);
+    const bounds = await seat.boundingBox();
+    const geometry = await seat.evaluate(node => {
+      const box = node.getBoundingClientRect(); const outline = node.querySelector<SVGRectElement>('.order-spectrum-outline')!;
+      const rect = outline.getBBox(); const matrix = outline.getScreenCTM()!;
+      const first = new DOMPoint(rect.x, rect.y).matrixTransform(matrix);
+      const last = new DOMPoint(rect.x + rect.width, rect.y + rect.height).matrixTransform(matrix);
+      const bars = [...node.querySelectorAll<SVGLineElement>('.order-spectrum-bar')];
+      return { edges: [first.x - box.left, first.y - box.top, box.right - last.x, box.bottom - last.y],
+        radius: Number(outline.getAttribute('rx')), cardRadius: parseFloat(getComputedStyle(node).borderTopLeftRadius),
+        inward: Math.max(...bars.map(bar => bar.y2.baseVal.value)), outward: Math.max(...bars.map(bar => -bar.y1.baseVal.value)) };
+    });
+    for (const edge of geometry.edges) expect(edge).toBeCloseTo(.5, 1);
+    expect(geometry.radius).toBeCloseTo(geometry.cardRadius - .5, 1);
+    expect(geometry.inward).toBeLessThanOrEqual(6.5); expect(geometry.outward).toBeLessThanOrEqual(1);
+    await seat.screenshot({ path: `test-results/order-spectrum-${width}.png` });
+    expect(await seat.boundingBox()).toEqual(bounds);
+  }
 });
 
 test('order feed exposes names, placement and playback status without song details even after reveal', async ({ isolatedApp }) => {
