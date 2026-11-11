@@ -13,7 +13,7 @@
 - **Play first selection** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
 - Successful playback keeps the choice in **Previously played**, shown by default below the upcoming tracks. This means playback started, not necessarily that the song finished.
 
-The app never sends the whole list to Music Assistant. With [automatic play](using-the-app.md#automatic-play) switched on, a song that finishes naturally starts the next participant’s first saved choice, one song per turn, exactly as **Play first selection** would. Failed or uncertain playback keeps the entry for explicit review; an automatic start that never reached the speaker leaves the entry first in the list.
+The app never sends the whole list to Music Assistant. [Automatic play](using-the-app.md#automatic-play) can start the next participant’s first upcoming choice or continue the current participant’s playlist after a natural ending, exactly as **Play first selection** would. Continuing a playlist keeps their turn and waits when the playlist is empty or the next track cannot play. Failed or uncertain playback keeps the entry for explicit review; an automatic start that never reached the speaker leaves the entry first in the list.
 
 **Saved** means the server acknowledged durable storage. **Saving** and **Save not confirmed** do not. A pending edit is retained in that browser for explicit retry/review, not automatically replayed. If another tab changed the list, the latest saved list is loaded before retrying the change.
 

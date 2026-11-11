@@ -39,7 +39,7 @@ Use a designated test speaker or group: Play replaces its current queue and can 
 - Confirm the exact selected catalogue recording and uploaded audio play on the chosen destination.
 - Check single-track queue behaviour, reveal, speaker/group volume, and explicit turn advancement.
 - Check ordinary and long-paused resume, natural completion, external takeover, connection loss, and explicit recovery.
-- With automatic play on, confirm a natural completion starts the next participant's first saved song on the destination, including a group and an uploaded file, and that Finish turn, Skip turn and an empty playlist do not. Automated tests use a synthetic speaker; they do not establish how quickly a real destination accepts Play right after reporting the end of a song.
+- Check both automatic-play modes on the destination, including a group and an uploaded file: natural completion either starts the next participant's first upcoming song or keeps the current participant and continues their playlist. In the latter mode an empty list keeps their turn and waits. Confirm Stop, Finish turn and Skip turn never start another song, each song follows the reveal setting, and changing modes during a pending lookup cancels that start. Automated tests use a synthetic speaker; they do not establish how quickly a real destination accepts Play right after reporting the end of a song.
 - Confirm natural completion advances exactly once and does not start the next participant’s song.
 
 ### Browsers and devices

@@ -38,12 +38,16 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   assert.deepEqual(await (await request('/api/host/playback-settings', { enabled: false, revision: 0 })).json(), { enabled: false, revision: 1 });
   assert.equal((await request('/api/host/playback-settings', { enabled: true, revision: 0 })).status, 409);
   assert.equal((await request('/api/host/playback-settings', { enabled: true, revision: 1 })).status, 200);
-  assert.deepEqual(await (await request('/api/host/autoplay-settings')).json(), { enabled: false, revision: 0 });
-  assert.equal((await request('/api/host/autoplay-settings', { enabled: true, revision: 0 }, '', 'https://evil.example')).status, 403);
-  assert.equal((await request('/api/host/autoplay-settings', { enabled: 'true', revision: 0 })).status, 400);
-  assert.deepEqual(await (await request('/api/host/autoplay-settings', { enabled: true, revision: 0 })).json(), { enabled: true, revision: 1 });
-  assert.equal((await request('/api/host/autoplay-settings', { enabled: false, revision: 0 })).status, 409);
-  assert.deepEqual(await (await request('/api/host/autoplay-settings', { enabled: false, revision: 1 })).json(), { enabled: false, revision: 2 });
+  assert.deepEqual(await (await request('/api/host/autoplay-settings')).json(), { mode: 'off', revision: 0 });
+  assert.equal((await request('/api/host/autoplay-settings', { mode: 'next-participant', revision: 0 }, '', 'https://evil.example')).status, 403);
+  for (const input of [{ mode: 'shuffle', revision: 0 }, { mode: true, revision: 0 }, { enabled: true, revision: 0 },
+    { mode: 'off', enabled: false, revision: 0 }, { mode: 'off', revision: -1 }]) {
+    assert.equal((await request('/api/host/autoplay-settings', input)).status, 400);
+  }
+  assert.deepEqual(await (await request('/api/host/autoplay-settings', { mode: 'next-participant', revision: 0 })).json(), { mode: 'next-participant', revision: 1 });
+  assert.equal((await request('/api/host/autoplay-settings', { mode: 'off', revision: 0 })).status, 409);
+  assert.deepEqual(await (await request('/api/host/autoplay-settings', { mode: 'same-participant', revision: 1 })).json(), { mode: 'same-participant', revision: 2 });
+  assert.deepEqual(await (await request('/api/host/autoplay-settings', { mode: 'off', revision: 2 })).json(), { mode: 'off', revision: 3 });
   assert.deepEqual(await (await request('/api/host/playback-settings')).json(), { enabled: true, revision: 2 }, 'The two settings are independent.');
   assert.deepEqual(await (await request('/api/host/secret-playback-settings')).json(), { enabled: true, revision: 0 });
   assert.equal((await request('/api/host/secret-playback-settings', { enabled: false, revision: 0 }, '', 'https://evil.example')).status, 403);

@@ -70,13 +70,21 @@ The display smooths progress locally between playback updates. Before reveal, it
 
 Reveal follows the current participant's user identity across signed-in devices. Everyone can prepare their own playlist while waiting; only the current participant can play or reveal their track. The host has separate transport controls and no reveal button. A reveal request shows **Revealing…** until confirmed; **Details revealed** means the server has already accepted the reveal, including automatic reveal.
 
-When a song finishes naturally, the turn automatically moves to the next participant. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion. The next participant chooses when to start their song, unless automatic play is on.
+When a song finishes naturally, **When a song ends** determines whether to pass the turn or continue the current participant's playlist. Music Assistant can take a few seconds to confirm the end. Pausing, stopping, a playback error, or a lost connection does not count as completion.
 
 ### Automatic play
 
-Switch on **Settings → Playback → Play the next song automatically** to keep the music going between turns. It is off by default. When a song finishes naturally and the turn passes, the next participant’s first song in **Your playlist** starts by itself, as if they had chosen **Play first selection**: it moves to **Previously played**, starts hidden on the room display, and is revealed in the usual way. The round continues in listening order for as long as each participant has a song ready.
+Choose one option under **Settings → Playback → When a song ends**:
 
-Nothing starts, and the participant chooses as usual, when their playlist is empty, a previous play attempt needs review, the song’s source isn’t connected, or the speaker isn’t ready. A song that can’t be found stays first in their playlist. **Finish turn**, **Skip turn** and **Pass turn** never start the next song, and switching the setting on doesn’t start music by itself. While an automatic start is in progress, the participant’s playlist shows **Your first song is starting…**. To stop the music, use **Stop song** or switch the setting off.
+| Option | After a natural ending |
+| --- | --- |
+| **Pass turn and wait** (default) | Move to the next participant; they choose when to start a song. |
+| **Play next participant’s song** | Move to the next participant and play their first upcoming playlist track. Continue in listening order while each participant has a song ready. |
+| **Continue current participant’s playlist** | Keep the current participant and play their next upcoming track. If their playlist is empty or the track cannot play, keep their turn and wait. They can choose another song or finish their turn. |
+
+Automatic playback works as if the participant chose **Play first selection**: the track moves to **Previously played**, starts hidden if Secret playback is enabled, and follows the usual reveal settings. Played tracks do not loop. Existing automatic-play preferences carry over: on becomes **Play next participant’s song**, and off becomes **Pass turn and wait**.
+
+Nothing starts when the selected participant's playlist is empty, a previous play attempt needs review, the song’s source isn’t connected, or the speaker isn’t ready. A song that can’t be found stays first in their playlist; automatic playback does not skip it. **Stop song**, **Finish turn**, **Skip turn** and **Pass turn** never start the next song. Changing the setting does not start or stop the current song; it applies at the next natural ending and cancels a pending automatic start under the previous setting. While an automatic start is in progress, the participant’s playlist shows **Your first song is starting…**. Use **Stop song** to stop playback immediately, or **Pass turn and wait** to prevent automatic playback after the current song ends. Adding a song to an empty playlist while waiting does not start it automatically.
 
 The host and current playing participant can adjust volume when the selected speaker supports it. **Mute** sets volume to zero; **Unmute** restores the last nonzero level observed by that player UI (or 35% if none is known). The remembered level resets when the output changes. Group destinations use group volume.
 

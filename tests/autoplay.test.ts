@@ -6,7 +6,7 @@ import type { Store } from '../src/store.js';
 import { DemoAdapter } from '../src/playback.js';
 import { PreparationManager, preparationStateSchema, type PreparationState, type PreparationStore, type PreparationView, type SavedSelection } from '../src/preparations.js';
 import { attachAutoplay } from '../src/autoplay.js';
-import { AppError, stateSchema, type State, type Track } from '../src/model.js';
+import { AppError, stateSchema, type State, type Track, type AutoplayTarget } from '../src/model.js';
 
 class MemoryRoom implements Store {
   state: State = { schema: 3, room: null };
@@ -68,7 +68,7 @@ async function fixture(t: TestContext, names = ['Alex', 'Blair']) {
 test('automatic play is off by default: a finished song passes the turn and the next person chooses', async t => {
   const f = await fixture(t); const [, blair] = f.people;
   const saved = await blair!.add('demo:summer');
-  assert.deepEqual(f.engine.autoplaySettings(), { enabled: false, revision: 0 });
+  assert.deepEqual(f.engine.autoplaySettings(), { mode: 'off', revision: 0 });
   await f.start(); f.speaker.end(); await f.settle();
   assert.equal(f.host().current?.id, blair!.id); assert.equal(f.host().hostPlayback, null);
   assert.deepEqual(f.titles(), ['Night Bus Home']);
@@ -79,7 +79,7 @@ test('automatic play is off by default: a finished song passes the turn and the 
 test('when on, a natural ending starts the next person’s first saved song, records it as played and keeps it private', async t => {
   const f = await fixture(t, ['Alex', 'Blair', 'Casey']); const [alex, blair, casey] = f.people;
   const first = await blair!.add('demo:summer'); const second = await blair!.add('demo:aurora');
-  assert.deepEqual(await f.engine.setAutoplay(true, 0), { enabled: true, revision: 1 });
+  assert.deepEqual(await f.engine.setAutoplay('next-participant', 0), { mode: 'next-participant', revision: 1 });
   assert.deepEqual(f.titles(), [], 'Switching it on never starts music.');
   await f.start(); f.speaker.end(); await f.settle();
   const host = f.host();
@@ -100,7 +100,7 @@ test('when on, a natural ending starts the next person’s first saved song, rec
 test('the round keeps going in listening order until someone has no song ready', async t => {
   const f = await fixture(t); const [alex, blair] = f.people;
   await alex!.add('demo:aurora'); await blair!.add('demo:summer'); await blair!.add('demo:night');
-  await f.engine.setAutoplay(true, 0);
+  await f.engine.setAutoplay('next-participant', 0);
   await f.start();
   for (let i = 0; i < 4; i++) { f.speaker.end(); await f.settle(); }
   assert.deepEqual(f.titles(), ['Night Bus Home', 'Late Summer', 'Northern Lights', 'Night Bus Home']);
@@ -110,10 +110,10 @@ test('the round keeps going in listening order until someone has no song ready',
   assert.equal((await f.lists.read(blair!.list)).played.length, 2);
 });
 
-test('Finish turn, Skip turn and Stop song never start the next song', async t => {
+for (const mode of ['next-participant', 'same-participant'] as const) test(`${mode}: Finish turn, Skip turn and Stop song never start the next song`, async t => {
   const f = await fixture(t); const [alex, blair] = f.people;
   await alex!.add('demo:aurora'); await blair!.add('demo:summer');
-  await f.engine.setAutoplay(true, 0);
+  await f.engine.setAutoplay(mode, 0);
   await f.start(); await f.engine.advance(f.host().turnId!, alex!.token); await f.settle();
   assert.equal(f.host().current?.id, blair!.id); assert.equal(f.host().hostPlayback, null);
   await f.engine.advance(f.host().turnId!); await f.settle();
@@ -127,7 +127,7 @@ test('Finish turn, Skip turn and Stop song never start the next song', async t =
 
 test('switching it off during the lookup cancels the start; every device sees "starting", never a review', async t => {
   const f = await fixture(t); const [, blair] = f.people;
-  const saved = await blair!.add('demo:summer'); await f.engine.setAutoplay(true, 0);
+  const saved = await blair!.add('demo:summer'); await f.engine.setAutoplay('next-participant', 0);
   const seen: PreparationView[] = [];
   const unsubscribe = await f.lists.subscribe(blair!.list, view => { if (view) seen.push(view); }); t.after(unsubscribe);
   let release!: () => void; f.speaker.lookup = new Promise(resolve => { release = resolve; });
@@ -135,7 +135,7 @@ test('switching it off during the lookup cancels the start; every device sees "s
   await f.start(); f.speaker.end(); await looking;
   const during = await f.lists.read(blair!.list);
   assert.equal(during.reviewEntryId, saved); assert.equal(during.starting, true);
-  await f.engine.setAutoplay(false, 1); release(); await f.settle();
+  await f.engine.setAutoplay('off', 1); release(); await f.settle();
   assert.deepEqual(f.titles(), ['Night Bus Home']); assert.equal(f.host().current?.id, blair!.id); assert.equal(f.host().hostPlayback, null);
   const list = await f.lists.read(blair!.list);
   assert.deepEqual(list.upcoming.map(entry => entry.id), [saved]); assert.equal(list.played.length, 0);
@@ -147,7 +147,7 @@ test('switching it off during the lookup cancels the start; every device sees "s
 test('a song that cannot be looked up stays first without a review; an uncertain start keeps the usual review', async t => {
   const f = await fixture(t); const [alex, blair] = f.people;
   const blairs = await blair!.add('demo:summer'); const alexs = await alex!.add('demo:aurora');
-  await f.engine.setAutoplay(true, 0);
+  await f.engine.setAutoplay('next-participant', 0);
   f.speaker.failResolve = true;
   await f.start(); f.speaker.end(); await f.settle();
   assert.equal(f.host().current?.id, blair!.id); assert.equal(f.host().hostPlayback, null);
@@ -166,7 +166,7 @@ test('a song that cannot be looked up stays first without a review; an uncertain
 
 test('a user being deleted is skipped: their list is never opened and the turn waits', async t => {
   const f = await fixture(t); const [, blair] = f.people;
-  const saved = await blair!.add('demo:summer'); await f.engine.setAutoplay(true, 0);
+  const saved = await blair!.add('demo:summer'); await f.engine.setAutoplay('next-participant', 0);
   f.deleted.add(blair!.ownerId);
   await f.start(); f.speaker.end(); await f.settle();
   assert.deepEqual(f.titles(), ['Night Bus Home']); assert.equal(f.host().current?.id, blair!.id); assert.equal(f.host().hostPlayback, null);
@@ -177,11 +177,122 @@ test('a user being deleted is skipped: their list is never opened and the turn w
 
 test('the setting survives a restart, rejects stale changes and is independent of automatic reveal', async t => {
   const f = await fixture(t);
-  await f.engine.setAutoplay(true, 0);
-  await assert.rejects(f.engine.setAutoplay(false, 0), /settings changed/);
+  await f.engine.setAutoplay('next-participant', 0);
+  await assert.rejects(f.engine.setAutoplay('off', 0), /settings changed/);
   const restored = new Engine(f.store, new DemoAdapter(100), 'http://localhost:3000'); await restored.init();
   t.after(() => restored.adapter.close());
-  assert.deepEqual(restored.autoplaySettings(), { enabled: true, revision: 1 });
+  assert.deepEqual(restored.autoplaySettings(), { mode: 'next-participant', revision: 1 });
   assert.deepEqual(restored.playbackSettings(), { enabled: true, revision: 0 });
   assert.equal(restored.view({ kind: 'host' }).hostPlayback, null, 'A restart never resumes or starts audio.');
+});
+
+test('same-participant mode drains only their upcoming playlist, resets reveal, and waits on their empty list', async t => {
+  const f = await fixture(t); const [alex, blair] = f.people;
+  const first = await alex!.add('demo:summer'); const second = await alex!.add('demo:aurora');
+  const other = await blair!.add('demo:night');
+  await f.engine.setAutoplay('same-participant', 0);
+  assert.deepEqual(f.titles(), [], 'Choosing the mode never starts music.');
+  await f.start();
+  const order = f.engine.listeningOrder().rotation;
+  const ended = f.host().hostPlayback!.id;
+  await f.engine.reveal(alex!.token, f.host().turnId!, ended);
+  // Duplicate completion cannot consume two entries or pass the turn.
+  await Promise.all([f.engine.complete(ended), f.engine.complete(ended)]); await f.settle();
+  assert.deepEqual(f.titles(), ['Night Bus Home', 'Late Summer']);
+  assert.equal(f.host().current?.id, alex!.id); assert.equal(f.host().next?.id, blair!.id);
+  assert.deepEqual(f.engine.listeningOrder().rotation, order);
+  assert.equal(f.host().hostPlayback!.revealed, false);
+  assert.equal(alex!.view().ownPlayback!.track.title, 'Late Summer');
+  for (const view of [f.host(), blair!.view(), f.engine.view({ kind: 'display' })]) {
+    assert.ok(!JSON.stringify(view).includes('Late Summer'));
+  }
+  await f.engine.reveal(alex!.token, f.host().turnId!, f.host().hostPlayback!.id);
+  f.speaker.end(); await f.settle();
+  assert.deepEqual(f.titles(), ['Night Bus Home', 'Late Summer', 'Northern Lights']);
+  assert.equal(f.host().hostPlayback!.revealed, false);
+  const list = await f.lists.read(alex!.list);
+  assert.deepEqual(list.upcoming, []);
+  assert.deepEqual(new Set(list.played.map(entry => entry.id)), new Set([first, second]));
+  assert.ok(list.played.every(entry => entry.playCount === 1));
+  f.speaker.end(); await f.settle();
+  assert.equal(f.host().current?.id, alex!.id); assert.equal(f.host().hostPlayback, null);
+  assert.deepEqual((await f.lists.read(blair!.list)).upcoming.map(entry => entry.id), [other]);
+  await alex!.add('demo:night'); await f.settle();
+  assert.equal(f.titles().length, 3, 'Adding a song while waiting does not start it.');
+  await f.engine.advance(f.host().turnId!, alex!.token); await f.settle();
+  assert.equal(f.host().current?.id, blair!.id); assert.equal(f.host().hostPlayback, null);
+});
+
+for (const failure of ['lookup', 'play'] as const) test(`same-participant mode keeps the turn and saved song after ${failure} failure`, async t => {
+  const f = await fixture(t); const [alex] = f.people;
+  const first = await alex!.add('demo:summer'); const second = await alex!.add('demo:aurora');
+  await f.engine.setAutoplay('same-participant', 0); await f.start();
+  if (failure === 'lookup') f.speaker.failResolve = true; else f.speaker.failPlay = true;
+  f.speaker.end(); await f.settle();
+  assert.equal(f.host().current?.id, alex!.id); assert.equal(f.host().hostPlayback, null);
+  assert.deepEqual(f.titles(), ['Night Bus Home']);
+  const list = await f.lists.read(alex!.list);
+  assert.deepEqual(list.upcoming.map(entry => entry.id), [first, second]);
+  assert.equal(list.reviewEntryId, failure === 'play' ? first : undefined);
+});
+
+for (const change of ['next-participant', 'off-and-back'] as const) test(`same-participant pending lookup is cancelled by ${change}`, async t => {
+  const f = await fixture(t); const [alex] = f.people; const saved = await alex!.add('demo:summer');
+  await f.engine.setAutoplay('same-participant', 0); await f.start();
+  let release!: () => void; f.speaker.lookup = new Promise(resolve => { release = resolve; });
+  const looking = new Promise<void>(resolve => { f.speaker.looking = resolve; });
+  f.speaker.end(); await looking;
+  await f.engine.setAutoplay(change === 'off-and-back' ? 'off' : change, 1);
+  if (change === 'off-and-back') await f.engine.setAutoplay('same-participant', 2);
+  release(); await f.settle();
+  assert.deepEqual(f.titles(), ['Night Bus Home']); assert.equal(f.host().current?.id, alex!.id);
+  const list = await f.lists.read(alex!.list);
+  assert.deepEqual(list.upcoming.map(entry => entry.id), [saved]); assert.equal(list.reviewEntryId, undefined);
+});
+
+test('changing modes during a song applies at its natural end, without starting or stopping it immediately', async t => {
+  const f = await fixture(t); const [alex, blair] = f.people;
+  await alex!.add('demo:summer'); await blair!.add('demo:aurora');
+  await f.start(); const playing = f.host().hostPlayback!.id;
+  await f.engine.setAutoplay('same-participant', 0);
+  assert.equal(f.host().hostPlayback!.id, playing); assert.deepEqual(f.speaker.controls, []);
+  f.speaker.end(); await f.settle();
+  assert.equal(f.host().current?.id, alex!.id);
+  await f.engine.setAutoplay('next-participant', 1);
+  f.speaker.end(); await f.settle();
+  assert.equal(f.host().current?.id, blair!.id);
+  assert.deepEqual(f.titles(), ['Night Bus Home', 'Late Summer', 'Northern Lights']);
+});
+
+test('a delayed same-participant start cannot survive a later completion for the same seat', async t => {
+  const f = await fixture(t); const [alex] = f.people; const targets: AutoplayTarget[] = [];
+  f.engine.attachAutoplay(async target => { targets.push(target); });
+  await f.engine.setAutoplay('same-participant', 0); await f.start(); f.speaker.end(); await f.settle();
+  await f.start(); f.speaker.end(); await f.settle();
+  assert.equal(f.host().current?.id, alex!.id); assert.equal(targets.length, 2);
+  assert.equal(f.engine.autoplayReady(targets[0]!), false);
+  assert.equal(await f.engine.autoplay(targets[0]!, song('demo:summer'), randomUUID()), null);
+  assert.equal(f.engine.autoplayReady(targets[1]!), true);
+  assert.deepEqual(f.titles(), ['Night Bus Home', 'Night Bus Home']);
+});
+
+test('same-participant mode survives restart without starting music', async t => {
+  const f = await fixture(t); await f.engine.setAutoplay('same-participant', 0); await f.start();
+  const restored = new Engine(f.store, new DemoAdapter(100), 'http://localhost:3000'); await restored.init();
+  t.after(() => restored.adapter.close());
+  assert.deepEqual(restored.autoplaySettings(), { mode: 'same-participant', revision: 1 });
+  assert.equal(restored.view({ kind: 'host' }).current?.id, f.people[0]!.id);
+  assert.equal(restored.view({ kind: 'host' }).hostPlayback, null);
+});
+
+for (const enabled of [false, true]) test(`legacy autoplay enabled=${enabled} migrates with its saved revision`, async t => {
+  const f = await fixture(t);
+  const legacy = { ...f.store.state, room: { ...f.store.state.room!, autoplay: { enabled, revision: 7 } } };
+  f.store.state = stateSchema.parse(legacy);
+  const restored = new Engine(f.store, new DemoAdapter(100), 'http://localhost:3000'); await restored.init();
+  t.after(() => restored.adapter.close());
+  assert.deepEqual(restored.autoplaySettings(), { mode: enabled ? 'next-participant' : 'off', revision: 7 });
+  assert.equal('enabled' in f.store.state.room!.autoplay!, false);
+  await assert.rejects(restored.setAutoplay('same-participant', 6), /settings changed/);
+  assert.deepEqual(await restored.setAutoplay('same-participant', 7), { mode: 'same-participant', revision: 8 });
 });

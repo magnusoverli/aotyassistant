@@ -36,6 +36,16 @@ export interface CatalogueProvider {
   browse?(kind: 'artists' | 'albums' | 'tracks', value: string, turnId: string): Promise<CatalogueBrowse>;
 }
 
+export const autoplayModeSchema = z.enum(['off', 'next-participant', 'same-participant']);
+export const autoplaySettingsSchema = z.object({ mode: autoplayModeSchema, revision: z.number().int().nonnegative() }).strict();
+export type AutoplayMode = z.infer<typeof autoplayModeSchema>;
+export type AutoplaySettings = z.infer<typeof autoplaySettingsSchema>;
+// Read existing installations without losing their automatic-play preference or revision.
+const persistedAutoplaySchema = z.union([autoplaySettingsSchema,
+  z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict()
+    .transform(({ enabled, revision }): AutoplaySettings => ({ mode: enabled ? 'next-participant' : 'off', revision })),
+]);
+
 const participantSchema = z.object({
   id: z.string().uuid(), nickname: z.string(), credentialHash: z.string(), userId: z.string().uuid().optional(),
 }).strict();
@@ -46,7 +56,7 @@ const roomShape = z.object({
   active: z.array(z.string().uuid()).max(100),
   currentId: z.string().uuid().nullable(),
   autoReveal: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
-  autoplay: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
+  autoplay: persistedAutoplaySchema.optional(),
   secretPlayback: z.object({ enabled: z.boolean(), revision: z.number().int().nonnegative() }).strict().optional(),
   playback: z.object({
     id: z.string().uuid(), turnId: z.string().uuid(), track: trackSchema,
@@ -76,8 +86,8 @@ export type VolumeState = { available: boolean; level: number | null; revision?:
 /** Public output identity/health only; never a queue payload or current recording. */
 export type OutputState = { name: string | null; state: 'none' | 'checking' | 'ready' | 'unavailable' | 'unconfirmed' | 'recovery' | 'incompatible'; checkedAt: number | null; reason?: 'unsupported-schema' };
 export type PlaybackSettings = { enabled: boolean; revision: number };
-/** The participant whose turn began when a song ended, for automatic play. */
-export type AutoplayTarget = { turnId: string; participantId: string; userId: string };
+/** The participant selected at natural completion, bound to that playback policy. */
+export type AutoplayTarget = { turnId: string; participantId: string; userId: string; mode: AutoplayMode; settingsRevision: number };
 export const AUTO_REVEAL_FRACTION = 0.7;
 export type PlaybackProgress = { id: string; status: 'playing' | 'paused' | 'stopped'; fraction: number | null; elapsed?: number; duration?: number; autoRevealAt?: number };
 /** Source stream reported by MA; bitrate in kbps and sample rate in Hz. */

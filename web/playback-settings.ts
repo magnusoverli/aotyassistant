@@ -18,12 +18,6 @@ export const autoRevealSetting: ToggleSetting = {
   help: 'Reveal track details on the room display at 70% of playback progress. Participants can still reveal earlier. Tracks with unknown duration remain manual.',
   inactiveHelp: 'Only applies while Secret playback is on.',
 };
-export const autoplaySetting: ToggleSetting = {
-  path: '/api/host/autoplay-settings', className: 'settings-autoplay', id: 'autoplay', fallback: false,
-  title: 'Automatic play', label: 'Play the next song automatically',
-  help: 'When a song ends, the turn passes and the next participant’s first song in Your playlist starts by itself. If their playlist is empty or the song can’t play, they choose as usual. Finish turn, Skip turn and Pass turn never start the next song.',
-};
-
 /** Independent of Music Assistant setup: also available in demo mode. */
 export class PlaybackSettingsPanel {
   readonly element: HTMLElement;

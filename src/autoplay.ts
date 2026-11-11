@@ -2,7 +2,7 @@ import type { Engine } from './engine.js';
 import type { PreparationManager } from './preparations.js';
 import type { UserManager } from './users.js';
 
-/** Automatic play: when a song ends and the turn passes, start the next person's first saved song,
+/** Automatic play: when a song ends, start the selected participant's first upcoming saved song,
  * exactly as their own Play first selection would. Anything that prevents it (the setting switched
  * off, an empty list, a pending review, a disconnected source or speaker, a changed turn) leaves
  * the turn with them to choose as usual. */

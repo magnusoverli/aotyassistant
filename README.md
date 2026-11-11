@@ -16,7 +16,7 @@ People join the Doom Room from their phones, prepare private track selections, a
 - **Browse music:** search artists, albums, and tracks across the sources configured in Music Assistant.
 - **Prepare privately:** save and reorder selections, upload a track, and return to the same private list on later visits.
 - **Play and reveal:** the current participant controls playback and can reveal track details on the shared display, or the host can switch off secret playback to show them as each song starts.
-- **Keep the room moving:** confirmed track completion advances the turn; the next track starts when its participant presses Play, or by itself with optional automatic play.
+- **Keep the room moving:** choose whether a finished song passes the turn and waits, automatically plays the next participant's song, or continues the current participant's playlist.
 - **Use existing devices:** participant phones, a host desk inside Home Assistant, and a browser on a TV or shared display. Guests need no Home Assistant account or app installation.
 - **Make it your room:** add your room's logo to the room display and the join page.
 
@@ -51,7 +51,7 @@ For guests on mobile data or when moving between venues, enable **Settings → A
 
 The host opens **Host desk** to share invitations and arrange the listening order. Guests join on their phones, open **Your music**, browse **Find music**, and add tracks to **Your playlist** or upload an audio file. During a turn, the current participant selects **Play** from search results or **Play first selection** in the player, then **Reveal details** to show the track information. The turn passes automatically when Music Assistant confirms the track has finished, or earlier with **Finish turn**.
 
-There is one persistent room, not separate events or temporary sessions. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, **Finish turn** and **Skip turn** never start the next track. With **Settings → Playback → Play the next song automatically** switched on, a track that finishes naturally starts the next participant’s first saved song. Before Music Assistant is connected, **Demo mode — no audio** lets you try the workflow without playing sound.
+There is one persistent room, not separate events or temporary sessions. People, saved lists, and settings survive app restarts; playback and reveal reset. Joining, restarting, **Finish turn** and **Skip turn** never start the next track. **Settings → Playback → When a song ends** lets you pass the turn and wait (the default), play the next participant’s first upcoming song, or continue the current participant’s playlist. Continuing a playlist keeps their turn and waits if the list is empty or the next song cannot play. Before Music Assistant is connected, **Demo mode — no audio** lets you try the workflow without playing sound.
 
 Pressing Play replaces the selected speaker or group’s queue with one track and may interrupt other audio. The app does not automatically play an entire saved list or album.
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.0.13] — 2026-11-11
+
+- Replace the automatic-play toggle with **Settings → Playback → When a song ends**: pass the turn and wait, play the next participant's song, or continue the current participant's playlist. Continuing a playlist keeps their turn and waits if the list is empty or the next track cannot play. Existing preferences carry over, and changing modes cancels pending automatic starts.
+
 ## [2.0.12] — 2026-11-10
 
 - Scale the room display for TVs and high-resolution screens: larger header controls, listener names, avatars and QR codes, with proportional playback text, spacing and width limits. Keep the compact phone layout.

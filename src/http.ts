@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { publicContext } from './public-listener.js';
 import type { OnlineAccess } from './online-access.js';
 import { z } from 'zod';
-import { AppError, type Role, type ListeningOrderView } from './model.js';
+import { AppError, autoplaySettingsSchema, type Role, type ListeningOrderView } from './model.js';
 import type { Engine, EngineChange } from './engine.js';
 import type { Config } from './config.js';
 import type { IntegrationManager } from './integrations.js';
@@ -150,8 +150,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.json(await engine.setSecretPlayback(input.enabled, input.revision));
   }));
   app.get('/api/host/autoplay-settings', (_req, res) => res.json(engine.autoplaySettings()));
-  app.post('/api/host/autoplay-settings', jsonBody(z.strictObject({ enabled: z.boolean(), revision }), async (input, _req, res) => {
-    res.json(await engine.setAutoplay(input.enabled, input.revision));
+  app.post('/api/host/autoplay-settings', jsonBody(autoplaySettingsSchema, async (input, _req, res) => {
+    res.json(await engine.setAutoplay(input.mode, input.revision));
   }));
   app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
   app.get('/api/host/background-settings', async (_req, res) => { res.json(await background.read()); });

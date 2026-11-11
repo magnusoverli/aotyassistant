@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile, type AutoplayTarget, type RoomLogoView } from './model.js';
+import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile, type AutoplayTarget, type AutoplayMode, type AutoplaySettings, type RoomLogoView } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
@@ -11,7 +11,7 @@ import { artworkPath, artworkReference } from './catalogue-references.js';
 const secret = () => randomBytes(32).toString('base64url');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const defaultAutoReveal = { enabled: true, revision: 0 };
-const defaultAutoplay = { enabled: false, revision: 0 };
+const defaultAutoplay: AutoplaySettings = { mode: 'off', revision: 0 };
 const defaultSecretPlayback = { enabled: true, revision: 0 };
 export type EngineChange = 'room' | 'playback' | 'output';
 type PlayActor = { kind: 'participant'; credential: string } | { kind: 'autoplay'; target: AutoplayTarget };
@@ -33,7 +33,7 @@ export class Engine extends EventEmitter {
   private autoplayRuns = new Set<Promise<unknown>>();
 
   attachUsers(resolve: (credential: string) => UserProfile | undefined) { this.userForSession = resolve; }
-  /** Called after a song ends naturally and the turn passes, while automatic play is on. */
+  /** Called after a song ends naturally, for the participant selected by the playback mode. */
   attachAutoplay(handler: (target: AutoplayTarget) => Promise<unknown>) { this.autoplayNext = handler; }
   identityParticipants() { return structuredClone(this.room().participants); }
   hasLegacyParticipants() { return this.room().participants.some(person => !person.userId); }
@@ -127,13 +127,13 @@ export class Engine extends EventEmitter {
     this.scheduleAutoReveal();
     return this.playbackSettings();
   }
-  autoplaySettings(): PlaybackSettings { return { ...(this.room().autoplay ?? defaultAutoplay) }; }
+  autoplaySettings(): AutoplaySettings { return { ...(this.room().autoplay ?? defaultAutoplay) }; }
   /** Switching it on never starts music; it applies from the next song that ends. */
-  async setAutoplay(enabled: boolean, revision: number): Promise<PlaybackSettings> {
+  async setAutoplay(mode: AutoplayMode, revision: number): Promise<AutoplaySettings> {
     await this.transaction(async state => {
       const room = this.room(state); const current = room.autoplay ?? defaultAutoplay;
       if (current.revision !== revision) throw new AppError(409, 'Playback settings changed. Refresh them before trying again.');
-      room.autoplay = { enabled, revision: current.revision + 1 };
+      room.autoplay = { mode, revision: current.revision + 1 };
     });
     return this.autoplaySettings();
   }
@@ -151,9 +151,10 @@ export class Engine extends EventEmitter {
   }
   /** Automatic reveal only means something while songs start hidden. */
   private autoRevealOn(room: Room) { return room.autoReveal?.enabled !== false && room.secretPlayback?.enabled !== false; }
-  /** The same turn, the same seat still held by the same user, and the setting still on. */
+  /** The same completion, seat, user and policy; even changing away and back cancels a pending start. */
   private autoplayAllowed(room: Room, target: AutoplayTarget) {
-    return room.autoplay?.enabled === true && room.turnId === target.turnId && room.currentId === target.participantId &&
+    return target.mode !== 'off' && room.autoplay?.mode === target.mode && room.autoplay.revision === target.settingsRevision &&
+      room.turnId === target.turnId && room.currentId === target.participantId &&
       room.participants.some(person => person.id === target.participantId && person.userId === target.userId);
   }
   /** A cheap check before reserving a saved song; `autoplay` checks again inside the audio lane. */
@@ -162,9 +163,10 @@ export class Engine extends EventEmitter {
     return Boolean(this.live && this.playbackAvailable && !this.concealPlayback && !this.startingPlayback && room && !room.playback && this.autoplayAllowed(room, target));
   }
   private autoplayTarget(room: Room): AutoplayTarget | undefined {
-    if (room.autoplay?.enabled !== true || !room.currentId || room.playback) return;
+    const settings = room.autoplay ?? defaultAutoplay;
+    if (settings.mode === 'off' || !room.currentId || room.playback) return;
     const userId = room.participants.find(person => person.id === room.currentId)?.userId;
-    return userId ? { turnId: room.turnId, participantId: room.currentId, userId } : undefined;
+    return userId ? { turnId: room.turnId, participantId: room.currentId, userId, mode: settings.mode, settingsRevision: settings.revision } : undefined;
   }
   private startAutoplay(target: AutoplayTarget) {
     const next = this.autoplayNext; if (!next || !this.live) return;
@@ -197,7 +199,7 @@ export class Engine extends EventEmitter {
   async init(): Promise<void> {
     this.state = await this.store.load();
     this.state.room ??= { id: randomUUID(), revision: 0, turnId: randomUUID(), participants: [], active: [], currentId: null, playback: null };
-    roomSchema.parse(this.state.room);
+    this.state.room = roomSchema.parse(this.state.room);
     // Keep the room and memberships, but invalidate pending playback actions on restart.
     this.state.room.turnId = randomUUID(); this.state.room.playback = null; this.state.room.revision++;
     await this.store.save(this.state);
@@ -464,7 +466,7 @@ export class Engine extends EventEmitter {
     if (!this.adapter.resolveSaved) throw new AppError(422, 'Saved-track playback is unavailable.');
     return operation('prepared-play', () => this.playSelection({ kind: 'participant', credential }, turnId, previousPlaybackId, context => this.adapter.resolveSaved!(selection, context, `prepared:${entryId}`)));
   }
-  /** Automatic play: the first saved song of the person whose turn began when a song ended. The same
+  /** Automatic play: the first saved song of the person selected when a song ended. The same
    * checks as Play run inside the audio lane. Returns null when no audio command was sent, so the
    * saved song can stay first in their list; a failure after that keeps the usual review. */
   async autoplay(target: AutoplayTarget, selection: SavedSelection, entryId: string): Promise<string | null> {
@@ -580,13 +582,18 @@ export class Engine extends EventEmitter {
       await this.adapter.control('stop');
       return this.serial(async () => {
         if (!eligible()) return;
-        const state = structuredClone(this.state); this.rotate(state.room!); state.room!.revision++;
+        const state = structuredClone(this.state); const room = state.room!;
+        if (room.autoplay?.mode === 'same-participant') {
+          // Keep the seat/order, but invalidate actions and delayed starts from the finished song.
+          room.turnId = randomUUID(); room.playback = null;
+        } else this.rotate(room);
+        room.revision++;
         // The song was already stopped above.
         if (!await this.commit(state, { stopOnFailure: false })) throw new AppError(503, 'Completion state could not be saved.');
         return this.autoplayTarget(state.room!);
       });
     });
-    // Only a natural ending passes the turn this way; Finish, Skip and Pass never start the next song.
+    // Only a natural ending starts another song; Finish, Skip and Pass never do.
     if (next) this.startAutoplay(next);
   }
 }

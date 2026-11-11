@@ -8,7 +8,8 @@ import { pageFrame } from './page-layout';
 import { panel as createPanel, fieldControl, pageHeading, sectionHeading, actionGroup, notice as uiNotice } from './ui-components';
 import { ViewNodes, children, attr, prop, text, scheduledRender } from './view-nodes';
 import { SpeakerFreshness } from './speaker-freshness';
-import { PlaybackSettingsPanel, autoRevealSetting, autoplaySetting, secretPlaybackSetting } from './playback-settings';
+import { PlaybackSettingsPanel, autoRevealSetting, secretPlaybackSetting } from './playback-settings';
+import { AutoplaySettingsPanel } from './autoplay-settings';
 import { UserSettingsPanel } from './user-pin';
 import { SettingsSections, type SettingsSection } from './settings-sections';
 import { OnlinePanel } from './online-panel';
@@ -26,7 +27,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
   const onlineInvitations = new OnlinePanel(signal);
   const secretPlayback = new PlaybackSettingsPanel(signal, secretPlaybackSetting);
   const playbackSettings = new PlaybackSettingsPanel(signal, autoRevealSetting);
-  const autoplaySettings = new PlaybackSettingsPanel(signal, autoplaySetting);
+  const autoplaySettings = new AutoplaySettingsPanel(signal);
   secretPlayback.onValue = enabled => playbackSettings.setActive(enabled);
   void secretPlayback.load(); void playbackSettings.load(); void autoplaySettings.load();
   const userPins = new UserSettingsPanel(signal); void userPins.load();
