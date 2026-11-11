@@ -265,11 +265,14 @@ test('the spectrum follows the actual rounded card with bounded inward needles a
       const bars = [...node.querySelectorAll<SVGLineElement>('.order-spectrum-bar')];
       return { edges: [first.x - box.left, first.y - box.top, box.right - last.x, box.bottom - last.y],
         radius: Number(outline.getAttribute('rx')), cardRadius: parseFloat(getComputedStyle(node).borderTopLeftRadius),
-        inward: Math.max(...bars.map(bar => bar.y2.baseVal.value)), outward: Math.max(...bars.map(bar => -bar.y1.baseVal.value)) };
+        inward: Math.max(...bars.map(bar => bar.y2.baseVal.value)), outward: Math.max(0, ...bars.map(bar => -bar.y1.baseVal.value)) };
     });
     for (const edge of geometry.edges) expect(edge).toBeCloseTo(.5, 1);
     expect(geometry.radius).toBeCloseTo(geometry.cardRadius - .5, 1);
-    expect(geometry.inward).toBeLessThanOrEqual(6.5); expect(geometry.outward).toBeLessThanOrEqual(1);
+    expect(geometry.inward).toBe(width < 1100 ? 10.5 : 19.5); expect(geometry.outward).toBe(0);
+    await expect(seat.locator('.order-trace')).toHaveCSS('overflow', 'hidden');
+    await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('stroke-width', '1.6px');
+    await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('stroke-linecap', 'butt');
     await seat.screenshot({ path: `test-results/order-spectrum-${width}.png` });
     expect(await seat.boundingBox()).toEqual(bounds);
   }

@@ -48,7 +48,7 @@ Choose a still JPEG, PNG or WebP image up to 10 MB and 40 megapixels. Camera cap
 
 ### Listening order
 
-In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is. A compact multicolour spectrum border marks the current participant, with fine needles extending mostly inside the card. With the visualizer configured, they react to the room’s audio; otherwise a restrained decorative animation accompanies playback. The border stays still while choosing a song or while playback is paused or stopped. Reduced-motion preferences keep it static throughout.
+In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is. A multicolour spectrum border marks the current participant, with closely spaced needles extending entirely inside the card. With the visualizer configured, they react to the room’s audio; otherwise a restrained decorative animation accompanies playback. The border stays still while choosing a song or while playback is paused or stopped. Reduced-motion preferences keep it static throughout.
 
 On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. Your own card stays highlighted. This presentation does not change the saved turn order or desktop layout.
 
@@ -60,7 +60,7 @@ On **Host desk**, drag any participant card into a new position. Neighbouring ca
 2. In Music Assistant, create a permanent speaker group containing **Doom Room Visualizer** and your speakers.
 3. Select that group as Doom Room’s **Speaker or group**, then play a song. The visualizer status should report that it is receiving real audio spectrum.
 
-The visualizer is a persistent silent receiver on the app server. It reconnects after restart and sends timestamped frequency data to every room screen, including `/display`; screens need no microphone or browser audio permission. Track titles and artwork are not included in the spectrum feed.
+The visualizer is a persistent silent receiver on the app server. It reconnects after restart and sends timestamped frequency data to every room screen, including `/display`; screens need no microphone or browser audio permission. It analyses approximately **30–13,000 Hz** across **24 frequency bands**, producing **60 spectrum frames per second**. Screens interpolate the needles at their display refresh rate. Track titles and artwork are not included in the spectrum feed.
 
 Sendspin-compatible groups share playback timing. For supported Sonos devices, use Music Assistant’s [AirPlay/Sendspin bridging](https://www.music-assistant.io/player-support/sonos/#airplay-functionality) for synchronized grouping. A native Sonos player can instead share a [Universal Group](https://www.music-assistant.io/faq/groups/) with the receiver, but Universal Groups do **not** guarantee synchronized playback.
 

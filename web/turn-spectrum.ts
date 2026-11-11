@@ -1,13 +1,14 @@
 import { RoomSpectrum } from './room-spectrum';
 
 const namespace = 'http://www.w3.org/2000/svg';
+const needleSpacing = 3;
 function svg<K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<string, string> = {}) {
   const node = document.createElementNS(namespace, tag);
   for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
   return node;
 }
 
-/** A narrow ribbon of frequency needles, mostly inside the actual rounded card edge. */
+/** Frequency needles extending inward from the actual rounded card edge. */
 export class TurnSpectrum {
   readonly element = svg('svg', { class: 'order-trace', 'aria-hidden': 'true', focusable: 'false' });
   private outline = svg('rect', { class: 'order-spectrum-outline', fill: 'none' });
@@ -19,7 +20,6 @@ export class TurnSpectrum {
   private participantId: string | null = null;
   private playing = false;
   private frame = 0;
-  private last = 0;
 
   constructor() {
     this.element.append(this.outline);
@@ -44,11 +44,11 @@ export class TurnSpectrum {
     const points: { x: number; y: number; angle: number }[] = [];
     const horizontal = width - 1 - 2 * radius; const vertical = height - 1 - 2 * radius;
     const straight = (length: number, x: number, y: number, dx: number, dy: number, angle: number) => {
-      const count = Math.max(1, Math.round(length / 3.5));
+      const count = Math.max(1, Math.round(length / needleSpacing));
       for (let i = 0; i < count; i++) points.push({ x: x + dx * length * i / count, y: y + dy * length * i / count, angle });
     };
     const corner = (cx: number, cy: number, from: number) => {
-      const count = Math.max(2, Math.round(radius * Math.PI / 7));
+      const count = Math.max(2, Math.round(radius * Math.PI / (2 * needleSpacing)));
       for (let i = 0; i < count; i++) {
         const angle = from + i / count * 90; const radians = angle * Math.PI / 180;
         points.push({ x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians), angle: angle + 90 });
@@ -61,7 +61,7 @@ export class TurnSpectrum {
     for (let i = 0; i < points.length; i++) {
       const point = points[i]!;
       const group = svg('g', { transform: `translate(${point.x} ${point.y}) rotate(${point.angle})` });
-      const bar = svg('line', { class: 'order-spectrum-bar', x1: '0', x2: '0', y1: '-1', y2: height < 50 ? '3.5' : '6.5' });
+      const bar = svg('line', { class: 'order-spectrum-bar', x1: '0', x2: '0', y1: '0', y2: height < 50 ? '10.5' : '19.5' });
       bar.style.stroke = `hsl(${(150 + i / points.length * 300) % 360} 65% 72%)`;
       bar.style.animationDelay = `${-i * .137}s`; bar.style.animationDuration = `${3.2 + .7 * Math.sin(i * 1.7)}s`;
       group.append(bar); this.element.append(group); this.bars.push(bar);
@@ -77,7 +77,7 @@ export class TurnSpectrum {
   };
   private draw = (now: number) => {
     this.frame = requestAnimationFrame(this.draw);
-    if (now - this.last < 32) return; this.last = now;
+    // Interpolate the 60 Hz analysis on each display refresh instead of limiting motion to 30 fps.
     const bins = this.feed.clock.sample(now, this.roomId, this.participantId);
     this.element.dataset.reactive = String(Boolean(bins));
     if (!bins) return;

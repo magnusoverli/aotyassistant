@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.0.23] — 2026-11-11
+
+- Analyse 30–13,000 Hz at 60 spectrum frames per second and animate the border at the screen’s refresh rate.
+- Restyle join QR codes with forest-green modules on warm ivory, subtly rounded locator corners, and a sage-and-gold frame outside the four-module scanning margin.
+- Triple the spectrum border’s needle length, keep it entirely inside the rounded card, and make needles wider and more closely spaced.
+- Use regular-weight, slightly smaller status labels in the play order.
+
 ## [2.0.22] — 2026-11-11
 
 - Replace the active participant’s broad EQ glow with a compact multicolour spectrum border, extending mostly inward and respecting reduced-motion preferences.

@@ -28,10 +28,10 @@ export function frequencyBins(channels: Float32Array[], sampleRate: number): num
     }
     for (let i = 1; i < power.length; i++) power[i] = power[i]! + (re[i]! ** 2 + im[i]! ** 2) / channels.length;
   }
-  const maxHz = Math.min(16000, sampleRate / 2);
+  const minHz = 30; const maxHz = Math.min(13000, sampleRate / 2);
   return Array.from({ length: spectrumBins }, (_, band) => {
-    const low = Math.max(1, Math.floor(45 * (maxHz / 45) ** (band / spectrumBins) * size / sampleRate));
-    const high = Math.min(power.length, Math.max(low + 1, Math.ceil(45 * (maxHz / 45) ** ((band + 1) / spectrumBins) * size / sampleRate)));
+    const low = Math.max(1, Math.floor(minHz * (maxHz / minHz) ** (band / spectrumBins) * size / sampleRate));
+    const high = Math.min(power.length, Math.max(low + 1, Math.ceil(minHz * (maxHz / minHz) ** ((band + 1) / spectrumBins) * size / sampleRate)));
     let peak = 0;
     for (let bin = low; bin < high; bin++) peak = Math.max(peak, power[bin]!);
     const db = 20 * Math.log10(Math.max(1e-9, Math.sqrt(peak) * 4 / size));

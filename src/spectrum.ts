@@ -1,6 +1,6 @@
 /** Small, metadata-free frames shared by the server and every room screen. */
 export const spectrumBins = 24;
-export const spectrumRate = 30;
+export const spectrumRate = 60;
 export type SpectrumFrame = { at: number; bins: number[] };
 export type SpectrumPacket = { epoch: string; roomId: string | null; participantId: string | null; active: boolean; frames: SpectrumFrame[] };
 export type VisualizerSettings = { revision: number; enabled: boolean; delayMs: number };
@@ -19,7 +19,8 @@ export class SpectrumBuffer {
     this.prune(now);
   }
   private prune(now: number) {
-    this.frames = this.frames.filter(frame => frame.at >= now - 5500).slice(-1250);
+    // Retain the full delay + stream-ahead window at the analysis frame rate.
+    this.frames = this.frames.filter(frame => frame.at >= now - 5500).slice(-Math.ceil(spectrumRate * 41));
   }
   window(now: number, delayMs: number) {
     this.prune(now);

@@ -15,22 +15,22 @@
   .rotation-list > .rotation-seat:not(:last-child)::after { content:''; position:absolute; top:50%; right:calc(-1 * var(--order-gap) - 1px); width:var(--order-gap); height:12px; transform:translateY(-50%); background:linear-gradient(90deg,#83937366,#c6b58bcc); mask:url('./order-arrow.svg') center / 18px 12px no-repeat; pointer-events:none; }
   .rotation-seat .avatar { grid-column:1; grid-row:1 / 3; width:32px; height:32px; font-size:14px; }
   .rotation-seat strong { grid-column:2; grid-row:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14px; font-weight:600; line-height:18px; }
-  .seat-state { grid-column:2; grid-row:2; font-size:9.5px; line-height:16px; color:var(--muted); font-weight:500; white-space:nowrap; text-transform:uppercase; letter-spacing:.13em; }
+  .seat-state { grid-column:2; grid-row:2; font-size:9px; line-height:16px; color:var(--muted); font-weight:400; white-space:nowrap; text-transform:uppercase; letter-spacing:.13em; }
   .rotation-seat .seat-state:empty { display:none; }
   .rotation-seat:not(.is-current):not(.is-next):not(.is-you) { opacity:.55; }
   .rotation-seat.is-you { border-color:var(--accent); }
   .rotation-seat.is-next { background:#2c2b20; border-color:var(--accent); opacity:.85; }
-  .rotation-seat.is-next .seat-state { color:var(--accent); font-weight:700; }
+  .rotation-seat.is-next .seat-state { color:var(--accent); }
   /* The current card keeps a quiet edge at rest and a narrow spectrum while playing. */
   .rotation-seat.is-current { isolation:isolate; background:#1f2c1c; border-color:#829b6e; }
-  .rotation-seat.is-current .seat-state { color:#c9e8b1; font-weight:700; }
-  .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:visible; pointer-events:none; }
+  .rotation-seat.is-current .seat-state { color:#c9e8b1; }
+  .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:hidden; border-radius:inherit; pointer-events:none; }
   .order-spectrum-outline { stroke:#a5caaa; stroke-width:.6px; opacity:.35; }
-  .order-spectrum-bar { stroke-width:1px; stroke-linecap:round; opacity:.65; transform:scaleY(.3); transform-origin:0 0; }
+  .order-spectrum-bar { stroke-width:1.6px; stroke-linecap:butt; opacity:.65; transform:scaleY(.3); transform-origin:0 0; }
   .listening-order .rotation-seat.is-current .order-trace { display:block; }
   .listening-order[data-playback='playing'] .order-trace:not([data-reactive='true']) .order-spectrum-bar { animation:order-spectrum-breathe 3.5s ease-in-out infinite; }
   @keyframes order-spectrum-breathe { 0%,100% { transform:scaleY(.18); } 50% { transform:scaleY(.48); } }
-  /* One pixel outside, up to 6.5px inside. Keep the name above the fine edge needles. */
+  /* Up to 19.5px inward, clipped at the rounded border. Keep names above the needles. */
   .rotation-seat > :is(strong,.avatar,.seat-state) { position:relative; z-index:1; }
   @media(prefers-reduced-motion:reduce) {
     .order-trace .order-spectrum-bar { animation:none !important; transform:scaleY(.2) !important; opacity:.45; }
@@ -57,7 +57,7 @@
     :where(body:not([data-view='display'])) .rotation-seat { flex-basis:clamp(96px,calc((100% - 2 * var(--order-gap)) / 3),112px); grid-template-columns:minmax(0,1fr); min-height:44px; padding:3px 4px; column-gap:6px; row-gap:0; border-radius:6px; }
     :where(body:not([data-view='display'])) .rotation-seat .avatar,:where(body:not([data-view='display'])) .seat-state:not(.seat-state-compact) { display:none; }
     :where(body:not([data-view='display'])) .rotation-seat strong { grid-column:1; font-size:13px; text-align:center; }
-    :where(body:not([data-view='display'])) .seat-state-compact { display:block; grid-column:1; font-size:9.5px; text-align:center; }
+    :where(body:not([data-view='display'])) .seat-state-compact { display:block; grid-column:1; font-size:9px; text-align:center; }
     :where(body:not([data-view='display'])) .order-status { flex-basis:100%; font-size:13px; }
   }
 }
