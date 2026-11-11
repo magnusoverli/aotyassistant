@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.20] — 2026-11-11
+
+- Fit the profile-picture editor to the available screen height: keep Save and Cancel visible, shrink the crop preview as needed, and use a side-by-side layout on landscape phones.
+- Replace the light travelling around the current participant's card with an EQ-style glow: soft bands of light rise inward from the card's edges at irregular heights, like an old spectrum meter. It moves while their song plays, holds dimmed while it is paused or the page is offline, and becomes a slow breathing glow while they choose a song. Reduced-motion preferences show a steady glow. Phones draw half the bands. The **Now** / **Current turn** / **Your turn** labels are unchanged.
+- Give long track titles more horizontal room on landscape displays, using spare space to the right while preserving the track-info placement and progress-bar width.
+
 ## [2.0.19] — 2026-11-11
 
 - Add profile pictures: use **Profile picture** in Your music to take a photo with the phone's camera or choose a file, position and zoom the circular preview, then save. Hosts can manage pictures under **Settings → Users → Manage**. Saved pictures follow users across devices and update open displays and user pickers; removing a picture restores the first-letter avatar.

@@ -7,34 +7,9 @@ import { OrderDrag, type OrderMove } from './order-drag';
 import { stackedLayout } from './page-layout';
 import { turnFirst, canonicalInsertion } from './order-presentation';
 import { fittingSeats } from './display-stage';
+import { seatEq } from './seat-eq';
 
 type Management = { disabled(): boolean; reorder(move: OrderMove): Promise<void> };
-
-let turnBorderSequence = 0;
-
-/** A diffuse point light follows a normalized perimeter, clipped to the actual border. */
-function turnBorder() {
-  const namespace = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(namespace, 'svg');
-  svg.classList.add('order-trace'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
-  const rect = (className: string) => {
-    const node = document.createElementNS(namespace, 'rect'); node.classList.add(className);
-    node.setAttribute('x', '.5'); node.setAttribute('y', '.5'); node.setAttribute('pathLength', '100'); return node;
-  };
-  const definitions = document.createElementNS(namespace, 'defs');
-  const mask = document.createElementNS(namespace, 'mask'); const id = `order-border-${++turnBorderSequence}`;
-  mask.id = id; mask.setAttribute('maskUnits', 'userSpaceOnUse');
-  mask.setAttribute('x', '0'); mask.setAttribute('y', '0'); mask.setAttribute('width', '100%'); mask.setAttribute('height', '100%');
-  mask.append(rect('order-trace-mask')); definitions.append(mask); svg.append(definitions);
-  const light = () => {
-    const clipped = document.createElementNS(namespace, 'g'); clipped.setAttribute('mask', `url(#${id})`);
-    clipped.append(rect('order-trace-light')); return clipped;
-  };
-  // Blur a copy after masking, so only the border casts a halo into its surroundings.
-  const halo = document.createElementNS(namespace, 'g'); halo.classList.add('order-trace-halo'); halo.append(light());
-  svg.append(halo, light());
-  return svg;
-}
 
 /** One persistent participant bar, shared by every application route. */
 export class ListeningOrder {
@@ -189,6 +164,8 @@ export class ListeningOrder {
   private render() {
     this.drag?.update();
     const view = this.snapshot; const everyone = this.presentedPeople();
+    // The current card's light follows the room's playback (listening-order.css).
+    attr(this.element, 'data-playback', view?.playbackStatus ?? 'unavailable');
     text(this.empty, view ? 'No participants have joined.' : 'Loading listening order…');
     prop(this.empty, 'hidden', everyone.length > 0); prop(this.list, 'hidden', !everyone.length);
     const people = everyone.slice(0, this.seatsShown(everyone.length)); const hidden = everyone.length - people.length;
@@ -213,10 +190,10 @@ export class ListeningOrder {
         const name = v.el('name', 'strong', person.nickname); prop(name, 'title', person.nickname);
         const image = v.get('avatar', () => ({ key: '', node: avatar(person) }));
         const imageKey = JSON.stringify(person); if (image.key !== imageKey) { image.key = imageKey; image.node = avatar(person); }
-        const content: Node[] = [image.node, name,
+        // The light sits first, behind the avatar and name; it is kept, mid-motion, across updates.
+        const content: Node[] = [...(current ? [v.get('eq', seatEq)] : []), image.node, name,
           v.el('state', 'span', current && me ? 'Your turn' : current ? 'Current turn' : next && me ? 'You’re next' : next ? 'Up next' : me ? 'You' : '', 'seat-state'),
-          v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : '', 'seat-state seat-state-compact'),
-          v.get('turn-border', turnBorder)];
+          v.el('compact-state', 'span', current ? `Now${me ? ' · You' : ''}` : next ? `Next${me ? ' · You' : ''}` : me ? 'You' : '', 'seat-state seat-state-compact')];
         children(row, ...content);
         return row;
       }), ...(hidden ? [this.more] : []));

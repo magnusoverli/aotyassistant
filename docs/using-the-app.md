@@ -18,7 +18,7 @@ Resizing or entering full screen adjusts the layout automatically. Operating-sys
 
 ### Animated display background
 
-Cover artwork and the placeholder record share one responsive frame, with track details aligned to its bottom edge. The playback block reserves enough height for its text independently of the artwork. The animated BMF logo is vertically centred between the play order and the actual top of the artwork, with equal breathing room above and below. Balanced side columns keep the track details centred, with space for the artwork on the left and the QR or room logo on the right.
+Cover artwork and the placeholder record share one responsive frame, with track details aligned to its bottom edge. The playback block reserves enough height for its text independently of the artwork. The animated BMF logo is vertically centred between the play order and the actual top of the artwork, with equal breathing room above and below. Balanced side columns keep the track details centred, with space for the artwork on the left and the QR or room logo on the right. On landscape displays, the title can extend into the spare space to the right, stopping before the QR/logo area, while its left edge, the track-info placement and the progress-bar width stay fixed. Titles that still exceed the available space can use the reserved second line.
 
 In **Settings → Appearance → Animated BMF background**, set **Room display QR placement** to **Bottom-right** (the default) or **Right of play order**, then save. Bottom-right is used when the side column fits; otherwise the QR moves into the listening order automatically. Both positions show the code without a caption. This setting also works when the animation is disabled; its placement is shown on the room display rather than in the animation preview. The progress bar fills the details column. Track details have about 20% extra vertical space, extending upward from the artwork's bottom edge and spreading the content apart when space permits. The album name uses the same font, size, weight and colour as the artist name beneath the larger track title.
 
@@ -40,7 +40,7 @@ The room is always ready. New participants enter a display name and choose a fou
 
 ### Profile pictures
 
-Open **Your music → Profile picture** to add or change your picture, at any point in the listening order. **Take photo** opens the phone's native camera where supported; **Choose photo** opens the photo/file picker. Drag the preview (or use its arrow keys) to position the picture and adjust **Zoom**, then **Save picture**. Closing the editor before saving keeps your previous picture. **Remove picture** restores the larger first-letter avatar.
+Open **Your music → Profile picture** to add or change your picture, at any point in the listening order. **Take photo** opens the phone's native camera where supported; **Choose photo** opens the photo/file picker. Drag the preview (or use its arrow keys) to position the picture and adjust **Zoom**, then **Save picture**. The preview adapts to the available screen space, with **Save picture** and **Cancel** kept visible at the bottom. **Cancel** before saving keeps your previous picture. **Remove picture** restores the larger first-letter avatar.
 
 Pictures are visible to everyone in the room and in the existing-user picker. They follow your saved user across devices, survive restarts and are included in the app's data backup. Hosts can also add, replace or remove a user's picture in **Settings → Users → Manage**. Deleting a user deletes their picture; removing someone only from the listening order retains it.
 
@@ -48,7 +48,7 @@ Choose a still JPEG, PNG or WebP image up to 10 MB and 40 megapixels. Camera cap
 
 ### Listening order
 
-In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
+In the listening order, **Current turn** (or **Now** on compact layouts) identifies whose turn it is, and the current participant's card glows. While their song plays, soft bands of light rise inward from the card's edges at irregular heights, like an old spectrum meter. The motion is decorative: the page does not hear the music, which plays on the speaker. The bands hold, dimmed, while the song is paused or the page is offline. While the participant chooses a song, the card has a slow breathing glow instead. Reduced-motion preferences show a steady glow.
 
 On mobile, the compact listening order starts with **Now**, followed by **Next**. Cards rotate as turns advance; scroll horizontally to see the remaining participants. Your own card stays highlighted. This presentation does not change the saved turn order or desktop layout.
 

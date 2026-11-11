@@ -25,6 +25,7 @@ export class UserPictureEditor {
   private take = el('button', 'Take photo', 'secondary');
   private choose = el('button', 'Choose photo', 'secondary');
   private zoomControl = el('label', 'Zoom', 'picture-zoom');
+  private cropHelp = el('p', 'Drag or use arrow keys to position; zoom to crop.', 'muted picture-crop-help');
   private person?: Person;
   private image?: HTMLImageElement;
   private objectUrl?: string;
@@ -40,13 +41,14 @@ export class UserPictureEditor {
     this.element.onclick = () => this.open();
     const title = el('h2', 'Profile picture'); title.id = id;
     this.dialog.setAttribute('aria-labelledby', id);
-    const help = el('p', 'Your picture is visible to everyone in this room and in the user picker.', 'muted');
+    const help = el('p', 'Visible to everyone in the room and user picker.', 'muted');
+    const header = el('div', undefined, 'picture-header'); header.append(title, help);
     const preview = el('div', undefined, 'picture-preview');
     this.canvas.width = this.canvas.height = userPictureSize; this.canvas.tabIndex = 0;
     this.canvas.setAttribute('aria-label', 'Picture crop. Drag or use arrow keys to move the picture.');
     preview.append(this.current, this.canvas);
-    const cropHelp = el('p', 'Drag the picture or use arrow keys to position it. Adjust Zoom to fit the circle.', 'muted small');
-    const choices = el('div', undefined, 'actions'); choices.append(this.take, this.choose);
+    this.cropHelp.id = `${id}-crop-help`; this.canvas.setAttribute('aria-describedby', this.cropHelp.id);
+    const choices = el('div', undefined, 'actions picture-choices'); choices.append(this.take, this.choose);
     this.camera.type = this.picker.type = 'file';
     this.camera.accept = 'image/*'; this.camera.setAttribute('capture', 'user');
     this.picker.accept = 'image/jpeg,image/png,image/webp,image/heic,image/heif';
@@ -58,13 +60,16 @@ export class UserPictureEditor {
     this.zoom.type = 'range'; this.zoom.min = '1'; this.zoom.max = '4'; this.zoom.step = '.01'; this.zoom.value = '1';
     this.zoomControl.append(this.zoom);
     this.zoom.oninput = () => { this.crop.zoom = Number(this.zoom.value); this.draw(); };
-    const actions = el('div', undefined, 'actions'); actions.append(this.save, this.remove, this.cancel);
+    const actions = el('div', undefined, 'actions picture-actions'); actions.append(this.save, this.remove, this.cancel);
     for (const button of [this.take, this.choose, this.save, this.remove, this.cancel]) button.type = 'button';
     this.save.onclick = () => { void this.persist(false); }; this.remove.onclick = () => { void this.persist(true); };
     this.cancel.onclick = () => this.dialog.close();
     this.dialog.addEventListener('cancel', event => { if (this.busy) event.preventDefault(); });
     this.dialog.addEventListener('close', () => { this.clearDraft(); this.element.focus({ preventScroll: true }); });
-    this.dialog.append(title, help, preview, choices, this.camera, this.picker, this.zoomControl, cropHelp, this.status, actions);
+    const controls = el('div', undefined, 'picture-controls');
+    controls.append(choices, this.camera, this.picker, this.zoomControl, this.cropHelp, this.status);
+    const body = el('div', undefined, 'picture-body'); body.append(preview, controls);
+    this.dialog.append(header, body, actions);
     this.canvas.onkeydown = event => {
       if (!this.image || this.busy) return;
       const step = event.shiftKey ? 30 : 8;
@@ -112,7 +117,7 @@ export class UserPictureEditor {
     this.save.disabled ||= !this.image;
     this.save.textContent = this.busy ? 'Please wait…' : 'Save picture';
     this.remove.hidden = !this.person?.avatarUrl; this.zoom.disabled = this.busy;
-    this.zoomControl.hidden = !this.image; this.canvas.hidden = !this.image; this.current.hidden = Boolean(this.image);
+    this.zoomControl.hidden = this.cropHelp.hidden = !this.image; this.canvas.hidden = !this.image; this.current.hidden = Boolean(this.image);
   }
   private async load(file: File) {
     if (file.size > maxUserPictureBytes) { this.message('Choose a picture smaller than 10 MB.', true); return; }

@@ -1,13 +1,18 @@
 import { expect, type Page } from '@playwright/test';
 import { test } from './app-fixture';
 
-async function expectGlowing(pages: Page[], animated: boolean) {
+/** The current card carries the EQ light; its bands run only while the song plays and the page is online. */
+async function expectCurrentTurn(pages: Page[], moving: boolean) {
   for (const page of pages) {
-    await expect.poll(() => page.locator('.rotation-seat').evaluateAll(nodes => nodes.filter(node => getComputedStyle(node.querySelector('.order-trace-light')!).animationName === 'order-trace').map(node => node.getAttribute('aria-current')))).toEqual(animated ? ['step'] : []);
+    const card = page.locator('.rotation-seat.is-current');
+    await expect(card).toHaveAttribute('aria-current', 'step');
+    await expect(page.locator('.seat-eq')).toHaveCount(1); await expect(card.locator('.seat-eq')).toHaveCount(1);
+    await expect.poll(() => card.evaluate(node => node.getAnimations({ subtree: true })
+      .some(animation => animation.playState === 'running' && /^seat-eq-[abc](-x)?$/.test((animation as CSSAnimation).animationName)))).toBe(moving);
   }
 }
 
-test('every route highlights the current turn, including before playback, while paused, stopped and disconnected', async ({ page, browser, isolatedApp }) => {
+test('every route lights the current turn, moving only while its song plays: still before playback, while paused, stopped and disconnected', async ({ page, browser, isolatedApp }) => {
   test.setTimeout(60_000); // Six routes across six viewport sizes, plus live playback/reconnection checks.
   const first = await isolatedApp.engine.join('First'); await isolatedApp.engine.join('Second');
   const guest = await browser.newContext({ baseURL: isolatedApp.origin });
@@ -50,7 +55,7 @@ test('every route highlights the current turn, including before playback, while 
         await expect(current.locator('.rotation-seat.is-current')).toHaveCSS('opacity', '1');
         await expect(current.locator('.rotation-seat.is-next')).toHaveCSS('opacity', '0.85');
         const waiting = current.locator('.rotation-seat:not(.is-current):not(.is-next)');
-        await expect(waiting).toHaveCSS('opacity', '0.55');
+        await expect(waiting).toHaveCSS('opacity', current === participant ? '1' : '0.55');
         if (current !== participant) {
           await expect(waiting.locator('.seat-state:visible')).toHaveCount(0);
           await expect(waiting.locator('strong')).toHaveCSS('grid-row-start', '1');
@@ -97,41 +102,37 @@ test('every route highlights the current turn, including before playback, while 
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('You');
     for (const current of pages.slice(0, -1)) await expect(current.locator('.rotation-seat.is-you')).toHaveCount(0);
     const state = isolatedApp.engine.view({ kind: 'participant', credential: first });
-    await expectGlowing(pages, true);
+    await expectCurrentTurn(pages, false);
     await isolatedApp.engine.play(first, state.turnId!, null, 'demo:aurora');
     const playing = isolatedApp.engine.view({ kind: 'participant', credential: first });
-    await expectGlowing(pages, true);
-    const glow = await page.locator('.rotation-seat.is-current').evaluateHandle(async node => {
-      const animation = node.getAnimations({ subtree: true })[0]!; await animation.ready; return { animation, start: animation.startTime };
-    });
+    await expectCurrentTurn(pages, true);
     await isolatedApp.engine.reveal(first, playing.turnId!, playing.ownPlayback!.id);
     isolatedApp.engine.emit('change', 'playback');
     await expect(page.locator('.host-live')).toBeVisible();
-    expect(await glow.evaluate(saved => document.getAnimations().includes(saved.animation) && saved.animation.startTime === saved.start)).toBe(true);
+    await expectCurrentTurn(pages, true);
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 900 });
       await page.locator('.listening-order').screenshot({ path: `test-results/listening-order-playing-${width}.png` });
     }
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await expectGlowing([page], false);
+    await expectCurrentTurn([page], false);
     await expect(page.locator('.rotation-seat.is-current')).toHaveAttribute('aria-current', 'step');
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await expectGlowing([page], true);
+    await expectCurrentTurn([page], true);
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
-    await expectGlowing(pages.slice(1, -1), true);
-    await guest.setOffline(false); await expectGlowing(pages, true);
+    await expectCurrentTurn(pages.slice(1, -1), false);
+    await guest.setOffline(false); await expectCurrentTurn(pages, true);
     Object.defineProperty(isolatedApp.engine.adapter, 'connected', { configurable: true, value: false }); isolatedApp.engine.emit('change', 'output');
-    await expectGlowing(pages, true);
+    await expectCurrentTurn(pages, false);
     Reflect.deleteProperty(isolatedApp.engine.adapter, 'connected'); isolatedApp.engine.emit('change', 'output');
-    await expectGlowing(pages, true);
+    await expectCurrentTurn(pages, true);
     await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'pause');
-    await expectGlowing(pages, true);
+    await expectCurrentTurn(pages, false);
     await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'resume');
-    await expectGlowing(pages, true);
+    await expectCurrentTurn(pages, true);
     await isolatedApp.engine.control(first, playing.turnId!, playing.ownPlayback!.id, 'stop');
-    await expectGlowing(pages, true);
-    await glow.dispose();
+    await expectCurrentTurn(pages, false);
     await isolatedApp.engine.advance(state.turnId!, first);
     for (const current of pages) await expect(current.locator('.rotation-seat.is-current strong')).toHaveText('Second');
     for (const current of pages) {
@@ -140,7 +141,7 @@ test('every route highlights the current turn, including before playback, while 
       await expect(current.locator('.rotation-seat:not(.is-current):not(.is-next)')).toHaveCSS('opacity', '0.55');
       await expect(current.locator('.rotation-seat:not(.is-current):not(.is-next) .seat-state:visible')).toHaveCount(0);
     }
-    await expectGlowing(pages, true);
+    await expectCurrentTurn(pages, false);
     await expect(participant.locator('.rotation-seat.is-you .seat-state:visible')).toHaveText('Next · You');
     await guest.setOffline(true);
     for (const current of pages.slice(1, -1)) await expect(current.locator('.order-status')).toHaveText('Offline');
@@ -245,88 +246,6 @@ test('mobile keeps Now and Next in the first slots across turns, scrolling and r
     await assertOrder();
   }
   expect(writes.filter(url => !url.endsWith('/api/participant/preparations/init'))).toEqual([]);
-});
-
-test('a diffuse light travels on the actual card border without an inset trail at desktop and mobile sizes', async ({ page, isolatedApp }) => {
-  await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
-  await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectGlowing([page], true);
-  const masks = await page.locator('.order-trace mask').evaluateAll(nodes => nodes.map(node => node.id));
-  expect(new Set(masks).size).toBe(masks.length);
-  const seat = page.locator('.rotation-seat.is-current');
-  await expect(seat.locator('.order-trace-light').first()).toHaveCSS('stroke-width', '64px');
-  await expect(seat.locator('.order-trace-halo')).toHaveCSS('filter', 'blur(3px)');
-  await expect(seat.locator('.order-trace-halo')).toHaveCSS('opacity', '0.9');
-  const motion = await seat.evaluateHandle(async node => {
-    const animations = node.getAnimations({ subtree: true });
-    for (const animation of animations) animation.pause();
-    await Promise.all(animations.map(animation => animation.ready)); return animations;
-  });
-  try {
-    for (const width of [1440, 390, 320]) {
-      await page.setViewportSize({ width, height: 900 });
-      const bounds = await seat.boundingBox();
-      const outline = await seat.evaluate(node => {
-        const box = node.getBoundingClientRect(); const mask = node.querySelector<SVGRectElement>('.order-trace-mask')!;
-        const geometry = mask.getBBox(); const matrix = node.querySelector<SVGSVGElement>('.order-trace')!.getScreenCTM()!;
-        const first = new DOMPoint(geometry.x, geometry.y).matrixTransform(matrix);
-        const last = new DOMPoint(geometry.x + geometry.width, geometry.y + geometry.height).matrixTransform(matrix);
-        return { left: first.x - box.left, top: first.y - box.top, right: box.right - last.x, bottom: box.bottom - last.y,
-          radius: parseFloat(getComputedStyle(mask).rx), cardRadius: parseFloat(getComputedStyle(node).borderTopLeftRadius), stroke: getComputedStyle(mask).strokeWidth };
-      });
-      for (const edge of [outline.left, outline.top, outline.right, outline.bottom]) expect(edge).toBeCloseTo(.5, 2);
-      expect(outline.radius).toBeCloseTo(outline.cardRadius - .5, 2); expect(outline.stroke).toBe('1px');
-      const probes = await seat.evaluate(node => {
-        const head = node.querySelector<SVGRectElement>('.order-trace-light')!;
-        const box = node.getBoundingClientRect(); const matrix = head.getScreenCTM()!;
-        return [.20, .45, .70, .95].map(fraction => {
-          const point = head.getPointAtLength(head.getTotalLength() * fraction).matrixTransform(matrix);
-          return { x: point.x - box.x, y: point.y - box.y };
-        });
-      });
-      await seat.locator('.order-trace').evaluate(node => { (node as SVGElement).style.visibility = 'hidden'; });
-      const baseline = await seat.screenshot({ scale: 'css' });
-      await seat.locator('.order-trace').evaluate(node => { (node as SVGElement).style.removeProperty('visibility'); });
-      for (let frame = 0; frame < 4; frame++) {
-        await motion.evaluate((animations, time) => { for (const animation of animations) animation.currentTime = time; }, frame * 2500);
-        const image = await seat.screenshot({ path: `test-results/order-trace-${width}-${frame}.png`, scale: 'css' });
-        const painted = await page.evaluate(async ({ png, baseline, probes }) => {
-          const pixels = async (png: string) => {
-            const image = new Image(); image.src = `data:image/png;base64,${png}`; await image.decode();
-            const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
-            const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0); return context;
-          };
-          const context = await pixels(png); const original = await pixels(baseline);
-          const gain = (point: { x: number; y: number }, size = 5) => {
-            const half = Math.floor(size / 2);
-            const x = Math.max(0, Math.floor(point.x) - half); const y = Math.max(0, Math.floor(point.y) - half);
-            const after = context.getImageData(x, y, size, size).data; const before = original.getImageData(x, y, size, size).data;
-            let brighter = 0;
-            for (let i = 0; i < after.length; i += 4) brighter += ((after[i]! - before[i]!) + (after[i + 1]! - before[i + 1]!) + (after[i + 2]! - before[i + 2]!)) / 3;
-            return brighter / (size * size);
-          };
-          const inside = probes.map(point => {
-            const vertical = Math.min(point.x, context.canvas.width - point.x) < Math.min(point.y, context.canvas.height - point.y);
-            return gain({ x: point.x + (vertical ? point.x < context.canvas.width / 2 ? 8 : -8 : 0),
-              y: point.y + (!vertical ? point.y < context.canvas.height / 2 ? 8 : -8 : 0) }, 3);
-          });
-          // Follow the light's width so a wider head still samples its feathered edges.
-          const step = parseFloat(getComputedStyle(document.querySelector('.rotation-seat.is-current .order-trace-light')!).strokeWidth) / 4;
-          const profile = [-3, -2, -1, 0, 1, 2, 3].map(offset => gain({ x: probes[0]!.x + offset * step, y: probes[0]!.y }, 1));
-          return { edges: probes.map(point => gain(point) > 15), inside, profile };
-        }, { png: image.toString('base64'), baseline: baseline.toString('base64'), probes });
-        expect(painted.edges, `The soft glow must visibly move to a different edge at ${frame * 2500}ms (${width}px).`).toEqual(probes.map((_, index) => index === frame));
-        expect(painted.inside[frame], 'The card interior must not contain a second bright travelling line.').toBeLessThan(4);
-        if (frame === 0) {
-          const profile = painted.profile;
-          expect(profile[3]!).toBeGreaterThan(profile[2]! + 10);
-          expect(profile[2]!).toBeGreaterThan(profile[1]! + 10);
-          expect(profile[1]!).toBeGreaterThan(profile[0]! + 4);
-          for (let index = 0; index < 3; index++) expect(Math.abs(profile[index]! - profile[6 - index]!)).toBeLessThan(8);
-        }
-        expect(await seat.boundingBox()).toEqual(bounds);
-      }
-    }
-  } finally { await motion.dispose(); }
 });
 
 test('order feed exposes names, placement and playback status without song details even after reveal', async ({ isolatedApp }) => {

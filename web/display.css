@@ -58,8 +58,6 @@
   body[data-view='display'] .seat-state:not(.seat-state-compact) { display:none; }
   body[data-view='display'] .seat-state-compact { display:block; font-size:var(--display-text); line-height:1.2; letter-spacing:.08em; overflow:hidden; text-overflow:ellipsis; }
   body[data-view='display'] .seat-state-compact:empty { display:none; }
-  body[data-view='display'] .rotation-seat.is-current .seat-state::before { font-size:.75em; }
-  body[data-view='display'] .order-trace rect { rx:calc(.625rem - .5px); }
   .rotation-more { flex:0 0 var(--more-width); align-self:center; color:var(--muted); font-size:var(--display-text); font-weight:600; text-align:center; white-space:nowrap; }
   .order-measure { position:absolute; top:0; left:0; visibility:hidden; pointer-events:none; }
   .order-measure[hidden] { display:none; }
@@ -106,6 +104,11 @@
         minmax(0,1fr);
     }
     .room-visual { width:min(100%,var(--art)); justify-self:center; }
+    /* Widen only the title into the spare right column. Its left edge and reserved
+       height stay fixed, so neither the details nor the progress bar move or grow.
+       Half the display plus half the details width reaches the right edge; reserve
+       the QR/logo rail and a gutter before it. cqw refers to room-display. */
+    .room-title-slot { width:max(100%,calc(50cqw + 50% - var(--clearance) - var(--gutter))); }
   }
   .room-glow { position:absolute; inset:-9%; z-index:-1; border-radius:35%; background:radial-gradient(ellipse,#e9bd791a,transparent 70%); animation:room-breathe 8s ease-in-out infinite; pointer-events:none; }
   @keyframes room-breathe { 0%,100% { opacity:.35; transform:scale(.98); } 50% { opacity:.85; transform:scale(1.04); } }

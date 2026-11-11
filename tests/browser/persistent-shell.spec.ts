@@ -2,7 +2,7 @@ import { expect } from '@playwright/test';
 import { test } from './app-fixture';
 import { openNavigation } from './navigation-helpers';
 
-test('menu navigation and Back retain the actual header, order cards and animation nodes', async ({ page, isolatedApp }) => {
+test('menu navigation and Back retain the actual header and order cards', async ({ page, isolatedApp }) => {
   await page.addInitScript(() => {
     const state = window as unknown as { shellSources: { url: string; closed: boolean }[] }; state.shellSources = [];
     const Original = EventSource;
@@ -20,7 +20,6 @@ test('menu navigation and Back retain the actual header, order cards and animati
   await expect(page.locator('.rotation-seat')).toHaveCount(1);
   const shell = await page.locator('.app-header').elementHandle();
   const card = await page.locator('.rotation-seat').elementHandle();
-  const light = await page.locator('.rotation-seat .order-trace').elementHandle();
   const documents: string[] = [];
   const writes: string[] = [];
   page.on('request', request => {
@@ -34,7 +33,6 @@ test('menu navigation and Back retain the actual header, order cards and animati
     await expect(page.locator('main')).toBeVisible();
     expect(await shell!.evaluate(node => node === document.querySelector('.app-header'))).toBe(true);
     expect(await card!.evaluate(node => node === document.querySelector('.rotation-seat'))).toBe(true);
-    expect(await light!.evaluate(node => node === document.querySelector('.rotation-seat .order-trace'))).toBe(true);
     await expect(page.locator('.header-inner')).toHaveCSS('height', '44px');
     await expect(page.getByRole('navigation')).toBeHidden();
     await expect(page.locator('.seat-state-compact')).toHaveText('Now · You');

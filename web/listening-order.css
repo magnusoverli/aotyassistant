@@ -21,21 +21,51 @@
   .rotation-seat.is-you { border-color:var(--accent); }
   .rotation-seat.is-next { background:#2c2b20; border-color:var(--accent); opacity:.85; }
   .rotation-seat.is-next .seat-state { color:var(--accent); font-weight:700; }
-  .rotation-seat.is-current { background:#30432b; border-color:#829b6e; }
+  /* Current turn: soft light rises inward from the card's edges like an old spectrum meter
+     (seat-eq.ts). Bands are soft gradients moved only by transforms, so no per-frame blur.
+     They move while the song plays, hold dimmed while it is paused or the page is offline,
+     and give way to a slow breathing glow while a song is being chosen. */
+  .rotation-seat.is-current { isolation:isolate; container-type:inline-size; background:#1f2c1c; border-color:#8fae78; box-shadow:0 0 .875rem #9fcf6a2e; }
   .rotation-seat.is-current .seat-state { color:#c9e8b1; font-weight:700; }
-  .rotation-seat.is-current .seat-state:before { content:'● '; font-size:9px; }
-  .order-trace { display:none; position:absolute; inset:-1px; width:calc(100% + 2px); height:calc(100% + 2px); overflow:visible; pointer-events:none; }
-  .order-trace rect { width:calc(100% - 1px); height:calc(100% - 1px); rx:9.5px; fill:none; }
-  .order-trace-mask { stroke:white; stroke-width:1px; }
-  .order-trace-light { stroke:#edf5d9; stroke-width:64px; stroke-linecap:round; stroke-dasharray:.001 99.999; opacity:1; filter:blur(12px); }
-  .order-trace-halo { opacity:.9; filter:blur(3px); }
-  .listening-order .rotation-seat.is-current .order-trace { display:block; }
-  .listening-order .rotation-seat.is-current .order-trace-light { animation:order-trace 10s linear infinite; }
-  @keyframes order-trace { from { stroke-dashoffset:-20px; } to { stroke-dashoffset:-120px; } }
+  .rotation-seat.is-current > :not(.seat-eq) { position:relative; z-index:1; }
+  /* One blur for the whole layer, scaled to the card, turns the bands into a soft moving glow. */
+  .seat-eq { position:absolute; inset:0; z-index:0; overflow:hidden; border-radius:inherit; pointer-events:none; filter:blur(1cqi); }
+  .seat-eq::before { content:''; position:absolute; inset:0; border-radius:inherit; box-shadow:inset 0 0 1.25em .125em #b5dc8a55; opacity:.55; }
+  .eq-band {
+    --tint:radial-gradient(ellipse 50% 100% at 50% 0,#eef6b4f0 0%,#b0de78c0 24%,#7cc25270 52%,transparent 82%);
+    position:absolute; top:0; left:calc(var(--at) - var(--w) / 2); width:var(--w); height:80%;
+    background:var(--tint); transform-origin:50% 0; transform:scaleY(var(--low)); opacity:0; transition:opacity .6s ease;
+  }
+  .eq-band[data-edge='bottom'] {
+    --tint:radial-gradient(ellipse 50% 100% at 50% 100%,#eef6b4f0 0%,#b0de78c0 24%,#7cc25270 52%,transparent 82%);
+    top:auto; bottom:0; transform-origin:50% 100%;
+  }
+  .eq-band:is([data-edge='left'],[data-edge='right']) {
+    --tint:radial-gradient(ellipse 100% 50% at 0 50%,#eef6b4e0 0%,#b0de78b0 24%,#7cc25266 52%,transparent 82%);
+    top:calc(var(--at) - var(--w) / 2); left:0; width:22%; height:var(--w); transform-origin:0 50%; transform:scaleX(var(--low));
+  }
+  .eq-band[data-edge='right'] {
+    --tint:radial-gradient(ellipse 100% 50% at 100% 50%,#eef6b4e0 0%,#b0de78b0 24%,#7cc25266 52%,transparent 82%);
+    left:auto; right:0; transform-origin:100% 50%;
+  }
+  .listening-order:is([data-playback='playing'],[data-playback='paused']) .eq-band {
+    opacity:.85; animation:var(--eq) var(--d) ease-in-out var(--delay) infinite alternate;
+  }
+  .listening-order[data-playback='playing'] .seat-eq::before { animation:seat-eq-level 1.7s ease-in-out infinite alternate; }
+  .listening-order:is([data-playback='paused'],[data-online='false']) .eq-band { animation-play-state:paused; opacity:.4; }
+  .listening-order:is([data-playback='paused'],[data-online='false']) .seat-eq::before { animation-play-state:paused; }
+  .listening-order:not([data-playback='playing'],[data-playback='paused']) .seat-eq::before { animation:seat-eq-breathe 3.6s ease-in-out infinite; }
+  @keyframes seat-eq-a { 0% { transform:scaleY(var(--low)); } 22% { transform:scaleY(var(--peak)); } 41% { transform:scaleY(calc(var(--low) + (var(--peak) - var(--low)) * .3)); } 66% { transform:scaleY(calc(var(--peak) * .82)); } 100% { transform:scaleY(calc(var(--low) * 1.4)); } }
+  @keyframes seat-eq-b { 0% { transform:scaleY(calc(var(--peak) * .55)); } 30% { transform:scaleY(var(--low)); } 48% { transform:scaleY(calc(var(--peak) * .9)); } 72% { transform:scaleY(calc(var(--low) * 1.8)); } 100% { transform:scaleY(var(--peak)); } }
+  @keyframes seat-eq-c { 0% { transform:scaleY(var(--low)); } 15% { transform:scaleY(calc(var(--peak) * .7)); } 35% { transform:scaleY(calc(var(--low) * 1.5)); } 58% { transform:scaleY(var(--peak)); } 100% { transform:scaleY(calc(var(--peak) * .45)); } }
+  @keyframes seat-eq-a-x { 0% { transform:scaleX(var(--low)); } 22% { transform:scaleX(var(--peak)); } 41% { transform:scaleX(calc(var(--low) + (var(--peak) - var(--low)) * .3)); } 66% { transform:scaleX(calc(var(--peak) * .82)); } 100% { transform:scaleX(calc(var(--low) * 1.4)); } }
+  @keyframes seat-eq-b-x { 0% { transform:scaleX(calc(var(--peak) * .55)); } 30% { transform:scaleX(var(--low)); } 48% { transform:scaleX(calc(var(--peak) * .9)); } 72% { transform:scaleX(calc(var(--low) * 1.8)); } 100% { transform:scaleX(var(--peak)); } }
+  @keyframes seat-eq-c-x { 0% { transform:scaleX(var(--low)); } 15% { transform:scaleX(calc(var(--peak) * .7)); } 35% { transform:scaleX(calc(var(--low) * 1.5)); } 58% { transform:scaleX(var(--peak)); } 100% { transform:scaleX(calc(var(--peak) * .45)); } }
+  @keyframes seat-eq-level { from { opacity:.4; } to { opacity:.95; } }
+  @keyframes seat-eq-breathe { 0%,100% { opacity:.3; } 50% { opacity:.75; } }
   @media(prefers-reduced-motion:reduce) {
-    .listening-order .rotation-seat.is-current .order-trace-light { animation:none; stroke-dasharray:none; stroke-dashoffset:0; }
-    .order-trace-light { stroke-width:1px; opacity:.55; filter:none; }
-    .order-trace-halo { display:none; }
+    .listening-order .eq-band { animation:none; opacity:0; }
+    .listening-order .seat-eq::before { animation:none; opacity:.8; }
   }
   /* Touch: swipes scroll the order; a press-and-hold picks a card up (see order-drag.ts). */
   .rotation-list.is-editable .rotation-seat:not([aria-disabled='true']) { cursor:grab; touch-action:pan-x pan-y; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
@@ -45,8 +75,8 @@
   .rotation-seat.is-dragging > * { visibility:hidden; }
   .rotation-seat.is-keyboard-dragging { outline:2px solid var(--accent); outline-offset:-3px; }
   .order-drag-preview { position:fixed; top:0; left:0; z-index:60; margin:0; pointer-events:none; opacity:.95; border-color:var(--accent); box-shadow:0 12px 30px #0008; cursor:grabbing; }
-  .order-drag-preview .order-trace { visibility:hidden; }
   .order-drag-preview.is-invalid-drop { opacity:.5; }
+  .order-drag-preview .seat-eq { display:none; }
   .rotation-seat.order-drag-preview { background:#18251b; }
   .seat-state-compact { display:none; }
   @media(max-width:1099px) {
@@ -57,10 +87,11 @@
     :where(body:not([data-view='display'])) .rotation-list { --order-gap:18px; flex-basis:100%; }
     :where(body:not([data-view='display'])) .rotation-list > .rotation-seat:not(:last-child)::after { mask-size:12px 10px; }
     :where(body:not([data-view='display'])) .rotation-seat { flex-basis:clamp(96px,calc((100% - 2 * var(--order-gap)) / 3),112px); grid-template-columns:minmax(0,1fr); min-height:44px; padding:3px 4px; column-gap:6px; row-gap:0; border-radius:6px; }
-    :where(body:not([data-view='display'])) .order-trace rect { rx:5.5px; }
     :where(body:not([data-view='display'])) .rotation-seat .avatar,:where(body:not([data-view='display'])) .seat-state:not(.seat-state-compact) { display:none; }
     :where(body:not([data-view='display'])) .rotation-seat strong { grid-column:1; font-size:13px; text-align:center; }
     :where(body:not([data-view='display'])) .seat-state-compact { display:block; grid-column:1; font-size:9.5px; text-align:center; }
     :where(body:not([data-view='display'])) .order-status { flex-basis:100%; font-size:13px; }
+    /* Small cards: half the bands, which also saves phone batteries. */
+    :where(body:not([data-view='display'])) .eq-band:nth-child(odd) { display:none; }
   }
 }
