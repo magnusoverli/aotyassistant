@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.0.26] — 2026-11-11
+
+- Ramp spectrum needle opacity from 5% at zero input to 90% at 20% input, holding 90% brightness above that while length continues to react.
+
 ## [2.0.25] — 2026-11-11
 
 - Cap corner spectrum needles before their inward paths converge, preventing overlap without moving their anchors or changing their angles.

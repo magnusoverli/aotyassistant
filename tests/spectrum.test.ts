@@ -53,7 +53,7 @@ test('bass starts at the lower-left and treble meets at the upper-right on both 
   }
   const silent = spectrumNeedleLevel(0, 0); const quiet = spectrumNeedleLevel(.2, 0); const loud = spectrumNeedleLevel(1, 0);
   assert.ok(silent.opacity < .1 && silent.scale < .05);
-  assert.ok(silent.opacity < quiet.opacity && quiet.opacity < loud.opacity);
+  assert.ok(silent.opacity < quiet.opacity); assert.equal(quiet.opacity, loud.opacity);
   assert.ok(silent.scale < quiet.scale && quiet.scale < loud.scale);
   assert.equal(loud.scale, 1);
 });
@@ -69,7 +69,7 @@ test('weak treble survives the full analysis-to-needle path while bass and silen
   const previous = spectrumNeedleLevel(highLevel, 0);
   const high = appearance(treble);
   assert.ok(high.scale > previous.scale * 1.5, 'Quiet treble should be visibly longer than in 2.0.24.');
-  assert.ok(high.opacity > previous.opacity * 1.4, 'Quiet treble should also be easier to see.');
+  assert.equal(high.opacity, previous.opacity, 'Brightness depends on input amplitude, not frequency.');
   assert.ok(high.scale < appearance(bass).scale, 'A much quieter treble tone still reflects its lower energy.');
   const belowFloor = frequencyBins([tone(12000, 2048, 0, .0001)], 48000);
   for (const position of [0, .25, .5, .75, 1]) {
@@ -78,6 +78,16 @@ test('weak treble survives the full analysis-to-needle path while bass and silen
     assert.deepEqual(spectrumNeedleLevel(Math.max(...belowFloor) / 255, position), spectrumNeedleLevel(0, 0));
   }
   assert.deepEqual(spectrumNeedleLevel(.2, .5), spectrumNeedleLevel(.2, 0), 'Bass and lower mids retain their response.');
+});
+
+test('needle opacity rises from 5% to 90% by 20% input and stays there across all frequencies', () => {
+  for (const position of [0, .25, .5, .75, 1]) {
+    for (const [input, opacity] of [[-1, .05], [0, .05], [.05, .2625], [.1, .475], [.2, .9], [.5, .9], [1, .9], [2, .9]]) {
+      assert.ok(Math.abs(spectrumNeedleLevel(input!, position).opacity - opacity!) < 1e-12);
+    }
+    assert.ok(spectrumNeedleLevel(.2, position).scale < spectrumNeedleLevel(1, position).scale,
+      'Length continues responding above the brightness plateau.');
+  }
 });
 
 test('corner needles retain a visible gap at full input without moving their anchors or changing their width', () => {

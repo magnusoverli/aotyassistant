@@ -277,7 +277,7 @@ test('the spectrum follows the actual rounded card with bounded inward needles a
     await expect(seat.locator('.order-trace')).toHaveCSS('overflow', 'hidden');
     await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('stroke-width', '1.6px');
     await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('stroke-linecap', 'butt');
-    await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('opacity', '0.08');
+    await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('opacity', '0.05');
     await expect(seat.locator('.order-spectrum-bar').first()).toHaveCSS('animation-name', 'none');
     await seat.screenshot({ path: `test-results/order-spectrum-${width}.png` });
     expect(await seat.boundingBox()).toEqual(bounds);

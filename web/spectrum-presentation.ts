@@ -17,11 +17,12 @@ export function spectrumCornerLength(radius: number, count: number, strokeWidth 
   return Math.max(0, radius - (strokeWidth + gap) / (2 * Math.sin(halfAngle)));
 }
 
-/** Keep silence faint, but don't suppress weak treble twice through length and brightness.
- * Ease the response curve above roughly 1 kHz, retaining the bass response and full-scale limit. */
+/** Length eases above roughly 1 kHz; opacity reaches its plateau at 20% input.
+ * Keep brightness independent of frequency and the needle-length response curve. */
 export function spectrumNeedleLevel(level: number, position: number) {
   const trebleStart = Math.log(1000 / 50) / Math.log(15000 / 50);
   const treble = Math.max(0, Math.min(1, (position - trebleStart) / (1 - trebleStart)));
-  const strength = Math.max(0, Math.min(1, level)) ** (1.5 - .6 * treble);
-  return { scale: .04 + .96 * strength, opacity: .08 + .72 * strength };
+  const input = Math.max(0, Math.min(1, level));
+  const strength = input ** (1.5 - .6 * treble);
+  return { scale: .04 + .96 * strength, opacity: .05 + .85 * Math.min(1, input / .2) };
 }
