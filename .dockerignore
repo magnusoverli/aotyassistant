@@ -10,5 +10,6 @@ screenshots
 docs
 .github
 tests
-scripts
+scripts/*
+!scripts/build-sendspin.mjs
 *.md
