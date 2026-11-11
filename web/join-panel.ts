@@ -1,7 +1,7 @@
 import { panel as createPanel, fieldControl } from './ui-components';
 import { ViewNodes, children, attr, prop } from './view-nodes';
 import type { UserDirectory } from '../src/model';
-import { avatar } from './visuals';
+import { avatar, updateAvatar } from './visuals';
 import { pinInput } from './user-pin';
 
 /** Shared by /join and the unjoined participant entry screen; never submits on mount. */
@@ -22,7 +22,8 @@ export function joinPanel(options: { nickname: string; pin: string; directory?: 
   children(picker, ...users.map(user => {
     const button = v.el(`user-${user.id}`, 'button', undefined, 'secondary user-choice'); prop(button, 'type', 'button');
     prop(button, 'disabled', options.busy); attr(button, 'aria-pressed', String(user.id === selected?.id));
-    children(button, v.get(`avatar-${user.id}`, () => avatar(user)), v.el(`name-${user.id}`, 'span', user.nickname));
+    const picture = v.get(`avatar-${user.id}`, () => avatar(user)); updateAvatar(picture, user);
+    children(button, picture, v.el(`name-${user.id}`, 'span', user.nickname));
     button.onclick = () => {
       options.select(user.id);
       // Continue where the PIN goes (or straight to Join for a remembered browser).

@@ -30,6 +30,8 @@ import { pinInput } from './user-pin';
 import { pageFrame, workspaceGrid, slot, stackedLayout } from './page-layout';
 import { panel, pageHeading, notice } from './ui-components';
 import { productName, productTagline } from '../src/product';
+import { UserPictureEditor } from './user-picture';
+import { watchUserDirectory } from './user-directory';
 
 export function mountPage(root: HTMLElement, appHeader: AppHeader, listeningOrder: ListeningOrder, navigate: (path: string, replace?: boolean) => void) {
 const lifecycle = new AbortController();
@@ -89,6 +91,8 @@ let pinDraft = '';
 let userDirectory: UserDirectory | undefined;
 let selectedUser: string | undefined;
 let loadingUsers = false;
+let closeUserDirectory: (() => void) | undefined;
+let userDirectorySequence = 0;
 let registrationOperation = operationId();
 let joinError = '';
 let accessEnded = false;
@@ -99,6 +103,7 @@ const hostNodes = new ViewNodes();
 const pageNodes = new ViewNodes();
 const entryNodes = new ViewNodes();
 const catalogueRows = new Map<string, CatalogueRow>();
+const pictureEditor = page === 'participant' ? new UserPictureEditor(false, signal) : undefined;
 document.body.dataset.view = page;
 listeningOrder.setDisplay(page === 'display');
 void loadRoomLogo(signal);
@@ -326,6 +331,7 @@ function participantLayoutKey(current: View) {
 function accept(next: View) {
   if (signal.aborted) return;
   accessEnded = false;
+  if (next.me) { closeUserDirectory?.(); closeUserDirectory = undefined; }
   if (view?.roomId === next.roomId && view.revision > next.revision) return;
   if (view?.volume?.revision === next.volume?.revision && (view?.volume?.generation ?? 0) > (next.volume?.generation ?? 0)) next = { ...next, volume: view!.volume };
   if (catalogueIdentity(view) !== catalogueIdentity(next)) {
@@ -475,6 +481,7 @@ function playFirstSelection(confirmReplace = true) {
   playTrack(track, { entryId: entry.id, revision: library.view.revision }, confirmReplace);
 }
 function participant() {
+  pictureEditor?.update(view?.user ?? view?.me);
   if (!view?.me) return participantEntry();
   const v = participantNodes;
   const main = v.get('main', () => pageFrame('workspace', 'participant-page'));
@@ -488,7 +495,7 @@ function participant() {
   const find = v.get('find', () => link('Find music', '#music-find', 'secondary button'));
   find.onclick = event => { event.preventDefault(); document.getElementById('catalogue-search')?.focus({ preventScroll: true }); document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' }); };
   const list = v.el('list-shortcut', 'button', 'Your playlist', 'secondary'); prop(list, 'type', 'button'); list.onclick = () => music.focusList();
-  children(shortcuts, find, list); children(hero, title, distance, shortcuts);
+  children(shortcuts, find, list); children(hero, title, distance, shortcuts, pictureEditor?.element);
   const search = v.get('search', () => { const node = el('section', undefined, 'catalogue-panel'); node.setAttribute('aria-labelledby', 'music-find-title'); return node; });
   const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
   const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading); return node; });
@@ -616,9 +623,18 @@ function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision
 }
 async function loadUsers() {
   if (loadingUsers || signal.aborted) return;
+  closeUserDirectory ??= watchUserDirectory(false, signal, directory => {
+    userDirectorySequence++;
+    userDirectory = directory;
+    if (selectedUser && !directory.users.some(user => user.id === selectedUser)) { selectedUser = undefined; pinDraft = ''; }
+    render();
+  });
+  const sequence = ++userDirectorySequence;
   loadingUsers = true;
   try {
-    userDirectory = await api<UserDirectory>('/api/participant/identity');
+    const directory = await api<UserDirectory>('/api/participant/identity');
+    if (sequence !== userDirectorySequence || signal.aborted) return;
+    userDirectory = directory;
     if (selectedUser && !userDirectory.users.some(user => user.id === selectedUser)) {
       selectedUser = undefined; pinDraft = ''; registrationOperation = operationId();
     }

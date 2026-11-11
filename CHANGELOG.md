@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.0.19] — 2026-11-11
+
+- Add profile pictures: use **Profile picture** in Your music to take a photo with the phone's camera or choose a file, position and zoom the circular preview, then save. Hosts can manage pictures under **Settings → Users → Manage**. Saved pictures follow users across devices and update open displays and user pickers; removing a picture restores the first-letter avatar.
+- Store only a processed, metadata-free picture, retain the previous picture until saving succeeds, and clean up pictures when users are deleted.
+- Vertically centre the animated BMF logo in the space between the play order and the artwork, using the actual artwork position as the lower boundary.
+
 ## [2.0.18] — 2026-11-11
 
 - Keep the participant seek handle visible as a small dot, enlarging it when the progress bar is hovered, focused or dragged.

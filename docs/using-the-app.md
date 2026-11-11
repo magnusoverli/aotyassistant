@@ -18,7 +18,7 @@ Resizing or entering full screen adjusts the layout automatically. Operating-sys
 
 ### Animated display background
 
-Cover artwork and the placeholder record share one responsive frame, with track details aligned to its bottom edge. The playback block reserves enough height for its text independently of the artwork, and the animated background uses the spare area above it. Balanced side columns keep the track details centred, with space for the artwork on the left and the QR or room logo on the right.
+Cover artwork and the placeholder record share one responsive frame, with track details aligned to its bottom edge. The playback block reserves enough height for its text independently of the artwork. The animated BMF logo is vertically centred between the play order and the actual top of the artwork, with equal breathing room above and below. Balanced side columns keep the track details centred, with space for the artwork on the left and the QR or room logo on the right.
 
 In **Settings → Appearance → Animated BMF background**, set **Room display QR placement** to **Bottom-right** (the default) or **Right of play order**, then save. Bottom-right is used when the side column fits; otherwise the QR moves into the listening order automatically. Both positions show the code without a caption. This setting also works when the animation is disabled; its placement is shown on the room display rather than in the animation preview. The progress bar fills the details column. Track details have about 20% extra vertical space, extending upward from the artwork's bottom edge and spreading the content apart when space permits. The album name uses the same font, size, weight and colour as the artist name beneath the larger track title.
 
@@ -37,6 +37,16 @@ Add your room's logo in **Settings → Appearance → Upload logo**. It appears 
 The speaker list updates automatically from Music Assistant. **Updating…** keeps the previous selection visible while checking again; the help text identifies last-known, expired or failed observations and the last-check time. **Ready** requires fresh inventory and selected-queue checks, not just a saved speaker name. Last-known choices remain visible if a refresh fails, but are not presented as verified. Choosing a target checks it again before saving; discovery never changes the target or starts audio automatically.
 
 The room is always ready. New participants enter a display name and choose a four-digit PIN; returning participants select their name/avatar and enter their PIN on a new browser. Remembered browsers continue automatically. Each user has one playlist across devices and one place in the listening order. New arrivals enter at the end; the first person gets the first turn. Joining never starts music.
+
+### Profile pictures
+
+Open **Your music → Profile picture** to add or change your picture, at any point in the listening order. **Take photo** opens the phone's native camera where supported; **Choose photo** opens the photo/file picker. Drag the preview (or use its arrow keys) to position the picture and adjust **Zoom**, then **Save picture**. Closing the editor before saving keeps your previous picture. **Remove picture** restores the larger first-letter avatar.
+
+Pictures are visible to everyone in the room and in the existing-user picker. They follow your saved user across devices, survive restarts and are included in the app's data backup. Hosts can also add, replace or remove a user's picture in **Settings → Users → Manage**. Deleting a user deletes their picture; removing someone only from the listening order retains it.
+
+Choose a still JPEG, PNG or WebP image up to 10 MB and 40 megapixels. Camera captures are oriented and cropped by the browser; HEIC/HEIF files can also be selected on browsers that can decode them. The app stores a 512-pixel WebP square with photo metadata removed. If a picture is missing or cannot load, the person's initial remains visible. A conflicting edit from another device asks you to close and reopen the editor before saving again.
+
+### Listening order
 
 In the listening order, a soft light travels along the current participant’s card border, including while choosing a song or while playback is paused or stopped. Reduced-motion preferences use a static outline.
 

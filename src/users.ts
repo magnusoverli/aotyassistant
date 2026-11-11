@@ -8,6 +8,7 @@ import { PreparationIdentity, bindingDirectory, readBinding, selectionCredential
 import { SerialQueue } from './serial.js';
 import { listDirectory, readPrivateJson, writePrivateJson, removePrivateFile } from './store.js';
 import { operation, remaining } from './operation.js';
+import type { UserPictures } from './user-pictures.js';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
@@ -39,6 +40,7 @@ export class UserManager {
   private hashWaiters: (() => void)[] = [];
   private pending = new Set<Promise<unknown>>();
   private healthy = true;
+  private pictures?: UserPictures;
   private legacy: PreparationIdentity;
   readonly ready: Promise<void>;
   constructor(private directory: string, private preparations: PreparationManager, private engine: Engine, private now = Date.now) {
@@ -56,9 +58,32 @@ export class UserManager {
     const key = digest(token);
     return this.state.users.find(user => !user.deleting && user.sessions.some(session => session.hash === key && session.expires > this.now()));
   }
-  current(token: string) { const user = this.session(token); return user && profile(user); }
+  attachPictures(pictures: UserPictures) {
+    this.pictures = pictures;
+    this.engine.setUserPictures(id => this.pictureUrl(id));
+  }
+  pictureUrl(id: string) {
+    return this.healthy && this.state.users.some(user => user.id === id && !user.deleting) ? this.pictures?.url(id) : undefined;
+  }
+  private profile(user: User): UserProfile {
+    const avatarUrl = this.pictureUrl(user.id);
+    return { ...profile(user), ...(avatarUrl ? { avatarUrl } : {}) };
+  }
+  /** Serializes cosmetic commits with account deletion and session revocation, not audio commands. */
+  withProfile<T>(id: string, token: string | undefined, work: () => Promise<T>): Promise<T> {
+    return this.work('user-picture', async () => {
+      await this.ready;
+      return this.queue.run(async () => {
+        this.check(); uuid.parse(id);
+        if (token !== undefined && this.session(token)?.id !== id) throw new AppError(401, 'Select your name and sign in again.');
+        if (!this.state.users.some(user => user.id === id && !user.deleting)) throw new AppError(404, 'User not found.');
+        return work();
+      });
+    });
+  }
+  current(token: string) { const user = this.session(token); return user && this.profile(user); }
   directoryView(token = '', host = false): UserDirectory {
-    this.check(); return { users: this.state.users.filter(user => host || !user.deleting).map(user => ({ ...profile(user), ...(user.deleting ? { deletionPending: true } : {}) })), current: this.current(token) ?? null };
+    this.check(); return { users: this.state.users.filter(user => host || !user.deleting).map(user => ({ ...this.profile(user), ...(user.deleting ? { deletionPending: true } : {}) })), current: this.current(token) ?? null };
   }
   ownerAvailable(ownerId: string) { return this.healthy && !this.state.deleted.some(user => user.ownerId === ownerId) && !this.state.users.some(user => user.ownerId === ownerId && user.deleting); }
   /** A user's private list, for automatic play inside the server only; never an HTTP list selector. */
@@ -269,6 +294,7 @@ export class UserManager {
       this.engine.emit('change');
       if (user.ownerId) await this.preparations.notifyIdentity(user.ownerId);
       // Each step is idempotent. A failed cleanup remains visible to the host for an explicit retry.
+      await this.pictures?.remove(id);
       await this.engine.removeUser(id);
       if (user.ownerId) {
         await removeUploads(user.ownerId);
@@ -284,6 +310,7 @@ export class UserManager {
       const state = structuredClone(this.state); state.users = state.users.filter(user => user.id !== id);
       // Only opaque IDs remain, preventing old cookies, bindings or lost-response retries from restoring deleted data.
       state.deleted.push({ id, ownerId: user.ownerId, registration: user.registration }); await this.save(state);
+      this.engine.emit('change', 'identity');
     });
   }
   async drain() { await this.ready; while (this.pending.size) await Promise.allSettled([...this.pending]); await this.queue.drain(); }

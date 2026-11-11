@@ -30,6 +30,8 @@ import { BrowserSpeakers, requestSpeakerCookie } from './browser-speakers.js';
 import { mountBrowserSpeakers } from './browser-speaker-http.js';
 import { RoomLogo, maxLogoBytes } from './room-logo.js';
 import { DisplayBackground, backgroundSnapshotSchema } from './display-background.js';
+import { UserPictures, UserPictureFiles } from './user-pictures.js';
+import { mountUserPictures, mountUserDirectoryEvents } from './user-picture-http.js';
 
 const turn = z.uuid();
 const revision = z.number().int().nonnegative();
@@ -39,7 +41,8 @@ const cookie = (request: Request, name: string): string => {
 };
 
 export function createApp(engine: Engine, config: Config, webDirectory = resolve('dist/web'), integrations?: IntegrationManager,
-  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager, onlineAccess?: OnlineAccess, browserSpeakers?: BrowserSpeakers) {
+  preparations?: PreparationManager, uploads = new UploadAssets(config.dataDir), setupManager?: SetupManager, onlineAccess?: OnlineAccess, browserSpeakers?: BrowserSpeakers,
+  pictures = new UserPictures(new UserPictureFiles(config.dataDir))) {
   integrations?.configureGuestAccess(config.guestUrl, config.addon, config.guestOverride);
   integrations?.attachUploads(uploads, config.guestUrl);
   const checks = new MediaChecks(); integrations?.attachMediaChecks(checks);
@@ -48,6 +51,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   engine.setGuestOrigin(config.guestUrl);
   preparations ??= new PreparationManager(new PreparationFileStore(config.dataDir), Date.now, savedSourceAvailable(integrations));
   const users = new UserManager(config.dataDir, preparations, engine);
+  users.attachPictures(pictures);
+  pictures.onChange = () => { engine.emit('change', 'identity'); };
+  void pictures.ready.then(() => pictures.onChange());
   uploads.setOwnerPolicy(ownerId => users.ownerAvailable(ownerId));
   attachAutoplay(engine, preparations, users);
   const roomLogo = new RoomLogo(config.dataDir, () => { engine.emit('change'); });
@@ -83,7 +89,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       if (req.path === '/' && ['GET', 'HEAD'].includes(req.method)) {
         res.redirect(`${ingress.base}/host`); return;
       }
-      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
+      if (!(['/host', '/host/settings', '/join', '/participant', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
         return next(new AppError(404, 'Page not found.'));
       }
     }
@@ -95,7 +101,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const read = ['GET', 'HEAD'].includes(req.method);
     const diagnosticRead = read && /^\/api\/media\/check\/[A-Za-z0-9_-]{43}\/track\.wav$/.test(req.path);
     const setupRoute = req.path.startsWith('/api/host/addressing') || req.path.startsWith('/api/host/auth/') || req.path === '/api/host/setup' || req.path === '/api/host/setup/refresh' ||
-      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations' || req.path === '/api/host/integrations/events'));
+      (read && (req.path === '/host/settings' || req.path.startsWith('/assets/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/') || req.path === '/api/host/integrations' || req.path === '/api/host/integrations/destinations' || req.path === '/api/host/integrations/events'));
     if (!known && setup && read && ['/', '/host'].includes(req.path)) { res.redirect('/host/settings'); return; }
     if (!known && setup && read && ['/display', '/join', '/participant'].includes(req.path)) {
       res.status(403).type('html').send(guestAddressHelp(config.guestUrl, req.path)); return;
@@ -109,7 +115,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
       const setupOrigin = setup && setupRoute && origin && [localOrigin, `https://${host}`].includes(origin);
       if (!origin || (remote ? origin !== remote.origin : ingress ? origin !== ingress.origin : origin !== config.guestUrl && origin !== localOrigin && !setupOrigin)) return next(new AppError(403, 'Cross-origin controls are not allowed.'));
       if (req.headers['sec-fetch-site'] === 'cross-site') return next(new AppError(403, 'Cross-site controls are not allowed.'));
-      const fileUpload = req.method === 'POST' && (/^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(req.path) || req.path === '/api/host/logo') && req.is('application/octet-stream');
+      const fileUpload = req.method === 'POST' && (/^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(req.path) || req.path === '/api/host/logo' || req.path === '/api/participant/picture' || /^\/api\/host\/users\/[a-f0-9-]{36}\/picture$/.test(req.path)) && req.is('application/octet-stream');
       if (!req.is('application/json') && !fileUpload) return next(new AppError(415, 'Send an application/json request, or one file to an upload endpoint.'));
     }
     next();
@@ -123,7 +129,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   });
   app.use(express.json({ limit: '16kb' }));
   app.use(compressJson);
-  app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
+  app.use('/api', async (_req, _res, next) => { try { await users.migrate(); await pictures.ready; next(); } catch (error) { next(error); } });
   if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess,
     req => users.directoryView(participantCredential(req)).current?.nickname);
   const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users);
@@ -133,6 +139,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.get('/api/media/check/:key/track.wav', (req, res) => { checks.serve(req, res); });
   const participant = (req: Request): Role => ({ kind: 'participant', credential: cookie(req, 'doom_room_participant') });
   const participantCredential = (req: Request) => cookie(req, 'doom_room_participant');
+  mountUserPictures(app, users, pictures, participantCredential);
 
   app.get('/api/host/state', (_req, res) => res.json(engine.view({ kind: 'host' })));
   // Connector account approval and invitations are administered only through HA authentication.
@@ -295,6 +302,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   }));
 
   const streams = new EventStreams(500, 'Too many live connections. Close unused tabs and try again.');
+  mountUserDirectoryEvents(app, users, engine, streams, participantCredential);
   app.get('/api/listening-order/events', (_req, res) => {
     const snapshot = (): ListeningOrderView => engine.listeningOrder();
     const initial = snapshot(); const stream = streams.reserve(res); if (!stream.open()) return;

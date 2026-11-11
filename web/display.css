@@ -74,9 +74,10 @@
     grid-template-rows:minmax(0,1fr) auto; gap:1rem; padding:1rem var(--gutter) var(--foot);
     container:room-display / size; overflow:clip;
   }
-  /* Both ends are explicit. An auto grid-row-end on an absolute child reaches the
-     page's padding edge, allowing the lower logo strokes to extend over playback. */
-  .display-page > .bmf-background { position:relative; inset:auto; z-index:-1; grid-area:1 / 1 / 2 / 2; align-self:stretch; justify-self:stretch; width:auto; height:auto; padding:0; }
+  /* PublicRoom measures the clear area to the actual artwork. Equal inner padding
+     and a centred transform give the visible logo equal space above and below. */
+  .display-page > .bmf-background { position:absolute; inset:0 var(--gutter) auto; z-index:-1; width:auto; height:var(--background-height,0px); padding:min(1rem,calc(var(--background-height,0px) / 2)) 0; place-items:center; }
+  .display-page > .bmf-background > bmf-logo { transform-origin:center; }
   .display-page:not([data-background='on']) > .bmf-background { display:none; }
   .room-stage {
     --art:min(var(--art-preferred),max(0px,100cqh - 1rem));

@@ -13,7 +13,7 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const defaultAutoReveal = { enabled: true, revision: 0 };
 const defaultAutoplay: AutoplaySettings = { mode: 'off', revision: 0 };
 const defaultSecretPlayback = { enabled: true, revision: 0 };
-export type EngineChange = 'room' | 'playback' | 'output';
+export type EngineChange = 'room' | 'playback' | 'output' | 'identity';
 type PlayActor = { kind: 'participant'; credential: string } | { kind: 'autoplay'; target: AutoplayTarget };
 
 export class Engine extends EventEmitter {
@@ -29,10 +29,12 @@ export class Engine extends EventEmitter {
   private startingPlayback?: { id: string; previousId: string | null; turnId: string };
   private revealCheckPending = false;
   private userForSession?: (credential: string) => UserProfile | undefined;
+  private pictureForUser?: (id: string) => string | undefined;
   private autoplayNext?: (target: AutoplayTarget) => Promise<unknown>;
   private autoplayRuns = new Set<Promise<unknown>>();
 
   attachUsers(resolve: (credential: string) => UserProfile | undefined) { this.userForSession = resolve; }
+  setUserPictures(resolve: (id: string) => string | undefined) { this.pictureForUser = resolve; }
   /** Called after a song ends naturally, for the participant selected by the playback mode. */
   attachAutoplay(handler: (target: AutoplayTarget) => Promise<unknown>) { this.autoplayNext = handler; }
   identityParticipants() { return structuredClone(this.room().participants); }
@@ -261,7 +263,10 @@ export class Engine extends EventEmitter {
   }
   /** Public names by participant ID; never credentials or selections. */
   private people(room: Room) {
-    const people = new Map(room.participants.map(({ id, nickname }) => [id, { id, nickname }]));
+    const people = new Map(room.participants.map(({ id, nickname, userId }) => {
+      const avatarUrl = userId ? this.pictureForUser?.(userId) : undefined;
+      return [id, { id, nickname, ...(avatarUrl ? { avatarUrl } : {}) }];
+    }));
     return (id: string | null) => id ? people.get(id) ?? null : null;
   }
   private nextId(room: Room) {
@@ -312,7 +317,7 @@ export class Engine extends EventEmitter {
     }
     const me = this.participant(role.credential, room); const myTurn = room.currentId === me.id;
     const seat = room.active.indexOf(me.id); const currentSeat = room.active.indexOf(room.currentId ?? '');
-    return { ...base, me: { id: me.id, nickname: me.nickname }, myTurn, catalogue: this.catalogueState, secretPlayback: room.secretPlayback?.enabled !== false,
+    return { ...base, me: person(me.id)!, myTurn, catalogue: this.catalogueState, secretPlayback: room.secretPlayback?.enabled !== false,
       songEnd: (room.autoplay ?? defaultAutoplay).mode,
       ...(this.userForSession ? { user: this.userForSession(role.credential) } : {}),
       position: { seat: seat + 1, total: room.active.length, turnsUntil: (seat - currentSeat + room.active.length) % room.active.length },

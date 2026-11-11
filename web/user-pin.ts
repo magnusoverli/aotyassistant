@@ -2,8 +2,10 @@ import { fieldControl, panel, sectionHeading } from './ui-components';
 import { ViewNodes, children, prop, attr } from './view-nodes';
 import { requestJson } from './request';
 import type { UserDirectory } from '../src/model';
-import { avatar } from './visuals';
+import { avatar, updateAvatar } from './visuals';
 import { link } from './dom';
+import { UserPictureEditor } from './user-picture';
+import { watchUserDirectory } from './user-directory';
 
 /** A four-digit PIN field with its Show/Hide toggle inside the field. */
 export function pinInput(v: ViewNodes, id: string, label: string) {
@@ -37,12 +39,17 @@ export class UserSettingsPanel {
   private loadSequence = 0;
   private message = '';
   private failed = false;
+  private picture: UserPictureEditor;
   constructor(private signal: AbortSignal) {
+    this.picture = new UserPictureEditor(true, signal);
     this.element.setAttribute('aria-labelledby', 'settings-users-title');
     this.render();
     window.addEventListener('focus', () => { if (!this.busy) void this.load(); }, { signal });
     window.addEventListener('online', () => { if (!this.busy) void this.load(); }, { signal });
     window.addEventListener('offline', () => this.render(), { signal });
+    watchUserDirectory(true, signal, directory => {
+      this.loadSequence++; this.directory = directory; this.render();
+    });
   }
   async load() {
     if (this.loading || this.signal.aborted) return;
@@ -64,6 +71,7 @@ export class UserSettingsPanel {
     children(heading, heading.firstElementChild!, v.el('count', 'span', count === undefined ? 'Loading…' : `${count} ${count === 1 ? 'user' : 'users'}`, 'badge'));
     const hint = v.el('hint', 'p', 'Each person has one playlist across devices. Manage their PIN or permanently delete their account, music and place in the listening order.', 'muted');
     const disabled = this.busy || !navigator.onLine;
+    this.picture.update(this.directory?.users.find(user => user.id === this.selected && !user.deletionPending));
     const pin = pinInput(v, 'reset-user-pin', 'New 4-digit PIN'); prop(pin.input, 'disabled', disabled);
     const list = v.el('list', 'ul', undefined, 'settings-user-list'); attr(list, 'aria-label', 'Saved users');
     children(list, ...(this.directory?.users ?? []).map(user => {
@@ -76,7 +84,8 @@ export class UserSettingsPanel {
       const manage = v.el(`manage-${user.id}`, 'button', expanded ? 'Close' : 'Manage', 'secondary'); prop(manage, 'type', 'button'); prop(manage, 'disabled', this.busy);
       attr(manage, 'aria-label', `${expanded ? 'Close' : 'Manage'} ${user.nickname}`); attr(manage, 'aria-expanded', String(expanded)); attr(manage, 'aria-controls', `user-actions-${user.id}`);
       manage.onclick = () => { this.selected = expanded ? '' : user.id; this.editingPin = false; pin.input.value = ''; this.message = ''; this.failed = false; this.render(); };
-      children(header, v.get(`avatar-${user.id}`, () => avatar(user)), identity, manage);
+      const picture = v.get(`avatar-${user.id}`, () => avatar(user)); updateAvatar(picture, user);
+      children(header, picture, identity, manage);
       const details = v.el(`details-${user.id}`, 'div', undefined, 'settings-user-details'); details.id = `user-actions-${user.id}`; prop(details, 'hidden', !expanded);
       if (expanded) {
         const reset = v.el('reset', 'button', user.pinRequired ? 'Set first PIN' : 'Reset PIN', 'secondary'); prop(reset, 'type', 'button'); prop(reset, 'disabled', disabled);
@@ -107,7 +116,7 @@ export class UserSettingsPanel {
             this.failed = true; this.message = `Deletion was not confirmed. ${error instanceof Error ? error.message : 'Refresh users and retry Delete user.'}`; await this.load();
           }).finally(() => { this.busy = false; this.render(); });
         };
-        children(danger, removal, remove); children(details, !user.deletionPending && (this.editingPin ? form : reset), danger);
+        children(danger, removal, remove); children(details, !user.deletionPending && this.picture.element, !user.deletionPending && (this.editingPin ? form : reset), danger);
       }
       children(row, header, details); return row;
     }));

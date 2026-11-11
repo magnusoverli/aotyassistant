@@ -12,9 +12,11 @@ Saved controls update connected displays through the existing room stream and pe
 `display-background.json` in the app's data directory. The background starts enabled and
 looping, in room gold at 12% opacity. A blank seed chooses new patterns;
 any fixed seed repeats the same organic growth pattern. Letter grow time in Settings
-supports 0.2–60 seconds. The display and preview place the logo near the top with an
-8% vertical compression. Width is automatic: CSS fits the native SVG aspect ratio into both
-dimensions of a dedicated, contained row above playback in normal and fullscreen mode.
+supports 0.2–60 seconds. The display vertically centres the logo between the play order and
+the actual artwork top; the settings preview places it near the top. Both use 8% vertical
+compression. Width is automatic: CSS fits the native SVG aspect ratio into both dimensions
+of the contained area. PublicRoom observes the artwork position as the display resizes,
+including fullscreen, and disconnects the observer on navigation.
 Old width preferences are discarded on read without rewriting other saved settings. The `paused` attribute is a
 programmatic start gate, not a saved appearance setting; use Replay preview to test intros.
 

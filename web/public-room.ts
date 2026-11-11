@@ -42,6 +42,7 @@ export function publicStreamDetails(view: View, online: boolean) {
 export class PublicRoom {
   readonly element = pageFrame('display', 'display-page');
   private background = new AnimatedBackground();
+  private backgroundLayout?: ResizeObserver;
   private invitation = el('aside', undefined, 'room-invitation');
   private logo = roomLogoMark('room-logo-display');
   private stage = el('section', undefined, 'now-playing');
@@ -66,7 +67,7 @@ export class PublicRoom {
     for (const url of this.objectUrls) URL.revokeObjectURL(url);
     this.objectUrls = [];
   }
-  destroy() { this.prepared.clear(); this.clearImages(); this.revealed = undefined; this.background.destroy(); }
+  destroy() { this.backgroundLayout?.disconnect(); this.prepared.clear(); this.clearImages(); this.revealed = undefined; this.background.destroy(); }
   private showArtworkNormally(kind?: ArtworkKind) {
     const track = this.revealed; if (!track) return;
     if ((!kind || kind === 'artwork') && track.artwork && !this.cover.querySelector('.room-artwork')) this.cover.append(artwork(track.artwork, 'Current album artwork', 'room-artwork', true));
@@ -112,6 +113,16 @@ export class PublicRoom {
     this.invitation.setAttribute('aria-label', 'Join room'); this.invitation.hidden = true;
     // The logo is the page's own child: it sits beside playback where there is a side column, and above it where there is none.
     grid.append(listening, this.invitation); this.element.append(this.background.element, this.logo, grid);
+    // The actual artwork can be shorter than the text column. Centre the decoration
+    // in the clear space down to the artwork, rather than in the text's reserved row.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.backgroundLayout = new ResizeObserver(() => {
+        if (!this.element.isConnected) return;
+        const height = Math.max(0, visual.getBoundingClientRect().top - this.element.getBoundingClientRect().top);
+        this.background.element.style.setProperty('--background-height', `${height}px`);
+      });
+      for (const node of [this.element, grid, visual]) this.backgroundLayout.observe(node);
+    }
     this.connecting();
   }
 

@@ -1,6 +1,7 @@
 @import './public/assets/ui-foundation.css';
 @import './listening-order.css';
 @import './user-identity.css';
+@import './user-picture.css';
 @import './settings.css';
 @import './playback.css';
 @import './participant-player.css';

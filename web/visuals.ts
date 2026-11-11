@@ -1,11 +1,29 @@
 import type { Person } from '../src/model';
 import { el } from './dom';
+import { appPath } from './paths';
+
+const avatarKeys = new WeakMap<HTMLElement, string>();
+
+/** Retain the node, but update cached picker/settings avatars when the photo version changes. */
+export function updateAvatar(node: HTMLElement, person: Person | null | undefined) {
+  const value = person?.nickname ?? '?';
+  const key = JSON.stringify([value, person?.avatarUrl]);
+  if (avatarKeys.get(node) === key) return;
+  avatarKeys.set(node, key);
+  let hash = 0; for (const char of value) hash = ((hash << 5) - hash + char.codePointAt(0)!) | 0;
+  for (let i = 0; i < 5; i++) node.classList.toggle(`avatar-${i}`, i === Math.abs(hash % 5));
+  node.textContent = Array.from(value.trim().toLocaleUpperCase())[0] ?? '?';
+  if (person?.avatarUrl) {
+    const image = el('img'); image.alt = ''; image.decoding = 'async'; image.draggable = false;
+    image.hidden = true;
+    image.onload = () => { if (avatarKeys.get(node) === key) image.hidden = false; };
+    image.onerror = () => image.remove();
+    image.src = appPath(person.avatarUrl); node.append(image);
+  }
+}
 
 export function avatar(person: Person | null | undefined, size = '', variant = '') {
-  const value = person?.nickname ?? '?';
-  const initial = Array.from(value.trim().toLocaleUpperCase())[0] ?? '?';
-  let hash = 0; for (const char of value) hash = ((hash << 5) - hash + char.codePointAt(0)!) | 0;
-  const a = el('span', initial, `avatar avatar-${Math.abs(hash % 5)} ${size} ${variant}`);
+  const a = el('span', undefined, `avatar ${size} ${variant}`); updateAvatar(a, person);
   a.setAttribute('aria-hidden', 'true'); return a;
 }
 

@@ -77,8 +77,8 @@ export type State = z.infer<typeof stateSchema>;
 export type Room = z.infer<typeof roomSchema>;
 export type Role = { kind: 'host' } | { kind: 'display' } | { kind: 'participant'; credential: string };
 
-export type Person = { id: string; nickname: string };
-export type UserProfile = { id: string; nickname: string; pinRequired: boolean; deletionPending?: boolean };
+export type Person = { id: string; nickname: string; avatarUrl?: string };
+export type UserProfile = Person & { pinRequired: boolean; deletionPending?: boolean };
 export type UserDirectory = { users: UserProfile[]; current: UserProfile | null };
 export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[]; playbackStatus: NonNullable<View['playbackStatus']> };
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
