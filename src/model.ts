@@ -105,6 +105,8 @@ export type View = {
   me?: Person; myTurn?: boolean; ownPlayback?: Room['playback'];
   /** Participants only. False when songs show on the room display as soon as they start. */
   secretPlayback?: boolean;
+  /** Participants only: the room's Settings → Playback → When a song ends. */
+  songEnd?: AutoplayMode;
   user?: UserProfile;
   hostPlayback?: Pick<NonNullable<Room['playback']>, 'id' | 'status' | 'revealed'> | null;
   catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };

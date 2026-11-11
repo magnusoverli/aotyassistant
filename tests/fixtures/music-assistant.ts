@@ -235,11 +235,17 @@ export async function startMusicAssistantFixture(port = 0) {
     } else if (command === 'player_queues/stop') { queue.state = 'idle'; queue.ended = false; player.playback_state = 'idle'; player.active_source = null; }
     else if (command === 'player_queues/pause') { queue.resume_pos = queue.elapsed_time; queue.state = 'paused'; player.playback_state = 'paused'; }
     else if (command === 'player_queues/resume') { queue.state = 'playing'; queue.active = true; queue.elapsed_time = queue.resume_pos; player.playback_state = 'playing'; player.active_source = queue.queue_id; }
+    else if (command === 'player_queues/seek') {
+      // As in MA: only an active queue with a known-length item; the seek restarts it playing.
+      const duration = queue.current_item?.media_item?.duration;
+      if (!queue.active || !queue.current_item || !duration || !Number.isInteger(args.position) || args.position < 0 || args.position > duration) { res.statusCode = 500; res.end('Can not seek'); return; }
+      queue.elapsed_time = args.position; queue.elapsed_time_last_updated = Date.now() / 1000; queue.state = 'playing'; player.playback_state = 'playing';
+    }
     else { res.statusCode = 400; res.end('Unexpected command'); return; }
     if (volumeDelay) { await new Promise(resolve => setTimeout(resolve, volumeDelay)); volumeReadPending = false; }
     if (lostAcknowledgement === command) { lostAcknowledgement = undefined; res.destroy(); }
     else res.end(JSON.stringify(result));
-    if (/^player_queues\/(play_media|pause|resume|stop|autoplay|repeat|shuffle)$/.test(command)) notify('queue_updated', queue.queue_id, queue);
+    if (/^player_queues\/(play_media|pause|resume|stop|seek|autoplay|repeat|shuffle)$/.test(command)) notify('queue_updated', queue.queue_id, queue);
     if (command.startsWith('players/cmd/')) notify('player_updated', player.player_id);
   });
   server.on('upgrade', (request, socket, head) => {

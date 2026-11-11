@@ -4,6 +4,52 @@
   .playback-progress .progress-rail progress[hidden] { display:none; }
   .auto-reveal-marker { position:absolute; top:50%; width:2px; height:10px; transform:translate(-50%,-50%); border-radius:1px; background:var(--text); opacity:.55; }
   .auto-reveal-marker[hidden] { display:none; }
+  /* Drag to move within your song (seek-bar.ts). At rest the bar looks as it always has; pointing
+     at it, focusing it or dragging thickens it and shows a handle. The hit area is taller than the bar. */
+  .playback-progress .progress-rail progress { transition:transform .12s ease; }
+  .playback-progress.is-seekable:is(:hover,:focus-within) .progress-rail progress,
+  .playback-progress[data-seeking] .progress-rail progress { transform:scaleY(1.67); }
+  .playback-progress .seek-input {
+    --thumb:1rem;
+    position:absolute; z-index:1; top:50%; left:0; width:100%; height:2.25rem; min-height:0; margin:0; padding:0;
+    transform:translateY(-50%); border:0; border-radius:0; background:transparent; cursor:pointer; touch-action:pan-y;
+    -webkit-appearance:none; appearance:none;
+  }
+  .playback-progress .seek-input[hidden] { display:none; }
+  .playback-progress .seek-input:disabled { cursor:progress; }
+  .playback-progress .seek-input:focus-visible { outline:none; }
+  .playback-progress .seek-input::-webkit-slider-runnable-track { height:100%; border:0; background:transparent; }
+  .playback-progress .seek-input::-moz-range-track { height:100%; border:0; background:transparent; }
+  .playback-progress .seek-input::-moz-range-progress { background:transparent; }
+  .playback-progress .seek-input::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none; width:var(--thumb); height:var(--thumb); margin-top:calc((2.25rem - var(--thumb)) / 2);
+    border:2px solid #101a13; border-radius:50%; background:var(--accent); box-shadow:0 1px 4px #0009; transform:scale(0); transition:transform .12s ease;
+  }
+  .playback-progress .seek-input::-moz-range-thumb {
+    width:var(--thumb); height:var(--thumb); border:2px solid #101a13; border-radius:50%; background:var(--accent);
+    box-shadow:0 1px 4px #0009; transform:scale(0); transition:transform .12s ease;
+  }
+  .playback-progress.is-seekable:is(:hover,:focus-within) .seek-input::-webkit-slider-thumb,
+  .playback-progress[data-seeking] .seek-input::-webkit-slider-thumb { transform:scale(1); }
+  .playback-progress.is-seekable:is(:hover,:focus-within) .seek-input::-moz-range-thumb,
+  .playback-progress[data-seeking] .seek-input::-moz-range-thumb { transform:scale(1); }
+  .playback-progress .seek-input:focus-visible::-webkit-slider-thumb { box-shadow:0 0 0 4px #e9bd7966; }
+  .playback-progress .seek-input:focus-visible::-moz-range-thumb { box-shadow:0 0 0 4px #e9bd7966; }
+  /* Waiting for the speaker: the handle stays at the chosen point, dimmed. */
+  .playback-progress[data-seeking='pending'] .seek-input::-webkit-slider-thumb { opacity:.55; }
+  .playback-progress[data-seeking='pending'] .seek-input::-moz-range-thumb { opacity:.55; }
+  /* The chosen time above the handle; near either end it stays inside the bar's width. */
+  .seek-bubble {
+    position:absolute; z-index:2; bottom:calc(100% + 1.125rem); left:calc(var(--seek-at,0) * 100%);
+    transform:translateX(calc(var(--seek-at,0) * -100%)); padding:.25rem .5rem; border:1px solid var(--line); border-radius:.375rem;
+    background:#18251b; color:var(--text); font-size:.8125rem; font-weight:650; line-height:1.25rem; font-variant-numeric:tabular-nums;
+    white-space:nowrap; pointer-events:none; box-shadow:0 .25rem .75rem #0008;
+  }
+  .seek-bubble[hidden] { display:none; }
+  .seek-bubble.is-warning { border-color:var(--accent); color:var(--accent); }
+  @media(prefers-reduced-motion:reduce) {
+    .playback-progress .progress-rail progress,.playback-progress .seek-input::-webkit-slider-thumb,.playback-progress .seek-input::-moz-range-thumb { transition:none; }
+  }
   .panel[data-playback-role] { display:grid; grid-template-columns:minmax(0,1fr) minmax(260px,.85fr); grid-template-areas:'identity transport' 'timeline timeline' 'footer footer'; align-items:center; gap:16px 24px; }
   [data-playback-role] > .private-now-playing,[data-playback-role] > .host-live-person { grid-area:identity; margin:0; }
   .panel[data-playback-role] > .playback-progress { grid-area:timeline; margin:0; }

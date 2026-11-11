@@ -711,3 +711,30 @@ test('finishing a parked pause issues no resume/stop, while another active sourc
   await assert.rejects(f.engine.control(f.sam, f.host().turnId!, second, 'resume'), e => e instanceof AppError && e.status === 409);
   assert.equal(writes(f).length, count); assert.equal(f.host().current!.nickname, 'Sam');
 });
+
+test('seeking moves the owned song once, keeps ownership, and never moves a paused song', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id); const id = f.host().hostPlayback!.id;
+  f.remote.calls.length = 0;
+  await f.engine.seek(f.alex, turn, id, 95.7);
+  const seeks = f.remote.calls.filter(call => call.command === 'player_queues/seek');
+  assert.equal(seeks.length, 1); assert.equal((seeks[0]!.args as { position: number }).position, 95, 'MA receives whole seconds.');
+  assert.ok(Math.abs(f.participant(f.alex).progress!.elapsed! - 95) < 2);
+  assert.equal(f.host().hostPlayback?.id, id); assert.equal(f.host().playbackStatus, 'playing'); assert.equal(f.adapter.problem, undefined);
+  await f.engine.control(f.alex, turn, id, 'pause');
+  f.remote.calls.length = 0;
+  await assert.rejects(f.engine.seek(f.alex, turn, id, 30), error => error instanceof AppError && error.status === 409);
+  assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/seek').length, 0);
+  assert.equal(f.remote.queue.state, 'paused');
+});
+
+test('a seek the speaker refuses leaves the song playing where it was, without recovery', async t => {
+  const f = await fixture(60_000); t.after(f.close);
+  const turn = f.host().turnId!; const track = (await f.engine.search(f.alex, turn, 'fixture')).tracks[0]!;
+  await f.engine.play(f.alex, turn, null, track.id); const id = f.host().hostPlayback!.id;
+  f.remote.queue.current_item!.media_item!.duration = 0; // MA refuses items without a duration.
+  await assert.rejects(f.engine.seek(f.alex, turn, id, 30), error => error instanceof AppError && error.status === 422);
+  assert.equal(f.remote.queue.state, 'playing'); assert.equal(f.host().hostPlayback?.id, id);
+  assert.equal(f.host().playbackStatus, 'playing'); assert.equal(f.adapter.problem, undefined);
+});

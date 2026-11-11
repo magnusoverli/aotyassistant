@@ -10,6 +10,7 @@ const messages = {
   'setup-unconfirmed': 'The speaker’s single-track queue settings could not be verified. The app did not send a new Play command; the previous song may still be playing.',
   'pause-unconfirmed': 'Pause could not be confirmed. The speaker may still be playing.',
   'resume-unconfirmed': 'Resume could not be confirmed. Playback may have resumed.',
+  'seek-unconfirmed': 'Moving within the song could not be confirmed. The speaker may be playing from another point.',
   'stop-unconfirmed': 'Stop could not be confirmed. The speaker may still be playing. The turn was not advanced.',
   'transfer-unconfirmed': 'Moving playback could not be confirmed. The song may be on either speaker. Recover playback controls before trying again; your turn was kept.',
   'queue-unverified': 'The playback queue could not be safely verified. The turn was not advanced.',

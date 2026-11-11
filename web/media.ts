@@ -57,7 +57,9 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
   const fallback = frame.querySelector<HTMLElement>('.progress-unavailable');
   const unavailable = Boolean(progress && progress.fraction == null);
   if (fallback) prop(fallback, 'hidden', !unavailable);
-  if (progress?.fraction != null) prop(bar, 'value', progress.fraction); else attr(bar, 'value', undefined);
+  // A participant choosing a point in their song owns the bar, handle and elapsed time (seek-bar.ts).
+  const seeking = frame.dataset.seeking !== undefined;
+  if (!seeking) { if (progress?.fraction != null) prop(bar, 'value', progress.fraction); else attr(bar, 'value', undefined); }
   prop(bar, 'hidden', !progress || Boolean(fallback && unavailable));
   const marker = frame.querySelector<HTMLElement>('.auto-reveal-marker');
   if (marker) {
@@ -75,10 +77,16 @@ function paintProgress(frame: HTMLElement, progress?: PlaybackProgress) {
   if (progress?.duration !== undefined) {
     if (times.children.length !== 2) times.replaceChildren(el('span'), el('span'));
     const elapsed = progress.elapsed === undefined ? '—:—' : time(progress.elapsed); const duration = progress.duration > 0 ? time(progress.duration) : '—:—';
-    if (times.children[0]!.textContent !== elapsed) times.children[0]!.textContent = elapsed;
+    if (!seeking && times.children[0]!.textContent !== elapsed) times.children[0]!.textContent = elapsed;
     if (times.children[1]!.textContent !== duration) times.children[1]!.textContent = duration;
     const description = progress.elapsed === undefined ? 'Position unavailable' : `${elapsed} elapsed${progress.duration > 0 ? ` of ${duration}` : ''}`;
     if (bar.getAttribute('aria-valuetext') !== description) bar.setAttribute('aria-valuetext', description);
+    const handle = frame.querySelector<HTMLInputElement>('.seek-input');
+    if (handle && !seeking && progress.elapsed !== undefined) {
+      const value = String(Math.max(0, Math.floor(progress.elapsed)));
+      if (handle.value !== value) handle.value = value;
+      if (handle.getAttribute('aria-valuetext') !== description) handle.setAttribute('aria-valuetext', description);
+    }
   } else { if (times.childNodes.length) times.replaceChildren(); attr(bar, 'aria-valuetext', 'Track progress. Times hidden until reveal.'); }
 }
 export function progressBar(progress?: PlaybackProgress, publicDisplay = false, options: { hideStatus?: boolean; positionFallback?: boolean } = {}) {

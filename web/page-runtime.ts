@@ -138,7 +138,13 @@ const playback = page === 'host' ? new Playback({ ...playbackOptions, role: 'hos
   advance: turnId => { player.cancel(); return mutate('/api/host/advance', { turnId }); },
   stop: (turnId, playbackId) => { player.cancel(); return mutate('/api/host/stop', { turnId, playbackId }); },
 }) : page === 'participant' ? new Playback({ ...playbackOptions, role: 'participant',
-  playFirst: playFirstSelection,
+  playFirst: () => playFirstSelection(),
+  next: () => playFirstSelection(false),
+  seek: position => run(async () => {
+    const current = view; const song = current?.ownPlayback;
+    if (!current?.myTurn || !song || song.status !== 'playing') return;
+    await mutate('/api/participant/seek', { turnId: current.turnId, playbackId: song.id, position });
+  }),
   control: action => { error = ''; player.control(action); },
   reveal: () => { error = ''; player.reveal(); },
   finish: () => { player.cancel(); return mutate('/api/participant/finish', { turnId: view?.turnId }); },
@@ -459,13 +465,14 @@ function renderPlayback(current: View) {
     firstSelection: page === 'participant' ? library.view?.upcoming[0] : undefined,
     selectionReady: !library.loading && !library.saving && !library.pending && !library.view?.reviewEntryId });
 }
-function playFirstSelection() {
+/** `confirmReplace` false: Next track in the "continue this playlist" mode, which replaces the song without asking. */
+function playFirstSelection(confirmReplace = true) {
   error = '';
   const entry = library.view?.upcoming[0];
   if (!entry || !library.view) return;
   const track: CatalogueTrack = { id: `prepared:${entry.id}`, title: entry.title, artist: entry.artist, album: entry.album, version: entry.version,
     provider: entry.provider, duration: entry.duration, available: entry.sourceAvailable !== false, artwork: entry.artwork, artistArtwork: entry.artistArtwork };
-  playTrack(track, { entryId: entry.id, revision: library.view.revision });
+  playTrack(track, { entryId: entry.id, revision: library.view.revision }, confirmReplace);
 }
 function participant() {
   if (!view?.me) return participantEntry();
@@ -603,8 +610,8 @@ function participant() {
   children(main, hero, view.user?.pinRequired && enrollmentPanel(), musicPanel);
   return main;
 }
-function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }) {
-  if (view?.ownPlayback && view.ownPlayback.status !== 'stopped' && !confirm('Replace the current song? Playing this song will stop the current one.')) return;
+function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }, confirmReplace = true) {
+  if (confirmReplace && view?.ownPlayback && view.ownPlayback.status !== 'stopped' && !confirm('Replace the current song? Playing this song will stop the current one.')) return;
   player.play(track, prepared);
 }
 async function loadUsers() {

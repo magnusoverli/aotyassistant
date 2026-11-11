@@ -14,7 +14,7 @@ type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?
 type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configurationRevision' | 'routeConfigured' | 'playbackAvailable' |
   'withPlayback' | 'withDemoPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
 type QueueItem = Awaited<ReturnType<MusicAssistantApi['queueItems']>>[number];
-type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback' | 'queueById' | 'transferTarget' | 'transferQueue'>;
+type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback' | 'queueById' | 'transferTarget' | 'transferQueue' | 'seekQueue'>;
 type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; previousQueueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
   idleSince?: number; position?: { elapsed: number; duration: number; at: number }; streamInfo?: StreamInfo };
 
@@ -414,6 +414,55 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
         this.invalidate(playbackFailure(error, dispatched ? `${action}-unconfirmed` : 'queue-unverified'));
         throw new AppError(503, this.issue);
       }
+    });
+  }
+  /** Moves the playing, app-owned song within itself. MA rebuilds the stream for the same queue
+   * item, so ownership and stream identity are unchanged; the new position is read back. Only a
+   * song that stopped being this app's, or a speaker that cannot be read, needs recovery: a seek
+   * that did not happen leaves the song playing where it was. */
+  async seek(position: number): Promise<void> {
+    if (this.closed) throw new AppError(503, 'Playback is shutting down.');
+    if (this.demoId || !this.integrations.configured) { await this.demo.seek(position); return; }
+    if (!this.own) throw new AppError(409, 'There is no application-owned playback to control.');
+    await this.command('seek', async () => {
+      const own = this.own;
+      if (!own) throw new AppError(409, 'There is no application-owned playback to control.');
+      const api = own.api;
+      if (!api.seekQueue) throw new AppError(422, 'This music connection cannot move within a song.');
+      const q = await playbackRead(() => api.queue(own.destination), () => !this.closed && this.own === own);
+      if (!this.activelyOwned(q, own)) { this.invalidate('external-playback'); throw new AppError(409, this.issue); }
+      // MA's seek also starts a paused queue, so a paused song is never moved.
+      if (own.status !== 'playing' || q.state !== 'playing' || !q.active || q.ended || !this.safeQueue(q)) {
+        throw new AppError(409, 'Resume the song before moving within it.');
+      }
+      const target = Math.max(0, Math.min(Math.floor(position), Math.floor(own.track.duration || position)));
+      const started = Date.now(); let failed = false;
+      // MA answers a refused seek (no duration, inactive queue) with a bare 500 before changing
+      // anything, so the response cannot tell a refusal from a lost acknowledgement. Never replay it.
+      try { await api.seekQueue(own.queueId, target); } catch { failed = true; }
+      const seen: { queue?: QueueSnapshot } = {};
+      const moved = async () => {
+        if (this.closed) throw new Error('Playback controller closed.');
+        const queue = await playbackRead(() => api.queue(own.destination), () => !this.closed && this.own === own);
+        if (!this.sameQueueItem(queue, own)) { this.invalidate('external-playback'); throw new AppError(409, this.issue); }
+        if (!this.safeQueue(queue) || queue.ended) throw new Error('Unsafe queue state.');
+        seen.queue = queue;
+        if (!queue.active || queue.state !== 'playing' || queue.elapsed_time === undefined) return undefined;
+        const late = (Date.now() - started) / 1000 + 5;
+        return queue.elapsed_time >= target - 2 && queue.elapsed_time <= target + late ? queue : undefined;
+      };
+      let confirmed: QueueSnapshot | undefined; let readFailure: unknown;
+      // MA publishes the target before it rebuilds the stream, so after an error one read tells.
+      try { confirmed = failed ? await moved() : await this.readBack(moved, 'Moving within the song was not confirmed.'); }
+      catch (error) { if (error instanceof AppError && error.status === 409) throw error; readFailure = error; }
+      if (confirmed) { this.observe(own, confirmed); own.idleSince = undefined; return; }
+      const last = seen.queue;
+      if (!last || last.state !== 'playing' || !last.active) {
+        this.invalidate(playbackFailure(readFailure, 'seek-unconfirmed')); throw new AppError(503, this.issue);
+      }
+      this.observe(own, last);
+      throw new AppError(failed ? 422 : 502, failed ? 'The speaker could not move to that point in the song. It keeps playing from where it was.'
+        : 'The speaker did not confirm the new position. The song keeps playing.');
     });
   }
   /** Called with the integration/audio lanes already held. Never re-enter withPlayback. */

@@ -292,6 +292,9 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.post('/api/participant/control', jsonBody(z.strictObject({ turnId: turn, playbackId: turn, action: z.enum(['pause', 'resume', 'stop']) }), async (input, req, res) => {
     await engine.control(participantCredential(req), input.turnId, input.playbackId, input.action); res.json(engine.view(participant(req)));
   }));
+  app.post('/api/participant/seek', jsonBody(z.strictObject({ turnId: turn, playbackId: turn, position: z.number().finite().min(0).max(86_400) }), async (input, req, res) => {
+    await engine.seek(participantCredential(req), input.turnId, input.playbackId, input.position); res.json(engine.view(participant(req)));
+  }));
   app.post('/api/participant/volume', jsonBody(z.strictObject({ turnId: turn, playbackId: turn, level: z.number().int().min(0).max(100), volumeRevision: z.string().min(1).max(200) }), async (input, req, res) => {
     await engine.setVolume(input.level, input.turnId, participantCredential(req), input.playbackId, input.volumeRevision); res.json(engine.view(participant(req)));
   }));

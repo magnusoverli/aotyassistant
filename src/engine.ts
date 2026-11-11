@@ -313,6 +313,7 @@ export class Engine extends EventEmitter {
     const me = this.participant(role.credential, room); const myTurn = room.currentId === me.id;
     const seat = room.active.indexOf(me.id); const currentSeat = room.active.indexOf(room.currentId ?? '');
     return { ...base, me: { id: me.id, nickname: me.nickname }, myTurn, catalogue: this.catalogueState, secretPlayback: room.secretPlayback?.enabled !== false,
+      songEnd: (room.autoplay ?? defaultAutoplay).mode,
       ...(this.userForSession ? { user: this.userForSession(role.credential) } : {}),
       position: { seat: seat + 1, total: room.active.length, turnsUntil: (seat - currentSeat + room.active.length) % room.active.length },
       ...(myTurn ? { ownPlayback: structuredClone(room.playback), progress: this.progress(room, true), volume: this.adapter.volume } : {}) };
@@ -562,6 +563,25 @@ export class Engine extends EventEmitter {
         const room = this.room(state); check(room);
         room.playback!.status = action === 'pause' ? 'paused' : action === 'resume' ? 'playing' : 'stopped';
       });
+    }));
+  }
+  /** Only the participant whose song is playing moves within it. Automatic reveal follows the
+   * reported position, so moving past its marker reveals a hidden song. */
+  async seek(credential: string, turnId: string, playbackId: string, position: number): Promise<void> {
+    return operation('seek', () => this.audio(async () => {
+      const check = (room: Room) => {
+        this.current(credential, turnId, room); this.expectedPlayback(room, playbackId);
+        if (!room.playback || room.playback.status === 'stopped') throw new AppError(409, 'Select and play a track first.');
+        if (room.playback.status !== 'playing') throw new AppError(409, 'Resume the song before moving within it.');
+        if (this.concealPlayback) throw new AppError(409, 'Playback cannot be confirmed. Review its status before controlling it.');
+      };
+      const duration = await this.inspect(room => {
+        check(room); return this.adapter.progress?.(room.playback!.id)?.duration || room.playback!.track.duration;
+      });
+      if (!this.adapter.seek) throw new AppError(422, 'This speaker cannot move within a song.');
+      if (!Number.isFinite(duration) || duration <= 0) throw new AppError(422, 'This song’s length is unknown, so it cannot be moved within.');
+      await this.adapter.seek(Math.max(0, Math.min(position, duration)));
+      this.emit('change');
     }));
   }
   async reveal(credential: string, turnId: string, playbackId: string): Promise<void> {

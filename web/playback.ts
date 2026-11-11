@@ -8,6 +8,7 @@ import { slot } from './page-layout';
 import { panel } from './ui-components';
 import { ViewNodes, attr, children, prop, text } from './view-nodes';
 import { ParticipantPlayerDetails } from './participant-player-details';
+import { SeekBar } from './seek-bar';
 
 type CommonOptions = {
   volume(level: number, commit: boolean): void;
@@ -22,6 +23,10 @@ type HostOptions = CommonOptions & {
 type ParticipantOptions = CommonOptions & {
   role: 'participant';
   playFirst(): void;
+  /** Plays the next saved song at once, keeping the turn: the "continue this playlist" song-end mode. */
+  next(): void;
+  /** Moves the participant's playing song; settles once the speaker's answer is in. */
+  seek(position: number): Promise<void>;
   control(action: 'pause' | 'resume' | 'stop'): void;
   reveal(): void;
   finish(): Promise<void> | void;
@@ -45,6 +50,7 @@ export class Playback {
   private details?: ParticipantPlayerDetails;
   private cover?: ArtworkView;
   private portrait?: ArtworkView;
+  private seekBar?: SeekBar;
   /** Host-only: the playback the card last showed, and a stop the host is waiting on. */
   private hostUi = { identity: '', pending: '' };
 
@@ -74,6 +80,10 @@ export class Playback {
     return this.nodes.get('progress', () => {
       const node = progressBar(undefined, false);
       if (this.options.role === 'host') node.classList.add('host-progress');
+      else {
+        const options = this.options;
+        this.seekBar = new SeekBar(node, seconds => options.seek(seconds), () => { if (this.state) this.update(this.state); });
+      }
       return node;
     });
   }
@@ -82,6 +92,7 @@ export class Playback {
   clear() {
     this.details?.destroy(); this.details = undefined; this.cover?.clear(); this.portrait?.clear(); this.cover = this.portrait = undefined;
     this.state = undefined; this.volumeState = undefined; this.audibleVolume = 35; this.nodes.clear(); this.hostUi = { identity: '', pending: '' };
+    this.seekBar = undefined;
   }
 
   updateVolume(volume?: VolumeState) {
@@ -106,8 +117,8 @@ export class Playback {
     }, true);
   }
 
-  private decorate(button: HTMLButtonElement, caption: string, icon: 'play' | 'pause' | 'stop' | 'volume' | 'muted' | 'reveal' | 'advance', mobileCaption?: string) {
-    const paths = { play: 'M8 5l11 7-11 7Z', pause: 'M8 5v14M16 5v14', stop: 'M6 6h12v12H6Z',
+  private decorate(button: HTMLButtonElement, caption: string, icon: 'play' | 'pause' | 'stop' | 'volume' | 'muted' | 'reveal' | 'advance' | 'next', mobileCaption?: string) {
+    const paths = { play: 'M8 5l11 7-11 7Z', pause: 'M8 5v14M16 5v14', stop: 'M6 6h12v12H6Z', next: 'M5 5l10 7-10 7ZM19 5v14',
       volume: 'M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
       muted: 'M11 5 6 9H3v6h3l5 4ZM16 9l6 6M22 9l-6 6',
       reveal: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
@@ -130,7 +141,7 @@ export class Playback {
   /** Telemetry never remounts buttons, artwork, disclosures or a slider being dragged. */
   updateTelemetry(progress?: PlaybackProgress, volume?: VolumeState) {
     if (!this.state) return;
-    if (!this.progress.querySelector('.player-pending')) updateProgress(this.progress, progress);
+    if (!this.progress.querySelector('.player-pending') && !this.seekBar?.active) updateProgress(this.progress, progress);
     this.updateVolume(volume);
   }
 
@@ -142,9 +153,11 @@ export class Playback {
     const songActive = Boolean(online && playback && (playback.status === 'playing' || playback.status === 'paused'));
     const progress = this.progress;
     const status = progress.querySelector<HTMLElement>('.playback-status')!;
-    status.classList.toggle('player-pending', !host && starting);
+    const moving = this.seekBar?.pendingText;
+    status.classList.toggle('player-pending', !host && (starting || Boolean(moving)));
     updateProgress(progress, host ? songActive ? projected.progress : undefined : playback ? projected.progress : undefined);
-    if (!host && starting) text(status, 'Starting track…');
+    if (!host && starting) text(status, 'Starting track…'); else if (!host && moving) text(status, moving);
+    if (!host) this.updateSeek(state);
     updateOutputLabel(this.output, view.output, online);
     prop(this.volume.querySelector('input')!, 'disabled', !online || !view.connected || !projected.volume?.available ||
       (!host && (!playback || playback.status === 'stopped' || starting)));
@@ -152,6 +165,25 @@ export class Playback {
     if (this.options.role === 'host') this.renderHost(state, this.options, songActive);
     else this.renderParticipant(state, this.options);
     return this.element;
+  }
+
+  /** Only the participant whose song is playing can move within it. MA's seek would also start a
+   * paused song, so pausing hides the handle. */
+  private updateSeek(state: PlaybackState) {
+    const bar = this.seekBar; if (!bar) return;
+    const { view, projected, online, busy, starting } = state;
+    const playback = view.myTurn ? projected.ownPlayback : undefined;
+    const progress = projected.progress;
+    const enabled = Boolean(online && view.connected && view.myTurn && !busy && !starting && playback?.status === 'playing' &&
+      !playback.id.startsWith('pending-') && progress?.id === playback.id && progress.elapsed !== undefined);
+    bar.update({ enabled, duration: progress?.duration ?? 0, revealAt: progress?.autoRevealAt,
+      hidden: view.secretPlayback !== false && !playback?.revealed });
+  }
+
+  /** In the "continue this playlist" song-end mode, Play pick becomes Next track during a song. */
+  private nextTrackMode(state: PlaybackState | undefined) {
+    const playback = state?.view.myTurn ? state.projected.ownPlayback : undefined;
+    return Boolean(state?.view.songEnd === 'same-participant' && playback && (playback.status === 'playing' || playback.status === 'paused'));
   }
 
   private button(id: string, caption: string, action: () => void, secondary = false) {
@@ -191,13 +223,19 @@ export class Playback {
     const controls = this.nodes.el('transport', 'div', undefined, 'playback-transport');
     attr(controls, 'role', 'group'); attr(controls, 'aria-label', 'Playback controls');
     const play = this.options.role === 'participant' ? this.button('player-play-next', 'Play first selection', () => {
-      if (this.options.role === 'participant') this.options.playFirst();
+      if (this.options.role !== 'participant') return;
+      if (this.nextTrackMode(this.state)) this.options.next(); else this.options.playFirst();
     }, true) : undefined;
     if (play) {
-      const next = state.firstSelection;
+      const next = state.firstSelection; const skip = this.nextTrackMode(state);
       const ready = Boolean(next && next.sourceAvailable !== false && permitted && view.catalogue?.playbackAvailable && state.selectionReady);
       prop(play, 'hidden', !next); prop(play, 'disabled', !ready || starting); attr(play, 'data-player-ready', String(ready));
-      prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here'); this.decorate(play, 'Play first selection', 'play', 'Play pick');
+      if (skip) {
+        prop(play, 'title', next ? `Next track: ${next.title}` : 'Your list is empty'); this.decorate(play, 'Next track', 'next', 'Next');
+      } else {
+        prop(play, 'title', next ? `Play first selection: ${next.title}` : 'Save a track to play it here'); this.decorate(play, 'Play first selection', 'play', 'Play pick');
+      }
+      play.classList.toggle('is-next-track', skip);
     }
     // The host never starts a song, so its player has no Play button at all.
     children(controls, play, transport, stop);

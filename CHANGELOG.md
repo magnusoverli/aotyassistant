@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.0.15] — 2026-11-11
+
+- Move within your song: during your turn, drag the progress bar in **Your music** (or use the arrow and Page Up/Down keys). A bubble shows the chosen time, the speaker moves when you let go, and the handle waits at that point until Music Assistant confirms. Moving a hidden song past the automatic-reveal marker reveals it, and the bubble warns before you let go. Only the participant whose song is playing can do this, and only while it plays.
+- When **When a song ends** is set to **Continue current participant’s playlist**, the player's **Play first selection** becomes **Next track** during a song: it starts your next saved song at once and keeps your turn.
+
 ## [2.0.14] — 2026-11-11
 
 - Rebuild the room display as one picture designed at 1920×1080 and scaled as a whole: header, play order, artwork, song details, join code and logo now grow together on any screen, including 960×540 TV boxes and 4K, instead of following separate rules. Text read from across the room is at least 24 design pixels.

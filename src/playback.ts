@@ -19,6 +19,8 @@ export interface PlaybackAdapter {
   discardSelection?(track: Track): void;
   play(track: Track, playbackId: string): Promise<void>;
   control(action: 'pause' | 'resume' | 'stop'): Promise<void>;
+  /** Moves the playing song to `position` seconds. Absent where the speaker cannot. */
+  seek?(position: number): Promise<void>;
   onComplete: (playbackId: string) => void;
   onInvalidated?: (playbackId: string, message: string) => void;
   onStatus?: (playbackId: string, status: 'playing' | 'paused') => void;
@@ -78,6 +80,12 @@ export class DemoAdapter implements PlaybackAdapter {
       this.remaining = Math.max(0, this.remaining - (Date.now() - this.startedAt));
     }
     if (action === 'resume' && !this.timer && this.playbackId) this.schedule();
+  }
+  async seek(position: number): Promise<void> {
+    if (!this.playbackId) throw new AppError(409, 'There is no song to move within.');
+    this.remaining = Math.max(0, this.duration - Math.max(0, Math.min(this.duration, position))) * 1000;
+    if (this.timer) { clearTimeout(this.timer); this.schedule(); }
+    this.onProgress();
   }
   private schedule(): void {
     this.startedAt = Date.now();

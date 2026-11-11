@@ -78,7 +78,7 @@ export type QueueSnapshot = z.infer<typeof queueSchema>;
 type Command = 'players/all' | 'providers' | 'player_queues/get_active_queue' | 'music/search' | 'music/artists/artist_albums'
   | 'music/albums/album_tracks' | 'music/item_by_uri' | 'player_queues/items' | 'player_queues/autoplay'
   | 'player_queues/repeat' | 'player_queues/shuffle' | 'player_queues/play_media' | 'player_queues/stop'
-  | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/clear' | 'player_queues/get' | 'player_queues/transfer' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
+  | 'player_queues/pause' | 'player_queues/resume' | 'player_queues/seek' | 'player_queues/clear' | 'player_queues/get' | 'player_queues/transfer' | 'players/get' | 'players/cmd/volume_set' | 'players/cmd/group_volume';
 const volumePlayerSchema = z.object({ player_id: z.string(), available: z.boolean(), type: z.string().default('player'),
   supported_features: z.array(z.string()).default([]), volume_control: z.string().default('none'),
   volume_level: z.number().int().min(0).max(100).nullable().default(null), group_volume: z.number().int().min(0).max(100).nullable().default(null),
@@ -607,6 +607,10 @@ export class MusicAssistantClient implements MusicAssistantReader {
   async controlQueue(queueId: string, action: 'pause' | 'resume' | 'stop'): Promise<void> {
     await this.read('/api', `player_queues/${action}`, { queue_id: queueId });
   }
+  /** MA restarts the current item's stream at a whole second within its duration. */
+  async seekQueue(queueId: string, position: number): Promise<void> {
+    await this.read('/api', 'player_queues/seek', { queue_id: queueId, position: Math.max(0, Math.floor(position)) });
+  }
   private async volumePlayer(playerId: string) {
     const result = volumePlayerSchema.safeParse(await this.read('/api', 'players/get', { player_id: playerId }));
     if (!result.success || result.data.player_id !== playerId || !result.data.available) throw new AppError(502, 'Destination volume is unavailable.');
@@ -643,7 +647,7 @@ const apiMethods = ['inspect', 'activeQueue', 'search', 'artwork', 'artists', 'a
 
 /** Structural port: integrations depend on capabilities, not one concrete client's prototype. */
 export type MusicAssistantApi = Pick<MusicAssistantClient, typeof apiMethods[number]> &
-  Partial<Pick<MusicAssistantClient, 'queueById' | 'transferTarget' | 'transferQueue'>>;
+  Partial<Pick<MusicAssistantClient, 'queueById' | 'transferTarget' | 'transferQueue' | 'seekQueue'>>;
 export function isMusicAssistantApi(reader: MusicAssistantReader): reader is MusicAssistantApi {
   return apiMethods.every(method => typeof Reflect.get(reader, method) === 'function');
 }

@@ -24,7 +24,7 @@ const readRoutes = [
 const writeRoutes = [
   /^\/api\/browser-speaker\/(?:register|pair|stop)$/,
   /^\/api\/participant\/browser-speaker\/(?:register|telemetry)$/,
-  /^\/api\/participant\/(?:join|logout|finish|search|browse|play|control|volume|reveal)$/,
+  /^\/api\/participant\/(?:join|logout|finish|search|browse|play|control|seek|volume|reveal)$/,
   /^\/api\/participant\/import\/(?:read|match)$/,
   /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-upload|replace-upload|purge-upload|clear|move|remove|restore|review|play|import|import\/stop|album|replace)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/discard)?$/,
