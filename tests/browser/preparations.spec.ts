@@ -60,6 +60,7 @@ test('one automatic list reorders, restores entries from history, survives remov
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer']);
     await expect(second.locator('.list-save-status')).toHaveText('Private · Saved ✓');
     await expect(second.locator('.preparation-list > .list-notice')).toHaveCount(0);
+    await second.locator('#list-history summary', { hasText: 'Removed' }).click();
     await second.locator('#list-history').locator('.saved-track', { hasText: 'Northern Lights' }).getByRole('button', { name: 'Add back', exact: true }).click();
     await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);
     await second.reload(); await showList(second); await expect(titles(second)).toHaveText(['Night Bus Home', 'Late Summer', 'Northern Lights']);

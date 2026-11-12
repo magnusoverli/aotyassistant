@@ -23,7 +23,7 @@ export class PreparationPanel {
   private list?: HTMLElement;
   private listKey = '';
   private withSearch = true;
-  private historyLimit = 50;
+  private historyLimits = { played: 50, removed: 50 };
   private rows = new Map<string, { key: string; element: HTMLElement }>();
   private historyRows = new Map<string, { key: string; element: HTMLElement }>();
   readonly uploads: UploadPanel;
@@ -147,14 +147,18 @@ export class PreparationPanel {
     const v = this.nodes;
     const canImport = this.options.getView()?.catalogue?.source === 'music-assistant';
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      this.moving, [...this.open], this.historyLimit, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport, this.importer.busy]);
+      this.moving, [...this.open], this.historyLimits.played, this.historyLimits.removed, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport, this.importer.busy]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
-    const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-labelledby', 'music-list-title');
+    const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-label', 'Your playlist');
     this.bar.observe(list);
     list.classList.add('is-expanded'); prop(list, 'tabIndex', -1); attr(list, 'data-my-turn', String(Boolean(this.options.getView()?.myTurn)));
     const heading = v.el('heading', 'div', undefined, 'list-heading');
-    const title = v.get('title', () => { const node = el('h2', 'Your playlist'); node.id = 'music-list-title'; return node; });
+    // Phones show the shorter "Playlist" (music-collection.css); the region keeps its full name everywhere.
+    const title = v.get('title', () => {
+      const node = el('h2'); node.id = 'music-list-title';
+      node.append(el('span', 'Your playlist', 'list-title-full'), el('span', 'Playlist', 'list-title-short')); return node;
+    });
     const count = snapshot?.upcoming.length;
     const countLabel = v.el('count', 'span', count === undefined ? '' : `${count} ${count === 1 ? 'track' : 'tracks'}`, 'list-count');
     prop(countLabel, 'hidden', count === undefined);
@@ -219,13 +223,19 @@ export class PreparationPanel {
     children(ordered, ...upcomingRows); bodyNodes.push(ordered);
     const tools = v.el('tools', 'div', undefined, 'list-tools'); const toolNodes: Node[] = [];
     const history = v.el('history', 'div', undefined, 'list-history'); prop(history, 'id', 'list-history');
-    const historyNodes: Node[] = [];
-    let remaining = this.historyLimit; const historyIds = new Set<string>();
+    const historyNodes: Node[] = []; const historyIds = new Set<string>();
+    // Both categories are always listed, collapsed until opened (their open state survives re-renders).
     for (const kind of ['played', 'removed'] as const) {
-      const entries = snapshot?.[kind] ?? []; if (!entries.length) continue;
-      historyNodes.push(v.el(`history-title-${kind}`, 'h3', `${kind === 'played' ? 'Previously played' : 'Removed'} · ${entries.length}`));
+      const entries = snapshot?.[kind] ?? [];
+      const section = this.details(`history-${kind}`, `${kind === 'played' ? 'Previously played' : 'Removed'} · ${entries.length}`);
+      section.classList.add('list-history-section'); historyNodes.push(section);
+      const sectionNodes: Node[] = [section.querySelector('summary')!];
+      if (!entries.length) {
+        sectionNodes.push(v.el(`history-empty-${kind}`, 'p', kind === 'played' ? 'No songs played yet.' : 'No removed songs.', 'muted small list-history-empty'));
+        children(section, ...sectionNodes); continue;
+      }
       const rows = v.el(`history-${kind}`, 'ul', undefined, 'saved-tracks'); const historyEntries: Node[] = [];
-      const visible = entries.slice(0, remaining); remaining -= visible.length;
+      const visible = entries.slice(0, this.historyLimits[kind]);
       for (const entry of visible) {
         historyIds.add(entry.id); const key = JSON.stringify([kind, entry]);
         let cached = this.historyRows.get(entry.id);
@@ -242,14 +252,15 @@ export class PreparationPanel {
         }
         for (const control of cached.element.querySelectorAll('button')) prop(control, 'disabled', library.locked);
         historyEntries.push(cached.element);
-      } children(rows, ...historyEntries); historyNodes.push(rows);
-    }
-    if ((snapshot?.played.length ?? 0) + (snapshot?.removed.length ?? 0) > this.historyLimit) {
-      historyNodes.push(this.control('more-history', 'Show more history', () => { this.historyLimit += 50; this.refresh(); }));
+      } children(rows, ...historyEntries); sectionNodes.push(rows);
+      // Each category pages on its own, so one never looks empty while the other is cut off.
+      if (entries.length > visible.length) sectionNodes.push(this.control(`more-${kind}`, kind === 'played' ? 'Show more played songs' : 'Show more removed songs',
+        () => { this.historyLimits[kind] += 50; this.refresh(); }));
+      children(section, ...sectionNodes);
     }
     children(history, ...historyNodes);
     for (const id of this.historyRows.keys()) if (!historyIds.has(id)) this.historyRows.delete(id);
-    if (snapshot?.played.length || snapshot?.removed.length) toolNodes.push(history);
+    if (snapshot) toolNodes.push(history);
     // History scrolls with the list inside its own area, so it never grows the card.
     children(tools, ...toolNodes); if (toolNodes.length) bodyNodes.push(tools);
     children(body, ...bodyNodes); listNodes.push(body); children(list, ...listNodes);

@@ -6,6 +6,7 @@
      its boundary, including when an empty or short playlist cannot scroll. */
   #music-collection > .preparation-list,#music-collection .list-body { overscroll-behavior:auto; }
   #music-collection .saved-track .result-identity strong { font-size:1.25rem; line-height:1.25; }
+  .preparation-list .list-title-short { display:none; }
 
   @media(min-width:1100px) {
     .music-workspace.workspace-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'player' 'collection'; }
@@ -42,16 +43,20 @@
     #music-collection { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:var(--radius-panel); background:var(--panel); }
     /* An ordinary card above the search (the playlist bar summarises it while browsing below). */
     #music-collection > .preparation-list { position:relative; top:auto; z-index:auto; width:100%; padding:10px 14px 12px; border:0; border-bottom:1px solid var(--line); border-radius:13px 13px 0 0; background:var(--panel); box-shadow:none; max-height:none; overflow:visible; }
-    #music-collection .list-heading { min-height:44px; }
-    #music-collection .list-heading h2 { font-size:1rem; white-space:nowrap; }
+    /* A one-line header, "Playlist", ruled off from the scrolling songs. No track count or save status:
+       a failed save still shows "Needs attention" here and Retry in the list. */
+    #music-collection .list-heading { min-height:44px; padding-bottom:8px; border-bottom:1px solid var(--line); }
+    #music-collection .list-heading h2 { font-size:1.25rem; line-height:1.5rem; white-space:nowrap; }
+    #music-collection .list-title-full { display:none; }
+    #music-collection .list-title-short { display:inline; }
     #music-collection .list-meta { margin-top:2px; line-height:1rem; }
     #music-collection .list-meta .list-preview { margin:0; }
-    #music-collection .preparation-list:not([data-save-state='ready']):not(.needs-attention) .list-count { visibility:hidden; }
+    #music-collection .list-count { display:none; }
     #music-collection .list-preview { display:none; font-size:.75rem; line-height:1rem; margin:2px 0 0; }
     #music-collection .needs-attention .list-preview { display:block; color:var(--accent); }
     #music-collection .list-save-status { display:none; }
-    #music-collection .preparation-list:not([data-save-state='ready']) .list-save-status { display:block; position:absolute; top:32px; left:14px; right:14px; height:16px; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.75rem; line-height:16px; }
-    #music-collection .preparation-list.needs-attention .list-save-status { display:none; }
+    /* The header's rule replaces the first song's top border. */
+    #music-collection ol.saved-tracks > .saved-track:first-child { border-top:0; }
     /* About four rows, including history. */
     #music-collection .list-body { display:block; height:auto; min-height:0; max-height:min(15rem,38dvh); margin:0; padding:0 4px 0 0; overflow-y:auto; scrollbar-width:thin; }
     #music-collection .list-empty { display:flex; align-items:center; height:auto; margin:0; padding:.5rem 0; font-size:.875rem; }
@@ -70,7 +75,10 @@
     #music-collection .saved-unavailable { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.75rem; line-height:18px; margin:0; }
     #music-collection .list-tools { display:block; }
     #music-collection .list-tools:empty { display:none; }
-    #music-collection .list-tools h3 { margin:14px 0 4px; font-size:.875rem; color:var(--muted); }
+    /* Previously played and Removed: collapsed rows that open in place. */
+    #music-collection .list-history-section { margin-top:0; }
+    #music-collection .list-history-section > summary { padding-block:12px; }
+    #music-collection .list-history-empty { margin:0 0 12px; }
 
     #music-collection > .catalogue-panel { width:100%; padding:14px; border:0; border-radius:0 0 13px 13px; background:transparent; }
     #music-collection .catalogue-title { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
@@ -78,6 +86,5 @@
     /* Room for the playlist bar above focused results. */
     #music-collection .catalogue-results button,#music-collection .search-form { scroll-margin-top:76px; }
     body[data-short-viewport='true'] #music-collection .list-body { max-height:min(9rem,30dvh); }
-    body[data-short-viewport='true'] #music-collection .list-save-status { display:none; }
   }
 }

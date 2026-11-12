@@ -1,6 +1,6 @@
 # Private selections and persistence
 
-**Your playlist** is your one automatic, persistent list of track choices, shared across your devices. Its subtitle shows the number of upcoming tracks, excluding played or removed songs. There is no list creation, selection, switching, or recovery workflow. An empty list is ready for searching and adding songs immediately after joining. Other participants, the host, and the room display do not receive its contents or counts.
+**Your playlist** is your one automatic, persistent list of track choices, shared across your devices. Its subtitle shows the number of upcoming tracks, excluding played or removed songs. On phones the card is headed simply **Playlist**, without the count or save status; a save that needs attention still shows **Needs attention** with **Retry save** in the list. There is no list creation, selection, switching, or recovery workflow. An empty list is ready for searching and adding songs immediately after joining. Other participants, the host, and the room display do not receive its contents or counts.
 
 ## Save and arrange
 
@@ -11,7 +11,7 @@
 - For an uploaded song, **⇄** opens a dialog to upload and review a new file instead. Choose **Replace song** to save it in the same position. The original stays in **Removed**, or **Previously played** if it has history, and its file is kept for separate deletion. Upload replacements work even while Music Assistant or the original file is unavailable. See [uploaded audio](uploaded-audio.md#replace-an-uploaded-song).
 - **Clear list** beside **Your playlist** starts again from scratch. After you confirm, it removes every upcoming song and the whole history (**Previously played** and **Removed**), and permanently deletes your uploaded songs. It can't be undone. Your place in the listening order is kept, and an uploaded song that is playing must stop or finish first. The button appears only when there is something to clear.
 - **Play first selection** in the player starts the first saved choice during the current participant’s turn. List controls only manage selections and order.
-- Successful playback keeps the choice in **Previously played**, shown by default below the upcoming tracks. This means playback started, not necessarily that the song finished.
+- Successful playback keeps the choice in **Previously played**. **Previously played** and **Removed** are always listed below the upcoming tracks with their counts, even when empty; each is collapsed until you open it and shows 50 songs at a time. This means playback started, not necessarily that the song finished.
 
 The app never sends the whole list to Music Assistant. [Automatic play](using-the-app.md#automatic-play) can start the next participant’s first upcoming choice or continue the current participant’s playlist after a natural ending, exactly as **Play first selection** would. Continuing a playlist keeps their turn and waits when the playlist is empty or the next track cannot play. Failed or uncertain playback keeps the entry for explicit review; an automatic start that never reached the speaker leaves the entry first in the list.
 

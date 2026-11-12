@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.1.2] — 2026-11-12
+
+- Make the phone participant player shorter, with smaller artwork and volume controls and playback status between the elapsed and total times beneath the progress bar.
+- Simplify the phone playlist header to **Playlist**, hide the track count and routine save status, and keep **Needs attention** and save-retry controls available when needed.
+- Collapse **Previously played** and **Removed** into separate expandable sections with counts, including empty histories, and let each section load 50 more songs at a time.
+
 ## [2.1.1] — 2026-11-12
 
 - Analyse 70–16,000 Hz (previously 50–15,000 Hz) across the 24 spectrum bands.

@@ -71,6 +71,7 @@ test('single-file metadata review, private save/reload and reversible/permanent 
     await page.screenshot({ path: 'test-results/participant-uploaded-file-320.png', fullPage: true });
     await page.getByRole('button', { name: 'Remove My private file title', exact: true }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] .saved-track')).toHaveCount(0);
+    await page.locator('#list-history summary', { hasText: 'Removed' }).click();
     await page.locator('#list-history').getByRole('button', { name: 'Add back', exact: true }).click();
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] strong')).toHaveText('My private file title');
     await page.getByRole('button', { name: 'Remove My private file title', exact: true }).click();

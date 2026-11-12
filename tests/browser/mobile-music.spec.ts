@@ -14,14 +14,16 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     const collection = page.locator('#music-collection'); const list = page.locator('.preparation-list');
     const input = page.getByRole('searchbox', { name: 'Search catalogue', exact: true });
     await expect(collection).toBeVisible(); await expect(page.locator('.list-count')).toHaveText('0 tracks');
-    await expect(list.getByRole('heading', { name: 'Your playlist', exact: true })).toBeVisible();
+    // Phones: a one-line "Playlist" header, with no track count or save status.
+    await expect(list.getByRole('heading', { name: 'Playlist', exact: true })).toBeVisible();
     expect(await page.locator('.list-count').evaluate(node => node.closest('h2'))).toBeNull();
-    await expect(page.locator('.list-count')).toBeVisible();
+    await expect(page.locator('.list-count')).toBeHidden(); await expect(page.locator('.list-save-status')).toBeHidden();
+    await expect(list.locator('.list-heading')).toHaveCSS('border-bottom-width', '1px');
     await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
     await expect(page.locator('.music-list-dialog')).toHaveCount(0);
     expect(await collection.evaluate(node => ['.preparation-list', '.catalogue-panel'].every(selector => node.querySelector(selector)?.parentElement === node))).toBe(true);
     expect(await page.locator('#participant-player').evaluate(node => node.parentElement?.id)).not.toBe('music-collection');
-    expect((await page.locator('#participant-player').boundingBox())!.height).toBe(272);
+    expect((await page.locator('#participant-player').boundingBox())!.height).toBe(230);
     const player = await page.locator('#participant-player').elementHandle();
     await input.fill('Collection'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     const rows = page.locator('.catalogue-results .track-row'); await expect(rows).toHaveCount(8);
@@ -95,6 +97,7 @@ test('the unified collection retains its desktop panes and actual row nodes afte
   expect(before[2]!.x).toBeGreaterThanOrEqual(before[1]!.x + before[1]!.width);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator('.saved-track').first()).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Playlist', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1440, height: 1000 });
   expect(await desktop()).toEqual(before);
   expect(await row!.evaluate(node => node === document.querySelector('.saved-track'))).toBe(true);

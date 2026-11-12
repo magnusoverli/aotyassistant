@@ -23,7 +23,7 @@
       align-items:stretch; gap:.25rem; padding:.75rem;
     }
     /* Half the vertical padding of the host card; the fixed frame shrinks by the same .75rem. */
-    #participant-player { padding-block:.375rem; block-size:calc(16.125rem + 2px); }
+    #participant-player { padding-block:.375rem; block-size:calc(14.25rem + 2px); grid-template-rows:3.25rem 1.5rem 2.75rem 2.25rem 2.75rem; }
     :is(#participant-player,#host-player) .player-mobile-only { display:inline; }
     :is(#participant-player,#host-player) .player-desktop-only { display:none; }
     :is(#participant-player,#host-player) .private-now-playing { position:relative; align-items:center; gap:.625rem; min-width:0; margin:0; }
@@ -36,6 +36,13 @@
     :is(#participant-player,#host-player) .artist { font-size:.8125rem; line-height:1.125rem; }
     :is(#participant-player,#host-player) .output-label { display:none; }
     #participant-player .player-details-open { display:block; position:absolute; inset:0; width:100%; height:100%; min-height:0; padding:0; border:0; background:transparent; border-radius:6px; }
+    /* Participant overrides follow the shared rules they replace. A slightly shorter identity row:
+       3.25rem artwork beside a two-line title and one artist line. */
+    #participant-player .mini-record { width:3.25rem; height:3.25rem; flex-basis:3.25rem; }
+    #participant-player .private-now-playing h2 { height:2.25rem; font-size:1.0625rem; line-height:1.125rem; }
+    #participant-player .artist-credit { height:1rem; }
+    #participant-player .artist-portrait { width:1rem; height:1rem; }
+    #participant-player .artist { font-size:.75rem; line-height:1rem; }
 
     :is(#participant-player,#host-player) .playback-progress { display:grid; grid-template-rows:1rem .25rem 1rem; gap:.125rem; margin:0; min-width:0; }
     :is(#participant-player,#host-player) .player-status-line { height:1rem; min-height:0; gap:.375rem; line-height:1rem; }
@@ -51,6 +58,24 @@
     :is(#participant-player,#host-player) progress:not([value]) { visibility:hidden; }
     :is(#participant-player,#host-player) .track-times { display:flex; min-height:0; height:1rem; margin:0; font-size:.75rem; line-height:1rem; }
     :is(#participant-player,#host-player) .track-times:empty::before,:is(#participant-player,#host-player) .track-times:empty::after { content:'—:—'; }
+    /* The participant's status shares the row under the bar: elapsed, status, duration. Fixed slots keep the
+       status in place across states; the times' spans and —:— placeholders join this grid directly. */
+    #participant-player .playback-progress {
+      grid-template-columns:auto minmax(0,1fr) auto; grid-template-rows:.25rem 1rem; gap:.25rem .5rem;
+      grid-template-areas:'rail rail rail' 'elapsed status duration';
+    }
+    #participant-player .progress-rail { grid-area:rail; }
+    #participant-player .track-times { display:contents; }
+    #participant-player .track-times > :first-child,#participant-player .track-times:empty::before { grid-area:elapsed; }
+    #participant-player .track-times > :last-child,#participant-player .track-times:empty::after { grid-area:duration; }
+    #participant-player .player-status-line { grid-area:status; justify-content:center; min-width:0; overflow:hidden; }
+    /* The Reveal button already shows Reveal, Revealing… or Revealed. */
+    #participant-player .player-mobile-privacy { display:none; }
+    /* The seek touch area starts in the gap above the bar and covers the times row, never the details button
+       above or the transport row below. Both thumbs are moved back onto the bar. */
+    #participant-player .playback-progress .seek-input { top:-.25rem; height:2rem; transform:none; }
+    #participant-player .playback-progress .seek-input::-webkit-slider-thumb { margin-top:-.125rem; }
+    #participant-player .playback-progress .seek-input::-moz-range-thumb { translate:0 -.625rem; }
 
     :is(#participant-player,#host-player) .playback-transport { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.375rem; width:100%; }
     #host-player .playback-transport { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -76,6 +101,9 @@
     :is(#participant-player,#host-player) .volume-control output { grid-column:2; min-width:0; width:100%; font-size:.8125rem; font-variant-numeric:tabular-nums; }
     :is(#participant-player,#host-player) .volume-control output[data-unavailable] { font-size:0; }
     :is(#participant-player,#host-player) .volume-control output[data-unavailable]::after { content:'—'; font-size:.8125rem; }
+    /* A smaller mute button sets a shorter volume row; the slider matches it. */
+    #participant-player #player-mute { width:2.25rem; min-width:2.25rem; height:2.25rem; padding:.5625rem; }
+    #participant-player .volume-control input[type='range'] { height:2.25rem; }
     :is(#participant-player,#host-player) .player-ending { grid-area:ending; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.5rem; width:100%; }
     #host-player .player-ending { grid-template-columns:minmax(0,1fr); }
     :is(#participant-player,#host-player) .player-ending button { width:100%; min-width:0; height:100%; min-height:0; padding:.375rem; gap:.375rem; font-size:.8125rem; }
@@ -86,7 +114,7 @@
     #participant-player .player-ending { grid-template-columns:minmax(0,1fr); }
     /* Without secret playback there is no Reveal, so the bottom row is dropped and the card is one row shorter. */
     #participant-player.without-reveal:not(.is-waiting) {
-      block-size:calc(13.125rem + 2px); grid-template-rows:3.625rem 2.5rem 2.75rem 2.75rem;
+      block-size:calc(11.25rem + 2px); grid-template-rows:3.25rem 1.5rem 2.75rem 2.25rem;
       grid-template-areas:'identity' 'timeline' 'transport' 'volume';
     }
     #participant-player.without-reveal .player-ending { display:none; }

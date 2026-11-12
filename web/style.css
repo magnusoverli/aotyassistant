@@ -255,7 +255,7 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
 /* One list beside the player and search, or a compact companion above the search panel. */
 .catalogue-panel .music-upload { margin:0; padding-top:0; border:0; }
 .music-upload > summary { padding:8px 0; color:var(--accent); font-size:.875rem; }
-.list-tools h3 { font-size:1rem; margin:16px 0 8px; }
+.list-history-empty { margin:0 0 12px; }
 .list-history { width:100%; min-width:0; }
 .list-tools button,.list-disclosure > button,.list-notice button { font-size:.875rem; min-height:44px; }
 .saved-source,.saved-unavailable,.list-save-status { font-size:.8125rem; }

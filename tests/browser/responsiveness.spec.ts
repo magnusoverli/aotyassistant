@@ -31,7 +31,7 @@ test('three participant tabs use one live connection each and leave capacity for
   } finally { await context.close(); }
 });
 
-test('large lists keep search/result/row nodes, and history is shown by default in bounded pages', async ({ browser, isolatedApp }) => {
+test('large lists keep search/result/row nodes, and history opens from a collapsed section in bounded pages', async ({ browser, isolatedApp }) => {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   try {
     const owner = await join(context, isolatedApp.origin);
@@ -52,8 +52,12 @@ test('large lists keep search/result/row nodes, and history is shown by default 
     await expect(page.locator('.saved-tracks[aria-label="Your prepared tracks"] > li')).toHaveCount(199);
     expect(await page.evaluate(() => (window as unknown as { retained: Element[] }).retained.every(node => node.isConnected))).toBe(true);
     expect(await page.evaluate(() => (window as unknown as { detachedRow: boolean }).detachedRow)).toBe(false);
+    // Both categories are listed even when empty, collapsed until opened.
+    await expect(page.locator('#list-history summary')).toHaveText(['Previously played · 0', 'Removed · 800']);
+    await expect(page.locator('#list-history .saved-track').first()).toBeHidden();
+    await page.locator('#list-history summary', { hasText: 'Removed' }).click();
     await expect(page.locator('#list-history .saved-track')).toHaveCount(50);
-    await page.getByRole('button', { name: 'Show more history', exact: true }).click();
+    await page.getByRole('button', { name: 'Show more removed songs', exact: true }).click();
     await expect(page.locator('#list-history .saved-track')).toHaveCount(100);
   } finally { await context.close(); }
 });
