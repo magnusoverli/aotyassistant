@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.1.0] — 2026-11-12
+
+- Reduce the visual treble lift from approximately +6 dB to +3 dB at the top end.
+
 ## [2.0.27] — 2026-11-11
 
 - Revert the corner spectrum needle-length limits, restoring their full reactive extension.

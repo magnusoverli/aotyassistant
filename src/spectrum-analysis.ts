@@ -39,7 +39,7 @@ export function frequencyBins(channels: Float32Array[], sampleRate: number): num
     // Keep the original noise floor so this never lights a band with no usable input.
     if (db <= -65) return 0;
     const centerHz = minHz * (maxHz / minHz) ** ((band + .5) / spectrumBins);
-    const trebleLiftDb = 6 * Math.max(0, Math.min(1, Math.log(centerHz / 1000) / Math.log(maxHz / 1000)));
+    const trebleLiftDb = 3 * Math.max(0, Math.min(1, Math.log(centerHz / 1000) / Math.log(maxHz / 1000)));
     return Math.round(Math.max(0, Math.min(1, (db + trebleLiftDb + 65) / 65)) * 255);
   });
 }

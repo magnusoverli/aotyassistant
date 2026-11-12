@@ -30,7 +30,8 @@ test('a gentle treble lift gives equal-amplitude high frequencies more presence 
   // Exact FFT-bin tones avoid differences due to spectral leakage.
   const peak = (hz: number, amplitude: number) => Math.max(...frequencyBins([tone(hz, 2048, 0, amplitude)], 48000));
   const middle = peak(937.5, .03); const high = peak(12000, .03);
-  assert.ok(high > middle + 12 && high < middle + 25);
+  const liftDb = (high - middle) * 65 / 255;
+  assert.ok(liftDb > 2.3 && liftDb < 3.1, 'Upper treble approaches a 3 dB visual lift.');
   assert.equal(peak(12000, .0001), 0, 'Input below the original noise floor remains invisible.');
 });
 
