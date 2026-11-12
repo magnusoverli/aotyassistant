@@ -37,8 +37,8 @@ test('participant searches privately with empty/errors but cannot play until a s
     await expect(alice.getByRole('button', { name: 'Artists', exact: true })).toHaveCount(0);
     await expect(alice.getByRole('button', { name: 'Songs', exact: true })).toHaveCount(0);
     await alice.screenshot({ path: 'test-results/participant-catalogue.png', fullPage: true });
-    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist');
-    await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('fixture'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
+    await expect(alice.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Search for an artist');
+    await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('fixture'); await alice.getByRole('searchbox', { name: 'Search catalogue' }).press('Enter');
     // A search lists matching artists only: songs are chosen from an artist's album, never searched for.
     await expect(alice.getByRole('button', { name: 'View albums by Fixture artist', exact: true })).toBeVisible();
     await expect(alice.getByRole('heading', { name: 'Artists', exact: true })).toHaveCount(0);
@@ -47,8 +47,9 @@ test('participant searches privately with empty/errors but cannot play until a s
     await alice.getByRole('button', { name: 'View albums' }).click();
     await alice.getByRole('button', { name: 'View tracks' }).click();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toBeVisible();
-    await expect(alice.getByText('Fixture artist', { exact: true })).toBeVisible();
-    await expect(alice.getByText('Fixture album · Original recording', { exact: true })).toBeVisible();
+    // The album heading names the artist; phone song rows leave it out.
+    await expect(alice.locator('.browse-heading')).toContainText('Fixture album'); await expect(alice.locator('.browse-heading')).toContainText('Fixture artist · 2025');
+    await expect(alice.getByText('Original recording · 3:00', { exact: true })).toBeVisible(); // Phones show version and length; the heading has the album.
     await expect(alice.getByRole('button', { name: 'Choose a speaker', exact: true })).toBeDisabled();
     await expect(waiting.getByText('Real catalogue fixture')).toHaveCount(0);
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0);
@@ -62,10 +63,10 @@ test('participant searches privately with empty/errors but cannot play until a s
     expect(searches.length).toBeGreaterThan(0); expect(searches.every(types => types === '["artist"]')).toBe(true);
     // The old song search is gone from the server too.
     expect((await alice.request.post('/api/participant/search', { headers: { Origin: isolatedApp.origin }, data: { turnId: 'x', query: 'fixture' } })).ok()).toBe(false);
-    await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('empty'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
+    await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('empty'); await alice.getByRole('searchbox', { name: 'Search catalogue' }).press('Enter');
     await expect(alice.getByText('No artists found. Try another search.')).toBeVisible();
     await expect(alice.getByText('Real catalogue fixture', { exact: true })).toHaveCount(0);
-    await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('failure'); await alice.getByRole('button', { name: 'Search', exact: true }).click();
+    await alice.getByRole('searchbox', { name: 'Search catalogue' }).fill('failure'); await alice.getByRole('searchbox', { name: 'Search catalogue' }).press('Enter');
     await expect(alice.getByRole('alert')).toContainText('Music Assistant did not accept');
     await expect(alice.locator('.catalogue-results').getByRole('alert')).toContainText('Music Assistant did not accept');
     await expect(alice.locator('.catalogue-results').getByRole('button', { name: 'Try again', exact: true })).toBeEnabled();

@@ -71,7 +71,7 @@ test('without Music Assistant, search says to connect it and opens once it is co
   const connected = await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: 0 });
   expect(connected.ok()).toBe(true);
   await page.goto('/participant');
-  await expect(search).toBeEnabled(); await expect(search).toHaveAttribute('placeholder', 'Artist');
+  await expect(search).toBeEnabled(); await expect(search).toHaveAttribute('placeholder', 'Search for an artist');
   await expect(page.locator('#music-find')).not.toContainText('Connect Music Assistant');
   expect(isolatedApp.calls.some(call => /play_media|cmd\/play|cmd\/volume/.test(call.command))).toBe(false);
 });

@@ -40,8 +40,8 @@ test('equivalent artists, releases and tracks are selectable without provider dr
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: `test-results/multi-provider-transparent-${width === 390 ? 'mobile' : 'desktop'}.png`, fullPage: true });
   }
-  await page.getByRole('button', { name: '← Albums', exact: true }).click();
-  await page.getByRole('button', { name: '← Artists', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to albums', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to artists', exact: true }).click();
   const before = isolatedApp.calls.length;
   await artist.click();
   await expect(page.locator('.catalogue-results .track-row')).toHaveCount(3);

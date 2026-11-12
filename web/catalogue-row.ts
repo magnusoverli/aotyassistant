@@ -10,6 +10,14 @@ type Options = {
   browse(item: CatalogueArtist | CatalogueAlbum): void; play(track: CatalogueTrack): void;
   /** Start the browse request when the pointer goes down; `unprepare` when no click follows. */
   prepare(item: CatalogueArtist | CatalogueAlbum): void; unprepare(): void;
+  /** A song's place in its album (1-based), shown on phones in place of the repeated cover. */
+  position?: number;
+};
+
+/** A song length as m:ss, or nothing when it is unknown. */
+const length = (seconds: number | null) => {
+  if (!seconds || !Number.isFinite(seconds)) return '';
+  const total = Math.round(seconds); return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
 };
 
 /** The backend resolves equivalent providers; listeners choose music, not services. */
@@ -25,11 +33,17 @@ export class CatalogueRow {
     if (kind === 'track') content.push(v.el('artist', 'p', track.artist, 'result-artist'));
     if (kind !== 'artist') content.push(v.el('details', 'p', kind === 'album'
       ? [album.artist, album.year, album.version].filter(Boolean).join(' · ')
-      : [track.album, track.version].filter(Boolean).join(' · '), kind === 'track' ? 'muted result-details' : 'muted'));
+      : [track.album, track.version].filter(Boolean).join(' · '), kind === 'track' ? 'muted result-details result-full' : 'muted result-full'));
+    // Phones browse inside one artist's album, so this line drops what the heading already says:
+    // albums show year and edition, songs their version and length (music-collection.css swaps the lines).
+    if (kind !== 'artist') content.push(v.el('meta', 'p', kind === 'album'
+      ? [album.year, album.version].filter(Boolean).join(' · ')
+      : [track.version, length(track.duration)].filter(Boolean).join(' · '), 'muted result-meta'));
     if (kind === 'track' && !track.available) content.push(v.el('unavailable', 'p', 'Currently unavailable', 'muted small'));
     children(copy, ...content);
     const art = v.get('art', () => new ArtworkView(kind === 'artist' ? 'Artist image' : 'Album artwork', kind === 'artist' ? 'result-artwork artist-portrait' : 'result-artwork'));
-    children(info, art.update(shown.artwork), copy);
+    const number = v.el('number', 'span', options.position ? String(options.position) : '', 'result-number'); attr(number, 'aria-hidden', 'true');
+    children(info, kind === 'track' && number, art.update(shown.artwork), copy);
     if (kind !== 'track') {
       attr(row, 'role', 'button'); prop(row, 'tabIndex', 0);
       attr(row, 'aria-label', kind === 'artist' ? `View albums by ${album.name}` : `View tracks on ${album.name}`);

@@ -51,8 +51,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000
     await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(albumScroll, 0);
     await page.goForward(); await expect(page.getByRole('button', { name: 'Add to list', exact: true })).toHaveCount(24);
     await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(trackScroll, 0);
-    await page.getByRole('button', { name: '← Albums' }).click();
-    await page.getByRole('button', { name: '← Artists' }).click();
+    await page.getByRole('button', { name: 'Back to albums' }).click();
+    await page.getByRole('button', { name: 'Back to artists' }).click();
     await expect(page.getByRole('button', { name: 'View albums' })).toHaveCount(24);
     await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(artistScroll, 0);
     await page.getByRole('searchbox').fill('Fixture again'); await page.getByRole('button', { name: 'Search', exact: true }).click();

@@ -30,7 +30,8 @@ export async function openSearch(page: Page) {
 export async function searchArtist(page: Page, artist = 'Fixture artist') {
   await openSearch(page);
   const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill(artist);
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  // The keyboard's Search key: phones have no visible Search button.
+  await input.press('Enter');
   await expect(page.getByRole('button', { name: `View albums by ${artist}`, exact: true })).toBeVisible();
 }
 /** Artist → album → its songs: the only way to reach a song. Leaves the album's songs on screen. */

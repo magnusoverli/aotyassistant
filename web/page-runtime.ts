@@ -5,7 +5,7 @@ import { loadRoomLogo, roomLogoMark, setRoomLogo } from './room-logo';
 import { ListeningOrder } from './listening-order';
 import { AppHeader } from './app-header';
 import { pageForPath, pageTitles } from './navigation';
-import { progressConnected, displayedProgress } from './media';
+import { progressConnected, displayedProgress, ArtworkView } from './media';
 import { PlayerController } from './player-controller';
 import { Playback, roomMessages } from './playback';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
@@ -14,7 +14,7 @@ import { PublicRoom } from './public-room';
 import { displayHasSideRail, observeDisplayLayout } from './display-stage';
 import { joinQrImage } from './join-qr';
 import { PreparationController, operationId } from './preparation-controller';
-import { PreparationPanel } from './preparation-panel';
+import { PreparationPanel, searchIcon } from './preparation-panel';
 import type { PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
@@ -567,19 +567,22 @@ function participant() {
   children(searchHeading, searchTitle);
   const form = v.el('form', 'form', undefined, 'search-form');
   const input = v.get('input', () => { const node = el('input'); node.type = 'search'; node.enterKeyHint = 'search'; node.required = true; node.maxLength = 200; node.id = 'catalogue-search'; node.setAttribute('aria-label', 'Search catalogue'); node.oninput = () => { searchText = node.value; }; return node; });
-  prop(input, 'placeholder', 'Artist'); prop(input, 'value', searchText); prop(input, 'disabled', !connected);
+  prop(input, 'placeholder', 'Search for an artist'); prop(input, 'value', searchText); prop(input, 'disabled', !connected);
   const submit = v.get('submit', () => { const node = el('button'); node.id = 'catalogue-search-submit'; node.type = 'submit'; return node; }); text(submit, searching ? 'Searching…' : 'Search'); prop(submit, 'disabled', !realtime || !view.connected || !connected);
   // Phones only (music-collection.css): empties the field and keeps the keyboard up for the next search.
   const clear = v.get('clear', () => {
     const node = el('button', '×', 'search-clear'); node.type = 'button'; node.setAttribute('aria-label', 'Clear search');
     node.onclick = () => { input.value = searchText = ''; input.focus({ preventScroll: true }); }; return node;
   });
-  children(form, input, clear, submit);
-  // Phones: the field and Done stay at the top of the search sheet, with a playlist summary beneath.
-  // Desktop lays these wrappers out as if absent (display:contents) and hides Done and the summary.
-  const done = v.get('sheet-done', () => { const node = el('button', 'Done', 'secondary search-sheet-done'); node.type = 'button'; node.onclick = () => closeSearch(); return node; });
+  // Phones draw one pill like the page's "Search for an artist" field: the magnifier, the input and × inside
+  // it. The keyboard's Search key submits; the Search button stays for screen readers but out of sight.
+  const icon = v.get('search-icon', () => searchIcon());
+  children(form, icon, input, clear, submit);
+  // Phones: the field and Done stay at the top of the search sheet, and a toast confirms each added song.
+  // Desktop lays these wrappers out as if absent (display:contents) and hides Done and the toast.
+  const done = v.get('sheet-done', () => { const node = el('button', 'Done', 'search-sheet-done'); node.type = 'button'; node.onclick = () => closeSearch(); return node; });
   const sheetTop = v.el('sheet-top', 'div', undefined, 'search-sheet-top'); children(sheetTop, form, done);
-  const sheetBar = v.el('sheet-bar', 'div', undefined, 'search-sheet-bar'); children(sheetBar, sheetTop, music.bar.inline);
+  const sheetBar = v.el('sheet-bar', 'div', undefined, 'search-sheet-bar'); children(sheetBar, sheetTop, music.bar.toast);
   form.onsubmit = event => {
     event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
@@ -621,17 +624,26 @@ function participant() {
   if (chosenArtist) {
     const crumbs = v.el('crumbs', 'div', undefined, 'browse-crumbs');
     const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists');
-    children(crumbs, back, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`));
+    attr(back, 'aria-label', chosenAlbum ? 'Back to albums' : 'Back to artists');
+    // Phones (music-collection.css): a chevron, the cover, then the title over "Artist · Year" (or "Albums"),
+    // in place of the one-line heading desktop keeps.
+    const art = v.get(chosenAlbum ? 'browse-album-art' : 'browse-artist-art', () => chosenAlbum
+      ? new ArtworkView('Album artwork', 'result-artwork browse-heading-art') : new ArtworkView('Artist image', 'result-artwork artist-portrait browse-heading-art'));
+    const heading = v.el('browse-heading', 'div', undefined, 'browse-heading');
+    children(heading, art.update(chosenAlbum ? chosenAlbum.artwork : chosenArtist.artwork),
+      v.el('browse-heading-title', 'h3', chosenAlbum ? chosenAlbum.name : chosenArtist.name),
+      v.el('browse-heading-sub', 'p', chosenAlbum ? [chosenArtist.name, chosenAlbum.year].filter(Boolean).join(' · ') : 'Albums', 'muted'));
+    children(crumbs, back, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`), heading);
     foundNodes.push(crumbs);
   }
   const rowIds = new Set<string>(); const occurrences = new Map<string, number>();
-  const row = (kind: 'artist' | 'album' | 'track', item: CatalogueArtist | CatalogueAlbum | CatalogueTrack) => {
+  const row = (kind: 'artist' | 'album' | 'track', item: CatalogueArtist | CatalogueAlbum | CatalogueTrack, position?: number) => {
     // Repeated references remain separate presentation rows; the opaque playback/browse
     // reference is never rewritten to manufacture a unique source identity.
     const identity = `${kind}:${item.id}`; const occurrence = occurrences.get(identity) ?? 0; occurrences.set(identity, occurrence + 1);
     const key = JSON.stringify([kind, item.id, occurrence]); rowIds.add(key);
     let renderer = catalogueRows.get(key); if (!renderer) { renderer = new CatalogueRow(); catalogueRows.set(key, renderer); }
-    return renderer.update(kind, item, { music, online: realtime && view!.connected,
+    return renderer.update(kind, item, { music, online: realtime && view!.connected, position,
       canPlay: Boolean(view!.myTurn), playbackAvailable: Boolean(view!.catalogue?.playbackAvailable), starting: player.starting,
       play: track => { error = ''; playTrack(track); },
       prepare: selected => catalogue.prepare(kind === 'artist' ? 'albums' : 'tracks', selected.id), unprepare: () => catalogue.unprepare(),
@@ -646,7 +658,8 @@ function participant() {
     });
   };
   const shown = catalogueBusy ? [] : level === 'artist' ? artists : level === 'album' ? albums : results;
-  for (const item of shown) foundNodes.push(row(level, item));
+  // An album's songs come in album order, so their place in the list is their track number.
+  shown.forEach((item, index) => foundNodes.push(row(level, item, level === 'track' ? index + 1 : undefined)));
   if (searchDone && !catalogueBusy && !shown.length) foundNodes.push(v.el('empty-browse', 'p', level === 'artist' ? 'No artists found. Try another search.'
     : level === 'album' ? 'No albums returned for this artist.' : 'No tracks returned for this album.', 'muted'));
   for (const id of catalogueRows.keys()) if (!rowIds.has(id)) catalogueRows.delete(id);

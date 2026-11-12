@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [2.1.5] — 2026-11-12
+
+- Clean up phone search: one search field like the playlist's, with the magnifier and **×** inside it and a plain **Done** beside it. The keyboard's Search key searches (the separate button is gone), and the playlist line under the field is replaced by a short confirmation at the bottom when a song is added, or a lasting one when a save needs attention.
+- On phones, browsing an artist or album shows a light header: **‹** back, the cover, and the name over "Artist · Year" (or "Albums"). Album rows leave out the artist; an album's songs show their track number, title, version and length instead of the repeated cover, artist and album.
+- Phone search's **+** and **▶** are matching round icons: **+** outlined in gold and filling green as **✓** when added, **▶** quieter, so a long album no longer reads as a column of gold Play buttons.
+- Back buttons when browsing are announced as **Back to artists** and **Back to albums**.
+- Fix the phone search **Add to list** button, which showed its text squeezed in beside the round **+** icon.
+
 ## [2.1.4] — 2026-11-12
 
 - Find music by artist only: search for an artist, open one of their albums, then choose a song. Songs are no longer searched for directly, and results no longer mix songs with artists. The import's **Find artist** opens a missing song's artist.

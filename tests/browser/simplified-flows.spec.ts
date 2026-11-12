@@ -67,7 +67,7 @@ test('browser and in-page Back restore private browsing without putting results 
   await page.goBack(); await expect(page.getByRole('button', { name: 'View albums' })).toBeVisible();
   await expect(page.getByRole('searchbox')).toHaveValue('Fixture');
   await page.goForward(); await expect(page.getByRole('button', { name: 'View tracks' })).toBeVisible();
-  await page.getByRole('button', { name: '← Artists' }).click(); await expect(page.getByRole('button', { name: 'View albums' })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to artists' }).click(); await expect(page.getByRole('button', { name: 'View albums' })).toBeVisible();
   expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
 });
 

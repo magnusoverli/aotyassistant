@@ -16,7 +16,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     const collection = page.locator('#music-collection'); const list = page.locator('.preparation-list');
     const input = page.getByRole('searchbox', { name: 'Search catalogue', exact: true });
     const opener = page.locator('#music-search-open'); const done = page.locator('.search-sheet-done');
-    const summary = page.locator('.search-sheet-status');
+    const toast = page.locator('.search-sheet-toast');
     const artistButton = page.getByRole('button', { name: 'View albums by Fixture artist', exact: true });
     const albumButton = page.getByRole('button', { name: 'View tracks on Fixture album', exact: true });
     await expect(collection).toBeVisible(); await expect(page.locator('.list-count')).toHaveText('0 tracks');
@@ -35,25 +35,37 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     // Where the page is when search opens (Playwright scrolls the field into view to tap it): Done returns there.
     await opener.scrollIntoViewIfNeeded(); const pageScroll = await page.evaluate(() => scrollY);
 
-    // Open: search is the whole page, ready to type, with Done and a playlist summary at the top.
+    // Open: search is the whole page, ready to type: one pill (magnifier, field, clear) and a plain Done.
     await opener.click();
     await expect(input).toBeVisible(); await expect(input).toBeFocused(); await expect(done).toBeVisible();
     for (const hidden of ['.app-header', '#participant-player', '.preparation-list']) await expect(page.locator(hidden)).toBeHidden();
-    await expect(summary).toContainText('Playlist'); await expect(summary).toContainText('0 tracks');
+    await expect(toast).toBeHidden(); expect((await page.getByRole('button', { name: 'Search', exact: true }).boundingBox())!.width).toBeLessThanOrEqual(1);
+    await expect(page.locator('.search-form .search-icon')).toBeVisible(); await expect(done).toHaveCSS('border-top-width', '0px');
     await expect(page.locator('.catalogue-results')).toContainText('Search for an artist, then choose an album and a song.');
     expect(await page.evaluate(() => scrollY)).toBe(0);
-    await input.fill('Fixture artist'); await input.press('Enter');
+    await input.fill('Fixture artist'); await expect(page.locator('.search-clear')).toBeVisible();
+    const pill = (await page.locator('.search-form').boundingBox())!; const clear = (await page.locator('.search-clear').boundingBox())!;
+    expect(clear.x + clear.width).toBeLessThanOrEqual(pill.x + pill.width); await input.press('Enter');
     // Searching lowers the keyboard and lists artists only, never songs.
     await expect(artistButton).toBeVisible(); await expect(input).not.toBeFocused();
     await expect(page.locator('.catalogue-results .track-row:not(.browse-row)')).toHaveCount(0);
-    await artistButton.click(); await albumButton.click();
+    await artistButton.click();
+    await expect(page.locator('.browse-heading')).toContainText('Fixture artist'); await expect(page.locator('.browse-heading')).toContainText('Albums');
+    await albumButton.click();
+    // The album heading: back, cover, the album over "Artist · Year".
+    await expect(page.getByRole('button', { name: 'Back to albums', exact: true })).toBeVisible();
+    await expect(page.locator('.browse-heading h3')).toHaveText('Fixture album'); await expect(page.locator('.browse-heading p')).toHaveText('Fixture artist · 2025');
     const rows = page.locator('.catalogue-results .track-row:not(.browse-row)'); await expect(rows).toHaveCount(1 + songs.length);
     const row = (index: number) => rows.filter({ has: page.getByText(songs[index]!, { exact: true }) });
-    // Compact rows: the add button is a round icon whose name is still "Add to list".
+    // Album rows: the track number (no repeated cover), the title over its length (no artist or album), and
+    // round icons whose names are still "Add to list" and "Play" while their text stays out of sight.
     const add = row(0).getByRole('button', { name: 'Add to list', exact: true });
-    expect((await add.boundingBox())!.width).toBe(44);
-    expect((await row(0).boundingBox())!.height).toBeLessThan(90);
-    // The field, Done and summary stay pinned at the top while the results scroll.
+    expect(await add.evaluate(node => [node.getBoundingClientRect().width, node.getBoundingClientRect().height, getComputedStyle(node).fontSize])).toEqual([44, 44, '0px']);
+    await expect(row(0).locator('.result-artist')).toBeHidden(); await expect(row(0).locator('.result-artwork')).toBeHidden();
+    await expect(row(0).locator('.result-number')).toHaveText('2'); await expect(row(0).locator('.result-meta')).toHaveText('10:00');
+    await expect(row(0).getByText('Fixture album')).toBeHidden();
+    expect((await row(0).boundingBox())!.height).toBeLessThanOrEqual(50);
+    // The field and Done stay pinned at the top while the results scroll.
     await row(5).scrollIntoViewIfNeeded();
     const fieldTop = () => input.evaluate(node => node.getBoundingClientRect().top); const pinned = await fieldTop();
     expect(pinned).toBeLessThan(40);
@@ -61,17 +73,17 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await page.route('**/api/participant/preparations/add', async route => { await held; await route.continue(); });
     try {
       await add.click(); await expect(list).toHaveAttribute('data-save-state', 'saving');
-      release(); await expect(summary).toContainText('1 track'); await expect(summary).toContainText(`Added: ${songs[0]}`);
+      release(); await expect(toast).toHaveText(`Added ${songs[0]} to your playlist`); await expect(page.locator('.list-count')).toHaveText('1 track');
       expect(await fieldTop()).toBe(pinned);
     } finally { release(); await page.unroute('**/api/participant/preparations/add'); }
     await expect(row(0).getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
     await row(1).getByRole('button', { name: 'Add to list', exact: true }).click();
-    await expect(summary).toContainText('2 tracks');
+    await expect(page.locator('.list-count')).toHaveText('2 tracks');
 
-    // A failed save says so in the summary; Retry is in the list after Done.
+    // A failed save says so in the toast, which stays until it is fixed; Retry is in the list after Done.
     await page.route('**/api/participant/preparations/add', route => route.fulfill({ status: 503, json: { error: 'Saved music could not be confirmed.' } }));
     await row(2).getByRole('button', { name: 'Add to list', exact: true }).click();
-    await expect(summary).toContainText('Needs attention');
+    await expect(toast).toContainText('Your playlist needs attention'); await expect(toast).toHaveClass(/needs-attention/);
     await page.unroute('**/api/participant/preparations/add');
 
     // Done returns to the page where it was, showing the list again.

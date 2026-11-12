@@ -17,7 +17,7 @@ type Options = { getView(): View | undefined; starting(): boolean; changed(): vo
   openSearch(): void };
 
 /** A magnifying glass drawn in the text colour, for the phone search field. */
-function searchIcon() {
+export function searchIcon() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 20 20'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'search-icon');
   svg.innerHTML = '<circle cx="8.5" cy="8.5" r="5.75" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>';

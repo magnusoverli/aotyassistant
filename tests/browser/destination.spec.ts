@@ -47,7 +47,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
       expect((await (await page.request.get('/api/participant/preparations/state')).json()).upcoming).toHaveLength(1);
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveValue('Fixture');
       await expect(page.getByRole('searchbox', { name: 'Search catalogue' })).toHaveAttribute('placeholder', 'Artist or song');
-      await expect(page.getByRole('button', { name: '← Albums', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Back to albums', exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as unknown as { destinationTestDocument: string }).destinationTestDocument)).toBe('same-document');
     }
     await expect(first.getByRole('searchbox', { name: 'Search catalogue' })).toBeFocused();
@@ -63,7 +63,7 @@ test('speaker changes preserve private lists/browsing/images and token changes r
     expect((await second.request.get(firstTrack.artwork)).status()).toBe(409);
     await expect(tv.getByText('Real catalogue fixture')).toHaveCount(0); await expect(host.getByText('Real catalogue fixture')).toHaveCount(0);
     // Old artist/album references must remain genuinely usable, not just visible in a stale UI.
-    await second.getByRole('button', { name: '← Albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks' }).click();
+    await second.getByRole('button', { name: 'Back to albums', exact: true }).click(); await second.getByRole('button', { name: 'View tracks' }).click();
     await expect(second.getByRole('button', { name: 'Add to list', exact: true })).toBeVisible();
     await showList(first); await showList(second);
     await expect(first.getByRole('button', { name: /^(Play first selection|Play pick)$/ })).toBeEnabled();

@@ -9,7 +9,8 @@
   .preparation-list .list-title-short { display:none; }
   /* Parts of the phone search sheet. Desktop lays the wrappers out as if absent and never shows the rest. */
   .search-sheet-bar,.search-sheet-top { display:contents; }
-  .list-search-open,.search-sheet-done,.search-sheet-status,.search-clear { display:none; }
+  .list-search-open,.search-sheet-done,.search-sheet-toast,.search-clear,.search-form > .search-icon,
+  .browse-heading,.catalogue-results .result-number,.catalogue-results .result-meta { display:none; }
 
   @media(min-width:1100px) {
     .music-workspace.workspace-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'player' 'collection'; }
@@ -105,42 +106,79 @@
     body[data-music-search='open'] .participant-page { padding-top:0; }
     body[data-music-search='open'] #music-collection { border:0; border-radius:0; background:transparent; }
     body[data-music-search='open'] #music-collection > .catalogue-panel { display:flex; flex-direction:column; padding:0; }
-    /* The field, Clear, Search and Done stay at the top, over a one-line playlist summary. */
+    /* One row at the top: the search pill and Done. */
     #music-collection .search-sheet-bar {
       display:block; position:sticky; top:0; z-index:15; order:-1; margin-inline:calc(-1 * var(--workspace-gutter));
-      padding:calc(10px + env(safe-area-inset-top,0px)) var(--workspace-gutter) 8px; background:#101a13fa; border-bottom:1px solid var(--line);
+      padding:calc(10px + env(safe-area-inset-top,0px)) var(--workspace-gutter) 10px; background:#101a13fa; border-bottom:1px solid var(--line);
     }
-    #music-collection .search-sheet-top { display:flex; align-items:center; gap:8px; }
+    #music-collection .search-sheet-top { display:flex; align-items:center; gap:12px; }
     #music-collection .search-sheet-top > .search-form { flex:1; min-width:0; }
-    #music-collection .search-sheet-done { display:inline-flex; flex:none; min-height:44px; padding:8px 14px; font-size:.875rem; }
+    /* The same pill as the page's "Search for an artist" field: magnifier, input and clear all inside one
+       border, which alone shows focus. The Search key submits; the button stays for screen readers only. */
+    #music-collection .search-form { display:flex; align-items:center; gap:10px; height:44px; margin:0; padding:0 4px 0 14px; border:1px solid var(--field-line); border-radius:10px; background:var(--field-bg); }
+    #music-collection .search-form:focus-within { border-color:var(--accent); }
+    #music-collection .search-form > .search-icon { display:block; color:var(--muted); }
+    #music-collection .search-form input { flex:1; min-width:0; height:42px; min-height:0; padding:0; border:0; border-radius:0; background:transparent; font-size:1rem; }
+    #music-collection .search-form input:focus,#music-collection .search-form input:focus-visible { outline:none; }
     #music-collection .search-form input::-webkit-search-cancel-button { -webkit-appearance:none; appearance:none; display:none; }
-    #music-collection .search-clear { display:inline-flex; flex:none; width:40px; min-width:40px; min-height:40px; padding:0; border:0; background:transparent; color:var(--muted); font-size:1.375rem; font-weight:400; }
+    #music-collection .search-form button[type='submit'] { position:absolute; width:1px; height:1px; min-height:0; padding:0; border:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+    #music-collection .search-clear { display:inline-flex; align-items:center; justify-content:center; flex:none; width:36px; min-width:36px; height:36px; min-height:0; padding:0; border:0; border-radius:50%; background:transparent; font-size:0; }
+    #music-collection .search-clear::before { content:'×'; content:'×' / ''; display:grid; place-items:center; width:20px; height:20px; border-radius:50%; background:var(--muted); color:var(--field-bg); font-size:15px; font-weight:700; line-height:1; }
+    #music-collection .search-clear:hover:not(:disabled) { filter:none; }
     #music-collection .search-form:has(input:placeholder-shown) .search-clear { display:none; }
-    #music-collection .search-sheet-status { display:flex; align-items:baseline; gap:6px; min-width:0; margin:6px 2px 0; color:var(--muted); font-size:.8125rem; line-height:1.125rem; white-space:nowrap; }
-    #music-collection .search-sheet-status strong { color:var(--text); font-weight:600; }
-    #music-collection .search-sheet-status > span:not(:empty)::before { content:'·'; margin-right:6px; color:var(--muted); }
-    #music-collection .search-sheet-detail { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-    #music-collection .search-sheet-status.is-flashing .search-sheet-detail { color:var(--green); }
-    #music-collection .search-sheet-status.needs-attention .search-sheet-detail { color:var(--accent); }
+    /* Done is a plain text action at the field's height, as on the phone's own search screens. */
+    #music-collection .search-sheet-done { display:inline-flex; flex:none; min-height:44px; padding:0 2px; border:0; background:transparent; color:var(--accent); font-size:1rem; font-weight:600; }
+    /* The playlist stays out of search: a brief toast confirms an added song, or says a save needs attention. */
+    #music-collection .search-sheet-toast:not([hidden]) {
+      display:block; position:fixed; z-index:20; left:var(--workspace-gutter); right:var(--workspace-gutter); bottom:calc(16px + env(safe-area-inset-bottom,0px));
+      max-width:684px; margin:0 auto; padding:12px 16px; border:1px solid #4a6040; border-radius:12px; background:#1f2c22; box-shadow:0 4px 24px #0006;
+      color:var(--text); font-size:.875rem; line-height:1.25rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    #music-collection .search-sheet-toast.needs-attention { border-color:var(--accent); color:var(--accent); white-space:normal; }
+    /* Inside an artist or album: a chevron back, the cover, then the title over "Artist · Year" or "Albums". */
+    #music-collection .browse-crumbs { gap:8px; margin:8px 0 6px; }
+    #music-collection .browse-crumbs > h3 { display:none; }
+    #music-collection .browse-crumbs > button { flex:none; justify-content:flex-start; width:32px; min-width:32px; min-height:44px; padding:0; border:0; background:transparent; color:var(--text); font-size:0; }
+    #music-collection .browse-crumbs > button::before { content:'‹'; content:'‹' / ''; font-size:2.25rem; font-weight:300; line-height:1; }
+    #music-collection .browse-heading { display:grid; flex:1; grid-template-columns:48px minmax(0,1fr); column-gap:12px; align-items:center; min-width:0; }
+    #music-collection .browse-heading .browse-heading-art { grid-row:1 / 3; width:48px; height:48px; flex-basis:48px; }
+    #music-collection .browse-heading h3 { align-self:end; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-read); font-size:1.0625rem; font-weight:650; letter-spacing:0; line-height:1.375rem; }
+    #music-collection .browse-heading p { align-self:start; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8125rem; line-height:1.125rem; }
     /* Speaker hint, then results, then uploading as the fallback when a song cannot be found. */
     #music-collection > .catalogue-panel > .muted { margin:12px 0 0; }
     #music-collection .catalogue-results { order:1; margin-top:4px; }
     #music-collection .catalogue-panel > .music-upload { order:2; margin-top:12px; border-top:1px solid var(--line); }
 
-    /* Compact results: artwork, three lines of text and the actions on one row. Add is a round +
-       that becomes ✓ (its text stays the accessible name); artists and albums show a chevron. */
-    #music-collection .catalogue-results .track-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; min-height:64px; margin:0; padding:8px 0; }
-    #music-collection .catalogue-results .track-row > .result-identity { display:flex; align-items:center; gap:12px; min-width:0; }
+    /* Compact results with the actions on the same row. Phones browse inside one artist's album, so rows drop
+       what the heading says: albums show year and edition (no artist); songs show their track number instead
+       of the album's cover repeated, then the title over version and length (no artist or album). */
+    #music-collection .catalogue-results .track-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; min-height:56px; margin:0; padding:6px 0; }
+    #music-collection .catalogue-results .track-row:not(.browse-row) { min-height:48px; padding:2px 0; }
+    #music-collection .catalogue-results .track-row > .result-identity { display:flex; align-items:center; gap:10px; min-width:0; }
     #music-collection .catalogue-results .result-identity > div:last-child { display:block; min-width:0; }
-    #music-collection .catalogue-results .result-artwork { flex:0 0 48px; width:48px; height:48px; }
+    #music-collection .catalogue-results .result-artwork { flex:0 0 40px; width:40px; height:40px; }
+    #music-collection .catalogue-results .track-row:not(.browse-row) .result-artwork,
+    #music-collection .catalogue-results :is(.result-artist,.result-full) { display:none; }
+    #music-collection .catalogue-results .result-meta:not(:empty) { display:block; }
+    #music-collection .catalogue-results .result-number { display:block; flex:0 0 1.5rem; color:var(--muted); font-size:.8125rem; font-variant-numeric:tabular-nums; text-align:right; }
     #music-collection .catalogue-results .result-identity strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9375rem; line-height:1.25rem; }
     #music-collection .catalogue-results .result-identity p { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8125rem; line-height:1.125rem; }
-    #music-collection .catalogue-results .row-actions { flex-wrap:nowrap; gap:6px; }
-    #music-collection .catalogue-results .row-actions button { min-height:44px; padding:6px 12px; font-size:.8125rem; line-height:1.1; max-width:6.5rem; white-space:normal; }
-    #music-collection .catalogue-results [data-preparation-track] { width:44px; min-width:44px; height:44px; padding:0; border-radius:50%; font-size:0; }
-    /* The icon is decoration: "/ ''" keeps it out of the accessible name (the plain value is for older browsers). */
+    #music-collection .catalogue-results .row-actions { flex-wrap:nowrap; gap:8px; }
+    /* Both actions are 44px round icons whose text stays the accessible name. Scoped through .row-actions
+       so they outrank the shared result-button rules. Add (+, the task here) is outlined in the accent and
+       fills green as ✓; Play (only during your turn) is a quieter outlined triangle, so a long album does not
+       read as a column of calls to action. The icons are decoration: "/ ''" keeps them out of the name (the
+       plain value is for older browsers). */
+    #music-collection .catalogue-results .row-actions button { display:inline-flex; align-items:center; justify-content:center; width:44px; min-width:44px; max-width:none; height:44px; min-height:0; padding:0;
+      border:1px solid var(--line); border-radius:50%; background:transparent; color:var(--text); font-size:0; white-space:nowrap; overflow:hidden; }
+    #music-collection .catalogue-results .row-actions button:hover:not(:disabled) { filter:none; border-color:var(--muted); }
+    #music-collection .catalogue-results .row-actions [data-preparation-track] { border-color:var(--accent); color:var(--accent); }
+    #music-collection .catalogue-results .row-actions [data-preparation-track][aria-disabled='true'] { border-color:var(--green); background:var(--green); color:var(--bg); }
     #music-collection .catalogue-results [data-preparation-track]::before { content:'+'; content:'+' / ''; font-size:1.5rem; font-weight:500; line-height:1; }
-    #music-collection .catalogue-results [data-preparation-track][aria-disabled='true']::before { content:'✓'; content:'✓' / ''; font-size:1.125rem; }
+    #music-collection .catalogue-results [data-preparation-track][aria-disabled='true']::before { content:'✓'; content:'✓' / ''; font-size:1.125rem; font-weight:700; }
+    #music-collection .catalogue-results .row-actions button:not([data-preparation-track])::before {
+      content:''; content:'' / ''; width:11px; height:13px; margin-left:3px; background:currentColor; clip-path:polygon(0 0,100% 50%,0 100%);
+    }
     #music-collection .catalogue-results .browse-row::after { content:'›'; content:'›' / ''; padding-inline:4px 2px; color:var(--muted); font-size:1.5rem; line-height:1; }
   }
 }
