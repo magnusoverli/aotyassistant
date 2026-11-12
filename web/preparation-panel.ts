@@ -12,7 +12,17 @@ import { ClearList } from './clear-list';
 import { ReplaceTrack } from './replace-track';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 
-type Options = { getView(): View | undefined; starting(): boolean; changed(): void; search(query: string): void };
+type Options = { getView(): View | undefined; starting(): boolean; changed(): void; search(query: string): void;
+  /** Phones: opens the full-screen search from the field at the top of the playlist. */
+  openSearch(): void };
+
+/** A magnifying glass drawn in the text colour, for the phone search field. */
+function searchIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 20 20'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('class', 'search-icon');
+  svg.innerHTML = '<circle cx="8.5" cy="8.5" r="5.75" fill="none" stroke="currentColor" stroke-width="1.75"/><path d="m13 13 4.5 4.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>';
+  return svg;
+}
 export class PreparationPanel {
   /** Drag-and-drop reordering of the upcoming songs, always available. */
   private drag?: ListDrag;
@@ -191,7 +201,14 @@ export class PreparationPanel {
     this.bar.update(count, snapshot?.upcoming[0]?.title, attention);
     const status = v.el('status', 'p', library.loading ? 'Loading your private list…' : library.saving ? 'Saving…' : library.pending ? 'Save not confirmed. Your change is kept.' : !navigator.onLine ? 'Offline · saved list retained' : snapshot ? 'Private · Saved ✓' : 'Selections unavailable', 'list-save-status'); attr(status, 'role', 'status');
     const body = v.get('body', () => { const node = el('div', undefined, 'list-body'); node.id = 'music-list-body'; node.dataset.scrollKey = 'private-list'; return node; });
-    const bodyNodes: Node[] = []; const listNodes: Node[] = [heading, status];
+    // Phones only (music-collection.css): looks like a search field and opens the search sheet.
+    const find = v.get('find', () => {
+      const node = el('button', undefined, 'list-search-open'); node.type = 'button'; node.id = 'music-search-open';
+      node.setAttribute('aria-controls', 'music-find'); node.onclick = () => this.options.openSearch();
+      node.append(searchIcon(), el('span')); return node;
+    });
+    text(find.lastElementChild!, canImport ? 'Search artists or songs' : 'Search music');
+    const bodyNodes: Node[] = []; const listNodes: Node[] = this.withSearch ? [heading, find, status] : [heading, status];
     if (library.error) {
       const notice = v.el('error', 'div', undefined, 'list-notice'); attr(notice, 'role', 'alert'); const messages: Node[] = [v.el('error-message', 'p', library.error)];
       if (library.pending) {

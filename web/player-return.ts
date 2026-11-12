@@ -13,15 +13,20 @@ export class PlayerReturn {
   private reviewPlayer = false;
   private observer = new IntersectionObserver(() => this.visibility());
 
-  constructor() {
+  /** `before` runs ahead of the jump and calls `go` when the player can be shown, for example after closing phone search. */
+  constructor(private before: (go: () => void) => void = go => go()) {
     this.element.setAttribute('aria-label', 'Playback shortcut');
     this.status.setAttribute('role', 'status'); this.element.hidden = true;
     this.jump.onclick = event => {
       if (!this.target) return;
-      const destination = this.failed && !this.reviewPlayer ? document.getElementById('main-content')! : this.target;
-      event.preventDefault(); destination.focus({ preventScroll: true });
-      destination.scrollIntoView({ block: 'start', behavior: 'instant' });
-      if (this.failed && this.reviewPlayer) destination.querySelector<HTMLButtonElement>('.player-details-open')?.click();
+      event.preventDefault();
+      this.before(() => {
+        if (!this.target) return;
+        const destination = this.failed && !this.reviewPlayer ? document.getElementById('main-content')! : this.target;
+        destination.focus({ preventScroll: true });
+        destination.scrollIntoView({ block: 'start', behavior: 'instant' });
+        if (this.failed && this.reviewPlayer) destination.querySelector<HTMLButtonElement>('.player-details-open')?.click();
+      });
     };
     this.element.append(this.status, this.jump);
     window.visualViewport?.addEventListener('resize', this.resized);

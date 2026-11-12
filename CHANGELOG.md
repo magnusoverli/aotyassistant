@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.1.3] — 2026-11-12
+
+- On phones, open search from a **Search artists or songs** field under the playlist title. Search fills the screen, with the field, **Clear**, **Done** and a one-line playlist summary pinned at the top.
+- Lower the phone keyboard when a search starts, and show compact one-line results with a round **+** / **✓** add button, **Play** during your turn and a chevron on artists and albums.
+- Make Back step out of an album or artist and then close phone search; a new search replaces the previous one instead of adding a Back step. **Done** returns to the playlist showing newly added songs, and reopening shows the last search.
+- Move **Upload a song** below the phone search results, and let **Go to player** close search before jumping to the player.
+
 ## [2.1.2] — 2026-11-12
 
 - Make the phone participant player shorter, with smaller artwork and volume controls and playback status between the elapsed and total times beneath the progress bar.

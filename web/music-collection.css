@@ -7,6 +7,9 @@
   #music-collection > .preparation-list,#music-collection .list-body { overscroll-behavior:auto; }
   #music-collection .saved-track .result-identity strong { font-size:1.25rem; line-height:1.25; }
   .preparation-list .list-title-short { display:none; }
+  /* Parts of the phone search sheet. Desktop lays the wrappers out as if absent and never shows the rest. */
+  .search-sheet-bar,.search-sheet-top { display:contents; }
+  .list-search-open,.search-sheet-done,.search-sheet-status,.search-clear { display:none; }
 
   @media(min-width:1100px) {
     .music-workspace.workspace-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'player' 'collection'; }
@@ -83,8 +86,61 @@
     #music-collection > .catalogue-panel { width:100%; padding:14px; border:0; border-radius:0 0 13px 13px; background:transparent; }
     #music-collection .catalogue-title { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
     #music-collection .catalogue-toolbar { margin:0; }
-    /* Room for the playlist bar above focused results. */
-    #music-collection .catalogue-results button,#music-collection .search-form { scroll-margin-top:76px; }
+    /* Room for the search sheet's sticky field above focused results. */
+    #music-collection .catalogue-results :is(button,.browse-row) { scroll-margin-top:112px; }
     body[data-short-viewport='true'] #music-collection .list-body { max-height:min(9rem,30dvh); }
+
+    /* Closed: the card is the playlist alone. The field under its title opens search. */
+    body:not([data-music-search='open']) #music-collection > .catalogue-panel { display:none; }
+    body:not([data-music-search='open']) #music-collection > .preparation-list { border-bottom:0; border-radius:13px; }
+    #music-collection .list-search-open {
+      display:flex; align-items:center; justify-content:flex-start; gap:10px; width:100%; min-height:44px; margin:10px 0 2px; padding:0 14px;
+      border:1px solid var(--field-line); border-radius:10px; background:var(--field-bg); color:var(--muted); font-size:1rem; font-weight:400; text-align:left;
+    }
+    #music-collection .list-search-open:hover:not(:disabled) { filter:none; border-color:var(--accent); }
+    #music-collection .search-icon { width:1.125rem; height:1.125rem; flex:none; }
+
+    /* Open: search is the page. The header, player and playlist step aside until Done or Back;
+       the bottom bar still offers Go to player during your turn. */
+    body[data-music-search='open'] :is(.app-header,#participant-player,.pin-enrollment,.mobile-list-bar,#music-collection > .preparation-list) { display:none; }
+    body[data-music-search='open'] .participant-page { padding-top:0; }
+    body[data-music-search='open'] #music-collection { border:0; border-radius:0; background:transparent; }
+    body[data-music-search='open'] #music-collection > .catalogue-panel { display:flex; flex-direction:column; padding:0; }
+    /* The field, Clear, Search and Done stay at the top, over a one-line playlist summary. */
+    #music-collection .search-sheet-bar {
+      display:block; position:sticky; top:0; z-index:15; order:-1; margin-inline:calc(-1 * var(--workspace-gutter));
+      padding:calc(10px + env(safe-area-inset-top,0px)) var(--workspace-gutter) 8px; background:#101a13fa; border-bottom:1px solid var(--line);
+    }
+    #music-collection .search-sheet-top { display:flex; align-items:center; gap:8px; }
+    #music-collection .search-sheet-top > .search-form { flex:1; min-width:0; }
+    #music-collection .search-sheet-done { display:inline-flex; flex:none; min-height:44px; padding:8px 14px; font-size:.875rem; }
+    #music-collection .search-form input::-webkit-search-cancel-button { -webkit-appearance:none; appearance:none; display:none; }
+    #music-collection .search-clear { display:inline-flex; flex:none; width:40px; min-width:40px; min-height:40px; padding:0; border:0; background:transparent; color:var(--muted); font-size:1.375rem; font-weight:400; }
+    #music-collection .search-form:has(input:placeholder-shown) .search-clear { display:none; }
+    #music-collection .search-sheet-status { display:flex; align-items:baseline; gap:6px; min-width:0; margin:6px 2px 0; color:var(--muted); font-size:.8125rem; line-height:1.125rem; white-space:nowrap; }
+    #music-collection .search-sheet-status strong { color:var(--text); font-weight:600; }
+    #music-collection .search-sheet-status > span:not(:empty)::before { content:'·'; margin-right:6px; color:var(--muted); }
+    #music-collection .search-sheet-detail { min-width:0; overflow:hidden; text-overflow:ellipsis; }
+    #music-collection .search-sheet-status.is-flashing .search-sheet-detail { color:var(--green); }
+    #music-collection .search-sheet-status.needs-attention .search-sheet-detail { color:var(--accent); }
+    /* Speaker hint, then results, then uploading as the fallback when a song cannot be found. */
+    #music-collection > .catalogue-panel > .muted { margin:12px 0 0; }
+    #music-collection .catalogue-results { order:1; margin-top:4px; }
+    #music-collection .catalogue-panel > .music-upload { order:2; margin-top:12px; border-top:1px solid var(--line); }
+
+    /* Compact results: artwork, three lines of text and the actions on one row. Add is a round +
+       that becomes ✓ (its text stays the accessible name); artists and albums show a chevron. */
+    #music-collection .catalogue-results .track-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:10px; min-height:64px; margin:0; padding:8px 0; }
+    #music-collection .catalogue-results .track-row > .result-identity { display:flex; align-items:center; gap:12px; min-width:0; }
+    #music-collection .catalogue-results .result-identity > div:last-child { display:block; min-width:0; }
+    #music-collection .catalogue-results .result-artwork { flex:0 0 48px; width:48px; height:48px; }
+    #music-collection .catalogue-results .result-identity strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9375rem; line-height:1.25rem; }
+    #music-collection .catalogue-results .result-identity p { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8125rem; line-height:1.125rem; }
+    #music-collection .catalogue-results .row-actions { flex-wrap:nowrap; gap:6px; }
+    #music-collection .catalogue-results .row-actions button { min-height:44px; padding:6px 12px; font-size:.8125rem; line-height:1.1; max-width:6.5rem; white-space:normal; }
+    #music-collection .catalogue-results [data-preparation-track] { width:44px; min-width:44px; height:44px; padding:0; border-radius:50%; font-size:0; }
+    #music-collection .catalogue-results [data-preparation-track]::before { content:'+'; font-size:1.5rem; font-weight:500; line-height:1; }
+    #music-collection .catalogue-results [data-preparation-track][aria-disabled='true']::before { content:'✓'; font-size:1.125rem; }
+    #music-collection .catalogue-results .browse-row::after { content:'›'; padding-inline:4px 2px; color:var(--muted); font-size:1.5rem; line-height:1; }
   }
 }

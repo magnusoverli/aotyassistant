@@ -60,6 +60,7 @@ let catalogueBusy = false;
 let catalogueError = '';
 type CatalogueAction = () => Promise<boolean | void> | boolean | void;
 let catalogueRetry: CatalogueAction | undefined;
+let catalogueRetryReplace = false;
 let catalogueSequence = 0;
 let artists: CatalogueArtist[] = [];
 let albums: CatalogueAlbum[] = [];
@@ -70,8 +71,25 @@ let albumNotices: string[] = [];
 let trackNotices: string[] = [];
 /** A search that finds both artists and songs shows a few artists first; this lists them all. */
 let allArtists = false;
+/** Phones: search fills the screen while open (body[data-music-search], music-collection.css). It is part of
+ * browse history, so Back steps out of an album or artist and then closes it. Desktop never opens it. */
+let searchOpen = false;
+/** History entries added since the sheet opened, so Done can return to the page in one step. */
+let sheetDepth = 0;
+/** The latest top-level search, shown again when the sheet reopens. */
+let lastSearch: ReturnType<typeof browseSnapshot> | undefined;
+/** Playlist length when the sheet opened: Done shows the songs added since. */
+let openedWith = 0;
+/** Runs once the sheet has closed, for example to jump to the player. */
+let afterClose: (() => void) | undefined;
 const browseSnapshot = () => ({ results, searchText, searchDone, artists, albums, chosenArtist, chosenAlbum,
-  artistNotices, albumNotices, trackNotices, allArtists, scroll: scrollY });
+  artistNotices, albumNotices, trackNotices, allArtists, scroll: scrollY, searchOpen, sheetDepth });
+function setSearchOpen(open: boolean) {
+  searchOpen = open; if (!open) sheetDepth = 0;
+  if (page === 'participant') document.body.dataset.musicSearch = open ? 'open' : 'closed';
+}
+/** Leaves the sheet without history traversal, when its history entries are being discarded. */
+function forgetSearch() { setSearchOpen(false); lastSearch = undefined; afterClose = undefined; }
 /** Restores a browse snapshot; without one, clears all results (optionally keeping the typed query). */
 function restoreBrowse(snapshot?: ReturnType<typeof browseSnapshot>, query = snapshot?.searchText ?? '') {
   results = snapshot?.results ?? []; searchText = query; searchDone = snapshot?.searchDone ?? false;
@@ -80,9 +98,45 @@ function restoreBrowse(snapshot?: ReturnType<typeof browseSnapshot>, query = sna
   allArtists = snapshot?.allArtists ?? false;
 }
 const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
-  catalogue.cancel(); resetCatalogueTask(); restoreBrowse(snapshot);
+  catalogue.cancel(); resetCatalogueTask();
+  // Closing keeps the latest search for the next time the sheet opens, not the results from before it opened.
+  const closing = searchOpen && !snapshot?.searchOpen;
+  restoreBrowse(closing ? lastSearch : snapshot);
+  setSearchOpen(Boolean(snapshot?.searchOpen)); sheetDepth = snapshot?.sheetDepth ?? 0;
   render(); window.scrollTo({ top: snapshot?.scroll ?? 0, behavior: 'instant' });
+  if (closing) searchClosed();
 }) : undefined;
+/** Phones: opens the search sheet over the page, at the top, ready to type. */
+function openSearch(focus = true) {
+  if (!searchOpen && browseHistory) {
+    browseHistory.remember(); // The page as it was, with its scroll position, for Back and Done.
+    openedWith = library.view?.upcoming.length ?? 0;
+    setSearchOpen(true); sheetDepth = 1;
+    render(); window.scrollTo({ top: 0, behavior: 'instant' });
+    browseHistory.push();
+  }
+  // Synchronous within the tap, so phones show the keyboard.
+  if (focus) { restoringFocus = true; document.getElementById('catalogue-search')?.focus({ preventScroll: true }); restoringFocus = false; }
+}
+/** Done, or a shortcut elsewhere: return to the page in one step, then run `after`. */
+function closeSearch(after?: () => void) {
+  if (!searchOpen) { after?.(); return; }
+  afterClose = after;
+  if (browseHistory && sheetDepth > 0) { history.go(-sheetDepth); return; }
+  restoreBrowse(lastSearch); setSearchOpen(false); render(); searchClosed();
+}
+function searchClosed() {
+  // Show the songs added while searching: they join the end of the upcoming list.
+  const body = document.getElementById('music-list-body');
+  const last = body?.querySelector('ol.saved-tracks > li:last-child');
+  if (body && last && (library.view?.upcoming.length ?? 0) > openedWith) {
+    const below = last.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
+    if (below > 0) body.scrollTop += below;
+  }
+  const after = afterClose; afterClose = undefined;
+  if (after) { after(); return; }
+  restoringFocus = true; document.getElementById('music-search-open')?.focus({ preventScroll: true }); restoringFocus = false;
+}
 let stream: { close(): void } | undefined;
 let releaseEvents = () => {};
 let qrUrl = '';
@@ -129,12 +183,14 @@ const player = new PlayerController({
 const library = new PreparationController(() => {
   if (page === 'participant' && view?.me && root.querySelector('.preparation-list')) { music.refresh(); renderParticipantPlayer(); } else render();
 }, () => Boolean(view?.me));
-const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting, changed: render, search: searchFor });
+const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting, changed: render, search: searchFor, openSearch: () => openSearch() });
 /** Runs a catalogue search as if typed, for example for a song an import didn't find. */
 function searchFor(query: string) {
+  if (stackedLayout()) openSearch(false);
   const input = document.getElementById('catalogue-search') as HTMLInputElement | null;
   const form = input?.form; if (!input || !form) return;
   input.value = searchText = query.slice(0, input.maxLength > 0 ? input.maxLength : 200);
+  if (searchOpen) { form.requestSubmit(); return; }
   document.getElementById('music-find')?.scrollIntoView({ block: 'start', behavior: 'instant' });
   form.requestSubmit(); input.focus({ preventScroll: true });
 }
@@ -167,7 +223,7 @@ listeningOrder.setManagement(page === 'host' ? {
 } : undefined);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(pageContent);
-const playerReturn = page === 'participant' ? new PlayerReturn() : undefined;
+const playerReturn = page === 'participant' ? new PlayerReturn(go => closeSearch(go)) : undefined;
 if (playerReturn) root.append(playerReturn.element, music.bar.element);
 const updatePlayerReturn = () => playerReturn?.update(view, player.starting, realtime, error);
 /** The tab title says when it is your turn, also from another app's tab switcher. */
@@ -222,7 +278,7 @@ const participantAccess = new ParticipantAccess(
     view = undefined; realtime = false; stream?.close(); stream = undefined; player.cancel(); catalogue.cancel(); library.clearIdentity(); music.stopUploads();
     participantNodes.clear(); playback?.clear(); catalogueRows.clear();
     resetCatalogueTask(); restoreBrowse(undefined, searchText);
-    browseHistory?.reset();
+    forgetSearch(); browseHistory?.reset();
     searchAnnouncement.textContent = '';
     void loadUsers();
   }, render,
@@ -233,9 +289,12 @@ function keepMusicFocusVisible() {
   const focused = document.activeElement;
   if (!(focused instanceof HTMLElement) || !focused.closest('.music-workspace')) return;
   const headerBottom = Math.max(0, appHeader.element.getBoundingClientRect().bottom) + 12;
+  // Phone search sheet: its sticky field and Done cover the top; they are never scrolled for.
+  const sheetBar = searchOpen && stackedLayout() ? root.querySelector<HTMLElement>('.search-sheet-bar') : null;
+  if (sheetBar && focused.closest('.search-sheet-bar')) return;
   // Phones: the playlist bar covers the top of the screen while browsing results.
-  const bar = stackedLayout() && focused.closest('.catalogue-panel') && !music.bar.element.hidden ? music.bar.element : undefined;
-  const obstruction = bar ? Math.max(headerBottom, bar.getBoundingClientRect().bottom + 12) : headerBottom;
+  const bar = !sheetBar && stackedLayout() && focused.closest('.catalogue-panel') && !music.bar.element.hidden ? music.bar.element : undefined;
+  const obstruction = sheetBar ? sheetBar.getBoundingClientRect().bottom + 8 : bar ? Math.max(headerBottom, bar.getBoundingClientRect().bottom + 12) : headerBottom;
   const rect = focused.getBoundingClientRect();
   if (rect.top < obstruction) window.scrollBy({ top: rect.top - obstruction, behavior: 'instant' });
 }
@@ -295,7 +354,8 @@ function showCatalogueStart() {
     window.scrollTo({ top: Math.max(0, scrollY + target - top), behavior: 'instant' });
   }
 }
-async function runCatalogue(action: CatalogueAction) {
+/** `replace`: the new list takes the current history entry's place (a new search in the phone sheet). */
+async function runCatalogue(action: CatalogueAction, replace = false) {
   catalogue.cancel();
   const sequence = ++catalogueSequence;
   const focusId = document.activeElement instanceof HTMLElement ? document.activeElement.id : '';
@@ -305,7 +365,7 @@ async function runCatalogue(action: CatalogueAction) {
   catch (cause) {
     if (sequence !== catalogueSequence) return;
     catalogueError = cause instanceof Error ? cause.message : 'Music could not be loaded. Try again.';
-    catalogueRetry = action;
+    catalogueRetry = action; catalogueRetryReplace = replace;
   } finally {
     if (sequence === catalogueSequence) {
       catalogueBusy = false; searching = false; render();
@@ -315,7 +375,13 @@ async function runCatalogue(action: CatalogueAction) {
         restoringFocus = false;
       }
       // Ordinary renders keep the viewport; a successful search/browse starts a new list.
-      if (newList) { showCatalogueStart(); browseHistory?.push(); }
+      if (newList) {
+        if (!chosenArtist) lastSearch = browseSnapshot();
+        if (searchOpen) window.scrollTo({ top: 0, behavior: 'instant' }); else showCatalogueStart();
+        // The phone sheet keeps one entry per search, so Back leaves search instead of replaying earlier queries.
+        if (searchOpen && replace) browseHistory?.remember();
+        else { if (searchOpen) sheetDepth++; browseHistory?.push(); }
+      }
     }
   }
 }
@@ -338,7 +404,7 @@ function accept(next: View) {
     catalogueRows.clear();
     catalogue.cancel();
     resetCatalogueTask(); restoreBrowse();
-    browseHistory?.reset();
+    forgetSearch(); browseHistory?.reset();
     if (page === 'participant') void library.refresh();
   }
   // Position/volume snapshots do not rebuild browsing forms or reload all artwork.
@@ -510,11 +576,25 @@ function participant() {
   const input = v.get('input', () => { const node = el('input'); node.type = 'search'; node.enterKeyHint = 'search'; node.required = true; node.maxLength = 200; node.id = 'catalogue-search'; node.setAttribute('aria-label', 'Search catalogue'); node.oninput = () => { searchText = node.value; }; return node; });
   prop(input, 'placeholder', realCatalogue ? 'Artist or song' : 'Try Northern or Night'); prop(input, 'value', searchText);
   const submit = v.get('submit', () => { const node = el('button'); node.id = 'catalogue-search-submit'; node.type = 'submit'; return node; }); text(submit, searching ? 'Searching…' : 'Search'); prop(submit, 'disabled', !realtime || !view.connected);
-  children(form, input, submit);
+  // Phones only (music-collection.css): empties the field and keeps the keyboard up for the next search.
+  const clear = v.get('clear', () => {
+    const node = el('button', '×', 'search-clear'); node.type = 'button'; node.setAttribute('aria-label', 'Clear search');
+    node.onclick = () => { input.value = searchText = ''; input.focus({ preventScroll: true }); }; return node;
+  });
+  children(form, input, clear, submit);
+  // Phones: the field and Done stay at the top of the search sheet, with a playlist summary beneath.
+  // Desktop lays these wrappers out as if absent (display:contents) and hides Done and the summary.
+  const done = v.get('sheet-done', () => { const node = el('button', 'Done', 'secondary search-sheet-done'); node.type = 'button'; node.onclick = () => closeSearch(); return node; });
+  const sheetTop = v.el('sheet-top', 'div', undefined, 'search-sheet-top'); children(sheetTop, form, done);
+  const sheetBar = v.el('sheet-bar', 'div', undefined, 'search-sheet-bar'); children(sheetBar, sheetTop, music.bar.inline);
   form.onsubmit = event => {
     event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
     if (!query) { catalogueError = realCatalogue ? 'Enter an artist or song to search.' : 'Enter a demo search.'; catalogueRetry = undefined; render(); return; }
+    // Phone sheet: lower the keyboard so the results get the screen. A new search from the top level
+    // replaces it in history; one started inside an artist or album is a step Back can return from.
+    const replace = searchOpen && !chosenArtist;
+    if (searchOpen && document.activeElement instanceof HTMLElement) document.activeElement.blur();
     browseHistory?.remember();
     restoreBrowse(undefined, searchText); searching = true;
     void runCatalogue(async () => {
@@ -532,8 +612,8 @@ function participant() {
           results = response.tracks; trackNotices = response.notices ?? []; searchDone = true; return true;
         }
       }
-    });
-  }; searchNodes.push(form);
+    }, replace);
+  }; searchNodes.push(sheetBar);
   const found = v.get('found', () => { const node = el('section', undefined, 'catalogue-results'); node.setAttribute('aria-label', 'Music results'); return node; });
   attr(found, 'aria-busy', String(catalogueBusy));
   const foundNodes: Node[] = [];
@@ -551,7 +631,8 @@ function participant() {
     const retry = v.get('retry', () => { const node = catalogueButton('Try again', () => catalogueRetry?.()); node.id = 'catalogue-retry'; return node; });
     prop(retry, 'disabled', !realtime || !view.connected);
     // runCatalogue clears the retry slot before executing; capture the current request.
-    const retryAction = catalogueRetry; retry.onclick = () => { if (retryAction) void runCatalogue(retryAction); };
+    const retryAction = catalogueRetry; const retryReplace = catalogueRetryReplace;
+    retry.onclick = () => { if (retryAction) void runCatalogue(retryAction, retryReplace); };
     children(notice, message, Boolean(catalogueRetry) && retry); foundNodes.push(notice);
   }
   if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', realCatalogue ? 'Search for an artist or a song title.' : 'Search for music to add to your private list.', 'muted small'));
@@ -611,7 +692,8 @@ function participant() {
   }
   for (const id of catalogueRows.keys()) if (!rowIds.has(id)) catalogueRows.delete(id);
   children(found, ...foundNodes);
-  children(search, ...searchNodes, search.querySelector('.music-upload'), Boolean(searchDone || catalogueBusy || catalogueError) && found);
+  // The open phone sheet shows its instructions before the first search.
+  children(search, ...searchNodes, search.querySelector('.music-upload'), Boolean(searchDone || catalogueBusy || catalogueError || searchOpen) && found);
   const musicPanel = music.render(search, renderPlayback(view));
   children(main, hero, view.user?.pinRequired && enrollmentPanel(), musicPanel);
   return main;
@@ -744,7 +826,8 @@ function render() {
   }
   if (window.scrollY !== scrollY) window.scrollTo({ top: scrollY, behavior: 'instant' });
   // Your turn starting or ending resizes the player; keep the content below it still when it is out of view.
-  if (playerCard?.isConnected && playerBefore && playerBefore.bottom <= 0) {
+  // A player hidden behind the phone search sheet has no height to keep.
+  if (playerCard?.isConnected && playerBefore && playerBefore.height > 0 && playerBefore.bottom <= 0) {
     const shift = playerCard.getBoundingClientRect().bottom - playerBefore.bottom;
     if (Math.abs(shift) >= 1) window.scrollBy({ top: shift, behavior: 'instant' });
   }
@@ -809,7 +892,7 @@ return () => {
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
   stream?.close(); stream = undefined; library.stop(); music.stopUploads(); releaseEvents();
   playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); music.bar.destroy(); browseHistory?.destroy();
-  turnAnnouncement.remove(); searchAnnouncement.remove();
+  turnAnnouncement.remove(); searchAnnouncement.remove(); delete document.body.dataset.musicSearch;
   root.replaceChildren();
 };
 }
