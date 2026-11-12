@@ -8,7 +8,7 @@ import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import type { State, View } from '../src/model.js';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 
 test('obsolete display settings cannot affect or block the automatic display, including corrupt records', async t => {
@@ -17,7 +17,7 @@ test('obsolete display settings cannot affect or block the automatic display, in
   // An upgrade neither needs to parse nor rewrite this retired preference record.
   const legacy = '{obsolete and unreadable';
   await writeFile(join(dataDir, 'display-settings.json'), legacy);
-  const server = createServer(); const adapter = new DemoAdapter(3600);
+  const server = createServer(); const adapter = new FakePlayback(3600);
   let closeApp = () => {};
   t.after(() => { closeApp(); adapter.close(); server.closeAllConnections(); server.close(); });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -25,7 +25,7 @@ test('obsolete display settings cannot affect or block the automatic display, in
   let state: State = { schema: 3, room: null };
   const engine = new Engine({ load: async () => structuredClone(state), save: async next => { state = structuredClone(next); } }, adapter, base);
   await engine.init();
-  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: base, dataDir, demoSeconds: 3600 }, 'web');
+  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: base, dataDir }, 'web');
   closeApp = close; server.on('request', app);
   const response = await fetch(`${base}/api/display/state`);
   assert.equal(response.status, 200);

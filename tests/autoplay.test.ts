@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { Engine } from '../src/engine.js';
 import type { Store } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { PreparationManager, preparationStateSchema, type PreparationState, type PreparationStore, type PreparationView, type SavedSelection } from '../src/preparations.js';
 import { attachAutoplay } from '../src/autoplay.js';
 import { AppError, stateSchema, type State, type Track, type AutoplayTarget } from '../src/model.js';
@@ -24,7 +24,7 @@ const song = (trackId: string): SavedSelection => ({ source: 'demo', trackId,
   metadata: { title: `Saved ${trackId}`, artist: 'Private artist', album: 'Private album', version: '', provider: 'Demo', duration: 100 } });
 
 /** A speaker that records what it was asked to play and ends songs only when told to. */
-class Speaker extends DemoAdapter {
+class Speaker extends FakePlayback {
   plays: { id: string; title: string }[] = []; controls: string[] = [];
   failResolve = false; failPlay = false; lookup?: Promise<void>; looking?: () => void;
   override async resolveSaved(selection: SavedSelection, context: string, trackId: string) {
@@ -179,7 +179,7 @@ test('the setting survives a restart, rejects stale changes and is independent o
   const f = await fixture(t);
   await f.engine.setAutoplay('next-participant', 0);
   await assert.rejects(f.engine.setAutoplay('off', 0), /settings changed/);
-  const restored = new Engine(f.store, new DemoAdapter(100), 'http://localhost:3000'); await restored.init();
+  const restored = new Engine(f.store, new FakePlayback(100), 'http://localhost:3000'); await restored.init();
   t.after(() => restored.adapter.close());
   assert.deepEqual(restored.autoplaySettings(), { mode: 'next-participant', revision: 1 });
   assert.deepEqual(restored.playbackSettings(), { enabled: true, revision: 0 });
@@ -278,7 +278,7 @@ test('a delayed same-participant start cannot survive a later completion for the
 
 test('same-participant mode survives restart without starting music', async t => {
   const f = await fixture(t); await f.engine.setAutoplay('same-participant', 0); await f.start();
-  const restored = new Engine(f.store, new DemoAdapter(100), 'http://localhost:3000'); await restored.init();
+  const restored = new Engine(f.store, new FakePlayback(100), 'http://localhost:3000'); await restored.init();
   t.after(() => restored.adapter.close());
   assert.deepEqual(restored.autoplaySettings(), { mode: 'same-participant', revision: 1 });
   assert.equal(restored.view({ kind: 'host' }).current?.id, f.people[0]!.id);
@@ -289,7 +289,7 @@ for (const enabled of [false, true]) test(`legacy autoplay enabled=${enabled} mi
   const f = await fixture(t);
   const legacy = { ...f.store.state, room: { ...f.store.state.room!, autoplay: { enabled, revision: 7 } } };
   f.store.state = stateSchema.parse(legacy);
-  const restored = new Engine(f.store, new DemoAdapter(100), 'http://localhost:3000'); await restored.init();
+  const restored = new Engine(f.store, new FakePlayback(100), 'http://localhost:3000'); await restored.init();
   t.after(() => restored.adapter.close());
   assert.deepEqual(restored.autoplaySettings(), { mode: enabled ? 'next-participant' : 'off', revision: 7 });
   assert.equal('enabled' in f.store.state.room!.autoplay!, false);

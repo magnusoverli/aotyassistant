@@ -4,7 +4,7 @@ import type { View } from '../src/model.js';
 import { ParticipantAccess } from '../web/participant-access.js';
 import { RequestError } from '../web/request.js';
 
-const member: View = { mode: 'demo', connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: null, next: null, me: { id: 'me', nickname: 'Listener' } };
+const member: View = { connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: null, next: null, me: { id: 'me', nickname: 'Listener' } };
 const setup = (request: () => Promise<View>, online = () => true) => {
   const accepted: View[] = []; let denied = 0;
   const access = new ParticipantAccess(request, online, view => { accepted.push(view); }, () => { denied++; }, () => {});

@@ -50,8 +50,8 @@ Normal setup takes place in **Settings**. The Home Assistant Configuration tab c
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `guest_url` | Automatic | Optional guest-origin fallback, such as `http://homeassistant.local:3000`. Include the published port; no path, query, or Ingress address. A saved in-app guest address takes precedence. |
-| `demo_track_seconds` | `30` | Simulated track length before Music Assistant is connected; 1–3600 seconds. No effect on real music. |
-| `playback_mode` | `demo` | Compatibility option for older saved configuration. Connecting Music Assistant enables real playback automatically. |
+| `demo_track_seconds` | Unset | Unused. Kept only so older saved configuration stays valid; demo mode has been removed. |
+| `playback_mode` | Unset | Unused. Kept only so older saved configuration stays valid. |
 
 ## Updates and restart behaviour
 

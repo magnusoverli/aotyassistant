@@ -12,7 +12,7 @@ import { UserPictureFiles, UserPictures, prepareUserPicture, type PictureFiles }
 import { pictureVersion } from '../src/user-picture-format.js';
 import { AppError, type State, type UserDirectory } from '../src/model.js';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 import { publicRoute } from '../src/public-listener.js';
 import { ingressListener } from '../src/ingress.js';
@@ -100,9 +100,9 @@ async function appFixture(t: TestContext, inOrder = true) {
     active: inOrder ? people.map(person => person.id) : [], currentId: inOrder ? people[0]!.id : null, playback: null } };
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const engine = new Engine({ async load() { return structuredClone(state); }, async save(next) { state = structuredClone(next); } }, new DemoAdapter(3600), origin); await engine.init();
+  const engine = new Engine({ async load() { return structuredClone(state); }, async save(next) { state = structuredClone(next); } }, new FakePlayback(3600), origin); await engine.init();
   const files = new MemoryPictures(); const pictures = new UserPictures(files);
-  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir, demoSeconds: 3600 }, 'web', undefined, undefined, undefined, undefined, undefined, undefined, pictures);
+  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir }, 'web', undefined, undefined, undefined, undefined, undefined, undefined, pictures);
   server.on('request', app);
   t.after(() => { close(); engine.adapter.close(); server.closeAllConnections(); server.close(); });
   const post = (path: string, body: unknown, token = people[1]!.token) => fetch(origin + path, { method: 'POST', body: JSON.stringify(body), headers: {

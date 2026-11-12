@@ -2,7 +2,7 @@ import { el, link } from './dom';
 import { headerModel, routes, type HeaderState, type NavigationItem, type Page } from './navigation';
 import { appPath, navigationHref, isPublic } from './paths';
 import { attr, prop, text } from './view-nodes';
-import { demoPlaybackNotice, productName } from '../src/product';
+import { productName } from '../src/product';
 import { requestJson } from './request';
 import type { UserDirectory } from '../src/model';
 import { DisplayChrome } from './display-chrome';
@@ -105,10 +105,7 @@ export class AppHeader {
   update(state: HeaderState) {
     this.lastState = state;
     const model = headerModel(this.page, state);
-    const demo = state.view?.mode === 'demo';
-    this.subtitle.classList.toggle('demo-playback-notice', demo);
-    attr(this.subtitle, 'aria-live', demo ? 'polite' : undefined);
-    text(this.subtitle, demo ? demoPlaybackNotice : model.subtitle);
+    text(this.subtitle, model.subtitle);
     for (const item of model.primary) {
       if (isPublic() && item.href.startsWith('/host')) continue;
       let anchor = this.links.get(item.id);

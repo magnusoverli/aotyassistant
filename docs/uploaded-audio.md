@@ -24,7 +24,7 @@ Supported extensions are `.mp3`, `.m4a`, `.flac`, `.wav`, `.aif`, `.aiff`, `.ogg
 
 Upload completion alone is not a saved list entry. Uploading does not change the turn or start audio. Once saved, the phone can disconnect; the file is stored by the app. Text corrections do not rewrite the original audio.
 
-Files can be prepared while Music Assistant is unavailable. Playback requires a connected, compatible server and speaker, plus successful file-access verification in Settings. The demo timer does not play uploads.
+Files can be prepared while Music Assistant is unavailable. Playback requires a connected, compatible server and speaker, plus successful file-access verification in Settings.
 
 ## Replace an uploaded song
 

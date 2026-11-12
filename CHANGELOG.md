@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [2.1.4] — 2026-11-12
+
+- Find music by artist only: search for an artist, open one of their albums, then choose a song. Songs are no longer searched for directly, and results no longer mix songs with artists. The import's **Find artist** opens a missing song's artist.
+- Remove demo mode. Without a Music Assistant connection, search and playback say to connect it in **Settings** instead of simulating silent playback. Songs saved from the old demo catalogue stay in lists as unavailable entries.
+- The `demo_track_seconds` and `playback_mode` add-on options no longer do anything; they remain only so older saved configurations stay valid.
+- Screen readers announce phone search's round add button as **Add to list** and **Added ✓** again, without reading out its **+** / **✓** icon; the artist and album chevrons are no longer read out either.
+- Remove the phone playback bar (**It’s your turn** / playback state with **Go to player**) that appeared at the bottom of the screen when the player was out of view, including during search. Connection problems still show as a notice at the top of the page.
+
 ## [2.1.3] — 2026-11-12
 
 - On phones, open search from a **Search artists or songs** field under the playlist title. Search fills the screen, with the field, **Clear**, **Done** and a one-line playlist summary pinned at the top.

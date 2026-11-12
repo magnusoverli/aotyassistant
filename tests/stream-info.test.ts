@@ -21,7 +21,7 @@ test('missing or malformed optional metadata never invents details or rejects a 
 });
 
 test('the subtle public technical line is reveal-independent and disappears when inactive or unavailable', () => {
-  const view: View = { mode: 'music-assistant', connected: true, roomId: 'room', turnId: 'turn', revision: 1, current: null, next: null,
+  const view: View = { connected: true, roomId: 'room', turnId: 'turn', revision: 1, current: null, next: null,
     progress: { id: 'playback', status: 'playing', fraction: null }, nowPlaying: { revealed: false },
     streamInfo: { source: 'Spotify', format: 'MP3', bitRate: 320, sampleRate: 44100 } };
   assert.equal(publicStreamDetails(view, true), 'Spotify · MP3 · 320 kbps · 44.1 kHz');

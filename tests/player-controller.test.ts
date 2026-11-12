@@ -6,7 +6,7 @@ import { PlayerController } from '../web/player-controller.js';
 
 const track: CatalogueTrack = { id: 'private-track', title: 'My track', artist: 'My artist', album: 'My album', version: '', duration: 180, provider: 'fixture', available: true };
 function fixture(role: 'host' | 'participant' = 'participant', position?: (progress?: PlaybackProgress) => PlaybackProgress | undefined) {
-  let view: View = { mode: 'music-assistant', connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: { id: 'alex', nickname: 'Alex' }, next: null,
+  let view: View = { connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: { id: 'alex', nickname: 'Alex' }, next: null,
     me: { id: 'alex', nickname: 'Alex' }, myTurn: true, ownPlayback: null, volume: { available: true, level: 30, revision: 'destination', generation: 0 } };
   let online = true; let resyncs = 0;
   const failures: string[] = [];
@@ -92,7 +92,7 @@ test('turn changes and offline transitions cancel private optimistic state and n
 });
 
 test('routing-only changes cancel queued player/volume work even when catalogue identity stays the same', async () => {
-  const f = fixture(); f.observe({ ...f.playing(), catalogue: { source: 'music-assistant', playbackAvailable: true, revision: 'same-catalogue' } });
+  const f = fixture(); f.observe({ ...f.playing(), catalogue: { configured: true, playbackAvailable: true, revision: 'same-catalogue' } });
   f.controller.control('pause'); f.controller.control('resume'); f.controller.volume(60, true); f.controller.volume(80, true);
   const old = structuredClone(f.view);
   f.observe({ ...f.view, volume: { available: false, level: null, revision: 'new-destination' }, catalogue: { ...f.view.catalogue!, playbackAvailable: true } });

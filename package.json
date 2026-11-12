@@ -1,6 +1,6 @@
 {
   "name": "doom-room",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "Turn-based music sharing for Home Assistant, powered by Music Assistant.",
   "license": "MIT",
   "repository": {

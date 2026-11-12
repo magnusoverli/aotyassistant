@@ -7,7 +7,7 @@ import { MusicAssistantClient } from '../src/music-assistant.js';
 import { MusicAssistantTransport } from '../src/music-assistant-transport.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { ManagedPlayback } from '../src/live-playback.js';
-import { DemoAdapter } from '../src/playback.js';
+import { findTrack } from '../tests/fixtures/find-track.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
 
@@ -44,7 +44,7 @@ async function fixture() {
   await manager.init();
   await manager.save(remote.origin, 'fixture-token', 0);
   await manager.selectDestination('sonos:room', manager.view().revision);
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 60_000);
+  const adapter = new ManagedPlayback(manager, 60_000);
   const store = new FileStore(directory); const save = store.save.bind(store);
   store.save = async state => {
     const began = performance.now(); await save(state);
@@ -54,7 +54,7 @@ async function fixture() {
   await engine.init(); await adapter.refresh();
   const member = await engine.join('Latency fixture');
   const state = () => engine.view({ kind: 'participant', credential: member });
-  const track = (await engine.search(member, state().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(engine, member);
   const play = () => engine.play(member, state().turnId!, state().ownPlayback?.id ?? null, track.id);
   const control = (action: 'pause' | 'resume' | 'stop') => engine.control(member, state().turnId!, state().ownPlayback!.id, action);
   return {

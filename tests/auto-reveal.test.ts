@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { stateSchema, type State, type Track } from '../src/model.js';
 import type { Store } from '../src/store.js';
 
@@ -11,7 +11,7 @@ class MemoryStore implements Store {
   async load() { return stateSchema.parse(structuredClone(this.state)); }
   async save(state: State) { await this.gate; if (this.fail) throw new Error('disk failure'); this.state = structuredClone(state); this.saves++; }
 }
-class ObservedAdapter extends DemoAdapter {
+class ObservedAdapter extends FakePlayback {
   id = ''; sample: { elapsed: number; duration: number } | null = { elapsed: 0, duration: 100 };
   controls: string[] = [];
   override async play(_track: Track, id: string) { this.id = id; }

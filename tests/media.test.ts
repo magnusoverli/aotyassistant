@@ -1,3 +1,4 @@
+import { findTrack } from './fixtures/find-track.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
@@ -9,7 +10,6 @@ import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { ManagedPlayback } from '../src/live-playback.js';
-import { DemoAdapter } from '../src/playback.js';
 import { MusicAssistantClient } from '../src/music-assistant.js';
 import { operation } from '../src/operation.js';
 import { createApp } from '../src/http.js';
@@ -23,14 +23,14 @@ async function fixture() {
   await manager.save(remote.origin, 'fixture-token', 0);
   // No manual check is needed, including after an application restart.
   await manager.selectDestination('sonos:room', manager.view().revision);
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 20);
+  const adapter = new ManagedPlayback(manager, 20);
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const engine = new Engine(new FileStore(dir), adapter, origin, manager); await engine.init();
   await adapter.refresh();
   const host = () => engine.view({ kind: 'host' });
   const alex = await engine.join('Alex'); const sam = await engine.join('Sam');
-  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, demoSeconds: 30 }, 'web', manager);
+  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir }, 'web', manager);
   server.on('request', http.app);
   const request = (path: string, credential?: string, role = 'participant', data?: unknown) => fetch(`${origin}${path}`, {
     method: data === undefined ? 'GET' : 'POST', headers: { ...(credential ? { Cookie: `doom_room_${role}=${credential}` } : {}), ...(data === undefined ? {} : { Origin: origin, 'Content-Type': 'application/json' }) },
@@ -45,7 +45,7 @@ const status = (code: number) => (error: unknown) => error instanceof AppError &
 
 test('display downloads encrypted full-size artwork before reveal and unlocks it locally without another image read', async t => {
   const f = await fixture(); t.after(f.close);
-  const selected = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const selected = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, null, selected.id);
   const display = async () => (await f.request('/api/display/state')).json() as Promise<View>;
   const hidden = await display(); assert.equal(hidden.nowPlaying?.revealed, false);
@@ -201,7 +201,7 @@ test('artwork is same-origin, participant-bound, reveal-gated, and revoked when 
 test('public stream details follow the verified stream independently of reveal and clear on missing data or stop', async t => {
   const f = await fixture(); t.after(f.close);
   f.remote.track.provider_mappings.push({ item_id: 'tidal-equivalent', provider_domain: 'tidal', available: true });
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   const id = f.participant(f.alex).ownPlayback!.id;
   assert.deepEqual(f.display().streamInfo, { source: 'Spotify' });
@@ -260,7 +260,7 @@ test('MA rejects unsupported thumbnail sizes; legacy app URLs normalize to the s
 
 test('in-flight public artwork is denied after turn changes and private references expire on credential changes', async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, null, track.id); const id = f.participant(f.alex).ownPlayback!.id;
   await f.engine.reveal(f.alex, f.host().turnId!, id); f.remote.delayImages(100);
   const image = f.request(`/api/display/artwork/${id}/artwork`);
@@ -273,7 +273,7 @@ test('in-flight public artwork is denied after turn changes and private referenc
 
 test('public progress contains no times before reveal and never advances a turn by duration guesses', async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, null, track.id); const id = f.participant(f.alex).ownPlayback!.id;
   f.remote.queue.elapsed_time = 90; f.remote.queue.elapsed_time_last_updated = Date.now() / 1000; await delay(65);
   const hidden = f.display().progress!; assert.equal(hidden.status, 'playing'); assert.ok(hidden.fraction! >= .5 && hidden.fraction! < .6);
@@ -297,7 +297,7 @@ test('only the current playing participant and host may control destination volu
   const f = await fixture(); t.after(f.close);
   assert.equal(f.host().volume!.available, true, 'Volume is available automatically for a configured destination.');
   assert.equal(f.remote.calls.filter(c => c.command.includes('/cmd/')).length, 0);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, null, track.id); const id = f.participant(f.alex).ownPlayback!.id;
   const post = (credential: string, level: number, playbackId = id) => f.request('/api/participant/volume', credential, 'participant', { turnId: f.host().turnId, playbackId, level, volumeRevision: f.host().volume!.revision });
   assert.equal((await post(f.sam, 30)).status, 403);
@@ -327,7 +327,7 @@ test('volume respects selected group semantics and unsupported destinations', as
 
 test('slow optional volume reads do not stall queue progress or overwrite a newer volume change', async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, null, track.id);
   f.remote.delayNextVolumeRead(180);
   void f.adapter.refresh(); // Explicit refresh/event, rather than polling volume on every queue sample.

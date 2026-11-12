@@ -3,7 +3,6 @@ import { once } from 'node:events';
 import { configFromEnv } from './config.js';
 import { Engine } from './engine.js';
 import { FileStore } from './store.js';
-import { DemoAdapter } from './playback.js';
 import { createApp } from './http.js';
 import { IntegrationFileStore, IntegrationManager } from './integrations.js';
 import { ManagedPlayback } from './live-playback.js';
@@ -28,7 +27,7 @@ try {
   const config = configFromEnv();
   const integrations = new IntegrationManager(new IntegrationFileStore(config.dataDir));
   await integrations.init();
-  const adapter = new ManagedPlayback(new DemoAdapter(config.demoSeconds), integrations);
+  const adapter = new ManagedPlayback(integrations);
   cleanup = () => { adapter.close(); integrations.close(); };
   const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl, integrations);
   await engine.init();

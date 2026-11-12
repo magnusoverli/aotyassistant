@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type Browser, type Page } from '@playwright/test';
-import { test } from './app-fixture';
-import type { DemoAdapter } from '../../src/playback';
+import { test, catalogueTrack } from './app-fixture';
+/** The parts of the test app these helpers use: connect the fixture Music Assistant and add songs to its album. */
+type Catalogue = { connect(): Promise<void>; addTracks(songs: { title: string; artist?: string; album?: string; duration?: number }[]): unknown };
 import { uploadBytes } from '../fixtures/uploads';
 import { showList, dragSong } from './preparation-helpers';
 
-async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, count = 8) {
+async function savedMusic(browser: Browser, origin: string, app: Catalogue, count = 8) {
+  await app.connect();
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
   const post = async (path: string, data: unknown) => {
     const response = await context.request.post(origin + path, { headers: { Origin: origin }, data }); expect(response.ok()).toBe(true); return response.json();
@@ -13,8 +15,8 @@ async function savedMusic(browser: Browser, origin: string, demo: DemoAdapter, c
   await post('/api/participant/join', { pin: '1234', nickname: 'Returning listener' });
   let library = await post('/api/participant/preparations/init', {});
   for (let index = 0; index < count; index++) {
-    const track = { id: `demo:entry-${index}`, title: `Saved selection ${index + 1}`, artist: 'A familiar artist', album: 'A favourite album', duration: 60 };
-    demo.catalogue.push(track);
+    const song = { title: `Saved selection ${index + 1}`, artist: 'A familiar artist', album: 'A favourite album', duration: 60 };
+    app.addTracks([song]); const track = await catalogueTrack(context.request, origin, song.title);
     library = (await post('/api/participant/preparations/add', { trackId: track.id, operation: { id: randomUUID(), issuedAt: Date.now(), revision: library.revision } })).view;
   }
   const page = await context.newPage();
@@ -88,7 +90,7 @@ test('checking valid membership never flashes a join form and failed checks requ
 });
 
 test('failed automatic list initialization reports an error rather than an empty replacement, and retry keeps saved songs', async ({ browser, isolatedApp }) => {
-  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 2);
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp, 2);
   try {
     let fail = true;
     await r.page.route('**/api/participant/preparations/init', async route => {
@@ -115,7 +117,7 @@ test('offline entry retains the nickname and returns to the join form after reco
 });
 
 for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks see no selections workspace until they explicitly join`, async ({ browser, isolatedApp }) => {
-  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, count);
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp, count);
   try {
     const writes: string[] = []; r.page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
     await r.context.clearCookies({ name: 'doom_room_participant' }); await r.page.goto(isolatedApp.origin + '/participant');
@@ -145,7 +147,7 @@ for (const count of [0, 8]) test(`returning visitors with ${count} saved tracks 
 });
 
 for (const entryPath of ['/participant', '/join']) test(`joining through ${entryPath} uses one private list without recovery or nickname-based access`, async ({ browser, isolatedApp }) => {
-  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 2);
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp, 2);
   const fresh = await browser.newContext({ viewport: { width: 390, height: 844 } });
   try {
     const page = await fresh.newPage(); await page.goto(isolatedApp.origin + entryPath);
@@ -183,7 +185,7 @@ test('join errors stay with the nickname, preserve the draft, and whitespace sen
 });
 
 test('revocation shows one calm entry notice, and saved music survives refresh and explicit rejoining', async ({ browser, page: host, isolatedApp }) => {
-  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 2);
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp, 2);
   try {
     await r.page.goto(isolatedApp.origin + '/participant'); await expect(r.page.locator('.participant-hero')).toBeVisible();
     const state = await (await host.request.get('/api/host/state')).json();
@@ -201,7 +203,7 @@ test('revocation shows one calm entry notice, and saved music survives refresh a
 });
 
 test('an unconfirmed private-list edit survives an unjoined reload and can be retried explicitly after joining', async ({ browser, isolatedApp }) => {
-  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp.demo, 3);
+  const r = await savedMusic(browser, isolatedApp.origin, isolatedApp, 3);
   try {
     await r.page.goto(isolatedApp.origin + '/participant'); await showList(r.page);
     let moves = 0;

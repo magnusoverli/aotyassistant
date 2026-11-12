@@ -104,7 +104,7 @@ test('every route shows the spectrum only while playing, hiding it before playba
     for (const current of pages.slice(0, -1)) await expect(current.locator('.rotation-seat.is-you')).toHaveCount(0);
     const state = isolatedApp.engine.view({ kind: 'participant', credential: first });
     await expectCurrentTurn(pages, false);
-    await isolatedApp.engine.play(first, state.turnId!, null, 'demo:aurora');
+    await isolatedApp.connect(); await isolatedApp.engine.play(first, state.turnId!, null, (await isolatedApp.trackFor(first)).id);
     const playing = isolatedApp.engine.view({ kind: 'participant', credential: first });
     await expectCurrentTurn(pages, true);
     await isolatedApp.engine.reveal(first, playing.turnId!, playing.ownPlayback!.id);
@@ -253,7 +253,7 @@ test('mobile keeps Now and Next in the first slots across turns, scrolling and r
 test('the spectrum follows the actual rounded card with bounded inward needles at desktop and mobile sizes', async ({ page, isolatedApp }) => {
   const credential = await isolatedApp.engine.join('Magnus'); await isolatedApp.engine.join('Sam');
   await page.emulateMedia({ reducedMotion: 'no-preference' }); await page.goto('/host'); await expectCurrentTurn([page], false);
-  await isolatedApp.engine.play(credential, isolatedApp.engine.view({ kind: 'host' }).turnId!, null, 'demo:aurora');
+  await isolatedApp.connect(); await isolatedApp.engine.play(credential, isolatedApp.engine.view({ kind: 'host' }).turnId!, null, (await isolatedApp.trackFor(credential)).id);
   await expectCurrentTurn([page], true);
   const seat = page.locator('.rotation-seat.is-current');
   await expect(page.locator('.order-trace')).toHaveCount(1);
@@ -287,7 +287,7 @@ test('the spectrum follows the actual rounded card with bounded inward needles a
 test('order feed exposes names, placement and playback status without song details even after reveal', async ({ isolatedApp }) => {
   const credential = await isolatedApp.engine.join('Listener');
   let view = isolatedApp.engine.view({ kind: 'participant', credential });
-  await isolatedApp.engine.play(credential, view.turnId!, null, 'demo:aurora');
+  await isolatedApp.connect(); await isolatedApp.engine.play(credential, view.turnId!, null, (await isolatedApp.trackFor(credential)).id);
   view = isolatedApp.engine.view({ kind: 'participant', credential });
   await isolatedApp.engine.reveal(credential, view.turnId!, view.ownPlayback!.id);
   const controller = new AbortController();
@@ -301,7 +301,7 @@ test('order feed exposes names, placement and playback status without song detai
     expect(snapshot.playbackStatus).toBe('playing');
     expect(snapshot.rotation).toEqual([{ id: view.me!.id, nickname: 'Listener' }]);
     expect(Object.keys(snapshot.current).sort()).toEqual(['id', 'nickname']);
-    expect(frame).not.toContain('Northern Lights'); expect(frame).not.toContain(credential);
+    expect(frame).not.toContain('Real catalogue fixture'); expect(frame).not.toContain(credential);
   } finally { controller.abort(); }
 });
 

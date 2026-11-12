@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type Page } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSong } from './app-fixture';
+import { openAlbum, songRow } from './preparation-helpers';
 import { uploadBytes } from '../fixtures/uploads';
 
 type Retention = { nodes: [string, Element][]; detached: string[]; observer: MutationObserver };
@@ -29,7 +30,9 @@ async function retained(page: Page) {
     return { replaced: nodes.filter(([selector, node]) => document.querySelector(selector) !== node || !node.isConnected).map(([selector]) => selector), detached: [...new Set(detached)] };
   })).toEqual({ replaced: [], detached: [] });
 }
-async function join(page: Page, origin: string) {
+/** Joins once Music Assistant is connected: without it there is nothing to search. */
+async function join(page: Page, app: { origin: string; connect(): Promise<void> }) {
+  const { origin } = app; await app.connect();
   const headers = { Origin: origin };
   expect((await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Stable UI' }, headers })).ok()).toBe(true);
   expect((await page.request.post('/api/participant/preparations/init', { data: {}, headers })).ok()).toBe(true);
@@ -37,7 +40,8 @@ async function join(page: Page, origin: string) {
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
   await expect(page.locator('#catalogue-search-submit')).toBeEnabled();
 }
-async function search(page: Page, query: string) {
+/** An artist search, as typed: results are artists to open. */
+async function search(page: Page, query = 'Fixture artist') {
   await page.getByRole('searchbox').fill(query); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await expect(page.locator('.catalogue-results[aria-busy="false"] .track-row').first()).toBeVisible();
 }
@@ -46,7 +50,7 @@ const workspace = ['.app-header', '.participant-page', '.music-workspace', '.pla
 test('artist browsing and playback patch existing regions without detaching unrelated controls', async ({ page, isolatedApp }) => {
   await isolatedApp.manager.save(isolatedApp.musicAssistantOrigin, 'fixture-token', 0);
   await isolatedApp.manager.selectDestination('sonos:room', isolatedApp.manager.view().revision);
-  await join(page, isolatedApp.origin);
+  await join(page, isolatedApp);
   await retain(page, workspace); await search(page, 'multi-provider'); await retained(page);
   await page.getByRole('button', { name: 'View albums' }).first().click(); await retained(page);
   await page.getByRole('button', { name: 'View tracks on The same release', exact: true }).click(); await retained(page);
@@ -74,7 +78,7 @@ test('upload progress is local and a private-list event preserves upload input s
       constructor() { super(); (window as unknown as { lastUpload: XMLHttpRequest }).lastUpload = this; }
     };
   });
-  await join(page, isolatedApp.origin); await search(page, 'Northern'); await page.locator('#list-upload').click();
+  await join(page, isolatedApp); await search(page); await page.locator('#list-upload').click();
   let release!: () => void; let entered!: () => void;
   const started = new Promise<void>(resolve => { entered = resolve; }); const held = new Promise<void>(resolve => { release = resolve; });
   await page.route(/\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/, async route => { entered(); await held; await route.continue().catch(() => {}); });
@@ -92,9 +96,9 @@ test('upload progress is local and a private-list event preserves upload input s
     await retain(page, [...workspace, '.upload-preview', '#upload-title', '#upload-artist', '#upload-album']);
     const headers = { Origin: isolatedApp.origin };
     const room = await (await page.request.get('/api/participant/state')).json();
-    const found = await (await page.request.post('/api/participant/search', { data: { turnId: room.turnId, query: 'Northern' }, headers })).json();
+    const found = { tracks: [await catalogueTrack(page.request, isolatedApp.origin)] }; expect(room.turnId).toBeTruthy();
     const list = await (await page.request.get('/api/participant/preparations/state')).json();
-    expect((await page.request.post('/api/participant/preparations/add', { headers, data: { trackId: found.tracks[0].id, operation: { id: randomUUID(), revision: list.revision, issuedAt: Date.now() } } })).ok()).toBe(true);
+    expect((await page.request.post('/api/participant/preparations/add', { headers, data: { trackId: found.tracks[0]!.id, operation: { id: randomUUID(), revision: list.revision, issuedAt: Date.now() } } })).ok()).toBe(true);
     await expect(page.locator('.saved-track')).toHaveCount(1); await retained(page);
     await expect(page.locator('#upload-title')).toBeFocused();
     expect(await page.locator('#upload-title').evaluate((node: HTMLInputElement) => [node.selectionStart, node.selectionEnd])).toEqual([2, 5]);
@@ -142,8 +146,8 @@ test('unchanged membership revalidation and list edits retain the workspace and 
     const Original = EventSource;
     window.EventSource = class extends Original { constructor(url: string | URL, options?: EventSourceInit) { super(url, options); state.eventConnections++; } };
   });
-  await join(page, isolatedApp.origin); await search(page, 'Northern');
-  await page.getByRole('button', { name: 'Add to list', exact: true }).click();
+  await join(page, isolatedApp); await search(page);
+  await openAlbum(page); await songRow(page, fixtureSong).getByRole('button', { name: 'Add to list', exact: true }).click();
   await expect(page.locator('.list-save-status')).toHaveText('Private · Saved ✓');
   await page.getByRole('searchbox').fill('draft kept');
   await page.locator('#catalogue-search').evaluate((node: HTMLInputElement) => node.setSelectionRange(3, 7));
@@ -158,7 +162,7 @@ test('unchanged membership revalidation and list edits retain the workspace and 
 });
 
 test('listening-order membership updates retain existing seats', async ({ page, browser, isolatedApp }) => {
-  await join(page, isolatedApp.origin); await expect(page.locator('.rotation-seat')).toHaveCount(1);
+  await join(page, isolatedApp); await expect(page.locator('.rotation-seat')).toHaveCount(1);
   await retain(page, [...workspace, '.rotation-seat']);
   const other = await browser.newContext();
   try {

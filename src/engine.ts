@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueSearch, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile, type AutoplayTarget, type AutoplayMode, type AutoplaySettings, type RoomLogoView } from './model.js';
+import { AppError, AUTO_REVEAL_FRACTION, roomSchema, type Role, type Room, type State, type View, type CatalogueProvider, type CatalogueBrowse, type PlaybackProgress, type PlaybackSettings, type Track, type ListeningOrderView, type UserProfile, type AutoplayTarget, type AutoplayMode, type AutoplaySettings, type RoomLogoView } from './model.js';
 import type { Store } from './store.js';
 import type { PlaybackAdapter } from './playback.js';
 import type { SavedSelection } from './preparations.js';
@@ -195,8 +195,10 @@ export class Engine extends EventEmitter {
     }, { stopOnFailure: false }).catch(() => {}).finally(() => { this.revealCheckPending = false; });
   }
   private get catalogueState() {
-    return this.catalogue?.configured ? { source: 'music-assistant' as const, playbackAvailable: this.catalogue.playbackAvailable ?? false, revision: this.catalogue.catalogueRevision ?? this.catalogue.configurationRevision ?? 0 }
-      : { source: 'demo' as const, playbackAvailable: true };
+    return this.catalogue?.configured ? { configured: true, playbackAvailable: this.catalogue.playbackAvailable ?? false, revision: this.catalogue.catalogueRevision ?? this.catalogue.configurationRevision ?? 0 }
+      // Without Music Assistant there is no music to find or play. An engine built without a catalogue
+      // provider (unit tests only; the app always has one) plays straight through its adapter.
+      : { configured: false, playbackAvailable: !this.catalogue };
   }
   async init(): Promise<void> {
     this.state = await this.store.load();
@@ -285,7 +287,7 @@ export class Engine extends EventEmitter {
     const room = this.room();
     if (role.kind === 'participant') this.participant(role.credential, room);
     const person = this.people(room);
-    const base: View = { mode: this.adapter.mode, connected: this.ready, roomId: room.id, logo: this.roomLogo?.() ?? null,
+    const base: View = { connected: this.ready, roomId: room.id, logo: this.roomLogo?.() ?? null,
       playbackAvailable: this.playbackAvailable, playbackStatus: this.playbackStatus(room),
       ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
       revision: room.revision, turnId: room.turnId, current: person(room.currentId), next: person(this.nextId(room)),
@@ -336,14 +338,6 @@ export class Engine extends EventEmitter {
   }
   catalogueContext(credential: string): string {
     const room = this.room(); const member = this.participant(credential, room); return `${room.id}:${member.id}`;
-  }
-  async captureDemo(credential: string, trackId: string): Promise<SavedSelection> {
-    const context = this.catalogueContext(credential);
-    if (this.catalogue?.configured) throw new AppError(409, 'The catalogue changed. Search again.');
-    const track = await this.adapter.resolve(trackId, context);
-    if (this.catalogueContext(credential) !== context || this.catalogue?.configured) throw new AppError(409, 'The catalogue or membership changed. Search again.');
-    return { source: 'demo', trackId, metadata: { title: track.title, artist: track.artist, album: track.album,
-      version: '', provider: 'Demo', duration: track.duration, ...(track.artwork === '/demo-cover.svg' ? { artworkId: 'demo-cover' as const } : {}) } };
   }
   displayArtwork(playbackId: string, kind: 'artwork' | 'artistArtwork') {
     const room = this.room();
@@ -441,28 +435,16 @@ export class Engine extends EventEmitter {
     });
     if (seat.person) await this.remove(seat.person.id, seat.revision);
   }
-  async search(credential: string, _turnId: string, query: string): Promise<CatalogueSearch> {
-    if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');
-    const room = this.room(); const participant = this.participant(credential, room); const context = `${room.id}:${participant.id}`;
-    const catalogue = this.catalogueState;
-    const tracks = catalogue.source === 'music-assistant' ? await this.catalogue!.search(query, context)
-      : (await this.adapter.search(query)).map(t => ({ id: t.id, title: t.title, artist: t.artist, album: t.album,
-        duration: t.duration, version: '', provider: 'Demo', available: true, artwork: t.artwork, artistArtwork: t.artistArtwork }));
-    const latest = this.room(); const member = this.participant(credential, latest);
-    if (`${latest.id}:${member.id}` !== context) throw new AppError(401, 'Room membership changed. Join again.');
-    const currentCatalogue = this.catalogueState;
-    if (catalogue.source !== currentCatalogue.source || catalogue.revision !== currentCatalogue.revision) throw new AppError(409, 'The catalogue connection changed. Search again.');
-    return { ...currentCatalogue, tracks };
-  }
+  /** The only way to find music: artists matching a search, an artist's albums, then an album's tracks. */
   async browse(credential: string, kind: 'artists' | 'albums' | 'tracks', value: string): Promise<CatalogueBrowse> {
     if (!this.storageHealthy) throw new AppError(503, 'Room storage is unavailable.');
     const room = this.room(); const member = this.participant(credential, room); const context = `${room.id}:${member.id}`;
     const catalogue = this.catalogueState;
-    if (!this.catalogue?.configured || !this.catalogue.browse) throw new AppError(422, 'Artist/album browsing requires a Music Assistant connection.');
+    if (!this.catalogue?.configured || !this.catalogue.browse) throw new AppError(422, 'Finding music requires a Music Assistant connection. Ask the host to connect it in Settings.');
     const result = await this.catalogue.browse(kind, value, context);
     const latest = this.room(); const currentMember = this.participant(credential, latest);
     if (`${latest.id}:${currentMember.id}` !== context) throw new AppError(401, 'Room membership changed. Join again.');
-    if (catalogue.source !== this.catalogueState.source || catalogue.revision !== this.catalogueState.revision) throw new AppError(409, 'The catalogue connection changed. Browse again.');
+    if (catalogue.configured !== this.catalogueState.configured || catalogue.revision !== this.catalogueState.revision) throw new AppError(409, 'The catalogue connection changed. Browse again.');
     return { ...result, playbackAvailable: this.catalogueState.playbackAvailable };
   }
   async play(credential: string, turnId: string, previousPlaybackId: string | null, trackId: string): Promise<void> {
@@ -493,6 +475,7 @@ export class Engine extends EventEmitter {
       };
       const context = await this.inspect(room => {
         check(room);
+        if (this.catalogue && !this.catalogue.configured) throw new AppError(422, 'Connect Music Assistant in Settings before playing.');
         if (this.catalogue?.configured && !this.catalogue.playbackAvailable) {
           if (this.catalogue.output?.name) throw new AppError(409, 'The selected speaker is not ready. Check its status in host settings and try again.');
           throw new AppError(422, 'Choose a speaker or group in Settings before playing.');

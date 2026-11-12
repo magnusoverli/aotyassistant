@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { View } from '../src/model.js';
 import { publicPlaybackState, publicStageText } from '../web/public-room.js';
 
-const view: View = { mode: 'demo', connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: null, next: null };
+const view: View = { connected: true, roomId: 'room', revision: 1, turnId: 'turn', current: null, next: null };
 
 test('the public room is idle without active playback, including a stopped or stale revealed selection', () => {
   assert.equal(publicPlaybackState(view, true), 'idle');

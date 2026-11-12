@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSong } from './app-fixture';
+import { closeSearch, openAlbum, openSearch, songRow } from './preparation-helpers';
 import { uploadBytes } from '../fixtures/uploads';
 import type { IntegrationView } from '../../src/integrations';
 
@@ -36,17 +37,17 @@ test('compact phone workspace keeps the editable list inline and preserves brows
 });
 
 test('one player separates reveal, volume and finish while keeping search available', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
+  await isolatedApp.connect(); await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await expect(page.locator('.playback-card').getByRole('button', { name: 'Pass turn' })).toBeEnabled();
-  await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.getByRole('button', { name: 'Play', exact: true }).click();
+  await openAlbum(page);
+  await songRow(page, fixtureSong).getByRole('button', { name: 'Play', exact: true }).click(); await closeSearch(page);
   await expect(page.getByRole('button', { name: 'Reveal details' })).toBeEnabled();
   await expect(page.locator('.playback-transport').getByRole('button', { name: 'Finish turn' })).toBeEnabled();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Reveal details' }).click(); await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display');
-  await expect(page.getByRole('searchbox')).toHaveValue('Northern');
+  await expect(page.getByRole('searchbox', { includeHidden: true })).toHaveValue('Fixture artist');
   page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Finish turn', exact: true }).click(); await expect(page.locator('.playback-card')).toContainText('Choose a song');
   await expect(page.getByRole('button', { name: 'Pass turn' })).toBeEnabled();
 });
@@ -73,7 +74,8 @@ test('browser and in-page Back restore private browsing without putting results 
 test('upload review and inline history restoration keep saved music intact without list-access controls', async ({ page, isolatedApp }) => {
   await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Keeper' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
-  await page.locator('#list-upload').click(); await expect(page.getByText('Choose one audio file, then review it before adding.')).toBeVisible();
+  // Phones upload from search, below its results; the list is edited after Done.
+  await openSearch(page); await page.locator('#list-upload').click(); await expect(page.getByText('Choose one audio file, then review it before adding.')).toBeVisible();
   await page.locator('#track-upload-file').setInputFiles({ name: 'draft.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
   await expect(page.getByRole('heading', { name: 'Review uploaded song' })).toBeVisible();
   await page.getByLabel('Track title', { exact: true }).fill('Keep this draft');
@@ -81,7 +83,7 @@ test('upload review and inline history restoration keep saved music intact witho
   await page.locator('#track-upload-file').setInputFiles({ name: 'other.mp3', mimeType: 'audio/mpeg', buffer: uploadBytes });
   await expect(page.getByLabel('Track title', { exact: true })).toHaveValue('Keep this draft');
   await page.locator('.upload-preview').getByRole('button', { name: 'Add to list', exact: true }).click();
-  await expect(page.locator('.list-count')).toHaveText('1 track');
+  await expect(page.locator('.list-count')).toHaveText('1 track'); await closeSearch(page);
   await page.getByRole('button', { name: 'Remove Keep this draft', exact: true }).click();
   await page.locator('#list-history summary', { hasText: 'Removed' }).click();
   await page.locator('#list-history').getByRole('button', { name: 'Add back', exact: true }).click();
@@ -102,9 +104,10 @@ test('host invitations remain available with thirty people and consequential act
   await page.getByRole('button', { name: 'Copy join link' }).scrollIntoViewIfNeeded();
   await expect(page.getByRole('button', { name: 'Copy join link' })).toBeInViewport();
   const state = await (await page.request.get('/api/participant/state')).json();
-  await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });
+  await isolatedApp.connect();
+  await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: (await catalogueTrack(page.request, isolatedApp.origin)).id }, headers: { Origin: isolatedApp.origin } });
   await expect(page.locator('.host-playback-status')).toContainText('Playing');
-  await expect(page.locator('main')).not.toContainText('Northern Lights');
+  await expect(page.locator('main')).not.toContainText(fixtureSong);
   page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: 'Skip turn' }).click();
   expect((await (await page.request.get('/api/host/state')).json()).turnId).toBe(state.turnId);
   page.once('dialog', dialog => dialog.dismiss()); await page.locator('.rotation-seat.is-current').getByRole('button', { name: /^Remove/ }).click();

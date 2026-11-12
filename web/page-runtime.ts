@@ -8,7 +8,6 @@ import { pageForPath, pageTitles } from './navigation';
 import { progressConnected, displayedProgress } from './media';
 import { PlayerController } from './player-controller';
 import { Playback, roomMessages } from './playback';
-import { PlayerReturn } from './player-return';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
 import { CatalogueRow } from './catalogue-row';
 import { PublicRoom } from './public-room';
@@ -52,6 +51,7 @@ const catalogue = new CatalogueController(() => view);
 let realtime = false;
 let busy = false;
 let error = '';
+/** A search finds artists; an artist shows albums; an album shows its tracks. Songs are never searched for. */
 let results: CatalogueTrack[] = [];
 let searchText = '';
 let searchDone = false;
@@ -69,8 +69,6 @@ let chosenAlbum: CatalogueAlbum | undefined;
 let artistNotices: string[] = [];
 let albumNotices: string[] = [];
 let trackNotices: string[] = [];
-/** A search that finds both artists and songs shows a few artists first; this lists them all. */
-let allArtists = false;
 /** Phones: search fills the screen while open (body[data-music-search], music-collection.css). It is part of
  * browse history, so Back steps out of an album or artist and then closes it. Desktop never opens it. */
 let searchOpen = false;
@@ -80,22 +78,19 @@ let sheetDepth = 0;
 let lastSearch: ReturnType<typeof browseSnapshot> | undefined;
 /** Playlist length when the sheet opened: Done shows the songs added since. */
 let openedWith = 0;
-/** Runs once the sheet has closed, for example to jump to the player. */
-let afterClose: (() => void) | undefined;
 const browseSnapshot = () => ({ results, searchText, searchDone, artists, albums, chosenArtist, chosenAlbum,
-  artistNotices, albumNotices, trackNotices, allArtists, scroll: scrollY, searchOpen, sheetDepth });
+  artistNotices, albumNotices, trackNotices, scroll: scrollY, searchOpen, sheetDepth });
 function setSearchOpen(open: boolean) {
   searchOpen = open; if (!open) sheetDepth = 0;
   if (page === 'participant') document.body.dataset.musicSearch = open ? 'open' : 'closed';
 }
 /** Leaves the sheet without history traversal, when its history entries are being discarded. */
-function forgetSearch() { setSearchOpen(false); lastSearch = undefined; afterClose = undefined; }
+function forgetSearch() { setSearchOpen(false); lastSearch = undefined; }
 /** Restores a browse snapshot; without one, clears all results (optionally keeping the typed query). */
 function restoreBrowse(snapshot?: ReturnType<typeof browseSnapshot>, query = snapshot?.searchText ?? '') {
   results = snapshot?.results ?? []; searchText = query; searchDone = snapshot?.searchDone ?? false;
   artists = snapshot?.artists ?? []; albums = snapshot?.albums ?? []; chosenArtist = snapshot?.chosenArtist; chosenAlbum = snapshot?.chosenAlbum;
   artistNotices = snapshot?.artistNotices ?? []; albumNotices = snapshot?.albumNotices ?? []; trackNotices = snapshot?.trackNotices ?? [];
-  allArtists = snapshot?.allArtists ?? false;
 }
 const browseHistory = page === 'participant' ? new BrowseHistory(browseSnapshot, snapshot => {
   catalogue.cancel(); resetCatalogueTask();
@@ -118,10 +113,9 @@ function openSearch(focus = true) {
   // Synchronous within the tap, so phones show the keyboard.
   if (focus) { restoringFocus = true; document.getElementById('catalogue-search')?.focus({ preventScroll: true }); restoringFocus = false; }
 }
-/** Done, or a shortcut elsewhere: return to the page in one step, then run `after`. */
-function closeSearch(after?: () => void) {
-  if (!searchOpen) { after?.(); return; }
-  afterClose = after;
+/** Done: return to the page in one step. */
+function closeSearch() {
+  if (!searchOpen) return;
   if (browseHistory && sheetDepth > 0) { history.go(-sheetDepth); return; }
   restoreBrowse(lastSearch); setSearchOpen(false); render(); searchClosed();
 }
@@ -133,8 +127,6 @@ function searchClosed() {
     const below = last.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom;
     if (below > 0) body.scrollTop += below;
   }
-  const after = afterClose; afterClose = undefined;
-  if (after) { after(); return; }
   restoringFocus = true; document.getElementById('music-search-open')?.focus({ preventScroll: true }); restoringFocus = false;
 }
 let stream: { close(): void } | undefined;
@@ -184,7 +176,7 @@ const library = new PreparationController(() => {
   if (page === 'participant' && view?.me && root.querySelector('.preparation-list')) { music.refresh(); renderParticipantPlayer(); } else render();
 }, () => Boolean(view?.me));
 const music = new PreparationPanel(library, { getView: () => view, starting: () => player.starting, changed: render, search: searchFor, openSearch: () => openSearch() });
-/** Runs a catalogue search as if typed, for example for a song an import didn't find. */
+/** Runs an artist search as if typed, for example for the artist of a song an import didn't find. */
 function searchFor(query: string) {
   if (stackedLayout()) openSearch(false);
   const input = document.getElementById('catalogue-search') as HTMLInputElement | null;
@@ -223,9 +215,7 @@ listeningOrder.setManagement(page === 'host' ? {
 } : undefined);
 const pageContent = el('div', undefined, 'app-content'); pageContent.id = 'main-content'; pageContent.tabIndex = -1;
 root.replaceChildren(pageContent);
-const playerReturn = page === 'participant' ? new PlayerReturn(go => closeSearch(go)) : undefined;
-if (playerReturn) root.append(playerReturn.element, music.bar.element);
-const updatePlayerReturn = () => playerReturn?.update(view, player.starting, realtime, error);
+if (page === 'participant') root.append(music.bar.element);
 /** The tab title says when it is your turn, also from another app's tab switcher. */
 function updateTitle() {
   const title = `${page === 'participant' && view?.me && view.myTurn ? '● Your turn · ' : ''}${pageTitles[page]} · ${productName}`;
@@ -516,7 +506,7 @@ function host() {
   main.classList.toggle('is-empty', !active.length);
   if (!active.length) {
     children(workspace, v.el('empty', 'p', 'Share the room. The first person to join gets the first turn.', 'muted'),
-      (!view.playbackAvailable || view.mode === 'demo') && v.get('setup', () => link('Set up music and speaker', '/host/settings')));
+      !view.playbackAvailable && v.get('setup', () => link('Set up music and speaker', '/host/settings')));
     return main;
   }
   children(workspace, renderPlayback(view));
@@ -527,7 +517,6 @@ function renderParticipantPlayer() {
   const card = root.querySelector('.playback-card');
   if (page !== 'participant' || !view?.me || !card || root.querySelector('.app-content > .error')) { render(); return; }
   const current = view; holdBelowPlayer(() => renderPlayback(current));
-  updatePlayerReturn();
   // Starting a track changes availability, not the search/list layout or their DOM state.
   for (const control of root.querySelectorAll<HTMLButtonElement>('[data-player-ready]')) prop(control, 'disabled', control.dataset.playerReady !== 'true' || player.starting);
 }
@@ -565,17 +554,21 @@ function participant() {
   const searchHeading = v.get('search-heading', () => el('div', undefined, 'catalogue-toolbar'));
   const searchTitle = v.get('search-title', () => { const node = el('div', undefined, 'catalogue-title'); const heading = el('h2', 'Find music'); heading.id = 'music-find-title'; node.append(heading); return node; });
   const searchNodes: Node[] = [searchHeading];
-  const realCatalogue = view.catalogue?.source === 'music-assistant';
-  if (realCatalogue && !view.catalogue?.playbackAvailable) {
+  // Without Music Assistant there is nothing to search: say who can fix it instead of offering a dead form.
+  const connected = Boolean(view.catalogue?.configured);
+  if (!connected || !view.catalogue?.playbackAvailable) {
     const hint = v.el('speaker-hint', 'p', undefined, 'muted small');
-    const prefix = v.get('speaker-prefix', () => document.createTextNode('')); text(prefix, view.output?.name ? 'Check the speaker in ' : 'Choose a speaker in ');
-    children(hint, prefix, v.get('speaker-settings', () => link('host settings', '/host/settings', 'inline-link')), v.get('speaker-suffix', () => document.createTextNode(' before playing. You can still prepare tracks.'))); searchNodes.push(hint);
+    const prefix = v.get('speaker-prefix', () => document.createTextNode(''));
+    text(prefix, !connected ? 'Connect Music Assistant in ' : view.output?.name ? 'Check the speaker in ' : 'Choose a speaker in ');
+    const suffix = v.get('speaker-suffix', () => document.createTextNode(''));
+    text(suffix, !connected ? ' to find music.' : ' before playing. You can still prepare tracks.');
+    children(hint, prefix, v.get('speaker-settings', () => link('host settings', '/host/settings', 'inline-link')), suffix); searchNodes.push(hint);
   }
   children(searchHeading, searchTitle);
   const form = v.el('form', 'form', undefined, 'search-form');
   const input = v.get('input', () => { const node = el('input'); node.type = 'search'; node.enterKeyHint = 'search'; node.required = true; node.maxLength = 200; node.id = 'catalogue-search'; node.setAttribute('aria-label', 'Search catalogue'); node.oninput = () => { searchText = node.value; }; return node; });
-  prop(input, 'placeholder', realCatalogue ? 'Artist or song' : 'Try Northern or Night'); prop(input, 'value', searchText);
-  const submit = v.get('submit', () => { const node = el('button'); node.id = 'catalogue-search-submit'; node.type = 'submit'; return node; }); text(submit, searching ? 'Searching…' : 'Search'); prop(submit, 'disabled', !realtime || !view.connected);
+  prop(input, 'placeholder', 'Artist'); prop(input, 'value', searchText); prop(input, 'disabled', !connected);
+  const submit = v.get('submit', () => { const node = el('button'); node.id = 'catalogue-search-submit'; node.type = 'submit'; return node; }); text(submit, searching ? 'Searching…' : 'Search'); prop(submit, 'disabled', !realtime || !view.connected || !connected);
   // Phones only (music-collection.css): empties the field and keeps the keyboard up for the next search.
   const clear = v.get('clear', () => {
     const node = el('button', '×', 'search-clear'); node.type = 'button'; node.setAttribute('aria-label', 'Clear search');
@@ -590,7 +583,7 @@ function participant() {
   form.onsubmit = event => {
     event.preventDefault(); if (submit.disabled) return;
     const query = input.value.trim();
-    if (!query) { catalogueError = realCatalogue ? 'Enter an artist or song to search.' : 'Enter a demo search.'; catalogueRetry = undefined; render(); return; }
+    if (!query) { catalogueError = 'Enter an artist to search.'; catalogueRetry = undefined; render(); return; }
     // Phone sheet: lower the keyboard so the results get the screen. A new search from the top level
     // replaces it in history; one started inside an artist or album is a step Back can return from.
     const replace = searchOpen && !chosenArtist;
@@ -598,33 +591,20 @@ function participant() {
     browseHistory?.remember();
     restoreBrowse(undefined, searchText); searching = true;
     void runCatalogue(async () => {
-      if (realCatalogue) {
-        // One query finds artists to browse and songs by title; a failed half is reported, not hidden.
-        const response = await catalogue.searchAll(query);
-        if (response) {
-          artists = response.artists?.artists ?? []; artistNotices = response.artists ? response.artists.notices ?? [] : ['Artists could not be loaded. Search again to retry.'];
-          results = response.songs?.tracks ?? []; trackNotices = response.songs ? response.songs.notices ?? [] : ['Songs could not be loaded. Search again to retry.'];
-          searchDone = true; return true;
-        }
-      } else {
-        const response = await catalogue.search(query);
-        if (response && view?.catalogue?.source === response.source) {
-          results = response.tracks; trackNotices = response.notices ?? []; searchDone = true; return true;
-        }
-      }
+      const response = await catalogue.searchArtists(query);
+      if (!response) return;
+      artists = response.artists ?? []; artistNotices = response.notices ?? []; searchDone = true; return true;
     }, replace);
   }; searchNodes.push(sheetBar);
   const found = v.get('found', () => { const node = el('section', undefined, 'catalogue-results'); node.setAttribute('aria-label', 'Music results'); return node; });
   attr(found, 'aria-busy', String(catalogueBusy));
   const foundNodes: Node[] = [];
-  const resultKind = realCatalogue && !chosenAlbum ? chosenArtist ? 'album' : 'artist' : 'track';
+  // One level at a time: matching artists, then the chosen artist's albums, then the chosen album's tracks.
+  const level = chosenAlbum ? 'track' : chosenArtist ? 'album' : 'artist';
   const counted = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`;
-  // Music Assistant search results: matching artists to browse, then songs by title.
-  const topLevel = realCatalogue && !chosenArtist;
-  const resultSummary = topLevel ? `${counted(artists.length, 'artist')} and ${counted(results.length, 'song')}`
-    : counted(resultKind === 'album' ? albums.length : results.length, resultKind);
-  const notices = topLevel ? [...artistNotices, ...trackNotices] : resultKind === 'album' ? albumNotices : trackNotices;
-  const announcement = searching ? 'Searching…' : catalogueBusy ? 'Loading music…' : searchDone ? `${resultSummary} ${realCatalogue ? 'returned' : 'found'}.` : '';
+  const resultSummary = counted(level === 'artist' ? artists.length : level === 'album' ? albums.length : results.length, level);
+  const notices = level === 'artist' ? artistNotices : level === 'album' ? albumNotices : trackNotices;
+  const announcement = searching ? 'Searching…' : catalogueBusy ? 'Loading music…' : searchDone ? `${resultSummary} found.` : '';
   if (searchAnnouncement.textContent !== announcement) searchAnnouncement.textContent = announcement;
   if (catalogueError) {
     const notice = v.el('error', 'div', undefined, 'list-notice'); const message = v.el('error-text', 'p', catalogueError); attr(message, 'role', 'alert');
@@ -635,7 +615,7 @@ function participant() {
     retry.onclick = () => { if (retryAction) void runCatalogue(retryAction, retryReplace); };
     children(notice, message, Boolean(catalogueRetry) && retry); foundNodes.push(notice);
   }
-  if (!searchDone && !searching && !catalogueError) foundNodes.push(v.el('instructions', 'p', realCatalogue ? 'Search for an artist or a song title.' : 'Search for music to add to your private list.', 'muted small'));
+  if (!searchDone && !searching && !catalogueError && connected) foundNodes.push(v.el('instructions', 'p', 'Search for an artist, then choose an album and a song.', 'muted small'));
   if (searching || catalogueBusy) { const status = v.el('status', 'p', searching ? 'Searching…' : 'Loading music…', 'muted'); attr(status, 'role', 'status'); foundNodes.push(status); }
   if (!catalogueBusy) for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
   if (chosenArtist) {
@@ -665,31 +645,10 @@ function participant() {
       }); },
     });
   };
-  const bothKinds = topLevel && !catalogueBusy && artists.length > 0 && results.length > 0;
-  if (bothKinds) foundNodes.push(v.el('artists-heading', 'h3', 'Artists', 'results-heading'));
-  const shownArtists = bothKinds && !allArtists ? artists.slice(0, 4) : artists;
-  for (const artist of !catalogueBusy && topLevel ? shownArtists : []) {
-    foundNodes.push(row('artist', artist));
-  }
-  if (!catalogueBusy && topLevel && shownArtists.length < artists.length) {
-    const more = v.get('more-artists', () => { const node = el('button', '', 'secondary results-more'); node.type = 'button'; return node; });
-    text(more, `Show all ${artists.length} artists`); more.onclick = () => { allArtists = true; render(); }; foundNodes.push(more);
-  }
-  if (bothKinds) foundNodes.push(v.el('songs-heading', 'h3', 'Songs', 'results-heading'));
-  for (const album of !catalogueBusy && chosenArtist && !chosenAlbum ? albums : []) {
-    foundNodes.push(row('album', album));
-  }
-  const emptyBrowse = searchDone && !catalogueBusy && realCatalogue && ((topLevel && !artists.length && !results.length) || (chosenArtist && !chosenAlbum && !albums.length) || (chosenAlbum && !results.length));
-  if (emptyBrowse) foundNodes.push(v.el('empty-browse', 'p', chosenArtist && !chosenAlbum
-    ? 'No albums returned for this artist.'
-    : chosenAlbum ? 'No tracks returned for this album.' : 'No artists or songs found. Try another search.', 'muted'));
-  if (searchDone && !catalogueBusy && !realCatalogue && !results.length) {
-    const empty = v.el('empty-tracks', 'p', 'No tracks found in the demo catalogue. Try “Northern”, “Summer”, or “Night”.', 'muted');
-    attr(empty, 'role', 'status'); foundNodes.push(empty);
-  }
-  for (const group of catalogueBusy ? [] : results) {
-    foundNodes.push(row('track', group));
-  }
+  const shown = catalogueBusy ? [] : level === 'artist' ? artists : level === 'album' ? albums : results;
+  for (const item of shown) foundNodes.push(row(level, item));
+  if (searchDone && !catalogueBusy && !shown.length) foundNodes.push(v.el('empty-browse', 'p', level === 'artist' ? 'No artists found. Try another search.'
+    : level === 'album' ? 'No albums returned for this artist.' : 'No tracks returned for this album.', 'muted'));
   for (const id of catalogueRows.keys()) if (!rowIds.has(id)) catalogueRows.delete(id);
   children(found, ...foundNodes);
   // The open phone sheet shows its instructions before the first search.
@@ -814,7 +773,6 @@ function render() {
       actions); content.push(main);
   }
   children(pageContent, ...content);
-  updatePlayerReturn();
   for (const [key, top] of scrollRegions) { const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(node => node.dataset.scrollKey === key); if (region) prop(region, 'scrollTop', top); }
   const replacement = focused?.id ? document.getElementById(focused.id)
     : focused?.dataset.focusKey ? [...root.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey) : null;
@@ -891,7 +849,7 @@ return () => {
   listeningOrder.setDisplayInvitation();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
   stream?.close(); stream = undefined; library.stop(); music.stopUploads(); releaseEvents();
-  playback?.clear(); publicRoom?.destroy(); playerReturn?.destroy(); music.bar.destroy(); browseHistory?.destroy();
+  playback?.clear(); publicRoom?.destroy(); music.bar.destroy(); browseHistory?.destroy();
   turnAnnouncement.remove(); searchAnnouncement.remove(); delete document.body.dataset.musicSearch;
   root.replaceChildren();
 };

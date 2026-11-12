@@ -1,11 +1,9 @@
 import { expect } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSong, fixtureSongOnDisplay } from './app-fixture';
 
 test('settings persist auto reveal and all progress markers disappear after automatic or manual reveal', async ({ page, context, isolatedApp }) => {
-  const headers = { Origin: isolatedApp.origin };
+  const headers = { Origin: isolatedApp.origin }; await isolatedApp.connect();
   const joined = await (await page.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Auto listener' } })).json();
-  let elapsed = 10;
-  isolatedApp.demo.progress = () => ({ elapsed, duration: 100 });
   await page.goto('/host/settings#playback');
   const toggle = page.getByRole('checkbox', { name: 'Automatically reveal at 70%' });
   await expect(toggle).toBeEnabled(); await expect(toggle).toBeChecked();
@@ -13,7 +11,8 @@ test('settings persist auto reveal and all progress markers disappear after auto
   await page.reload(); await expect(toggle).not.toBeChecked();
   const participant = await context.newPage(); const display = await context.newPage(); const host = await context.newPage();
   const start = async (previousPlaybackId: string | null) => {
-    const response = await page.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId, trackId: 'demo:aurora' } });
+    const track = await catalogueTrack(page.request, isolatedApp.origin);
+    const response = await page.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId, trackId: track.id } });
     expect(response.ok()).toBe(true); return response.json();
   };
   const playing = await start(null);
@@ -24,11 +23,12 @@ test('settings persist auto reveal and all progress markers disappear after auto
     await expect(tab.locator('.auto-reveal-marker')).toBeVisible();
     await expect(tab.locator('.auto-reveal-marker')).toHaveAccessibleName('Automatic reveal at 70%');
   }
-  elapsed = 70; isolatedApp.demo.onProgress();
-  await expect(display.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
+  // 70% of the fixture song's 180 seconds, as Music Assistant would report it.
+  isolatedApp.remote.queue.elapsed_time = 126;
+  await expect(display.getByRole('heading', { name: fixtureSongOnDisplay, exact: true })).toBeVisible();
   for (const tab of [participant, display, host]) await expect(tab.locator('.auto-reveal-marker')).toBeHidden();
-  await expect(host.locator('#host-player')).not.toContainText('Northern Lights');
-  elapsed = 10; const replacement = await start(playing.ownPlayback.id);
+  await expect(host.locator('#host-player')).not.toContainText(fixtureSong);
+  const replacement = await start(playing.ownPlayback.id);
   await expect(display.locator('.auto-reveal-marker')).toBeVisible();
   await page.request.post('/api/participant/reveal', { headers, data: { turnId: joined.turnId, playbackId: replacement.ownPlayback.id } });
   for (const tab of [participant, display, host]) await expect(tab.locator('.auto-reveal-marker')).toBeHidden();

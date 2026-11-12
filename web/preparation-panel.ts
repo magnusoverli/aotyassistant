@@ -44,7 +44,7 @@ export class PreparationPanel {
   private collection?: HTMLElement;
   /** Phones: the playlist's one-line summary while browsing below it. */
   readonly bar = new ListBar(() => this.focusList());
-  /** Imports a list shared from SuShe Online. Needs Music Assistant; there is no demo version. */
+  /** Imports a list shared from SuShe Online, through Music Assistant. */
   private importer: ListImport;
   /** Empties the playlist and its history after a confirmation, to start from scratch. */
   private clearer: ClearList;
@@ -155,7 +155,7 @@ export class PreparationPanel {
   private renderList() {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
-    const canImport = this.options.getView()?.catalogue?.source === 'music-assistant';
+    const canImport = Boolean(this.options.getView()?.catalogue?.configured);
     const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
       this.moving, [...this.open], this.historyLimits.played, this.historyLimits.removed, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport, this.importer.busy]);
     if (this.list && key === this.listKey) return this.list;
@@ -207,7 +207,7 @@ export class PreparationPanel {
       node.setAttribute('aria-controls', 'music-find'); node.onclick = () => this.options.openSearch();
       node.append(searchIcon(), el('span')); return node;
     });
-    text(find.lastElementChild!, canImport ? 'Search artists or songs' : 'Search music');
+    text(find.lastElementChild!, 'Search for an artist');
     const bodyNodes: Node[] = []; const listNodes: Node[] = this.withSearch ? [heading, find, status] : [heading, status];
     if (library.error) {
       const notice = v.el('error', 'div', undefined, 'list-notice'); attr(notice, 'role', 'alert'); const messages: Node[] = [v.el('error-message', 'p', library.error)];
@@ -226,7 +226,7 @@ export class PreparationPanel {
       const review = v.el('review', 'div', undefined, 'list-notice'); children(review, v.el('review-message', 'p', 'A previous play attempt needs review. The track is still saved; check the player before trying again.'),
         this.control('review', 'Keep in list', () => library.edit('review', { entryId: library.view?.reviewEntryId }))); bodyNodes.push(review);
     }
-    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', canImport ? 'No songs yet. Search to add one, or import a list.' : 'No songs yet. Search to add one.', 'muted list-empty'));
+    if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', canImport ? 'No songs yet. Search for an artist to add one, or import a list.' : 'No songs yet.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
     const drag = this.drag ??= new ListDrag(ordered, body, {
       enabled: () => !this.library.locked && !this.library.loading && !this.moving && (this.library.view?.upcoming.length ?? 0) > 1,

@@ -1,9 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type Browser, type Page } from '@playwright/test';
-import { test } from './app-fixture';
-import type { DemoAdapter } from '../../src/playback';
+import { test, catalogueTrack } from './app-fixture';
+import { closeSearch, openSearch } from './preparation-helpers';
+/** The parts of the test app these helpers use: connect the fixture Music Assistant and add songs to its album. */
+type Catalogue = { connect(): Promise<void>; addTracks(songs: { title: string; artist?: string; album?: string; duration?: number }[]): unknown };
 
-async function workspace(browser: Browser, host: Page, origin: string, demo: DemoAdapter, count = 24) {
+async function workspace(browser: Browser, host: Page, origin: string, app: Catalogue, count = 24) {
+  await app.connect();
   const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: origin } });
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
   const joined = await context.request.post(origin + '/api/participant/join', { data: { pin: '1234', nickname: 'Workspace listener' }, headers: { Origin: origin } });
@@ -11,8 +14,8 @@ async function workspace(browser: Browser, host: Page, origin: string, demo: Dem
   const request = async (path: string, data: unknown) => context.request.post(origin + '/api/participant/preparations' + path, { data, headers: { Origin: origin } });
   let library = await (await request('/init', {})).json();
   for (let index = 0; index < count; index++) {
-    const track = { id: `demo:workspace-${index}`, title: `Workspace selection ${String(index + 1).padStart(2, '0')}${index === 0 ? ' — a long title that still needs to be readable and kept' : ''}`, artist: 'An artist with a deliberately long name', album: 'A very long album name for a narrow sidebar', duration: 60 };
-    demo.catalogue.push(track);
+    const song = { title: `Workspace selection ${String(index + 1).padStart(2, '0')}${index === 0 ? ' — a long title that still needs to be readable and kept' : ''}`, artist: 'An artist with a deliberately long name', album: 'A very long album name for a narrow sidebar', duration: 60 };
+    app.addTracks([song]); const track = await catalogueTrack(context.request, origin, song.title);
     const response = await request('/add', { trackId: track.id, operation: { id: randomUUID(), issuedAt: Date.now(), revision: library.revision } });
     expect(response.ok()).toBe(true); library = (await response.json()).view;
   }
@@ -22,7 +25,7 @@ async function workspace(browser: Browser, host: Page, origin: string, demo: Dem
 }
 
 test('participant typography, surfaces and desktop alignment match the host pages, with uploads beside search', async ({ browser, page: host, isolatedApp }) => {
-  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 3); const page = r.page;
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp, 3); const page = r.page;
   const typography = (node: Element) => {
     const style = getComputedStyle(node);
     return { family: style.fontFamily, weight: style.fontWeight, size: style.fontSize, spacing: style.letterSpacing };
@@ -77,7 +80,7 @@ test('participant typography, surfaces and desktop alignment match the host page
 });
 
 test('search exposes pending/results feedback and restores keyboard focus without starting playback', async ({ browser, page: host, isolatedApp }) => {
-  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 1); const page = r.page;
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp, 1); const page = r.page;
   let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; });
   await page.route('**/api/participant/search**', async route => { await pending; await route.continue(); });
   try {
@@ -96,9 +99,11 @@ test('search exposes pending/results feedback and restores keyboard focus withou
 });
 
 test('saved-list changes update the player selection without adding playback controls to the list', async ({ browser, page: host, isolatedApp }) => {
-  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 3); const page = r.page;
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp, 3); const page = r.page;
   try {
     await page.setViewportSize({ width: 390, height: 844 });
+    // Phones type in full-screen search; the player behind it still follows the list.
+    await openSearch(page);
     const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Keep this query');
     await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 6));
     const saved = await (await page.request.get('/api/participant/preparations/state')).json();
@@ -109,6 +114,7 @@ test('saved-list changes update the player selection without adding playback con
     expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 6]);
     await expect(page.locator('.preparation-list').getByRole('button', { name: /^(Play|Pause|Resume|Finish turn)/, includeHidden: true })).toHaveCount(0);
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
+    await closeSearch(page); await expect(input).toHaveValue('Keep this query');
     await page.locator('.playback-card').getByRole('button', { name: 'Play pick', exact: true }).click();
     await expect(page.locator('.playback-card').getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(page.locator('.list-count')).toHaveText('2 tracks');
@@ -125,7 +131,7 @@ test('saved-list changes update the player selection without adding playback con
 });
 
 test('search and one private list share desktop/phone layouts, including long metadata and short viewports', async ({ browser, page: host, isolatedApp }) => {
-  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo);
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp);
   const page = r.page;
   try {
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Workspace'); await page.getByRole('button', { name: 'Search', exact: true }).click();
@@ -164,22 +170,26 @@ test('search and one private list share desktop/phone layouts, including long me
 });
 
 test('owner and room updates preserve search/caret, expanded list scroll, and the shared header', async ({ browser, page: host, isolatedApp }) => {
-  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo); const page = r.page;
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp); const page = r.page;
   try {
     await page.setViewportSize({ width: 390, height: 844 });
-    const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Still searching');
-    await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 7));
+    // With search closed, a list change keeps the page and the list's own scroll position.
     await page.locator('.list-body').evaluate(node => { node.scrollTop = 260; });
     await page.locator('header').evaluate(node => { (node as HTMLElement).dataset.sameNode = 'yes'; });
     const before = await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }));
     const saved = await (await page.request.get('/api/participant/preparations/state')).json();
-    expect((await r.request('/add', { trackId: 'demo:aurora', operation: { id: randomUUID(), issuedAt: Date.now(), revision: saved.revision } })).ok()).toBe(true);
+    const track = await catalogueTrack(r.context.request, isolatedApp.origin);
+    expect((await r.request('/add', { trackId: track.id, operation: { id: randomUUID(), issuedAt: Date.now(), revision: saved.revision } })).ok()).toBe(true);
     await expect(page.locator('.list-count')).toHaveText('25 tracks');
+    expect(await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }))).toEqual(before);
+    // In search, a room change keeps the typed query, its selection and focus.
+    await openSearch(page);
+    const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Still searching');
+    await input.evaluate(node => (node as HTMLInputElement).setSelectionRange(2, 7));
     let session = await (await host.request.get('/api/host/state')).json();
     session = await (await r.post('/api/host/reorder', { ids: session.active.map((person: { id: string }) => person.id), revision: session.revision })).json();
     await expect(input).toBeFocused(); await expect(input).toHaveValue('Still searching');
     expect(await input.evaluate(node => [(node as HTMLInputElement).selectionStart, (node as HTMLInputElement).selectionEnd])).toEqual([2, 7]);
-    expect(await page.evaluate(() => ({ y: scrollY, list: document.querySelector('.list-body')!.scrollTop }))).toEqual(before);
     await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
     await expect(page.locator('header')).toHaveAttribute('data-same-node', 'yes');
     await r.post('/api/host/remove', { id: session.current.id, revision: session.revision });
@@ -191,7 +201,7 @@ test('owner and room updates preserve search/caret, expanded list scroll, and th
 });
 
 test('adding from results keeps compact list, query, focus and scroll without starting audio', async ({ browser, page: host, isolatedApp }) => {
-  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp.demo, 1); const page = r.page;
+  const r = await workspace(browser, host, isolatedApp.origin, isolatedApp, 1); const page = r.page;
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     const input = page.getByRole('searchbox', { name: 'Search catalogue' }); await input.fill('Summer');

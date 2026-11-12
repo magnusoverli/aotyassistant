@@ -155,14 +155,15 @@ export class ListImport {
     if (job.unreadable) nodes.push(el('p', `${plural(job.unreadable, 'song in the link', 'songs in the link')} couldn’t be read.`, 'muted'));
     if (job.missing.length) {
       nodes.push(el('h3', `Not found · ${job.missing.length}`));
-      nodes.push(el('p', 'Search for these yourself, or upload a file.', 'muted small'));
+      nodes.push(el('p', 'Find their artist to choose them yourself, or upload a file.', 'muted small'));
       const list = el('ul', undefined, 'import-missing');
       for (const song of job.missing) {
         const item = el('li'); const copy = el('div');
         copy.append(el('strong', song.title), el('p', [song.artist, song.album].filter(Boolean).join(' · '), 'muted'));
         if (song.failed) copy.append(el('span', 'Couldn’t check · try searching', 'import-failed'));
-        const search = this.action('Search', () => { this.dialog.close(); this.options.search(`${song.artist} ${song.title}`); });
-        search.setAttribute('aria-label', `Search for ${song.title}`);
+        // Searches find artists: open this song's artist, then its album and the song.
+        const search = this.action('Find artist', () => { this.dialog.close(); this.options.search(song.artist); });
+        search.setAttribute('aria-label', `Find ${song.artist} to choose ${song.title}`);
         item.append(copy, search); list.append(item);
       }
       nodes.push(list);

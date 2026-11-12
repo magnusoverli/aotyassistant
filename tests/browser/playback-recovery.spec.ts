@@ -1,5 +1,6 @@
 import { expect } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack } from './app-fixture';
+import { openSearch } from './preparation-helpers';
 
 for (const width of [1440, 390]) test(`playback problems show distinct reasons and recovery only when needed without losing browsing at ${width}px`, async ({ page, context, isolatedApp }) => {
   await page.setViewportSize({ width, height: 900 });
@@ -8,13 +9,13 @@ for (const width of [1440, 390]) test(`playback problems show distinct reasons a
   await manager.selectDestination('sonos:room', manager.view().revision);
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   const joined = await (await post('/api/participant/join', { pin: '1234', nickname: 'Current listener' })).json();
-  const found = await (await post('/api/participant/search', { turnId: joined.turnId, query: 'fixture' })).json();
-  const start = () => post('/api/participant/play', { turnId: joined.turnId, previousPlaybackId: null, trackId: found.tracks[0].id });
+  const found = { tracks: [await catalogueTrack(page.request, isolatedApp.origin)] };
+  const start = () => post('/api/participant/play', { turnId: joined.turnId, previousPlaybackId: null, trackId: found.tracks[0]!.id });
   expect((await start()).ok()).toBe(true);
   const host = await context.newPage(); await host.setViewportSize({ width, height: 900 });
   await page.goto('/participant'); await host.goto('/host');
   const input = page.getByRole('searchbox', { name: 'Search catalogue' });
-  await input.fill('Keep this private search');
+  await openSearch(page); await input.fill('Keep this private search');
   await input.evaluate(node => { (window as unknown as { originalSearch: Element }).originalSearch = node; });
   const writesBefore = remote.calls.filter(call => /player_queues\/(play_media|pause|resume|stop)$/.test(call.command)).length;
   remote.failReads('player_queues/get_active_queue', 2); remote.notify();

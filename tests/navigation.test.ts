@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { headerModel, routes, pageForPath, spaDestination, type HeaderView, type Page } from '../web/navigation.js';
 
-const view: HeaderView = { mode: 'demo', me: { id: 'me', nickname: 'Literal <name>' } };
+const view: HeaderView = { me: { id: 'me', nickname: 'Literal <name>' } };
 
 test('SPA navigation retains cross-page fragments, queries and Ingress without intercepting native anchors or external pages', () => {
   const current = new URL('https://ha.example/api/hassio_ingress/room/display');

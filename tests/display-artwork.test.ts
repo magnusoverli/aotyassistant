@@ -12,7 +12,7 @@ function deferred<T>() {
 const tick = () => new Promise<void>(resolve => setImmediate(resolve));
 const images: DisplayImages = { artwork: { body: Uint8Array.from([255, 216, 255, 1]), contentType: 'image/jpeg' },
   artistArtwork: { body: Uint8Array.from([1, 2, 3, 4]), contentType: 'image/png' } };
-const base: View = { mode: 'music-assistant', connected: true, roomId: 'room', turnId: 'turn', revision: 1, current: { id: 'listener', nickname: 'Listener' }, next: null,
+const base: View = { connected: true, roomId: 'room', turnId: 'turn', revision: 1, current: { id: 'listener', nickname: 'Listener' }, next: null,
   progress: { id: 'playback', status: 'playing', fraction: .1 }, nowPlaying: { revealed: false } };
 const revealed: View = { ...base, nowPlaying: { revealed: true, track: { id: 'track', title: 'Hidden song', artist: 'Hidden artist', album: 'Hidden album', duration: 180 } } };
 

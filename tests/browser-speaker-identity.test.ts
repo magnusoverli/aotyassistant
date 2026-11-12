@@ -9,7 +9,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 import { ingressListener } from '../src/ingress.js';
 import { BrowserSpeakers, type BrowserSpeakerView } from '../src/browser-speakers.js';
@@ -21,8 +21,8 @@ for (const ingress of [false, true]) test(ingress ? 'Ingress disables browser sp
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const base = ingress ? '/api/hassio_ingress/fixture' : '';
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: origin,
-    dataDir: await mkdtemp(join(tmpdir(), 'doom-room-speaker-identity-')), demoSeconds: 3600 };
-  const adapter = new DemoAdapter(3600); t.after(() => adapter.close());
+    dataDir: await mkdtemp(join(tmpdir(), 'doom-room-speaker-identity-')) };
+  const adapter = new FakePlayback(3600); t.after(() => adapter.close());
   const engine = new Engine(new FileStore(config.dataDir), adapter, origin); await engine.init();
   const speakers = new BrowserSpeakers(() => ({ origin: 'http://127.0.0.1:8095', token: 'fixture-only', epoch: '1', scope: 'fixture', version: '2.10.9', serverId: 'fixture' })); t.after(() => speakers.close());
   const { app, close } = createApp(engine, config, 'web', undefined, undefined, undefined, undefined, undefined, speakers);

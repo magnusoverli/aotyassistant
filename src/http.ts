@@ -91,14 +91,14 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     // Supervisor checks process liveness, never speaker recovery or dependency readiness.
     if (req.path === '/api/health' && ['GET', 'HEAD'].includes(req.method)) {
       res.status(engine.live ? 200 : 503).json({ ok: engine.live, storageAvailable: engine.storageAvailable,
-        playbackAvailable: engine.playbackAvailable, mode: engine.adapter.mode, backupPaused: durability.paused }); return;
+        playbackAvailable: engine.playbackAvailable, backupPaused: durability.paused }); return;
     }
     if (!engine.live) return next(new AppError(503, 'The application is shutting down. Try again after it restarts.'));
     if (ingress) {
       if (req.path === '/' && ['GET', 'HEAD'].includes(req.method)) {
         res.redirect(`${ingress.base}/host`); return;
       }
-      if (!(['/host', '/host/settings', '/join', '/participant', '/user/settings', '/display', '/demo-cover.svg'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
+      if (!(['/host', '/host/settings', '/join', '/participant', '/user/settings', '/display'].includes(req.path) || req.path.startsWith('/assets/') || req.path.startsWith('/api/host/') || req.path.startsWith('/api/browser-speaker/') || req.path.startsWith('/api/participant/') || req.path.startsWith('/api/display/') || req.path.startsWith('/api/user-pictures/') || req.path === '/api/listening-order/events' || req.path === '/api/logo' || req.path.startsWith('/api/logo/'))) {
         return next(new AppError(404, 'Page not found.'));
       }
     }
@@ -291,9 +291,6 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   }));
   app.post('/api/participant/finish', jsonBody(z.strictObject({ turnId: turn }), async (input, req, res) => {
     await engine.advance(input.turnId, participantCredential(req)); res.json(engine.view(participant(req)));
-  }));
-  app.post('/api/participant/search', jsonBody(z.strictObject({ turnId: turn, query: z.string().trim().min(1).max(200) }), async (input, req, res) => {
-    await catalogueRead(req, 'search', async () => res.json(await engine.search(participantCredential(req), input.turnId, input.query)));
   }));
   app.post('/api/participant/browse', jsonBody(z.strictObject({ kind: z.enum(['artists', 'albums', 'tracks']), value: z.string().trim().min(1).max(1000) }), async (input, req, res) => {
     await catalogueRead(req, 'browse', async () => res.json(await engine.browse(participantCredential(req), input.kind, input.value)));

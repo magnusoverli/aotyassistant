@@ -6,7 +6,7 @@ import type { AddressInfo } from 'node:net';
 import { createServer } from 'node:http';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 import type { Config } from '../src/config.js';
 import type { View } from '../src/model.js';
@@ -16,8 +16,8 @@ test('HTTP cookies, input validation, role privacy, and filtered/revocable event
   const port = (server.address() as AddressInfo).port;
   const base = `http://127.0.0.1:${port}`;
   const config: Config = { port, listenHost: '127.0.0.1', guestUrl: base,
-    dataDir: await mkdtemp('/tmp/opencode/doom-room-http-'), demoSeconds: 3600 };
-  const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl);
+    dataDir: await mkdtemp('/tmp/opencode/doom-room-http-') };
+  const adapter = new FakePlayback(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl);
   await engine.init();
   const { app, close } = createApp(engine, config, 'web');
   server.on('request', app);

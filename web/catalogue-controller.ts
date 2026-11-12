@@ -1,9 +1,9 @@
-import type { CatalogueBrowse, CatalogueSearch, View } from '../src/model';
+import type { CatalogueBrowse, View } from '../src/model';
 import { requestJson } from './request';
 
 /** Private catalogue lifetime excludes turn/speaker changes, but includes membership and credentials. */
 export function catalogueIdentity(view: View | undefined) {
-  return JSON.stringify([view?.roomId, view?.me?.id, view?.catalogue?.source, view?.catalogue?.revision]);
+  return JSON.stringify([view?.roomId, view?.me?.id, view?.catalogue?.configured, view?.catalogue?.revision]);
 }
 
 type Early = { key: string; identity: string; controller: AbortController; result: Promise<CatalogueBrowse> };
@@ -30,22 +30,8 @@ export class CatalogueController {
     return this.task(signal => early?.result ?? this.request<T>(path, data, 18_000, signal), early?.controller);
   }
 
-  search(query: string) {
-    return this.load<CatalogueSearch>('/api/participant/search', { turnId: this.getView()?.turnId, query });
-  }
-
-  /** Music Assistant: matching artists and song titles for one query, read together.
-   * Either half may fail on its own; the search fails only when both do. */
-  searchAll(query: string) {
-    return this.task(async signal => {
-      const [artists, songs] = await Promise.allSettled([
-        this.request<CatalogueBrowse>('/api/participant/browse', { kind: 'artists', value: query }, 18_000, signal),
-        this.request<CatalogueSearch>('/api/participant/search', { turnId: this.getView()?.turnId, query }, 18_000, signal),
-      ]);
-      if (artists.status === 'rejected' && songs.status === 'rejected') throw artists.reason;
-      return { artists: artists.status === 'fulfilled' ? artists.value : undefined, songs: songs.status === 'fulfilled' ? songs.value : undefined };
-    });
-  }
+  /** A search finds artists only: music is chosen artist, then album, then track. */
+  searchArtists(query: string) { return this.browse('artists', query); }
 
   /** Starts a browse when a finger or button goes down; the click that follows reuses it. */
   prepare(kind: 'artists' | 'albums' | 'tracks', value: string) {

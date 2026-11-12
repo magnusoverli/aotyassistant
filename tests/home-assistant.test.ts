@@ -11,7 +11,7 @@ import { SetupManager } from '../src/setup.js';
 import { IntegrationFileStore, IntegrationManager } from '../src/integrations.js';
 import { FileStore, writePrivateJson } from '../src/store.js';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 import { ingressListener } from '../src/ingress.js';
 import { DurabilityBarrier, durability } from '../src/backup.js';
@@ -66,7 +66,7 @@ test('automatic addresses refresh after stable discovery; explicit overrides pre
   manager.attachUploads({} as never, 'http://localhost:3000');
   const client = { read: async (path: string) => path === '/addons/self/info' ? { network: { '3000/tcp': 4000 } }
     : path === '/network/info' ? { interfaces: [{ primary: true, ipv4: { address: ['192.168.1.8/24'] } }] } : {} };
-  const config = { port: 3000, listenHost: '0.0.0.0', guestUrl: 'http://localhost:3000', dataDir: dir, demoSeconds: 30, addon: true };
+  const config = { port: 3000, listenHost: '0.0.0.0', guestUrl: 'http://localhost:3000', dataDir: dir, addon: true };
   let guest = ''; const setup = new SetupManager(config, manager, value => { guest = value; }, client, async () => [], async () => []);
   t.after(() => setup.close()); await setup.refresh(); assert.equal(guest, 'http://192.168.1.8:4000');
   const changed = await supervisorHints({ read: async path => path === '/network/info' ? { interfaces: [{ primary: true, ipv4: { address: ['192.168.1.9/24'] } }] } : client.read(path) }, 3000);
@@ -81,7 +81,7 @@ test('automatic addresses refresh after stable discovery; explicit overrides pre
   assert.equal(explicit.allowsGuestHost('other.local:4000'), false);
   const savedHostname = 'http://homeassistant.local:4000';
   await restored.saveGuestOrigin(savedHostname, restored.view().revision);
-  const local = await listen(t); const adapter = new DemoAdapter();
+  const local = await listen(t); const adapter = new FakePlayback();
   const engine = new Engine(new FileStore(dir), adapter, guest, restored); await engine.init();
   const http = createApp(engine, { ...config, port: local.port }, 'web', restored, undefined, undefined, explicit);
   local.server.on('request', http.app); t.after(() => { http.close(); adapter.close(); });
@@ -119,9 +119,9 @@ async function authorizationFixture(t: TestContext) {
     else { res.statusCode = 400; res.end('unsupported'); }
   });
   const dir = await directory(t); const manager = new IntegrationManager(new IntegrationFileStore(dir)); await manager.init();
-  const local = await listen(t); const adapter = new DemoAdapter();
+  const local = await listen(t); const adapter = new FakePlayback();
   const engine = new Engine(new FileStore(dir), adapter, local.origin, manager); await engine.init();
-  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.origin, dataDir: dir, demoSeconds: 30 }, 'web', manager);
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.origin, dataDir: dir }, 'web', manager);
   local.server.on('request', http.app); t.after(() => { http.close(); adapter.close(); });
   const post = (path: string, data: unknown) => fetch(`${local.origin}${path}`, { method: 'POST', headers: { Origin: local.origin, 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
   const start = async () => {

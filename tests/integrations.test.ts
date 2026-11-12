@@ -10,8 +10,9 @@ import { IntegrationManager, IntegrationFileStore, type IntegrationView } from '
 import { createApp } from '../src/http.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
-import { AppError, type CatalogueTrack } from '../src/model.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
+import { AppError, type CatalogueArtist } from '../src/model.js';
+import { stubApi } from './fixtures/stub-api.js';
 import type { Config } from '../src/config.js';
 
 const privateTrack = 'Never disclose this current song';
@@ -193,9 +194,9 @@ test('HTTP integration endpoints use explicit open-host routes with sanitization
   const mock = await mockMusicAssistant(); t.after(mock.close);
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config: Config = { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: await mkdtemp('/tmp/opencode/doom-room-integration-http-'), demoSeconds: 30 };
+  const config: Config = { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: await mkdtemp('/tmp/opencode/doom-room-integration-http-') };
   const manager = new IntegrationManager(new IntegrationFileStore(config.dataDir)); await manager.init();
-  const adapter = new DemoAdapter(); const engine = new Engine(new FileStore(config.dataDir), adapter, origin, manager); await engine.init();
+  const adapter = new FakePlayback(); const engine = new Engine(new FileStore(config.dataDir), adapter, origin, manager); await engine.init();
   const { app, close } = createApp(engine, config, 'web', manager); server.on('request', app);
   t.after(() => { close(); adapter.close(); server.closeAllConnections(); server.close(); });
   const request = (path: string, data?: unknown, requestOrigin = origin) => fetch(`${origin}${path}`, {
@@ -230,15 +231,15 @@ test('catalogue search uses bounded track-only requests and preserves recording 
   mock.setMode('normal'); await assert.rejects(new MusicAssistantClient(mock.origin, 'bad-token').search('query'), error => error instanceof AppError && error.message.includes('rejected'));
 });
 
-test('changing connection settings during an in-flight search discards the old results', async () => {
-  let resolveSearch!: (tracks: CatalogueTrack[]) => void;
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-search-race-')), () => ({
-    async inspect() { throw new Error('Not used'); }, async activeQueue() { return 'unused'; },
-    search: () => new Promise(resolve => { resolveSearch = resolve; }),
+test('changing connection settings during an in-flight artist search discards the old results', async () => {
+  let resolveSearch!: (page: { items: CatalogueArtist[] }) => void;
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-search-race-')), () => stubApi({
+    async activeQueue() { return 'unused'; },
+    artists: () => new Promise(resolve => { resolveSearch = resolve; }),
   }));
   await manager.init(); await manager.save('http://localhost:8095', 'old-token', 0);
-  const result = manager.search('query'); await manager.save('http://localhost:8095', 'new-token', manager.view().revision);
-  resolveSearch([]); await assert.rejects(result, error => error instanceof AppError && error.status === 409);
+  const result = manager.browse('artists', 'query', 'member'); await manager.save('http://localhost:8095', 'new-token', manager.view().revision);
+  resolveSearch({ items: [] }); await assert.rejects(result, error => error instanceof AppError && error.status === 409);
 });
 
 test('slow coalesced discovery does not block settings and cannot publish an old connection report', async () => {

@@ -1,10 +1,10 @@
+import { findCatalogueTrack } from './fixtures/find-track.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { IntegrationFileStore, IntegrationManager } from '../src/integrations.js';
 import { ManagedPlayback } from '../src/live-playback.js';
-import { DemoAdapter } from '../src/playback.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 const room = { player_id: 'sonos:room', name: 'Living room', available: true };
@@ -16,7 +16,7 @@ async function eventually(check: () => boolean) {
 async function fixture() {
   const remote = await startMusicAssistantFixture();
   const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-output-'))); await manager.init();
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 60_000);
+  const adapter = new ManagedPlayback(manager, 60_000);
   await manager.save(remote.origin, 'fixture-token', 0);
   return { remote, manager, adapter, close() { adapter.close(); remote.close(); } };
 }
@@ -93,7 +93,7 @@ test('stale observations cannot reverse a confirmed switch and remembered readin
 test('speaker disappearance keeps owned playback guarded and recovery never resumes audio', async t => {
   const f = await fixture(); t.after(f.close); const { manager, remote, adapter } = f;
   await manager.selectDestination(room.player_id, manager.view().revision);
-  const [track] = await manager.search('fixture', 'member');
+  const [track] = await findCatalogueTrack(manager, 'member');
   await adapter.play(await adapter.resolve(track!.id, 'member'), 'owned-track');
   remote.setSpeakers([bedroom]); await manager.check(manager.view().revision);
   assert.equal(manager.output.state, 'unavailable'); assert.equal(adapter.ownsPlayback, true);

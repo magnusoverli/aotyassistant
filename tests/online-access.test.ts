@@ -18,7 +18,7 @@ import { createApp } from '../src/http.js';
 import { ingressListener } from '../src/ingress.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { durability } from '../src/backup.js';
 import { UploadAssets } from '../src/uploads.js';
 import { fixtureUploadAnalysis, uploadBytes } from './fixtures/uploads.js';
@@ -193,7 +193,7 @@ test('every participant action is reachable through an online invitation', () =>
   const actions = [...playlist.matchAll(/app\.post\(`\$\{prefix\}\/([a-z/-]+)`/g)].map(match => match[1]!);
   for (const list of playlist.matchAll(/for \(const action of \[([^\]]+)\]/g)) actions.push(...[...list[1]!.matchAll(/'([a-z-]+)'/g)].map(match => match[1]!));
   paths.push(...actions.map(action => `/api/participant/preparations/${action}`));
-  for (const expected of ['/api/participant/search', '/api/participant/preparations/import', '/api/participant/preparations/import/stop',
+  for (const expected of ['/api/participant/browse', '/api/participant/preparations/import', '/api/participant/preparations/import/stop',
     '/api/participant/preparations/clear', '/api/participant/preparations/move', '/api/participant/preparations/replace-upload']) assert.ok(paths.includes(expected), expected);
   for (const path of paths) assert.equal(publicRoute('POST', path), true, path);
   // Reads too, such as following an import's progress.
@@ -210,11 +210,11 @@ test('online guests may read the room logo, but never change it', () => {
 
 test('user settings opens through Tailscale while identity and host controls keep their access gates', async t => {
   const f = await fixture(t, true); await f.online.refresh();
-  const local = await listen(t); const adapter = new DemoAdapter();
+  const local = await listen(t); const adapter = new FakePlayback();
   let state: State = { schema: 3, room: null };
   const engine = new Engine({ async load() { return structuredClone(state); }, async save(next) { state = structuredClone(next); } }, adapter, local.url);
   await engine.init();
-  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, demoSeconds: 30 }, 'web');
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir }, 'web');
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   t.after(() => { gateway.close(); http.close(); adapter.close(); });
   const request = (path: string, cookie = '', method = 'GET') => new Promise<{ status: number; body: string }>((resolve, reject) => {
@@ -262,9 +262,9 @@ test('online artist, album and track artwork reaches MA with participant and inv
   const ma = await startMusicAssistantFixture(); t.after(ma.close);
   const integrations = new IntegrationManager(new IntegrationFileStore(f.dir)); await integrations.init();
   await integrations.save(ma.origin, 'fixture-token', 0);
-  const local = await listen(t); const adapter = new DemoAdapter();
+  const local = await listen(t); const adapter = new FakePlayback();
   const engine = new Engine(new FileStore(f.dir), adapter, local.url, integrations); await engine.init();
-  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, demoSeconds: 30 }, 'web', integrations);
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir }, 'web', integrations);
   local.server.on('request', http.app);
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   t.after(() => { gateway.close(); http.close(); adapter.close(); });
@@ -311,10 +311,10 @@ test('online artist, album and track artwork reaches MA with participant and inv
 
 test('public listener gates profiles, supports PIN join/private library, rejects host and media routes, and revokes live streams', async t => {
   const f = await fixture(t); await enable(f.online);
-  const local = await listen(t); const adapter = new DemoAdapter(); const engine = new Engine(new FileStore(f.dir), adapter, local.url); await engine.init();
+  const local = await listen(t); const adapter = new FakePlayback(); const engine = new Engine(new FileStore(f.dir), adapter, local.url); await engine.init();
   engine.setOnlineSharing(() => f.online.sharing());
   const uploads = new UploadAssets(f.dir, fixtureUploadAnalysis);
-  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir, demoSeconds: 30 }, 'web', undefined, undefined, uploads, undefined, f.online);
+  const http = createApp(engine, { port: local.port, listenHost: '127.0.0.1', guestUrl: local.url, dataDir: f.dir }, 'web', undefined, undefined, uploads, undefined, f.online);
   local.server.on('request', http.app);
   const gateway = publicListener(http.app, f.online); const remote = await listen(t, gateway.listener);
   const ingress = await listen(t, ingressListener(http.app, '127.0.0.1'));

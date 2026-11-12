@@ -14,7 +14,7 @@ let container = '';
 try {
   await docker('volume', 'create', volume);
   await docker('volume', 'create', restoredVolume);
-  await docker('run', '--rm', '--network', 'none', '--volume', `${volume}:/data`, '--entrypoint', 'node', image, '-e', "require('fs').writeFileSync('/data/options.json', JSON.stringify({demo_track_seconds:30}))");
+  await docker('run', '--rm', '--network', 'none', '--volume', `${volume}:/data`, '--entrypoint', 'node', image, '-e', "require('fs').writeFileSync('/data/options.json', JSON.stringify({}))");
   const launch = (data: string) => docker('run', '--detach', '--rm', '--publish', `127.0.0.1:${port}:3000`, '--volume', `${data}:/data`, '--env', 'HA_ADDON=1', '--env', `GUEST_URL=${origin}`, image);
   container = await launch(volume);
   const ready = async () => {

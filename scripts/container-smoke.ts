@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { setTimeout } from 'node:timers/promises';
 import type { View } from '../src/model.js';
 import type { IntegrationView } from '../src/integrations.js';
-import type { PreparationView, PreparationResult } from '../src/preparations.js';
+import type { PreparationView } from '../src/preparations.js';
 import { docker, image, availablePort } from './container-fixture.js';
 
 const port = await availablePort();
@@ -44,14 +44,12 @@ try {
   const membership = joined.headers.get('set-cookie')!.split(';')[0]!;
   const initialized = await post('/api/participant/preparations/init', {}, membership); assert.equal(initialized.status, 200);
   const libraryCookie = initialized.headers.get('set-cookie')!.split(';')[0]!; const credentials = `${membership}; ${libraryCookie}`;
-  let library = await initialized.json() as PreparationView;
-  for (const trackId of ['demo:aurora', 'demo:summer']) {
-    const added = await post('/api/participant/preparations/add', { trackId, operation: { id: randomUUID(), revision: library.revision, issuedAt: Date.now() } }, credentials);
-    assert.equal(added.status, 200); library = (await added.json() as PreparationResult).view;
-  }
-  const moved = await post('/api/participant/preparations/move', { entryId: library.upcoming[1]!.id, beforeId: library.upcoming[0]!.id, operation: { id: randomUUID(), revision: library.revision, issuedAt: Date.now() } }, libraryCookie);
-  assert.equal(moved.status, 200); library = (await moved.json() as PreparationResult).view;
-  const savedLibrary = library;
+  const library = await initialized.json() as PreparationView;
+  // No Music Assistant runs here, and there is no demo catalogue: adding a song is refused and the list is kept.
+  const refused = await post('/api/participant/preparations/add', { trackId: 'ref:unavailable', operation: { id: randomUUID(), revision: library.revision, issuedAt: Date.now() } }, credentials);
+  assert.equal(refused.status, 409);
+  const savedLibrary = (await (await fetch(origin + '/api/participant/preparations/state', { headers: { Cookie: libraryCookie } })).json()) as PreparationView;
+  assert.equal(savedLibrary.upcoming.length, 0);
   const guestOrigin = origin.replace('127.0.0.1', 'localhost');
   const addressing = await fetch(origin + '/api/host/addressing'); assert.equal(addressing.status, 200);
   const addresses = await addressing.json() as { revision: number };
@@ -85,8 +83,6 @@ try {
   const restoredLibrary = await restored.json() as PreparationView;
   assert.equal(restoredLibrary.revision, savedLibrary.revision);
   assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.id), savedLibrary.upcoming.map(entry => entry.id));
-  assert.deepEqual(restoredLibrary.upcoming.map(entry => entry.title), ['Late Summer', 'Northern Lights']);
-  assert.ok(restoredLibrary.upcoming.every(entry => entry.sourceAvailable === false));
   const initializedAgain = await post('/api/participant/preparations/init', {}, membership); assert.equal(initializedAgain.status, 200);
   assert.equal((await initializedAgain.json() as PreparationView).ownerId, library.ownerId);
   for (const path of ['/api/host/admit', '/api/host/start', '/api/host/create', '/api/host/end', '/api/host/invitation', '/api/display/auth']) assert.equal((await post(path, { revision: after.revision })).status, 404);

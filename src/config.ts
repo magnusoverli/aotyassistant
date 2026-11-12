@@ -7,7 +7,6 @@ const schema = z.object({
   listenHost: z.string().min(1),
   guestUrl: httpOrigin('GUEST_URL must be an http(s) origin, without credentials, path, query, or fragment.'),
   dataDir: z.string().min(1),
-  demoSeconds: z.coerce.number().int().min(1).max(3600),
   addon: z.boolean().optional(), guestOverride: z.boolean().optional(), ingressPort: z.number().int().min(1).max(65535).optional(),
 });
 export type Config = z.infer<typeof schema>;
@@ -19,9 +18,8 @@ export function configFromEnv(): Config {
     port: process.env.PORT ?? 3000,
     listenHost: process.env.LISTEN_HOST ?? '127.0.0.1',
     guestUrl: options.guest_url || process.env.GUEST_URL || 'http://localhost:3000',
-    // `playback_mode` remains in the add-on schema only so older saved options stay valid.
+    // `playback_mode` and `demo_track_seconds` remain in the add-on schema only so older saved options stay valid.
     dataDir: process.env.DATA_DIR ?? './data',
-    demoSeconds: options.demo_track_seconds ?? process.env.DEMO_TRACK_SECONDS ?? 30,
     addon: process.env.HA_ADDON === '1', guestOverride: Boolean(options.guest_url || process.env.GUEST_URL),
     ...(process.env.HA_ADDON === '1' ? { ingressPort: 8099 } : {}),
   });

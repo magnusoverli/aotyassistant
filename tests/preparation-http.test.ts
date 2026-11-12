@@ -9,12 +9,11 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
 import { ManagedPlayback } from '../src/live-playback.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { PreparationFileStore, PreparationManager } from '../src/preparations.js';
 import type { PreparationView, PreparationResult } from '../src/preparations.js';
-import type { CatalogueSearch, View, UserDirectory } from '../src/model.js';
+import type { CatalogueBrowse, CatalogueTrack, View, UserDirectory } from '../src/model.js';
 import type { SharedSong } from '../src/shared-list.js';
 import { ListImports } from '../src/list-import-jobs.js';
 import { createApp } from '../src/http.js';
@@ -27,10 +26,10 @@ async function fixture(t: TestContext) {
   const remote = await startMusicAssistantFixture(); const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-http-');
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: dir, demoSeconds: 3600 };
+  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: dir };
   async function boot() {
     const integrations = new IntegrationManager(new IntegrationFileStore(dir)); await integrations.init();
-    const adapter = new ManagedPlayback(new DemoAdapter(3600), integrations, 30);
+    const adapter = new ManagedPlayback(integrations, 30);
     const engine = new Engine(new FileStore(dir), adapter, origin, integrations); await engine.init();
     await adapter.refresh();
     const preparationStore = new PreparationFileStore(dir);
@@ -68,8 +67,10 @@ async function fixture(t: TestContext) {
   await running.integrations.save(remote.origin, 'fixture-token', 0); await running.integrations.selectDestination('sonos:room', running.integrations.view().revision);
   await running.adapter.refresh();
   async function add(member = first) {
-    const current = await json('/api/participant/state', undefined, member.membership);
-    const search = await json<CatalogueSearch>('/api/participant/search', { turnId: current.turnId, query: 'fixture' }, member.membership);
+    // As in the app: search for an artist, open one of their albums, then pick a song.
+    const browse = (kind: 'artists' | 'albums' | 'tracks', value: string) => json<CatalogueBrowse>('/api/participant/browse', { kind, value }, member.membership);
+    const artist = (await browse('artists', 'fixture')).artists![0]!; const album = (await browse('albums', artist.id)).albums![0]!;
+    const search = { tracks: (await browse('tracks', album.id)).tracks! };
     const list = await json<PreparationView>(prefix + '/state', undefined, member.privateCookie);
     const body = { operation: operation(list.revision), trackId: search.tracks[0]!.id };
     return { ...(await json<PreparationResult>(prefix + '/add', body, member.credentials)), body, search };
@@ -422,7 +423,7 @@ test('a shared list is imported on the server: found songs are saved in order wi
 
 test('a song is replaced with another from its album, in the same place, for its owner only', async t => {
   const f = await fixture(t); const added = await f.add();
-  type Album = { album: { name: string; artist: string }; tracks: CatalogueSearch['tracks']; current: number };
+  type Album = { album: { name: string; artist: string }; tracks: CatalogueTrack[]; current: number };
   const album = await f.json<Album>(prefix + '/album', { entryId: added.entryId }, f.first.credentials);
   assert.deepEqual(album.album, { name: 'Fixture album', artist: 'Fixture artist' });
   assert.deepEqual(album.tracks.map(track => track.title), ['Real catalogue fixture', 'Second fixture song']); assert.equal(album.current, 0);

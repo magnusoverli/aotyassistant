@@ -20,7 +20,7 @@ test('host cards are immediately draggable and save a single insertion while pre
   const first = await isolatedApp.engine.join('First');
   for (const name of ['Second', 'Third', 'Fourth']) await isolatedApp.engine.join(name);
   const turn = isolatedApp.engine.view({ kind: 'host' }).turnId!;
-  await isolatedApp.engine.play(first, turn, null, 'demo:night');
+  await isolatedApp.connect(); await isolatedApp.engine.play(first, turn, null, (await isolatedApp.trackFor(first)).id);
   const before = isolatedApp.engine.view({ kind: 'host' });
   const writes: unknown[] = []; page.on('request', request => { if (request.url().endsWith('/api/host/reorder')) writes.push(request.postDataJSON()); });
   await page.setViewportSize({ width: 1440, height: 900 }); await page.goto('/host');

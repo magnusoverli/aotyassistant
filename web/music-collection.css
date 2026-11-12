@@ -100,8 +100,7 @@
     #music-collection .list-search-open:hover:not(:disabled) { filter:none; border-color:var(--accent); }
     #music-collection .search-icon { width:1.125rem; height:1.125rem; flex:none; }
 
-    /* Open: search is the page. The header, player and playlist step aside until Done or Back;
-       the bottom bar still offers Go to player during your turn. */
+    /* Open: search is the page. The header, player and playlist step aside until Done or Back. */
     body[data-music-search='open'] :is(.app-header,#participant-player,.pin-enrollment,.mobile-list-bar,#music-collection > .preparation-list) { display:none; }
     body[data-music-search='open'] .participant-page { padding-top:0; }
     body[data-music-search='open'] #music-collection { border:0; border-radius:0; background:transparent; }
@@ -139,8 +138,9 @@
     #music-collection .catalogue-results .row-actions { flex-wrap:nowrap; gap:6px; }
     #music-collection .catalogue-results .row-actions button { min-height:44px; padding:6px 12px; font-size:.8125rem; line-height:1.1; max-width:6.5rem; white-space:normal; }
     #music-collection .catalogue-results [data-preparation-track] { width:44px; min-width:44px; height:44px; padding:0; border-radius:50%; font-size:0; }
-    #music-collection .catalogue-results [data-preparation-track]::before { content:'+'; font-size:1.5rem; font-weight:500; line-height:1; }
-    #music-collection .catalogue-results [data-preparation-track][aria-disabled='true']::before { content:'✓'; font-size:1.125rem; }
-    #music-collection .catalogue-results .browse-row::after { content:'›'; padding-inline:4px 2px; color:var(--muted); font-size:1.5rem; line-height:1; }
+    /* The icon is decoration: "/ ''" keeps it out of the accessible name (the plain value is for older browsers). */
+    #music-collection .catalogue-results [data-preparation-track]::before { content:'+'; content:'+' / ''; font-size:1.5rem; font-weight:500; line-height:1; }
+    #music-collection .catalogue-results [data-preparation-track][aria-disabled='true']::before { content:'✓'; content:'✓' / ''; font-size:1.125rem; }
+    #music-collection .catalogue-results .browse-row::after { content:'›'; content:'›' / ''; padding-inline:4px 2px; color:var(--muted); font-size:1.5rem; line-height:1; }
   }
 }

@@ -15,7 +15,7 @@ export function spaDestination(target: URL, current: URL, base = ''): string | u
 }
 
 /** Only fields needed by the shell; no track metadata, private lists, or integration secrets. */
-export type HeaderView = Pick<View, 'me' | 'mode'>;
+export type HeaderView = Pick<View, 'me'>;
 export type HeaderState = { view?: HeaderView };
 export type NavigationItem = { id: string; text: string; href: string; current: boolean };
 

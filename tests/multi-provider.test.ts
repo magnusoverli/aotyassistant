@@ -190,7 +190,8 @@ test('nested source references/artwork remain participant-bound, opaque and revo
   for (const privateValue of ['PRIVATE', mbArtist, 'spotify://', 'group:', 'ma:', 'external_ids', 'provider_mappings']) assert.ok(!json.includes(privateValue));
   assert.ok(group.sources!.every(s => s.id.startsWith('ref:')));
   await assert.rejects(manager.browse('albums', group.sources![0]!.id, 'bob'), /another participant/);
-  const tracks = await manager.search('Sandman', 'alice');
+  const albumGroup = (await manager.browse('albums', group.id, 'alice')).albums![0]!;
+  const tracks = (await manager.browse('tracks', albumGroup.id, 'alice')).tracks!;
   await assert.rejects(manager.captureSaved(tracks[0]!.id, 'bob'), /another participant/);
   assert.equal((await manager.captureSaved(tracks[0]!.id, 'alice')).source, 'music-assistant');
   const tidal = tracks[0]!.sources!.find(s => s.provider === 'tidal')!;

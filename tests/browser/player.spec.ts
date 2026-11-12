@@ -1,19 +1,21 @@
 import { expect, type Browser, type Page } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, fixtureSongOnDisplay } from './app-fixture';
+import { closeSearch, openAlbum } from './preparation-helpers';
 
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
-async function setup(browser: Browser, host: Page) {
+/** A phone participant with the fixture album open in search. `results` returns to that album and `player`
+ * closes phone search so the player is in view (desktop shows both, so neither step does anything there). */
+async function setup(browser: Browser, host: Page, app: { connect(): Promise<void> }) {
+  await app.connect();
   let state = await (await host.request.get('/api/host/state')).json();
   const post = (path: string, data: unknown) => host.request.post(path, { data, headers: { Origin: new URL(state.joinUrl).origin } });
-  const settings = await (await host.request.get('/api/host/integrations')).json();
-  if (settings.tokenConfigured) await post('/api/host/integrations/clear', { revision: settings.revision });
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const participant = await context.newPage();
   await participant.goto(state.joinUrl); await participant.getByLabel('Display name').fill('Alex'); await participant.getByLabel('4-digit PIN', { exact: true }).fill('1234'); await participant.getByRole('button', { name: 'Join room' }).click();
   await expect(participant).toHaveURL(/\/participant$/);
   state = await (await host.request.get('/api/host/state')).json();
   await host.goto('/host'); const tv = await context.newPage(); await tv.goto(state.displayUrl);
-  await participant.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern'); await participant.getByRole('button', { name: 'Search', exact: true }).click();
-  return { participant, tv, post, async close() { await context.close(); } };
+  await openAlbum(participant);
+  return { participant, tv, post, results: () => openAlbum(participant), player: () => closeSearch(participant), async close() { await context.close(); } };
 }
 async function volume(page: Page, level: number) {
   await page.getByRole('slider', { name: 'Volume', exact: true }).evaluate((node, value) => {
@@ -22,13 +24,13 @@ async function volume(page: Page, level: number) {
   }, level);
 }
 
-for (const paused of [false, true]) test(`direct and prepared replacement both require confirmation while ${paused ? 'paused' : 'playing'}`, async ({ browser, page: host }) => {
-  const f = await setup(browser, host); const page = f.participant;
+for (const paused of [false, true]) test(`direct and prepared replacement both require confirmation while ${paused ? 'paused' : 'playing'}`, async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp); const page = f.participant;
   try {
     const plays: string[] = []; page.on('request', request => { if (/\/participant\/(play|preparations\/play)$/.test(new URL(request.url()).pathname)) plays.push(request.url()); });
     await page.getByRole('button', { name: 'Add to list', exact: true }).click();
     await expect(page.locator('.list-count')).toHaveText('1 track');
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.getByRole('button', { name: 'Play', exact: true }).click(); await f.player();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(page.locator('.player-pending')).toHaveCount(0);
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
@@ -36,23 +38,26 @@ for (const paused of [false, true]) test(`direct and prepared replacement both r
     const prompts: string[] = [];
     for (const name of ['Play', 'Play pick']) {
       page.once('dialog', async dialog => { prompts.push(dialog.message()); await dialog.dismiss(); });
+      if (name === 'Play') await f.results(); else await f.player();
       await page.getByRole('button', { name, exact: true }).click();
       expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).toBe(original.ownPlayback.id);
     }
     expect(prompts).toEqual(Array(2).fill('Replace the current song? Playing this song will stop the current one.'));
     expect(plays).toHaveLength(1);
-    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await f.results(); page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: 'Play', exact: true }).click(); await f.player();
     await expect(page.locator('.player-pending')).toHaveCount(0);
     await expect.poll(async () => (await (await page.request.get('/api/participant/state')).json()).ownPlayback.id).not.toBe(original.ownPlayback.id);
     expect(plays).toHaveLength(2);
   } finally { await f.close(); }
 });
 
-test('a delayed search leaves pause and finish available and retains its results across a turn change', async ({ browser, page: host }) => {
-  const f = await setup(browser, host); const page = f.participant; const search = gate();
+test('a delayed search leaves pause and finish available and retains its results across a turn change', async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp); const page = f.participant; const search = gate();
+  // Phones cover the player with search, and leaving search drops a pending one: check this with both on screen.
+  await page.setViewportSize({ width: 1440, height: 1000 });
   try {
-    await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
-    await page.route('**/api/participant/search', async route => { await search.promise; await route.continue(); });
+    await page.getByRole('button', { name: 'Play', exact: true }).click(); await f.player(); await expect(page.locator('.player-pending')).toHaveCount(0);
+    await page.route('**/api/participant/browse', async route => { await search.promise; await route.continue(); });
     await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Night');
     await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.locator('.catalogue-results')).toHaveAttribute('aria-busy', 'true');
@@ -68,8 +73,8 @@ test('a delayed search leaves pause and finish available and retains its results
   } finally { search.release(); await f.close(); }
 });
 
-test('the participant player stays responsive through slow play/pause/reveal replies and rolls back rejected actions', async ({ browser, page: host }) => {
-  const f = await setup(browser, host); const { participant: page, tv } = f;
+test('the participant player stays responsive through slow play/pause/reveal replies and rolls back rejected actions', async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp); const { participant: page, tv } = f;
   const start = gate(); const pause = gate(); const reveal = gate(); const actions: string[] = [];
   let holdPause = true;
   await page.route('**/api/participant/play', async route => { await start.promise; await route.continue(); });
@@ -82,7 +87,7 @@ test('the participant player stays responsive through slow play/pause/reveal rep
   let finishes = 0;
   await page.route('**/api/participant/finish', async route => { finishes++; await route.fulfill({ status: 502, json: { error: 'Fixture finish rejected.' } }); });
   try {
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await page.getByRole('button', { name: 'Play', exact: true }).click(); await f.player();
     await expect(page.getByText('Starting track…', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toBeDisabled();
@@ -115,13 +120,13 @@ test('the participant player stays responsive through slow play/pause/reveal rep
     await expect(page.locator('.player-mobile-privacy')).toHaveText('Revealing');
     await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
     await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
-    reveal.release(); await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
+    reveal.release(); await expect(tv.getByRole('heading', { name: fixtureSongOnDisplay, exact: true })).toBeVisible();
     await expect(page.locator('.player-pending')).toHaveCount(0);
   } finally { start.release(); pause.release(); reveal.release(); await f.close(); }
 });
 
-for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused' : 'playing'} player advances once without a separate Stop or automatic next playback`, async ({ browser, page: host }) => {
-  const f = await setup(browser, host); const page = f.participant; const finish = gate();
+for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused' : 'playing'} player advances once without a separate Stop or automatic next playback`, async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp); const page = f.participant; const finish = gate();
   const nextContext = await browser.newContext();
   try {
     const origin = new URL(page.url()).origin;
@@ -129,7 +134,7 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     const next = await nextContext.newPage(); await next.goto(origin + '/participant');
     await expect(next.getByRole('heading', { name: 'Alex’s turn.' })).toBeVisible();
     await expect(next.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Play', exact: true }).click(); await f.player(); await expect(page.locator('.player-pending')).toHaveCount(0);
     if (paused) { await page.getByRole('button', { name: 'Pause', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0); }
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
@@ -161,8 +166,8 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
   } finally { finish.release(); await nextContext.close(); await f.close(); }
 });
 
-test('participant and host volume remain active, optimistic, and latest-only during delayed responses', async ({ browser, page: host }) => {
-  const f = await setup(browser, host); const page = f.participant; const participantAck = gate(); const hostAck = gate();
+test('participant and host volume remain active, optimistic, and latest-only during delayed responses', async ({ browser, page: host, isolatedApp }) => {
+  const f = await setup(browser, host, isolatedApp); const page = f.participant; const participantAck = gate(); const hostAck = gate();
   const participantLevels: number[] = []; const hostLevels: number[] = [];
   let firstParticipant = true; let firstHost = true; let fail = false;
   await page.route('**/api/participant/volume', async route => {
@@ -178,7 +183,7 @@ test('participant and host volume remain active, optimistic, and latest-only dur
     await route.fulfill({ response });
   });
   try {
-    await page.getByRole('button', { name: 'Play', exact: true }).click(); await expect(page.locator('.player-pending')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Play', exact: true }).click(); await f.player(); await expect(page.locator('.player-pending')).toHaveCount(0);
     await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
     await page.getByRole('slider', { name: 'Volume', exact: true }).evaluate(node => { (node as HTMLElement).dataset.sameNode = 'yes'; });
     await volume(page, 55); await expect(page.locator('.volume-control output')).toHaveText('55%');

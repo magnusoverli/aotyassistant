@@ -33,7 +33,7 @@ export function artwork(url: string | undefined, alt: string, className = '', ea
   return frame;
 }
 function artworkImage(url: string | undefined, alt: string, className: string, eager: boolean) {
-  if (url && (url.startsWith('/api/participant/artwork/') || url.startsWith('/api/participant/preparations/artwork/') || /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}\/artwork$/.test(url) || url.startsWith('/api/display/artwork/') || url === '/demo-cover.svg')) {
+  if (url && (url.startsWith('/api/participant/artwork/') || url.startsWith('/api/participant/preparations/artwork/') || /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}\/artwork$/.test(url) || url.startsWith('/api/display/artwork/'))) {
     const image = el('img'); image.alt = alt; image.loading = eager ? 'eager' : 'lazy'; image.decoding = 'async';
     const size = className.includes('room-artwork') ? 1024 : 160;
     image.src = appPath(url.startsWith('/api/') ? `${url}?size=${size}` : url);

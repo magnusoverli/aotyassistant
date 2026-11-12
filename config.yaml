@@ -1,5 +1,5 @@
 name: Doom Room
-version: "2.1.3"
+version: "2.1.4"
 slug: doom_room
 url: https://github.com/magnusoverli/doom-room
 description: Turn-based music sharing for Home Assistant, powered by Music Assistant.
@@ -33,11 +33,10 @@ ports_description:
 webui: "http://[HOST]:[PORT:3000]/host"
 environment:
   HA_ADDON: "1"
-options:
-  demo_track_seconds: 30
+options: {}
 schema:
   guest_url: url?
   playback_mode: list(demo)?
-  demo_track_seconds: int(1,3600)
+  demo_track_seconds: int(1,3600)?
 
 image: ghcr.io/magnusoverli/doom-room

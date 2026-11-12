@@ -1,5 +1,5 @@
 import { AppError, type StreamInfo, type Track, type VolumeState } from './model.js';
-import { DemoAdapter, type PlaybackAdapter } from './playback.js';
+import type { PlaybackAdapter } from './playback.js';
 import { type IntegrationManager, type PlaybackController } from './integrations.js';
 import type { MusicAssistantApi, QueueSnapshot } from './music-assistant.js';
 import type { SavedSelection } from './preparations.js';
@@ -13,7 +13,7 @@ import { sourceStreamInfo } from './stream-info.js';
 
 type Selection = Awaited<ReturnType<IntegrationManager['resolve']>> & { release?: () => void; suspend?: () => void; uploaded?: boolean };
 type PlaybackIntegration = Pick<IntegrationManager, 'configured' | 'configurationRevision' | 'routeConfigured' | 'playbackAvailable' |
-  'withPlayback' | 'withDemoPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
+  'withPlayback' | 'attachPlayback' | 'refreshOutputSoon' | 'playbackChanged' | 'resolve' | 'resolveSaved' | 'resolveUpload'>;
 type QueueItem = Awaited<ReturnType<MusicAssistantApi['queueItems']>>[number];
 type PlaybackApi = Pick<MusicAssistantApi, 'playbackCapability' | 'queue' | 'queueItems' | 'configureSingle' | 'playSingle' | 'controlQueue' | 'volume' | 'setVolume' | 'pausedDestination' | 'subscribePlayback' | 'queueById' | 'transferTarget' | 'transferQueue' | 'seekQueue'>;
 type Ownership = Selection & { appId: string; api: PlaybackApi; destination: string; queueId: string; queueItemId: string | null; previousQueueItemId: string | null; status: 'playing' | 'paused'; seenPlaying: boolean;
@@ -43,8 +43,6 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   private eventGeneration = 0;
   private eventPollPending = false;
   private eventWaiters = new Set<() => void>();
-  private demoId?: string;
-  private demoSelections = new WeakMap<Track, string>();
   onComplete: (id: string) => void = () => {};
   onInvalidated: (id: string, message: string) => void = () => {};
   onStatus: (id: string, status: 'playing' | 'paused') => void = () => {};
@@ -58,11 +56,9 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   private volumeConfirmation?: NodeJS.Timeout;
   private volumeTarget?: { level: number; requestedAt: number; mismatches: number };
   get volume(): VolumeState {
-    if (!this.integrations.configured) return this.demo.volume;
     return { ...(this.available && this.integrations.playbackAvailable ? this.volumeState : { available: false, level: null }), revision: this.integrations.configurationRevision, generation: this.volumeGeneration };
   }
   progress(id: string) {
-    if (!this.integrations.configured) return this.demo.progress(id);
     const own = this.own; if (!own || own.appId !== id || !own.position || this.failed) return null;
     const { elapsed, duration, at } = own.position;
     return { elapsed: Math.min(duration || Infinity, elapsed + (own.status === 'playing' && !this.transferAttempt ? Math.max(0, Math.min(3, (Date.now() - at) / 1000)) : 0)), duration };
@@ -160,7 +156,6 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.volumeConfirmation = setTimeout(() => { background(() => { void this.refreshVolume(api, destination); }); }, 300); this.volumeConfirmation.unref();
   }
   async setVolume(level: number, playbackId?: string) {
-    if (!this.integrations.configured) { await this.demo.setVolume(level); return; }
     if (!this.available || !this.integrations.playbackAvailable) throw new AppError(409, 'Choose a playback destination and recover connectivity before changing volume.');
     this.volumeEpoch++;
     const revision = this.integrations.configurationRevision;
@@ -189,23 +184,18 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     });
     this.onProgress();
   }
-  get mode() { return this.integrations.configured ? 'music-assistant' as const : 'demo' as const; }
   get connected() { return !this.closed && !this.failed; }
-  get ownsPlayback() { return Boolean(this.own || this.demoId); }
-  get playbackId() { return this.own?.appId ?? this.demoId; }
+  get ownsPlayback() { return Boolean(this.own); }
+  get playbackId() { return this.own?.appId; }
   get requiresRecovery() { return this.failed; }
 
-  constructor(private demo: DemoAdapter, private integrations: PlaybackIntegration, private pollMs = 1500) {
+  constructor(private integrations: PlaybackIntegration, private pollMs = 1500) {
     integrations.attachPlayback(this);
-    demo.onComplete = id => { if (this.demoId === id) { this.demoId = undefined; this.onComplete(id); } };
-    demo.onProgress = () => this.onProgress();
     this.configurationChanged();
   }
-  search(query: string) { return this.demo.search(query); }
   configurationChanged(): void {
     this.commandGeneration++;
     this.unsubscribeEvents?.(); this.unsubscribeEvents = undefined; this.eventRevision = undefined; this.eventsConnected = false;
-    this.demoSelections = new WeakMap();
     this.pending?.release?.(); this.pending = undefined; this.failed = false; this.issue = ''; this.problem = undefined; this.capabilityRevision = undefined;
     this.volumeEpoch++; this.volumeGeneration++; this.volumeTarget = undefined; clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
     this.volumeObservedAt = 0;
@@ -217,7 +207,6 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.onProgress();
   }
   async resolve(id: string, context = ''): Promise<Track> {
-    if (!this.integrations.configured) return this.resolveDemo(() => this.demo.resolve(id));
     if (!this.available) throw new AppError(409, 'Choose a speaker or group in Settings before playing.');
     this.pending?.release?.(); this.pending = undefined;
     return this.resolveLive(this.integrations.resolve(id, context));
@@ -225,10 +214,8 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   async resolveSaved(selection: SavedSelection, context: string, trackId: string): Promise<Track> {
     this.pending?.release?.(); this.pending = undefined;
     if (selection.source === 'upload') return this.resolveLive(this.integrations.resolveUpload(selection, context, trackId));
-    if (selection.source === 'demo') {
-      if (this.integrations.configured) throw new AppError(409, 'Demo selections cannot play through the connected catalogue. Your saved entry was kept.');
-      return this.resolveDemo(() => this.demo.resolveSaved(selection, context, trackId));
-    }
+    // Saved before demo mode was removed: kept in the list, but there is nothing to play it from.
+    if (selection.source === 'demo') throw new AppError(409, 'This song was saved from the old demo catalogue and cannot be played. Your saved entry was kept.');
     if (!this.available) throw new AppError(409, 'Choose a speaker or group in Settings before playing.');
     return this.resolveLive(this.integrations.resolveSaved(selection, context, trackId));
   }
@@ -238,14 +225,7 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.pending = selection; return selection.track;
   }
   discardSelection(track: Track) {
-    this.demoSelections.delete(track);
     if (this.pending?.track === track) { this.pending.release?.(); this.pending = undefined; }
-  }
-  private async resolveDemo(resolve: () => Promise<Track>) {
-    const revision = this.integrations.configurationRevision;
-    const track = await resolve();
-    if (this.closed || this.integrations.configured || revision !== this.integrations.configurationRevision) throw new AppError(409, 'The music connection changed. Select the recording again.');
-    this.demoSelections.set(track, revision); return track;
   }
   private isOwned(q: QueueSnapshot, own: Ownership): boolean {
     return (q.active || (q.ended && q.state === 'idle')) && this.sameQueueItem(q, own);
@@ -336,13 +316,6 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   async play(track: Track, appId: string): Promise<void> {
     if (this.closed) throw new AppError(503, 'Playback is shutting down.');
-    if (!this.integrations.configured) {
-      await this.integrations.withDemoPlayback(async () => {
-        if (this.closed || this.demoSelections.get(track) !== this.integrations.configurationRevision) throw new AppError(409, 'The music connection changed. Select the recording again.');
-        this.demoSelections.delete(track); this.demoId = appId; await this.demo.play(track, appId);
-      });
-      return;
-    }
     await this.command('play', async (api, destination, revision) => {
       const pending = this.pending; this.pending = undefined;
       if (!this.available || this.failed || !pending || pending.revision !== revision || pending.track.id !== track.id) { pending?.release?.(); throw new AppError(409, 'Playback setup changed. Select the recording again.'); }
@@ -383,10 +356,6 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
   }
   async control(action: 'pause' | 'resume' | 'stop'): Promise<void> {
     if (this.closed) throw new AppError(503, 'Playback is shutting down.');
-    if (this.demoId || !this.integrations.configured) {
-      if (action === 'stop') this.demoId = undefined;
-      await this.demo.control(action); return;
-    }
     if (!this.own) { if (action === 'stop') return; throw new AppError(409, 'There is no application-owned playback to control.'); }
     await this.command(action, async () => {
       const own = this.own;
@@ -427,7 +396,6 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
    * that did not happen leaves the song playing where it was. */
   async seek(position: number): Promise<void> {
     if (this.closed) throw new AppError(503, 'Playback is shutting down.');
-    if (this.demoId || !this.integrations.configured) { await this.demo.seek(position); return; }
     if (!this.own) throw new AppError(409, 'There is no application-owned playback to control.');
     await this.command('seek', async () => {
       const own = this.own;
@@ -648,5 +616,5 @@ export class ManagedPlayback implements PlaybackAdapter, PlaybackController {
     this.draining = true; this.commandGeneration++; this.unsubscribeEvents?.(); this.unsubscribeEvents = undefined;
     clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer);
   }
-  close(): void { this.closed = true; this.unsubscribeEvents?.(); for (const wake of this.eventWaiters) wake(); clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer); this.volumeEpoch++; this.volumeTarget = undefined; this.demo.close(); this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.transferAttempt = undefined; this.pending = undefined; this.demoId = undefined; }
+  close(): void { this.closed = true; this.unsubscribeEvents?.(); for (const wake of this.eventWaiters) wake(); clearTimeout(this.timer); clearTimeout(this.volumeConfirmation); clearInterval(this.volumeTimer); this.volumeEpoch++; this.volumeTarget = undefined; this.own?.release?.(); this.pending?.release?.(); this.own = undefined; this.transferAttempt = undefined; this.pending = undefined; }
 }

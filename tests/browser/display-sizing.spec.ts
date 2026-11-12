@@ -71,9 +71,9 @@ test('resizing relocates the QR without rebuilding playback, and old size choice
 
 test('long playback details fit both QR preferences and preserve geometry through reveal', async ({ page, isolatedApp }) => {
   const credential = await isolatedApp.engine.join('A listener with a long name'); await isolatedApp.engine.join('Next listener');
-  const track = isolatedApp.demo.catalogue[0]!;
-  track.title = 'A very long track title that wraps across the available playback space';
-  track.artist = 'An artist with a long display name'; track.album = 'A long album title';
+  await isolatedApp.connect();
+  const title = 'A very long track title that wraps across the available playback space';
+  isolatedApp.addTracks([{ title, artist: 'An artist with a long display name', album: 'A long album title' }]); const track = await isolatedApp.trackFor(credential, title);
   const turn = isolatedApp.engine.view({ kind: 'host' }).turnId!;
   await isolatedApp.engine.play(credential, turn, null, track.id);
   const playbackId = isolatedApp.engine.view({ kind: 'participant', credential }).ownPlayback!.id;
@@ -119,8 +119,9 @@ test('the animation fits its own row above playback in every state and exposes n
   await page.goto('/display');
   await expect(page.locator('.bmf-background bmf-logo svg')).toBeAttached();
   const turn = isolatedApp.engine.view({ kind: 'host' }).turnId!;
-  const track = isolatedApp.demo.catalogue[0]!;
-  track.title = 'A long revealed title that must not push the animation into the album artwork';
+  await isolatedApp.connect();
+  const title = 'A long revealed title that must not push the animation into the album artwork';
+  isolatedApp.addTracks([{ title }]); const track = await isolatedApp.trackFor(credential, title);
   for (const state of ['idle', 'hidden', 'revealed'] as const) {
     if (state === 'hidden') await isolatedApp.engine.play(credential, turn, null, track.id);
     if (state === 'revealed') {

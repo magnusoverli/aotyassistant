@@ -147,7 +147,7 @@ export class PlayerController {
     const intent = this.nextVolume; this.nextVolume = undefined; this.sendingVolume = true;
     const epoch = this.epoch; const volumeEpoch = this.volumeEpoch; const identity = this.identity; const view = this.options.getView()!;
     try {
-      const response = await this.options.request(`/api/${this.options.role}/volume`, { turnId: view.turnId, level: intent.level, volumeRevision: view.volume?.revision ?? 'demo',
+      const response = await this.options.request(`/api/${this.options.role}/volume`, { turnId: view.turnId, level: intent.level, volumeRevision: view.volume?.revision ?? 'unknown',
         ...(this.options.role === 'participant' ? { playbackId: view.ownPlayback!.id } : {}) });
       if (epoch !== this.epoch || volumeEpoch !== this.volumeEpoch || identity !== this.identity) return;
       intent.ack = response.volume?.generation ?? 0;

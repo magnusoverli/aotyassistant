@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type Page } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack } from './app-fixture';
 
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 // The header has its own reconnecting line; measure positions relative to the player.
@@ -18,12 +18,12 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
   test(`mobile player keeps its frame and control slots through all states at ${viewport.width}×${viewport.height}`, async ({ page, browser, isolatedApp }) => {
     await page.setViewportSize(viewport);
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
-    await post('/api/participant/join', { pin: '1234', nickname: 'Player' });
+    await isolatedApp.connect(); await post('/api/participant/join', { pin: '1234', nickname: 'Player' });
     const other = await browser.newContext({ baseURL: isolatedApp.origin });
     await other.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Next listener' }, headers: { Origin: isolatedApp.origin } });
-    const song = { id: 'demo:mobile-frame', title: 'A deliberately very long song title that cannot fit on two phone lines and must never stretch this player',
-      artist: 'An artist name that also cannot fit in the available space', album: 'Full album details', duration: 600, artwork: '/demo-cover.svg', artistArtwork: '/demo-cover.svg' };
-    isolatedApp.demo.catalogue.push(song);
+    const song = { title: 'A deliberately very long song title that cannot fit on two phone lines and must never stretch this player',
+      artist: 'An artist name that also cannot fit in the available space', album: 'Full album details', duration: 600 };
+    isolatedApp.addTracks([song, { title: 'Late Summer' }]);
     let library = await (await post('/api/participant/preparations/init', {})).json();
     const edit = async (action: string, data: Record<string, unknown>) => {
       const response = await post(`/api/participant/preparations/${action}`, { ...data, operation: { id: randomUUID(), issuedAt: Date.now(), revision: library.revision } });
@@ -60,12 +60,12 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
           .map(span => ({ label: span.textContent, width: span.clientWidth, required: span.scrollWidth })))).toEqual([]);
       };
       const click = (id: string) => page.locator(id).evaluate(node => (node as HTMLButtonElement).click());
-      await edit('add', { trackId: song.id });
+      await edit('add', { trackId: (await catalogueTrack(page.request, isolatedApp.origin, song.title)).id });
       await expect(page.locator('#player-play-next')).toBeEnabled();
       await expect(page.locator('.private-now-playing h2')).toHaveText(song.title); await unchanged();
       await expect(page.locator('.private-now-playing .artist-credit')).toBeHidden();
       await expect(page.locator('.player-mobile-privacy')).toBeEmpty();
-      await edit('add', { trackId: 'demo:summer' });
+      await edit('add', { trackId: (await catalogueTrack(page.request, isolatedApp.origin, 'Late Summer')).id });
       await expect(page.locator('.list-count')).toHaveText('2 tracks'); await unchanged();
       await edit('remove', { entryId: library.upcoming[1].id });
       await expect(page.locator('.list-count')).toHaveText('1 track'); await unchanged();
@@ -95,14 +95,15 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
         }, level);
         await expect(page.locator('.volume-control output')).toHaveText(`${level}%`); await unchanged();
       }
-      const progress = isolatedApp.demo.progress.bind(isolatedApp.demo);
-      isolatedApp.demo.progress = () => null; isolatedApp.demo.onProgress();
+      // Music Assistant stops reporting a position, then the speaker's volume; both come back.
+      const { adapter } = isolatedApp; const progress = adapter.progress.bind(adapter);
+      adapter.progress = () => null; adapter.onProgress();
       await expect(page.locator('#participant-player progress')).not.toHaveAttribute('value'); await unchanged();
-      isolatedApp.demo.progress = progress; isolatedApp.demo.onProgress();
+      adapter.progress = progress; adapter.onProgress();
       await expect(page.locator('#participant-player progress')).toHaveAttribute('value');
-      isolatedApp.demo.volume = { ...isolatedApp.demo.volume, available: false, level: null }; isolatedApp.demo.onProgress();
+      const volume = adapter.volume; Object.defineProperty(adapter, 'volume', { configurable: true, get: () => ({ ...volume, available: false, level: null }) }); adapter.onProgress();
       await expect(page.locator('.volume-control output')).toHaveText('Unavailable'); await unchanged();
-      isolatedApp.demo.volume = { ...isolatedApp.demo.volume, available: true, level: 35 }; isolatedApp.demo.onProgress();
+      delete (adapter as { volume?: unknown }).volume; adapter.onProgress();
 
       await page.context().setOffline(true);
       await expect(page.locator('.player-mobile-notice')).toHaveText('Connection lost'); await unchanged();
@@ -134,14 +135,14 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
 }
 
 test('mobile details close on desktop and enlarged text scales the frame, not its playback states', async ({ page, isolatedApp }) => {
-  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
+  await isolatedApp.connect(); await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Player' }, headers: { Origin: isolatedApp.origin } });
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await expect(page.getByRole('button', { name: 'Player details', exact: true })).toBeVisible();
   await page.evaluate(() => { document.documentElement.style.fontSize = '20px'; });
   expect((await page.locator('#participant-player').boundingBox())!.height).toBe(287);
   const before = await geometry(page);
   const state = await (await page.request.get('/api/participant/state')).json();
-  await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });
+  await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: (await catalogueTrack(page.request, isolatedApp.origin)).id }, headers: { Origin: isolatedApp.origin } });
   await expect(page.locator('#player-transport')).toBeEnabled();
   expect(await geometry(page)).toEqual(before);
   await page.getByRole('button', { name: 'Player details', exact: true }).click();

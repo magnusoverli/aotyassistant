@@ -1,3 +1,4 @@
+import { findTrack } from './fixtures/find-track.js';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -9,7 +10,6 @@ import { Engine } from '../src/engine.js';
 import { IntegrationManager } from '../src/integrations.js';
 import type { IntegrationState, IntegrationStore } from '../src/integration-store.js';
 import { ManagedPlayback } from '../src/live-playback.js';
-import { DemoAdapter } from '../src/playback.js';
 import { PersistenceError, type Store } from '../src/store.js';
 import { AppError, type State } from '../src/model.js';
 import { operation } from '../src/operation.js';
@@ -27,7 +27,7 @@ async function fixture(t: TestContext) {
   const store: Store = { async load() { return structuredClone(roomState); }, async save(next) { roomState = structuredClone(next); } };
   const manager = new IntegrationManager(integrationStore); await manager.init();
   await manager.save(remote.origin, 'fixture-token', 0); await manager.selectDestination('sonos:room', manager.view().revision);
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 60_000);
+  const adapter = new ManagedPlayback(manager, 60_000);
   const engine = new Engine(store, adapter, 'http://localhost:3000', manager); await engine.init(); await adapter.refresh();
   t.after(async () => {
     engine.beginShutdown(); adapter.beginShutdown(); await engine.drain(); adapter.close(); manager.close(); await manager.drain(); remote.close();
@@ -35,7 +35,7 @@ async function fixture(t: TestContext) {
   const alex = await engine.join('Alex'); await engine.join('Sam');
   const host = () => engine.view({ kind: 'host' });
   const participant = () => engine.view({ kind: 'participant', credential: alex });
-  const track = (await engine.search(alex, host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(engine, alex, 'fixture');
   await engine.play(alex, host().turnId!, null, track.id);
   remote.queue.elapsed_time = 70; remote.queue.elapsed_time_last_updated = Date.now() / 1000;
   const move = (id = 'sonos:bedroom', playbackId = participant().ownPlayback!.id, revision = manager.view().revision) =>
@@ -306,7 +306,7 @@ test('a replacement song publishes its new handoff identity and rejects an older
   const id = f.participant().ownPlayback!.id; const updates: (string | undefined)[] = [];
   const unsubscribe = f.manager.subscribe(() => updates.push(f.manager.view().playbackId)); t.after(unsubscribe);
   const result = assert.rejects(f.move(), /current song changed/); await gate.entered;
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   await f.engine.play(f.alex, f.host().turnId!, id, track.id);
   const nextId = f.participant().ownPlayback!.id;
   assert.notEqual(nextId, id); assert.ok(updates.includes(nextId));

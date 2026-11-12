@@ -5,7 +5,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { PreparationFileStore, PreparationManager, type SavedSelection } from '../src/preparations.js';
 import { ProgressClock } from '../web/progress-clock.js';
 
@@ -101,7 +101,7 @@ test('revealing times preserves the visible bar and ordinary timing corrections 
 });
 
 test('slow Play, Pause and Finish do not occupy the room lane or overwrite concurrent joins/order', async t => {
-  const dir = await mkdtemp('/tmp/opencode/doom-room-room-lanes-'); const demo = new DemoAdapter(3600); t.after(() => demo.close());
+  const dir = await mkdtemp('/tmp/opencode/doom-room-room-lanes-'); const demo = new FakePlayback(3600); t.after(() => demo.close());
   const engine = new Engine(new FileStore(dir), demo, 'http://localhost:3000'); await engine.init();
   const credential = await engine.join('Current'); await engine.join('Waiting');
   const host = () => engine.view({ kind: 'host' }); const turn = host().turnId!;

@@ -1,17 +1,21 @@
 import { expect, type Page } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSongOnDisplay } from './app-fixture';
+import { closeSearch, openAlbum, songRow } from './preparation-helpers';
+
+const layoutSong = 'Layout song with a deliberately long title that wraps across several lines on a phone';
 
 const layout = (page: Page) => page.evaluate(() =>
   ['.participant-hero', '.playback-card', '.music-workspace', '.catalogue-panel', '.catalogue-results', '.preparation-list'].map(selector => {
-    const rect = document.querySelector(selector)!.getBoundingClientRect();
+    // Phones hide the player and playlist while search is open: those stay hidden, the rest stays put.
+    const rect = document.querySelector(selector)!.getBoundingClientRect(); if (!rect.width && !rect.height) return { hidden: true };
     return { top: rect.top + scrollY, height: rect.height, width: rect.width };
   }));
 
 for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }, { width: 320, height: 700 }, { width: 390, height: 440 }, { width: 844, height: 390 }]) {
   test(`playback and turn changes keep the workspace in place at ${viewport.width}×${viewport.height}`, async ({ page, browser, isolatedApp }) => {
     await page.setViewportSize(viewport);
-    isolatedApp.demo.catalogue.push({ id: 'demo:layout', title: 'Layout song with a deliberately long title that wraps across several lines on a phone',
-      artist: 'A long artist name with a portrait beside it', album: 'Layout album', duration: 180, artwork: '/demo-cover.svg', artistArtwork: '/demo-cover.svg' });
+    await isolatedApp.connect();
+    isolatedApp.addTracks([{ title: layoutSong, artist: 'A long artist name with a portrait beside it', album: 'Layout album', duration: 180 }]);
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
     await post('/api/participant/join', { pin: '1234', nickname: 'First' });
     const other = await browser.newContext();
@@ -22,10 +26,12 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.goto('/participant');
       await expect(page.locator('.playback-card')).toContainText('Choose a song');
       await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeDisabled();
-      await page.getByRole('searchbox').fill('Layout'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-      await expect(page.locator('.catalogue-results .track-row')).toHaveCount(1);
+      await openAlbum(page);
+      await expect(songRow(page, layoutSong)).toHaveCount(1);
       await page.evaluate(() => { (document.activeElement as HTMLElement)?.blur(); scrollTo({ top: 0, behavior: 'instant' }); });
-      const before = await layout(page);
+      // Phones start the song from full-screen search, with the player out of sight until Done.
+      const phone = viewport.width < 1100;
+      let before = await layout(page);
       const workspace = await page.locator('.music-workspace').elementHandle();
       const sameWorkspace = async () => expect(await workspace!.evaluate(node => node === document.querySelector('.music-workspace'))).toBe(true);
       const unchanged = async () => {
@@ -36,12 +42,18 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       // Invoke controls without browser test automation scrolling to them first.
       const click = (selector: string) => page.locator(selector).evaluate(node => (node as HTMLButtonElement).click());
       await page.route('**/api/participant/play', async route => { await pending; await route.continue(); });
-      await click('.catalogue-results .row-actions button:last-child');
-      await expect(page.getByText('Starting track…', { exact: true })).toBeVisible();
+      await songRow(page, layoutSong).locator('.row-actions button:last-child').evaluate(node => (node as HTMLButtonElement).click());
+      if (phone) await expect(page.locator('.player-pending')).not.toHaveCount(0);
+      else await expect(page.getByText('Starting track…', { exact: true })).toBeVisible();
       await unchanged(); await sameWorkspace();
       release(); await expect(page.locator('.player-pending')).toHaveCount(0);
       await expect(page.locator('#player-transport')).toBeEnabled();
       await unchanged(); await sameWorkspace();
+      if (phone) {
+        await closeSearch(page);
+        await page.evaluate(() => { (document.activeElement as HTMLElement)?.blur(); scrollTo({ top: 0, behavior: 'instant' }); });
+        before = await layout(page);
+      }
       for (const name of ['Resume', 'Pause']) {
         await click('#player-transport'); await expect(page.locator('#player-transport')).toHaveText(name);
         await unchanged(); await sameWorkspace();
@@ -51,8 +63,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await unchanged(); await sameWorkspace();
       await page.screenshot({ path: `test-results/stable-player-playing-${viewport.width}x${viewport.height}.png`, fullPage: true });
       const previous = await (await page.request.get('/api/participant/state')).json();
-      await post('/api/participant/play', { turnId: previous.turnId, previousPlaybackId: previous.ownPlayback.id, trackId: 'demo:aurora' });
-      await expect(page.locator('.private-now-playing h2')).toHaveText('Northern Lights');
+      await post('/api/participant/play', { turnId: previous.turnId, previousPlaybackId: previous.ownPlayback.id, trackId: (await catalogueTrack(page.request, isolatedApp.origin)).id });
+      await expect(page.locator('.private-now-playing h2')).toHaveText(fixtureSongOnDisplay);
       await unchanged(); await sameWorkspace();
       const state = await (await page.request.get('/api/participant/state')).json();
       await post('/api/participant/control', { turnId: state.turnId, playbackId: state.ownPlayback.id, action: 'stop' });

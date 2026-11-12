@@ -5,12 +5,12 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { AppError } from '../src/model.js';
 
 async function fixture() {
   const directory = await mkdtemp('/tmp/opencode/doom-room-persistent-room-'); const store = new FileStore(directory);
-  const adapter = new DemoAdapter(3600); const engine = new Engine(store, adapter, 'http://app.local:3000'); await engine.init();
+  const adapter = new FakePlayback(3600); const engine = new Engine(store, adapter, 'http://app.local:3000'); await engine.init();
   return { directory, store, adapter, engine, host: () => engine.view({ kind: 'host' }),
     participant: (credential: string) => engine.view({ kind: 'participant', credential }) };
 }
@@ -49,7 +49,7 @@ test('a late join leaves a revealed pause and current turn untouched', async t =
 
 test('the room persists through restarts and emptying/rejoining without any session creation', async t => {
   const f = await fixture(); t.after(() => f.adapter.close()); const first = await f.engine.join('First');
-  const before = f.host(); const adapter = new DemoAdapter(); t.after(() => adapter.close());
+  const before = f.host(); const adapter = new FakePlayback(); t.after(() => adapter.close());
   const recovered = new Engine(f.store, adapter, 'http://app.local:3000'); await recovered.init();
   const host = () => recovered.view({ kind: 'host' });
   assert.equal(host().roomId, before.roomId); assert.equal(host().displayUrl, before.displayUrl); assert.equal(host().joinUrl, before.joinUrl);
@@ -74,7 +74,7 @@ test('legacy room records stop startup without overwriting room or private data'
   for (const schema of [1, 2]) {
     const bytes = JSON.stringify({ schema, session: { id: randomUUID(), participants: ['retained'] } });
     await writeFile(join(f.directory, 'state.json'), bytes);
-    const adapter = new DemoAdapter(); t.after(() => adapter.close()); const engine = new Engine(f.store, adapter, 'http://app.local:3000');
+    const adapter = new FakePlayback(); t.after(() => adapter.close()); const engine = new Engine(f.store, adapter, 'http://app.local:3000');
     await assert.rejects(engine.init(), /Persistent state could not be loaded/);
     assert.equal(await readFile(join(f.directory, 'state.json'), 'utf8'), bytes);
     assert.equal(await readFile(other, 'utf8'), 'saved-music-settings-fixture');

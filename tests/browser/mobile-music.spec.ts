@@ -1,85 +1,122 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack } from './app-fixture';
 import { dragSong } from './preparation-helpers';
 
+const songs = Array.from({ length: 8 }, (_, index) => `Collection song ${index} with a deliberately long title`);
+
 for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }, { width: 1099, height: 844 }]) {
-  test(`combined mobile music edits its list in place and summarises it while browsing at ${viewport.width}×${viewport.height}`, async ({ page, isolatedApp }) => {
+  test(`phone search fills the screen, finds songs by artist and album, and returns to the edited list at ${viewport.width}×${viewport.height}`, async ({ page, isolatedApp }) => {
     await page.setViewportSize(viewport);
+    await isolatedApp.connect(); isolatedApp.addTracks(songs.map(title => ({ title, artist: 'A long artist name', album: 'An album', duration: 600 })));
     const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
     await post('/api/participant/join', { pin: '1234', nickname: 'Mobile music' });
     await post('/api/participant/preparations/init', {});
-    for (let index = 0; index < 8; index++) isolatedApp.demo.catalogue.push({ id: `demo:collection-${index}`, title: `Collection song ${index} with a deliberately long title`, artist: 'A long artist name', album: 'An album', duration: 600 });
     await page.goto('/participant');
     const collection = page.locator('#music-collection'); const list = page.locator('.preparation-list');
     const input = page.getByRole('searchbox', { name: 'Search catalogue', exact: true });
+    const opener = page.locator('#music-search-open'); const done = page.locator('.search-sheet-done');
+    const summary = page.locator('.search-sheet-status');
+    const artistButton = page.getByRole('button', { name: 'View albums by Fixture artist', exact: true });
+    const albumButton = page.getByRole('button', { name: 'View tracks on Fixture album', exact: true });
     await expect(collection).toBeVisible(); await expect(page.locator('.list-count')).toHaveText('0 tracks');
-    // Phones: a one-line "Playlist" header, with no track count or save status.
+    // Phones: a one-line "Playlist" header, with no track count or save status, then the search field.
     await expect(list.getByRole('heading', { name: 'Playlist', exact: true })).toBeVisible();
     expect(await page.locator('.list-count').evaluate(node => node.closest('h2'))).toBeNull();
     await expect(page.locator('.list-count')).toBeHidden(); await expect(page.locator('.list-save-status')).toBeHidden();
     await expect(list.locator('.list-heading')).toHaveCSS('border-bottom-width', '1px');
-    await expect(page.getByRole('button', { name: /^(Open|Close) list$/ })).toHaveCount(0);
-    await expect(page.locator('.music-list-dialog')).toHaveCount(0);
+    await expect(opener).toBeVisible(); await expect(opener).toHaveText('Search for an artist');
+    // Search stays out of the page until it is opened.
+    await expect(input).toBeHidden(); await expect(page.locator('.catalogue-panel')).toBeHidden();
     expect(await collection.evaluate(node => ['.preparation-list', '.catalogue-panel'].every(selector => node.querySelector(selector)?.parentElement === node))).toBe(true);
     expect(await page.locator('#participant-player').evaluate(node => node.parentElement?.id)).not.toBe('music-collection');
     expect((await page.locator('#participant-player').boundingBox())!.height).toBe(230);
     const player = await page.locator('#participant-player').elementHandle();
-    await input.fill('Collection'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-    const rows = page.locator('.catalogue-results .track-row'); await expect(rows).toHaveCount(8);
-    const add = rows.first().getByRole('button', { name: 'Add to list', exact: true });
-    await add.scrollIntoViewIfNeeded();
-    const formY = () => input.evaluate(node => node.getBoundingClientRect().top + scrollY);
-    const beforeAdd = await formY();
+    // Where the page is when search opens (Playwright scrolls the field into view to tap it): Done returns there.
+    await opener.scrollIntoViewIfNeeded(); const pageScroll = await page.evaluate(() => scrollY);
+
+    // Open: search is the whole page, ready to type, with Done and a playlist summary at the top.
+    await opener.click();
+    await expect(input).toBeVisible(); await expect(input).toBeFocused(); await expect(done).toBeVisible();
+    for (const hidden of ['.app-header', '#participant-player', '.preparation-list']) await expect(page.locator(hidden)).toBeHidden();
+    await expect(summary).toContainText('Playlist'); await expect(summary).toContainText('0 tracks');
+    await expect(page.locator('.catalogue-results')).toContainText('Search for an artist, then choose an album and a song.');
+    expect(await page.evaluate(() => scrollY)).toBe(0);
+    await input.fill('Fixture artist'); await input.press('Enter');
+    // Searching lowers the keyboard and lists artists only, never songs.
+    await expect(artistButton).toBeVisible(); await expect(input).not.toBeFocused();
+    await expect(page.locator('.catalogue-results .track-row:not(.browse-row)')).toHaveCount(0);
+    await artistButton.click(); await albumButton.click();
+    const rows = page.locator('.catalogue-results .track-row:not(.browse-row)'); await expect(rows).toHaveCount(1 + songs.length);
+    const row = (index: number) => rows.filter({ has: page.getByText(songs[index]!, { exact: true }) });
+    // Compact rows: the add button is a round icon whose name is still "Add to list".
+    const add = row(0).getByRole('button', { name: 'Add to list', exact: true });
+    expect((await add.boundingBox())!.width).toBe(44);
+    expect((await row(0).boundingBox())!.height).toBeLessThan(90);
+    // The field, Done and summary stay pinned at the top while the results scroll.
+    await row(5).scrollIntoViewIfNeeded();
+    const fieldTop = () => input.evaluate(node => node.getBoundingClientRect().top); const pinned = await fieldTop();
+    expect(pinned).toBeLessThan(40);
     let release!: () => void; const held = new Promise<void>(resolve => { release = resolve; });
     await page.route('**/api/participant/preparations/add', async route => { await held; await route.continue(); });
     try {
       await add.click(); await expect(list).toHaveAttribute('data-save-state', 'saving');
-      expect(await formY()).toBe(beforeAdd);
-      release(); await expect(page.locator('.list-count')).toHaveText('1 track');
-      expect(await formY()).toBe(beforeAdd);
+      release(); await expect(summary).toContainText('1 track'); await expect(summary).toContainText(`Added: ${songs[0]}`);
+      expect(await fieldTop()).toBe(pinned);
     } finally { release(); await page.unroute('**/api/participant/preparations/add'); }
-    await expect(list.locator('.saved-track').first()).toBeVisible();
-    const row = await list.locator('.saved-track').first().elementHandle();
-    await rows.nth(1).getByRole('button', { name: 'Add to list', exact: true }).click();
-    await expect(page.locator('.list-count')).toHaveText('2 tracks'); expect(await formY()).toBe(beforeAdd);
-    await dragSong(page, 'Collection song 1 with a deliberately long title', 'Collection song 0 with a deliberately long title');
-    await expect(list.locator('.saved-track strong').first()).toContainText('Collection song 1');
-    expect(await row!.evaluate(node => node.isConnected && node.closest('#music-collection') !== null)).toBe(true);
-    await expect(input).toHaveValue('Collection');
-    // Browsing below the list: the list card scrolls away and a one-line playlist bar
-    // summarises it, without covering the focused result.
-    const button = rows.last().getByRole('button', { name: 'Add to list', exact: true });
-    await button.focus(); await button.scrollIntoViewIfNeeded();
-    await expect.poll(() => button.evaluate(node => {
-      const box = node.getBoundingClientRect(); const bar = document.querySelector<HTMLElement>('.mobile-list-bar')!;
-      const listBottom = document.querySelector('.preparation-list')!.getBoundingClientRect().bottom;
-      const cover = bar.hidden ? Math.max(0, listBottom) : bar.getBoundingClientRect().bottom;
-      return (listBottom > 0) !== !bar.hidden && box.top >= cover && box.bottom <= innerHeight;
-    })).toBe(true);
-    if (await page.locator('.mobile-list-bar').isVisible()) await expect(page.locator('.mobile-list-bar')).toContainText('2 tracks');
-    expect(await player!.evaluate(node => node === document.querySelector('#participant-player'))).toBe(true);
+    await expect(row(0).getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
+    await row(1).getByRole('button', { name: 'Add to list', exact: true }).click();
+    await expect(summary).toContainText('2 tracks');
 
-    // Save recovery is also inline, without an editor dialog or another list view.
+    // A failed save says so in the summary; Retry is in the list after Done.
     await page.route('**/api/participant/preparations/add', route => route.fulfill({ status: 503, json: { error: 'Saved music could not be confirmed.' } }));
-    await rows.nth(2).getByRole('button', { name: 'Add to list', exact: true }).click();
-    await expect(list).toHaveClass(/needs-attention/); await expect(collection.locator('.list-preview')).toHaveText('Needs attention');
-    await expect(list.getByRole('button', { name: 'Retry save', exact: true })).toBeVisible();
+    await row(2).getByRole('button', { name: 'Add to list', exact: true }).click();
+    await expect(summary).toContainText('Needs attention');
     await page.unroute('**/api/participant/preparations/add');
+
+    // Done returns to the page where it was, showing the list again.
+    await done.click();
+    await expect(input).toBeHidden(); await expect(page.locator('#participant-player')).toBeVisible(); await expect(opener).toBeFocused();
+    expect(await page.evaluate(() => scrollY)).toBe(pageScroll);
+    expect(await player!.evaluate(node => node === document.querySelector('#participant-player'))).toBe(true);
+    await expect(list).toHaveClass(/needs-attention/); await expect(collection.locator('.list-preview')).toHaveText('Needs attention');
     await list.getByRole('button', { name: 'Retry save', exact: true }).click();
     await expect(page.locator('.list-count')).toHaveText('3 tracks'); await expect(list).not.toHaveClass(/needs-attention/);
-    await expect(input).toHaveValue('Collection');
+    await dragSong(page, songs[1]!, songs[0]!);
+    await expect(list.locator('.saved-track strong').first()).toContainText('Collection song 1');
+
+    // Reopening shows the last search; Back steps out of an album and an artist, then closes search.
+    await opener.click(); await expect(input).toHaveValue('Fixture artist'); await expect(artistButton).toBeVisible();
+    await artistButton.click(); await albumButton.click(); await expect(rows).toHaveCount(1 + songs.length);
+    await page.goBack(); await expect(albumButton).toBeVisible();
+    await page.goBack(); await expect(artistButton).toBeVisible();
+    await page.goBack(); await expect(input).toBeHidden(); await expect(list).toBeVisible();
     expect((await (await page.request.get('/api/participant/state')).json()).ownPlayback).toBeNull();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: `test-results/mobile-music-${viewport.width}.png` });
   });
 }
 
+test('a new search inside phone search replaces the last one, so Back leaves search instead of replaying queries', async ({ page, isolatedApp }) => {
+  await isolatedApp.connect(); await page.setViewportSize({ width: 390, height: 844 });
+  await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Searcher' }, headers: { Origin: isolatedApp.origin } });
+  await page.goto('/participant');
+  const input = page.getByRole('searchbox', { name: 'Search catalogue', exact: true });
+  await page.locator('#music-search-open').click();
+  await input.fill('empty'); await input.press('Enter');
+  await expect(page.locator('.catalogue-results')).toContainText('No artists found. Try another search.');
+  await input.fill('Fixture artist'); await input.press('Enter');
+  await expect(page.getByRole('button', { name: 'View albums by Fixture artist', exact: true })).toBeVisible();
+  await page.locator('.search-clear').click(); await expect(input).toHaveValue(''); await expect(input).toBeFocused();
+  await page.goBack(); await expect(input).toBeHidden(); await expect(page.locator('.preparation-list')).toBeVisible();
+});
+
 test('the unified collection retains its desktop panes and actual row nodes after editing and resizing', async ({ page, isolatedApp }) => {
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   await post('/api/participant/join', { pin: '1234', nickname: 'Music layout' });
   let library = await (await post('/api/participant/preparations/init', {})).json();
-  for (const trackId of ['demo:aurora', 'demo:summer', 'demo:night']) library = (await (await post('/api/participant/preparations/add', { trackId,
+  await isolatedApp.connect(); isolatedApp.addTracks([{ title: 'Late Summer' }, { title: 'Night Bus Home' }]);
+  for (const title of ['Real catalogue fixture', 'Late Summer', 'Night Bus Home']) library = (await (await post('/api/participant/preparations/add', { trackId: (await catalogueTrack(page.request, isolatedApp.origin, title)).id,
     operation: { id: randomUUID(), issuedAt: Date.now(), revision: library.revision } })).json()).view;
   await page.setViewportSize({ width: 1440, height: 1000 }); await page.goto('/participant');
   await expect(page.locator('.list-count')).toHaveText('3 tracks');

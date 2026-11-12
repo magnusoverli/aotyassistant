@@ -73,6 +73,8 @@ export async function startMusicAssistantFixture(port = 0) {
   const authorizations = ['Bearer browser-test-token', 'Bearer fixture-token', 'Bearer browser-login-session', `Bearer ${appToken}`];
   let failed = false;
   const uploads = new Map<string, typeof track>();
+  // Songs a test adds to the fixture album, after the fixture song: found by artist, album, then song, like any other.
+  const extraTracks: (typeof track)[] = [];
   let uploadDuration = 180;
   let uploadMode: 'normal' | 'unreachable' | 'wrong-identity' | 'no-callback' = 'normal';
   let uploadDelay = 0;
@@ -173,7 +175,7 @@ export async function startMusicAssistantFixture(port = 0) {
     else if (command === 'music/albums/album_tracks' && args.item_id === 'fixture-album-full') result = [track, albummate];
     else if (command === 'music/albums/album_tracks') {
       const tracks = multiTracks.filter(t => t.provider === args.provider_instance_id_or_domain);
-      result = catalogueMode ? catalogueMode.startsWith('multi-provider-metadata') ? tracks.map(metadataOnly) : tracks : [track];
+      result = catalogueMode ? catalogueMode.startsWith('multi-provider-metadata') ? tracks.map(metadataOnly) : tracks : [track, ...extraTracks];
     }
     else if (command === 'music/item_by_uri' && typeof args.uri === 'string' && args.uri.startsWith('builtin://track/')) {
       const url = args.uri.slice('builtin://track/'.length);
@@ -187,7 +189,7 @@ export async function startMusicAssistantFixture(port = 0) {
         uploads.set(args.uri, uploaded); result = uploaded;
       } catch { res.statusCode = 400; res.end(`PRIVATE unreachable source ${url}`); return; }
     }
-    else if (command === 'music/item_by_uri') result = [...multiTracks, albummate].find(t => t.uri === args.uri) ?? track;
+    else if (command === 'music/item_by_uri') result = [...multiTracks, albummate, ...extraTracks].find(t => t.uri === args.uri) ?? track;
     else if (command === 'player_queues/get_active_queue') result = transfers ? activeQueue(args.player_id) ?? null : queue;
     else if (command === 'player_queues/get') result = queues.get(args.queue_id) ?? null;
     else if (command === 'player_queues/transfer' && transfers) {
@@ -224,7 +226,7 @@ export async function startMusicAssistantFixture(port = 0) {
       queue.shuffle_enabled = args.shuffle_enabled;
     }
     else if (command === 'player_queues/play_media') {
-      const selected = args.media?.[0] === track.uri ? track : multiTracks.find(t => t.uri === args.media?.[0]) ?? uploads.get(args.media?.[0]);
+      const selected = args.media?.[0] === track.uri ? track : [...multiTracks, ...extraTracks].find(t => t.uri === args.media?.[0]) ?? uploads.get(args.media?.[0]);
       if (!selected || args.option !== 'replace' || args.media.length !== 1) { res.statusCode = 400; res.end('Wrong recording or queue option'); return; }
       queue.items = 1; queue.current_item = { queue_item_id: `fixture-item-${++itemNumber}`, media_item: { ...selected },
         streamdetails: { provider: selected.provider, item_id: selected.item_id } };
@@ -298,6 +300,16 @@ export async function startMusicAssistantFixture(port = 0) {
       const entered = new Promise<void>(resolve => { enter = resolve; });
       const released = new Promise<void>(resolve => { release = resolve; });
       imageGate = { entered: enter, released }; return { entered, release };
+    },
+    /** Adds songs to the fixture album ("Fixture artist" → "Fixture album"); each one plays like the fixture song. */
+    addTracks(songs: { title: string; artist?: string; album?: string; duration?: number }[]) {
+      return songs.map(song => {
+        const id = `extra-track-${extraTracks.length + 1}`;
+        const added: typeof track = { ...structuredClone(track), item_id: id, uri: `spotify://track/${id}`, name: song.title, version: '', duration: song.duration ?? track.duration,
+          artists: [{ ...track.artists[0]!, name: song.artist ?? track.artists[0]!.name }], album: { ...track.album, name: song.album ?? track.album.name },
+          provider_mappings: [{ item_id: id, provider_domain: 'spotify', available: true }] };
+        extraTracks.push(added); return added;
+      });
     },
     delayImages(ms: number) { imageDelay = ms; },
     delayNextVolumeRead(ms: number) { nextVolumeDelay = ms; },

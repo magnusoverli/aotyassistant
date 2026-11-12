@@ -11,7 +11,7 @@ export const onlineCookie = (req: IncomingMessage) => readCookie(req, cookieName
 const readRoutes = [
   /^\/api\/browser-speaker\/(?:info|session\/[a-f0-9-]{36})$/,
   /^\/api\/participant\/browser-speaker\/session\/[a-f0-9-]{36}$/,
-  /^\/(?:join|participant|user\/settings|display)?$/, /^\/demo-cover\.svg$/, /^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css|svg|woff2)$/,
+  /^\/(?:join|participant|user\/settings|display)?$/, /^\/assets\/[a-zA-Z0-9_-]+\.(?:js|css|svg|woff2)$/,
   /^\/api\/participant\/(?:identity|state|events)$/,
   /^\/api\/participant\/identity\/events$/,
   /^\/api\/user-pictures\/[a-f0-9-]{36}\/[a-f0-9]{32}\.webp$/,
@@ -81,7 +81,7 @@ export function publicListener(handler: RequestListener, online: OnlineAccess) {
     if (path === '/api/online/session' && req.method === 'GET') { res.status(authorized ? 200 : 401).json({ ok: authorized }); return; }
     if (!publicRoute(req.method, path)) { res.status(404).json({ error: 'Page not found.' }); return; }
     // The shell contains no room data. It redeems the fragment before starting any room requests.
-    const shell = ['GET', 'HEAD'].includes(req.method) && (['/', '/join', '/participant', '/user/settings', '/display', '/demo-cover.svg'].includes(path) || path.startsWith('/assets/'));
+    const shell = ['GET', 'HEAD'].includes(req.method) && (['/', '/join', '/participant', '/user/settings', '/display'].includes(path) || path.startsWith('/assets/'));
     if (!shell && !authorized) { res.status(401).json({ error: 'Open the latest invitation from your host to continue.' }); return; }
     if (req.method === 'POST' && /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}$/.test(path)) {
       const length = req.headers['content-length'];

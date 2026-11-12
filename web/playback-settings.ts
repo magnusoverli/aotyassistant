@@ -18,7 +18,7 @@ export const autoRevealSetting: ToggleSetting = {
   help: 'Reveal track details on the room display at 70% of playback progress. Participants can still reveal earlier. Tracks with unknown duration remain manual.',
   inactiveHelp: 'Only applies while Secret playback is on.',
 };
-/** Independent of Music Assistant setup: also available in demo mode. */
+/** Independent of Music Assistant setup: these room settings save before it is connected. */
 export class PlaybackSettingsPanel {
   readonly element: HTMLElement;
   private toggle = el('input');

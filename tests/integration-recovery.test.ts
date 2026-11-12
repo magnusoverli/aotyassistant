@@ -1,3 +1,4 @@
+import { findCatalogueTrack } from './fixtures/find-track.js';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -22,7 +23,7 @@ test('manual same-server address changes retain exact saved selections and speak
   const remote = await startMusicAssistantFixture(); const other = await startMusicAssistantFixture(); t.after(remote.close); t.after(other.close);
   const store = new IntegrationFileStore(await directory(t)); const manager = new IntegrationManager(store); t.after(() => manager.close()); await manager.init();
   await manager.save(remote.origin, 'fixture-token', 0); await manager.check(1); await manager.selectDestination('sonos:room', 1);
-  const track = (await manager.search('fixture', 'owner'))[0]!; const saved = await manager.captureSaved(track.id, 'owner');
+  const track = (await findCatalogueTrack(manager, 'owner'))[0]!; const saved = await manager.captureSaved(track.id, 'owner');
   const binding = manager.sourceBindingId; const destination = manager.view().destination; const revision = manager.view().revision;
   const moved = remote.origin.replace('127.0.0.1', 'localhost');
   await assert.rejects(manager.save(moved, undefined, revision), /old token cannot be reused/);
@@ -37,7 +38,7 @@ test('manual same-server address changes retain exact saved selections and speak
   await assert.rejects(manager.save('http://127.0.0.1:1', 'fixture-token', manager.view().revision), /Cannot connect/);
   await assert.rejects(manager.save(remote.origin, 'bad-token', manager.view().revision), /rejected the token/);
   assert.deepEqual(await store.load(), before);
-  assert.ok(remote.calls.every(call => ['players/all', 'player_queues/get_active_queue', 'music/search', 'music/item_by_uri'].includes(call.command)));
+  assert.ok(remote.calls.every(call => ['players/all', 'player_queues/get_active_queue', 'music/search', 'music/artists/artist_albums', 'music/albums/album_tracks', 'music/item_by_uri'].includes(call.command)));
 });
 
 test('slow address validation leaves the command lane free and cannot overwrite newer settings or owned playback', async t => {
@@ -91,7 +92,7 @@ async function recoveryFixture(t: TestContext) {
     if (path === '/addons/official_music_assistant/info') return { state: 'started', discovery: ['music_assistant'], host_network: true };
     return {};
   } };
-  const config = { port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', guestOverride: true, addon: true, dataDir: dir, demoSeconds: 30 };
+  const config = { port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', guestOverride: true, addon: true, dataDir: dir };
   const setup = new SetupManager(config, manager, () => assert.fail('Saved guest origin changed'), supervisor, async () => mdns,
     async origins => { scans++; return discoverServers(origins, readInfo); }, { retryMs: 10, maxRetryMs: 20, refreshMs: 60, minimumMs: 1, jitter: () => 1 });
   t.after(() => setup.close());
@@ -134,7 +135,7 @@ test('concurrent discovery requests share one scan and closing during discovery 
   const manager = new IntegrationManager(new IntegrationFileStore(await directory(t))); await manager.init(); t.after(() => manager.close());
   let release!: () => void; let enter!: () => void; let scans = 0;
   const entered = new Promise<void>(resolve => { enter = resolve; }); const gate = new Promise<void>(resolve => { release = resolve; });
-  const setup = new SetupManager({ port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', dataDir: '', demoSeconds: 30 }, manager,
+  const setup = new SetupManager({ port: 3000, listenHost: '127.0.0.1', guestUrl: 'http://party.local:3000', dataDir: '' }, manager,
     () => assert.fail('Unexpected guest change'), undefined, async () => [], async () => { scans++; enter(); await gate; return []; },
     { retryMs: 10, maxRetryMs: 20, refreshMs: 60, minimumMs: 1 });
   t.after(() => { release(); setup.close(); });

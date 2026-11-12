@@ -1,3 +1,4 @@
+import { findTrack } from './fixtures/find-track.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -8,9 +9,9 @@ import { Engine } from '../src/engine.js';
 import { FileStore, PersistenceError } from '../src/store.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { ManagedPlayback } from '../src/live-playback.js';
-import { DemoAdapter } from '../src/playback.js';
 import { createApp } from '../src/http.js';
-import { AppError, type CatalogueTrack } from '../src/model.js';
+import { AppError, type CatalogueArtist } from '../src/model.js';
+import { stubApi } from './fixtures/stub-api.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 
 async function fixture() {
@@ -18,14 +19,14 @@ async function fixture() {
   const file = new IntegrationFileStore(dir); let failStore = false;
   const manager = new IntegrationManager({ load: () => file.load(), save: async state => { if (failStore) throw new PersistenceError('not-committed'); await file.save(state); } });
   await manager.init(); await manager.save(remote.origin, 'fixture-token', 0); await manager.selectDestination('sonos:room', manager.view().revision);
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 20);
+  const adapter = new ManagedPlayback(manager, 20);
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const engine = new Engine(new FileStore(dir), adapter, origin, manager); await engine.init();
   await adapter.refresh();
   const host = () => engine.view({ kind: 'host' });
   const alex = await engine.join('Alex'); const sam = await engine.join('Sam');
-  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir, demoSeconds: 30 }, 'web', manager); server.on('request', http.app);
+  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: dir }, 'web', manager); server.on('request', http.app);
   const participant = (credential: string) => engine.view({ kind: 'participant', credential });
   const context = (credential: string) => engine.catalogueContext(credential);
   const request = (path: string, credential?: string, data?: unknown) => fetch(origin + path, {
@@ -45,7 +46,7 @@ test('speaker-only changes preserve participant catalogue identity, cached brows
   const artists = await f.engine.browse(f.alex, 'artists', 'Fixture');
   const albums = await f.engine.browse(f.alex, 'albums', artists.artists![0]!.id);
   const track = (await f.engine.browse(f.alex, 'tracks', albums.albums![0]!.id)).tracks![0]!;
-  const other = (await f.engine.search(f.sam, f.host().turnId!, 'fixture')).tracks[0]!;
+  const other = await findTrack(f.engine, f.sam, 'fixture');
   const before = f.participant(f.alex); const otherBefore = f.participant(f.sam); const routing = f.manager.configurationRevision;
   const oldVolumeRevision = before.volume!.revision;
   const response = await f.request('/api/host/integrations/destination', undefined, { id: 'sonos:bedroom', revision: f.manager.view().revision });
@@ -68,7 +69,7 @@ test('speaker-only changes preserve participant catalogue identity, cached brows
 
 test('unchanged-credential saves keep references, but token/origin replacement, forget, and restart invalidate catalogue identity', async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   const epoch = f.manager.catalogueRevision;
   await f.manager.save(f.remote.origin, undefined, f.manager.view().revision);
   assert.equal(f.manager.catalogueRevision, epoch); await f.manager.resolve(track.id, f.context(f.alex));
@@ -77,7 +78,7 @@ test('unchanged-credential saves keep references, but token/origin replacement, 
   assert.equal((await f.request(track.artwork!, f.alex)).status, 409);
   await f.manager.save(f.remote.origin, 'fixture-token', f.manager.view().revision);
   assert.notEqual(f.manager.catalogueRevision, epoch); await assert.rejects(f.manager.resolve(track.id, f.context(f.alex)), status(409), 'Returning to old credentials must not resurrect old references.');
-  const fresh = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const fresh = await findTrack(f.engine, f.alex, 'fixture');
   const second = await startMusicAssistantFixture(); t.after(second.close);
   const originEpoch = f.manager.catalogueRevision;
   await assert.rejects(f.manager.save(second.origin, 'fixture-token', f.manager.view().revision), /different Music Assistant server/);
@@ -85,20 +86,20 @@ test('unchanged-credential saves keep references, but token/origin replacement, 
   await f.manager.clear(f.manager.view().revision);
   await f.manager.save(second.origin, 'fixture-token', f.manager.view().revision);
   assert.notEqual(f.manager.catalogueRevision, originEpoch); await assert.rejects(f.manager.resolve(fresh.id, f.context(f.alex)), status(409));
-  const current = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const current = await findTrack(f.engine, f.alex, 'fixture');
   const restored = new IntegrationManager(f.store); await restored.init();
   assert.equal(restored.configured, true); assert.equal(restored.view().revision, f.manager.view().revision);
   assert.notEqual(restored.catalogueRevision, f.manager.catalogueRevision); assert.notEqual(restored.configurationRevision, f.manager.configurationRevision);
   await assert.rejects(restored.resolve(current.id, f.context(f.alex)), status(409));
   await assert.rejects(restored.artwork(decodeURIComponent(current.artwork!.split('/').at(-1)!), f.context(f.alex)), status(409));
   const forgotten = f.manager.catalogueRevision; await f.manager.clear(f.manager.view().revision);
-  assert.notEqual(f.manager.catalogueRevision, forgotten); assert.equal(f.participant(f.alex).catalogue!.source, 'demo');
+  assert.notEqual(f.manager.catalogueRevision, forgotten); assert.equal(f.participant(f.alex).catalogue!.configured, false);
   assert.equal((await f.request(current.artwork!, f.alex)).status, 409);
 });
 
 test('in-flight private artwork survives a speaker-only change but is denied across a credential change', { timeout: 10_000 }, async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   const imageGate = f.remote.holdNextImageRead(); t.after(imageGate.release);
   const image = f.request(track.artwork!, f.alex);
   await imageGate.entered;
@@ -115,7 +116,7 @@ test('in-flight private artwork survives a speaker-only change but is denied acr
 
 test('speaker changes invalidate resolved playback and old volume intents, but an explicit fresh play can reuse the prepared reference', async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   const resolved = await f.adapter.resolve(track.id, f.context(f.alex));
   await f.manager.selectDestination('sonos:bedroom', f.manager.view().revision);
   await assert.rejects(f.adapter.play(resolved, crypto.randomUUID()), status(409));
@@ -134,7 +135,7 @@ test('speaker changes invalidate resolved playback and old volume intents, but a
 
 test('failed persistence changes neither routing/catalogue identity nor cached preparation and playback availability', async t => {
   const f = await fixture(); t.after(f.close);
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   const epoch = f.manager.catalogueRevision; const routing = f.manager.configurationRevision;
   f.failStore(); await assert.rejects(f.manager.selectDestination('sonos:bedroom', f.manager.view().revision), status(503));
   await assert.rejects(f.manager.save(f.remote.origin, 'replacement-token', f.manager.view().revision), status(503));
@@ -142,24 +143,24 @@ test('failed persistence changes neither routing/catalogue identity nor cached p
   await f.manager.resolve(track.id, f.context(f.alex)); assert.equal(writes(f).length, 0);
 });
 
-test('in-flight catalogue search survives routing changes but not credential changes', async () => {
-  let finish!: (tracks: CatalogueTrack[]) => void;
-  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-routing-race-')), () => ({
+test('in-flight artist search survives routing changes but not credential changes', async () => {
+  let finish!: (page: { items: CatalogueArtist[] }) => void;
+  const manager = new IntegrationManager(new IntegrationFileStore(await mkdtemp('/tmp/opencode/doom-room-routing-race-')), () => stubApi({
     async inspect() { return { checkedAt: Date.now(), serverVersion: 'fixture', schemaVersion: 65, docsAvailable: true, players: [{ id: 'speaker', name: 'Speaker', available: true }] }; },
-    async activeQueue() { return 'queue'; }, search: () => new Promise(resolve => { finish = resolve; }),
+    async activeQueue() { return 'queue'; }, artists: () => new Promise(resolve => { finish = resolve; }),
   }));
   await manager.init(); await manager.save('http://localhost:8095', 'fake-token', 0);
-  const epoch = manager.catalogueRevision; const pending = manager.search('fixture');
-  await manager.selectDestination('speaker', manager.view().revision); finish([]);
-  assert.deepEqual(await pending, []); assert.equal(manager.catalogueRevision, epoch);
-  const changed = manager.search('fixture'); await manager.save('http://localhost:8095', 'different-token', manager.view().revision); finish([]);
+  const epoch = manager.catalogueRevision; const pending = manager.browse('artists', 'fixture', 'member');
+  await manager.selectDestination('speaker', manager.view().revision); finish({ items: [] });
+  assert.deepEqual((await pending).artists, []); assert.equal(manager.catalogueRevision, epoch);
+  const changed = manager.browse('artists', 'fixture', 'member'); await manager.save('http://localhost:8095', 'different-token', manager.view().revision); finish({ items: [] });
   await assert.rejects(changed, status(409));
 });
 
 test('browse may finish across a routing change but an already resolving playback cannot silently move destinations', async t => {
   const f = await fixture(); t.after(f.close);
   const artists = await f.engine.browse(f.alex, 'artists', 'Fixture');
-  const track = (await f.engine.search(f.alex, f.host().turnId!, 'fixture')).tracks[0]!;
+  const track = await findTrack(f.engine, f.alex, 'fixture');
   const api = await f.manager.withPlayback(async client => client);
   const albums = api.albums.bind(api); let releaseBrowse!: () => void;
   const browseGate = new Promise<void>(resolve => { releaseBrowse = resolve; });

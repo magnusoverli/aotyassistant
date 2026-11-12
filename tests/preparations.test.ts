@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, stat, writeFile, open } from 'node:fs/promise
 import { join } from 'node:path';
 import { AppError } from '../src/model.js';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { FileStore } from '../src/store.js';
 import { PreparationManager, PreparationFileStore, preparationLimits, preparationStateSchema,
   type PreparationStore, type PreparationState, type PreparationOperation, type PreparationView, type SavedSelection } from '../src/preparations.js';
@@ -250,7 +250,7 @@ test('invalid descriptor metadata/proxy URLs and mutated operation bodies fail b
 });
 
 test('preparation edits and save failures do not touch a running engine, its turn/reveal, or playback controls', async t => {
-  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-isolation-'); const adapter = new DemoAdapter(3600); t.after(() => adapter.close());
+  const dir = await mkdtemp('/tmp/opencode/doom-room-preparation-isolation-'); const adapter = new FakePlayback(3600); t.after(() => adapter.close());
   let controls = 0; const control = adapter.control.bind(adapter); adapter.control = async action => { controls++; await control(action); };
   const engine = new Engine(new FileStore(dir), adapter, 'http://localhost:3000'); await engine.init();
   const member = await engine.join('Alex');

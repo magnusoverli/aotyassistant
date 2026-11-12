@@ -81,7 +81,7 @@ test('guest address discovery completes before slow Music Assistant browsing', a
   const pending = new Promise<string[]>(resolve => { finishBrowse = resolve; });
   let addressReady!: (value: string) => void;
   const ready = new Promise<string>(resolve => { addressReady = resolve; });
-  const setup = new SetupManager({ port: 3000, listenHost: '0.0.0.0', guestUrl: 'http://localhost:3000', dataDir: '.', demoSeconds: 30, addon: true }, manager, addressReady,
+  const setup = new SetupManager({ port: 3000, listenHost: '0.0.0.0', guestUrl: 'http://localhost:3000', dataDir: '.', addon: true }, manager, addressReady,
     { read: async path => path === '/addons/self/info' ? { network: { '3000/tcp': 4000 } } : path === '/network/info' ? { interfaces: [{ primary: true, ipv4: { address: ['192.168.1.8/24'] } }] } : {} },
     () => pending, async () => []);
   const scan = setup.refresh();

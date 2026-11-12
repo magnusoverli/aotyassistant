@@ -1,18 +1,18 @@
 import { expect } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSong } from './app-fixture';
 
 test('host progress respects reveal, unavailable positions and stable keyboard controls across live updates', async ({ page, isolatedApp }) => {
-  const { engine } = isolatedApp;
+  const { engine } = isolatedApp; await isolatedApp.connect(); isolatedApp.addTracks([{ title: 'Second fixture pick' }]);
   const credential = await engine.join('A very long participant display name'); await engine.join('Sam');
   const turn = engine.view({ kind: 'host' }).turnId!;
-  await engine.play(credential, turn, null, 'demo:aurora'); const id = engine.view({ kind: 'host' }).hostPlayback!.id;
+  await engine.play(credential, turn, null, (await isolatedApp.trackFor(credential)).id); const id = engine.view({ kind: 'host' }).hostPlayback!.id;
   await page.goto('/host');
   const live = page.locator('.host-live');
   const stop = page.getByRole('button', { name: 'Stop song — keep turn', exact: true });
   const writes: string[] = []; page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
   await expect(live.getByRole('progressbar')).toBeVisible();
   await expect(live.locator('.track-times')).toBeEmpty(); await expect(live).toContainText('Hidden on room display');
-  await expect(live).not.toContainText('Northern Lights');
+  await expect(live).not.toContainText(fixtureSong);
   await expect(live.getByRole('button', { name: 'Pause', exact: true })).toBeEnabled();
   await expect(live.getByRole('button', { name: /^(Reveal|Play first)/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'More', exact: true })).toHaveCount(0);
@@ -25,15 +25,16 @@ test('host progress respects reveal, unavailable positions and stable keyboard c
   await expect(live.locator('.host-playback-status')).toContainText('Paused'); await expect(stop).toBeEnabled();
   const paused = await live.getByRole('progressbar').getAttribute('value');
   await engine.reveal(credential, turn, id);
-  await expect(live).toContainText('Visible on room display'); await expect(live.locator('.track-times')).toContainText('1:00');
+  await expect(live).toContainText('Visible on room display'); await expect(live.locator('.track-times')).toContainText('3:00');
   expect(await live.getByRole('progressbar').getAttribute('value')).toBe(paused);
-  await expect(stop).toBeFocused(); await expect(live).not.toContainText('Northern Lights');
+  await expect(stop).toBeFocused(); await expect(live).not.toContainText(fixtureSong);
   expect(await nodes.evaluate(saved => saved.card === document.querySelector('.host-live') && saved.progress === document.querySelector('.host-progress progress') && saved.stop === document.querySelector('#host-stop'))).toBe(true);
-  const progress = isolatedApp.demo.progress.bind(isolatedApp.demo);
-  isolatedApp.demo.progress = () => null; engine.emit('change', 'playback');
+  // Music Assistant stops reporting a position; then reports one again.
+  const progress = isolatedApp.adapter.progress.bind(isolatedApp.adapter);
+  isolatedApp.adapter.progress = () => null; engine.emit('change', 'playback');
   await expect(live.getByText('Position unavailable', { exact: true })).toBeVisible();
   await expect(live.getByRole('progressbar')).toBeHidden();
-  isolatedApp.demo.progress = progress; engine.emit('change', 'playback');
+  isolatedApp.adapter.progress = progress; engine.emit('change', 'playback');
   await expect(live.getByRole('progressbar')).toBeVisible();
   await expect(live.getByText('Position unavailable', { exact: true })).toBeHidden();
   for (const width of [1440, 1100, 800, 700, 390, 320]) {
@@ -50,7 +51,7 @@ test('host progress respects reveal, unavailable positions and stable keyboard c
   }
   page.once('dialog', dialog => dialog.dismiss()); await stop.click();
   expect(writes).toEqual([]); expect(engine.view({ kind: 'host' }).hostPlayback!.status).toBe('paused');
-  await stop.focus(); await engine.play(credential, turn, id, 'demo:night');
+  await stop.focus(); await engine.play(credential, turn, id, (await isolatedApp.trackFor(credential, 'Second fixture pick')).id);
   await expect(stop).toBeVisible();
   await expect(page.getByRole('button', { name: 'Skip turn', exact: true })).toBeFocused();
   await expect(live).toContainText('Hidden on room display'); await expect(live.locator('.track-times')).toBeEmpty();
@@ -62,9 +63,11 @@ test('host progress respects reveal, unavailable positions and stable keyboard c
 });
 
 test('confirmed host stop shows pending feedback, keeps the turn and synchronizes the participant and display', async ({ page, context, isolatedApp }) => {
+  await isolatedApp.connect();
   const joined = await (await page.request.post('/api/participant/join', { data: { pin: '1234', nickname: 'Magnus' }, headers: { Origin: isolatedApp.origin } })).json();
   await isolatedApp.engine.join('Sam');
-  const response = await page.request.post('/api/participant/play', { data: { turnId: joined.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });
+  const track = await catalogueTrack(page.request, isolatedApp.origin);
+  const response = await page.request.post('/api/participant/play', { data: { turnId: joined.turnId, previousPlaybackId: null, trackId: track.id }, headers: { Origin: isolatedApp.origin } });
   expect(response.ok()).toBe(true); const playing = await response.json();
   const participant = await context.newPage(); await participant.goto('/participant');
   const display = await context.newPage(); await display.goto('/display'); await page.goto('/host');
@@ -89,9 +92,9 @@ test('confirmed host stop shows pending feedback, keeps the turn and synchronize
 });
 
 test('host stop failures and lost acknowledgements reconcile through reads without retrying the command', async ({ page, context, isolatedApp }) => {
-  const credential = await isolatedApp.engine.join('Magnus');
+  await isolatedApp.connect(); const credential = await isolatedApp.engine.join('Magnus');
   const turn = isolatedApp.engine.view({ kind: 'host' }).turnId!;
-  await isolatedApp.engine.play(credential, turn, null, 'demo:aurora'); await page.goto('/host');
+  await isolatedApp.engine.play(credential, turn, null, (await isolatedApp.trackFor(credential)).id); await page.goto('/host');
   let requests = 0;
   await page.route('**/api/host/stop', async route => {
     requests++;

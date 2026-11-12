@@ -11,7 +11,6 @@ export const trackSchema = z.object({
 }).strict();
 export type Track = z.infer<typeof trackSchema>;
 
-export type CatalogueSource = 'demo' | 'music-assistant';
 export type CatalogueMatchKind = 'identity' | 'metadata';
 export type CatalogueTrack = {
   id: string; title: string; artist: string; album: string; version: string;
@@ -19,7 +18,6 @@ export type CatalogueTrack = {
   sources?: CatalogueTrack[];
   matchKind?: CatalogueMatchKind;
 };
-export type CatalogueSearch = { source: CatalogueSource; playbackAvailable: boolean; tracks: CatalogueTrack[]; notices?: string[] };
 export type CatalogueArtist = { id: string; name: string; provider: string; description?: string; artwork?: string; sources?: CatalogueArtist[]; matchKind?: CatalogueMatchKind };
 export type CatalogueAlbum = { id: string; name: string; artist: string; provider: string; version: string; year: number | null; artwork?: string; artistArtwork?: string; sources?: CatalogueAlbum[]; matchKind?: CatalogueMatchKind };
 export type CataloguePage<T> = { items: T[]; notices?: string[] };
@@ -32,7 +30,7 @@ export interface CatalogueProvider {
   readonly output?: OutputState;
   readonly catalogueRevision?: string | number;
   readonly configurationRevision?: string | number;
-  search(query: string, context?: string): Promise<CatalogueTrack[]>;
+  /** Music is found by artist, then album, then track; songs are never searched for directly. */
   browse?(kind: 'artists' | 'albums' | 'tracks', value: string, turnId: string): Promise<CatalogueBrowse>;
 }
 
@@ -96,7 +94,7 @@ export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambi
 /** The room's logo: one shape drawn in the room's colours. `url` changes whenever the image does. */
 export type RoomLogoView = { url: string; width: number; height: number };
 export type View = {
-  mode: 'demo' | 'music-assistant'; connected: boolean; roomId: string | null;
+  connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;
   output?: OutputState;
   playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';
@@ -108,7 +106,8 @@ export type View = {
   songEnd?: AutoplayMode;
   user?: UserProfile;
   hostPlayback?: Pick<NonNullable<Room['playback']>, 'id' | 'status' | 'revealed'> | null;
-  catalogue?: { source: CatalogueSource; playbackAvailable: boolean; revision?: string | number };
+  /** Participants only. `configured` is false until the host connects Music Assistant: there is nothing to search. */
+  catalogue?: { configured: boolean; playbackAvailable: boolean; revision?: string | number };
   playbackIssue?: string;
   playbackProblem?: PlaybackProblem;
   progress?: PlaybackProgress; volume?: VolumeState;

@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { jsonBody } from '../src/http-utils.js';
 
 const make = () => z.strictObject({ turnId: z.uuid(), previousPlaybackId: z.uuid().nullable(), trackId: z.string().min(1).max(1000) });
-const input = { turnId: '11111111-1111-4111-8111-111111111111', previousPlaybackId: null, trackId: 'demo:aurora' };
+const input = { turnId: '11111111-1111-4111-8111-111111111111', previousPlaybackId: null, trackId: 'track:example' };
 const reused = make(); const req = { body: input } as Request; const res = {} as Response;
 let result: unknown;
 const route = jsonBody(make(), value => { result = value; });

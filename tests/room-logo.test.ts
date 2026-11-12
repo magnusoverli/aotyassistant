@@ -11,7 +11,7 @@ import { RoomLogo, logoShape, prepareLogo } from '../src/room-logo.js';
 import { AppError, type RoomLogoView, type View } from '../src/model.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 import type { Config } from '../src/config.js';
 
@@ -122,8 +122,8 @@ test('the host uploads and removes the logo; every page learns it before its fir
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port;
   const base = `http://127.0.0.1:${port}`;
-  const config: Config = { port, listenHost: '127.0.0.1', guestUrl: base, dataDir: await directory(t), demoSeconds: 3600 };
-  const adapter = new DemoAdapter(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl);
+  const config: Config = { port, listenHost: '127.0.0.1', guestUrl: base, dataDir: await directory(t) };
+  const adapter = new FakePlayback(3600); const engine = new Engine(new FileStore(config.dataDir), adapter, config.guestUrl);
   await engine.init();
   const { app, close } = createApp(engine, config, 'web');
   server.on('request', app);

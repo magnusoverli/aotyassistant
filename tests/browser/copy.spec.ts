@@ -1,6 +1,6 @@
 import { expect, type Page } from '@playwright/test';
-import { test } from './app-fixture';
-import { dragSong } from './preparation-helpers';
+import { test, catalogueTrack, fixtureSongOnDisplay } from './app-fixture';
+import { addSongs, dragSong } from './preparation-helpers';
 
 async function plainCopy(page: Page) {
   await expect(page.locator('.host-warning, .setup-steps, .session-navigation')).toHaveCount(0);
@@ -44,11 +44,12 @@ test('pages use function-first copy while joining, playback and reveal remain us
     await host.screenshot({ path: 'test-results/host-plain-copy.png', fullPage: true });
     const tv = await displayContext.newPage(); await tv.goto(session.displayUrl);
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible(); await plainCopy(tv);
-    const play = await listener.request.post('/api/participant/play', { headers: { Origin: isolatedApp.origin }, data: { turnId: session.turnId, previousPlaybackId: null, trackId: 'demo:aurora' } }); expect(play.ok()).toBe(true);
+    await isolatedApp.connect(); const track = await catalogueTrack(listener.request, isolatedApp.origin);
+    const play = await listener.request.post('/api/participant/play', { headers: { Origin: isolatedApp.origin }, data: { turnId: session.turnId, previousPlaybackId: null, trackId: track.id } }); expect(play.ok()).toBe(true);
     const own = await play.json(); await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     await expect(tv.locator('.artist-credit')).toHaveText(''); await expect(tv.locator('.vinyl-caption')).not.toHaveText(''); await plainCopy(tv);
     const reveal = await listener.request.post('/api/participant/reveal', { headers: { Origin: isolatedApp.origin }, data: { turnId: session.turnId, playbackId: own.ownPlayback.id } }); expect(reveal.ok()).toBe(true);
-    await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible(); await plainCopy(tv);
+    await expect(tv.getByRole('heading', { name: fixtureSongOnDisplay, exact: true })).toBeVisible(); await plainCopy(tv);
     session = await (await host.request.get('/api/host/state')).json(); await post('/api/host/remove', { id: session.current.id, revision: session.revision });
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible(); await plainCopy(tv);
     await expect(listener.getByRole('status').filter({ hasText: 'You’re no longer in the listening order.' })).toBeVisible(); await plainCopy(listener);
@@ -56,35 +57,31 @@ test('pages use function-first copy while joining, playback and reveal remain us
   } finally { await participantContext.close(); await displayContext.close(); }
 });
 
-test('silent demo playback is explicit on every playback page and disappears after connection', async ({ page, isolatedApp }) => {
-  await page.goto('/join'); await page.getByLabel('Display name').fill('Demo listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
+test('without Music Assistant, search says to connect it and opens once it is connected, with no demo mode anywhere', async ({ page, isolatedApp }) => {
+  await page.goto('/join'); await page.getByLabel('Display name').fill('Early listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
   await page.getByRole('button', { name: 'Join room', exact: true }).click(); await expect(page).toHaveURL('/participant');
+  const search = page.getByRole('searchbox', { name: 'Search catalogue' });
+  await expect(page.locator('#music-find')).toContainText('Connect Music Assistant in host settings to find music.');
+  await expect(search).toBeDisabled(); await expect(page.getByRole('button', { name: 'Search', exact: true })).toBeDisabled();
   for (const path of ['/host', '/participant', '/display']) {
-    await page.goto(path); await expect(page.locator('.demo-playback-notice')).toHaveText('Demo mode — no audio');
-    await expect(page.locator('.demo-playback-notice')).toBeVisible();
+    await page.goto(path); await expect(page.getByRole('main')).toBeVisible();
+    await expect(page.locator('body')).not.toContainText('Demo mode', { useInnerText: true });
   }
   const post = (path: string, data: unknown) => page.request.post(path, { data, headers: { Origin: isolatedApp.origin } });
   const connected = await post('/api/host/integrations/save', { url: isolatedApp.musicAssistantOrigin, accessToken: 'fixture-token', revision: 0 });
   expect(connected.ok()).toBe(true);
-  await expect(page.locator('.demo-playback-notice')).toBeHidden();
-  for (const path of ['/host', '/participant', '/display']) {
-    await page.goto(path); await expect(page.getByRole('main')).toBeVisible();
-    await expect(page.locator('.demo-playback-notice')).toBeHidden();
-    await expect(page.locator('body')).not.toContainText('Demo mode — no audio', { useInnerText: true });
-  }
+  await page.goto('/participant');
+  await expect(search).toBeEnabled(); await expect(search).toHaveAttribute('placeholder', 'Artist');
+  await expect(page.locator('#music-find')).not.toContainText('Connect Music Assistant');
   expect(isolatedApp.calls.some(call => /play_media|cmd\/play|cmd\/volume/.test(call.command))).toBe(false);
 });
 
-test('dragging a song to the top only changes the first selection and Play first selection starts it explicitly', async ({ page }) => {
+test('dragging a song to the top only changes the first selection and Play first selection starts it explicitly', async ({ page, isolatedApp }) => {
+  await isolatedApp.connect(); isolatedApp.addTracks([{ title: 'Northern Lights' }, { title: 'Night Bus Home' }]);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/join'); await page.getByLabel('Display name').fill('Selections listener'); await page.getByLabel('4-digit PIN', { exact: true }).fill('1234');
   await page.getByRole('button', { name: 'Join room', exact: true }).click(); await expect(page).toHaveURL('/participant');
-  for (const query of ['Northern', 'Night']) {
-    await page.getByRole('searchbox', { name: 'Search catalogue' }).fill(query);
-    await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await page.getByRole('button', { name: 'Add to list', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
-  }
+  await addSongs(page, ['Northern Lights', 'Night Bus Home']);
   const list = page.getByRole('complementary', { name: 'Your playlist', exact: true });
   await expect(list.locator('.saved-track')).toHaveCount(2);
   // No edit mode, handle or menu: the row itself is dragged.

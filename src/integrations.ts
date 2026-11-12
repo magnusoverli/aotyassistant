@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { AppError, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
+import { AppError, type CatalogueProvider, type CatalogueBrowse, type OutputState, type GuestAccess } from './model.js';
 import { findSong, ServiceGates, songKey, type SongFinder } from './list-import.js';
 import { BoundedCache } from './bounded-cache.js';
 import { UpstreamError } from './upstream-error.js';
@@ -108,7 +108,7 @@ export class IntegrationManager implements CatalogueProvider {
       await this.store.save(next); this.state = next; // Private startup migration; no audio, discovery, or revision change.
     }
   }
-  // An ambiguous first save must not silently fall back to demo playback.
+  // An ambiguous first save counts as configured, so it is never treated as "no music connection".
   get configured(): boolean { return this.settingsUncertain || this.state.musicAssistant !== null; }
   get configurationRevision(): string { return `${this.state.revision}:${this.runtimeId}`; }
   /** Catalogue identity changes only with credentials/origin (or a new process), never with speaker routing. */
@@ -309,13 +309,6 @@ export class IntegrationManager implements CatalogueProvider {
       if (revision !== this.catalogueRevision) throw new AppError(409, 'The artwork connection changed.');
     }
   }
-  async search(query: string, context = ''): Promise<CatalogueTrack[]> {
-    const ma = this.state.musicAssistant; const revision = this.catalogueRevision;
-    if (!ma) throw new AppError(409, 'The catalogue connection changed. Search again.');
-    const tracks = await this.getReader().search(query);
-    if (this.catalogueRevision !== revision) throw new AppError(409, 'The catalogue connection changed during search. Search again.');
-    return tracks.map(t => this.catalogueItem(t, 'track', context));
-  }
   /** Finds one song from an imported list and returns what to save, or undefined when it isn't found.
    * Server-side only: the descriptor comes from Music Assistant's own answer and goes straight into the list. */
   async importSong(song: SharedSong): Promise<SavedSelection | undefined> {
@@ -472,12 +465,6 @@ export class IntegrationManager implements CatalogueProvider {
       return work(this.getApi(), destination.id, this.state.revision);
     });
   }
-  async withDemoPlayback<T>(work: () => Promise<T>): Promise<T> {
-    return this.serial(async () => {
-      if (this.configured) throw new AppError(409, 'The music connection changed. Select the recording again.');
-      return work();
-    });
-  }
   async recoverPlayback(revision: number): Promise<IntegrationView> {
     return operation('recover', async () => {
       await this.withPlayback(async () => { this.expected(revision); await this.playback?.recover(); });
@@ -556,7 +543,7 @@ export class IntegrationManager implements CatalogueProvider {
       destination: ma?.destination ? { id: ma.destination.id, name: ma.destination.name } : null,
       status: this.settingsUncertain ? 'error' : !ma ? 'not-configured' : this.failure ? 'error' : report ? 'checked' : 'not-checked',
       destinationStatus, destinationMessage,
-      message: this.settingsUncertain ? this.failure : !ma ? 'Music Assistant is not configured. Demo mode simulates playback without audio.' : this.failure || (report
+      message: this.settingsUncertain ? this.failure : !ma ? 'Music Assistant is not configured. Connect it to search and play music.' : this.failure || (report
         ? 'Music Assistant is connected and authorized.'
         : 'Music Assistant is configured. Its connection has not been checked.'),
       report: structuredClone(report), playbackAvailable: this.playbackAvailable, playbackIssue: this.playback?.issue ?? '', mediaOrigin: this.state.mediaOrigin ?? null,

@@ -17,7 +17,7 @@ import { musicAssistantUrl } from '../src/lan-network.js';
 import { exactFunnel, funnelTarget } from '../src/tailscale.js';
 import { createApp } from '../src/http.js';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import type { State } from '../src/model.js';
 
 const gate = <T = void>() => {
@@ -85,13 +85,13 @@ test('compiled JSON routes match runtime schema outputs and errors for nested re
 test('real room routes compile at registration and preserve strict validation and revision guards', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'doom-room-modern-http-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
-  const adapter = new DemoAdapter(); let state: State = { schema: 3, room: null };
+  const adapter = new FakePlayback(); let state: State = { schema: 3, room: null };
   const engine = new Engine({ load: async () => structuredClone(state), save: async value => { state = structuredClone(value); } }, adapter, 'http://localhost:3000');
   t.after(() => adapter.close()); await engine.init();
   const server = createServer(); t.after(() => { server.closeAllConnections(); server.close(); });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: directory, demoSeconds: 30 });
+  const http = createApp(engine, { port, guestUrl: origin, listenHost: '127.0.0.1', dataDir: directory });
   server.on('request', http.app); t.after(http.close);
   assert.equal((await fetch(origin + '/api/health')).status, 200);
   const settings = await (await fetch(origin + '/api/host/playback-settings')).json() as { enabled: boolean; revision: number };

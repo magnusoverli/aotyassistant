@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, type BrowserContext } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, fixtureSong } from './app-fixture';
+import { openAlbum, songRow } from './preparation-helpers';
 import { PreparationFileStore } from '../../src/preparations';
 
 async function join(context: BrowserContext, origin: string) {
@@ -65,13 +66,13 @@ test('large lists keep search/result/row nodes, and history opens from a collaps
 test('the player clock moves between server samples, freezes on pause and stays frozen when offline', async ({ browser, isolatedApp }) => {
   const context = await browser.newContext();
   try {
-    await join(context, isolatedApp.origin); const page = await context.newPage(); await page.goto(isolatedApp.origin + '/participant');
-    await page.getByRole('searchbox', { name: 'Search catalogue' }).fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
-    await page.getByRole('button', { name: 'Play', exact: true }).click();
+    await isolatedApp.connect(); await join(context, isolatedApp.origin); const page = await context.newPage(); await page.goto(isolatedApp.origin + '/participant');
+    await openAlbum(page);
+    await songRow(page, fixtureSong).getByRole('button', { name: 'Play', exact: true }).click();
     await expect(page.locator('.player-pending')).toHaveCount(0);
     await expect(page.locator('.playback-card .playback-status')).toHaveText('● Playing');
-    // Keep the authoritative demo playing, but suppress progress events entirely.
-    isolatedApp.demo.onProgress = () => {};
+    // Keep the song playing in Music Assistant, but suppress progress events entirely.
+    isolatedApp.adapter.onProgress = () => {};
     const values = await page.evaluate(async () => {
       const values: number[] = [];
       for (let n = 0; n < 8; n++) { values.push(Number(document.querySelector('.playback-card progress')!.getAttribute('value'))); await new Promise(resolve => setTimeout(resolve, 300)); }
@@ -98,14 +99,16 @@ test('the player clock moves between server samples, freezes on pause and stays 
 test('a replacement search cancels stale work without blocking the search form', async ({ browser, isolatedApp }) => {
   const context = await browser.newContext(); let release = () => {};
   try {
-    await join(context, isolatedApp.origin); const page = await context.newPage(); await page.goto(isolatedApp.origin + '/participant');
+    await isolatedApp.connect(); await join(context, isolatedApp.origin); const page = await context.newPage(); await page.goto(isolatedApp.origin + '/participant');
     const held = new Promise<void>(resolve => { release = resolve; });
-    await page.route('**/api/participant/search', async route => { if (route.request().postDataJSON().query === 'Northern') await held; await route.continue().catch(() => {}); });
-    await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
+    // The stale search finds nothing, so applying it late would replace the newer artist with "No artists found".
+    await page.route('**/api/participant/browse', async route => { if (route.request().postDataJSON().value === 'empty') await held; await route.continue().catch(() => {}); });
+    await page.getByRole('searchbox').fill('empty'); await page.getByRole('button', { name: 'Search', exact: true }).click();
     await expect(page.locator('#catalogue-search-submit')).toBeEnabled();
-    await page.getByRole('searchbox').fill('Summer'); await page.locator('#catalogue-search-submit').click();
-    await expect(page.locator('.catalogue-results')).toContainText('Late Summer'); release();
-    await expect(page.locator('.catalogue-results')).not.toContainText('Northern Lights');
+    await page.getByRole('searchbox').fill('Fixture artist'); await page.locator('#catalogue-search-submit').click();
+    await expect(page.getByRole('button', { name: 'View albums by Fixture artist', exact: true })).toBeVisible(); release();
+    await page.waitForTimeout(300); await expect(page.locator('.catalogue-results')).not.toContainText('No artists found');
+    await expect(page.getByRole('button', { name: 'View albums by Fixture artist', exact: true })).toBeVisible();
   } finally { release(); await context.close(); }
 });
 

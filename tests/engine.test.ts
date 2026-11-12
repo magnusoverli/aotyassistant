@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter, type PlaybackAdapter } from '../src/playback.js';
+import type { PlaybackAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { FileStore, type Store } from '../src/store.js';
-import { AppError, type State, type CatalogueProvider, type CatalogueTrack } from '../src/model.js';
+import { AppError, type State, type CatalogueProvider, type CatalogueTrack, type CatalogueBrowse } from '../src/model.js';
 
 class MemoryStore implements Store {
   state: State = { schema: 3, room: null };
@@ -14,7 +15,7 @@ class MemoryStore implements Store {
   async save(state: State) { if (this.fail) throw new Error(); this.state = structuredClone(state); }
 }
 async function fixture(catalogue?: CatalogueProvider) {
-  const store = new MemoryStore(); const adapter = new DemoAdapter(3600);
+  const store = new MemoryStore(); const adapter = new FakePlayback(3600);
   const engine = new Engine(store, adapter, 'http://localhost:3000', catalogue); await engine.init();
   const host = () => engine.view({ kind: 'host' });
   const alex = await engine.join('Alex'); const sam = await engine.join('Sam');
@@ -120,12 +121,13 @@ test('an unconfirmed host stop preserves playback state and turn instead of repo
   assert.equal(f.host().hostPlayback, null); assert.equal(f.host().progress, undefined);
 });
 
-test('non-current participants may search, but cannot play, control, reveal, or finish', async t => {
-  const f = await fixture(); t.after(() => f.adapter.close());
+test('non-current participants may browse, but cannot play, control, reveal, or finish', async t => {
+  const night: CatalogueTrack = { id: 'demo:night', title: 'Night Bus Home', artist: 'Echo Garden', album: 'Small Hours', version: '', provider: 'fixture', duration: 30, available: true };
+  const f = await fixture({ configured: true, playbackAvailable: true, async browse() { return { tracks: [night], playbackAvailable: true }; } }); t.after(() => f.adapter.close());
   const turn = f.host().turnId!;
   await f.engine.play(f.alex, turn, null, 'demo:aurora');
   const id = f.participant(f.alex).ownPlayback!.id;
-  assert.equal((await f.engine.search(f.sam, turn, 'Night')).tracks.length, 1);
+  assert.equal((await f.engine.browse(f.sam, 'tracks', 'album')).tracks!.length, 1);
   for (const work of [
     () => f.engine.play(f.sam, turn, id, 'demo:night'),
     () => f.engine.control(f.sam, turn, id, 'stop'), () => f.engine.reveal(f.sam, turn, id),
@@ -274,7 +276,7 @@ test('restart restores membership/order, but not playback, reveal, or old action
   await f.engine.play(f.alex, turn, null, 'demo:aurora');
   const id = f.participant(f.alex).ownPlayback!.id; await f.engine.reveal(f.alex, turn, id);
   f.adapter.close();
-  const adapter = new DemoAdapter(); t.after(() => adapter.close());
+  const adapter = new FakePlayback(); t.after(() => adapter.close());
   const recovered = new Engine(f.store, adapter, 'http://localhost:3000'); await recovered.init();
   assert.equal(recovered.view({ kind: 'participant', credential: f.alex }).me!.nickname, 'Alex');
   assert.equal(recovered.view({ kind: 'host' }).current!.nickname, 'Alex');
@@ -294,7 +296,7 @@ test('file store persists privately and refuses to overwrite malformed saved sta
 });
 
 test('demo adapter emits actual timer completion but not stop/pause completion', async t => {
-  const adapter = new DemoAdapter(.03); t.after(() => adapter.close());
+  const adapter = new FakePlayback(.03); t.after(() => adapter.close());
   const ids: string[] = []; adapter.onComplete = id => ids.push(id);
   await adapter.play(await adapter.resolve('demo:night'), 'first'); await adapter.control('pause');
   await new Promise(resolve => setTimeout(resolve, 50)); assert.deepEqual(ids, []);
@@ -316,7 +318,7 @@ test('actual demo completion stops and advances the authoritative engine once', 
 
 test('stable room links and membership survive restart without invitation expiry', async t => {
   const f = await fixture(); t.after(() => f.adapter.close());
-  const adapter = new DemoAdapter(); t.after(() => adapter.close());
+  const adapter = new FakePlayback(); t.after(() => adapter.close());
   const engine = new Engine(f.store, adapter, 'http://localhost:3000'); await engine.init();
   await engine.join('Jordan');
   assert.equal(await engine.join('Alex', f.alex), f.alex);
@@ -333,49 +335,54 @@ test('stale host mutations are rejected after a room change', async t => {
   assert.equal(f.host().active!.length, 3);
 });
 
-test('connected catalogue search is private for every member and cannot play without a configured destination', async t => {
+test('connected catalogue browsing is private for every member and cannot play without a configured destination', async t => {
   const track: CatalogueTrack = { id: 'ma:opaque', title: 'Private catalogue result', artist: 'Private artist', album: 'Private album', version: 'Live', provider: 'spotify', duration: 180, available: true };
   let calls = 0;
-  const f = await fixture({ configured: true, async search() { calls++; return [track]; } }); t.after(() => f.adapter.close());
+  const f = await fixture({ configured: true, async browse() { calls++; return { tracks: [track], playbackAvailable: true }; } }); t.after(() => f.adapter.close());
   let events = 0; f.engine.on('change', () => events++);
-  assert.equal((await f.engine.search(f.sam, f.host().turnId!, 'query')).tracks.length, 1); assert.equal(calls, 1);
-  const result = await f.engine.search(f.alex, f.host().turnId!, 'query');
-  assert.equal(result.source, 'music-assistant'); assert.equal(result.playbackAvailable, false); assert.deepEqual(result.tracks, [track]);
+  assert.equal((await f.engine.browse(f.sam, 'tracks', 'album')).tracks!.length, 1); assert.equal(calls, 1);
+  const result = await f.engine.browse(f.alex, 'tracks', 'album');
+  assert.equal(result.playbackAvailable, false, 'Playback availability comes from the room, not the catalogue answer.'); assert.deepEqual(result.tracks, [track]);
   assert.equal(calls, 2); assert.equal(events, 0);
   for (const view of [f.host(), f.display(), f.participant(f.sam), f.participant(f.alex), f.store.state]) {
     assert.ok(!JSON.stringify(view).includes(track.title));
   }
-  assert.equal(f.participant(f.alex).catalogue!.source, 'music-assistant');
-  assert.equal(f.participant(f.sam).catalogue!.source, 'music-assistant');
+  assert.equal(f.participant(f.alex).catalogue!.configured, true);
+  assert.equal(f.participant(f.sam).catalogue!.configured, true);
   for (const id of ['ma:opaque', 'demo:aurora']) await assert.rejects(f.engine.play(f.alex, f.host().turnId!, null, id), status(422));
   assert.equal(f.participant(f.alex).ownPlayback, null);
 });
 
 test('private browsing survives turn changes but cannot cross connection or membership changes', async t => {
-  let resolveSearch!: (tracks: CatalogueTrack[]) => void;
+  let resolveBrowse!: (result: CatalogueBrowse) => void;
+  const empty = (): CatalogueBrowse => ({ artists: [], playbackAvailable: true });
   const catalogue = { configured: true, catalogueRevision: 'catalogue-a', configurationRevision: 'routing-a', playbackAvailable: true,
-    search: () => new Promise<CatalogueTrack[]>(resolve => { resolveSearch = resolve; }) };
+    browse: () => new Promise<CatalogueBrowse>(resolve => { resolveBrowse = resolve; }) };
   const f = await fixture(catalogue); t.after(() => f.adapter.close());
-  const result = f.engine.search(f.alex, f.host().turnId!, 'query');
-  await f.engine.advance(f.host().turnId!); resolveSearch([]);
-  assert.deepEqual((await result).tracks, []);
-  const changedDestination = f.engine.search(f.sam, f.host().turnId!, 'query');
-  catalogue.configurationRevision = 'routing-b'; catalogue.playbackAvailable = false; resolveSearch([]);
+  const result = f.engine.browse(f.alex, 'artists', 'query');
+  await f.engine.advance(f.host().turnId!); resolveBrowse(empty());
+  assert.deepEqual((await result).artists, []);
+  const changedDestination = f.engine.browse(f.sam, 'artists', 'query');
+  catalogue.configurationRevision = 'routing-b'; catalogue.playbackAvailable = false; resolveBrowse(empty());
   assert.equal((await changedDestination).playbackAvailable, false, 'Routing changes must preserve results with fresh playback availability.');
-  const changedCredentials = f.engine.search(f.sam, f.host().turnId!, 'query');
-  catalogue.catalogueRevision = 'catalogue-b'; resolveSearch([]); await assert.rejects(changedCredentials, status(409));
-  const changedSource = f.engine.search(f.sam, f.host().turnId!, 'query');
-  catalogue.configured = false; resolveSearch([]); await assert.rejects(changedSource, status(409));
+  const changedCredentials = f.engine.browse(f.sam, 'artists', 'query');
+  catalogue.catalogueRevision = 'catalogue-b'; resolveBrowse(empty()); await assert.rejects(changedCredentials, status(409));
+  const disconnected = f.engine.browse(f.sam, 'artists', 'query');
+  catalogue.configured = false; resolveBrowse(empty()); await assert.rejects(disconnected, status(409));
   catalogue.configured = true;
-  const removed = f.engine.search(f.alex, f.host().turnId!, 'query');
-  await f.engine.remove(f.participant(f.alex).me!.id, f.host().revision); resolveSearch([]);
+  const removed = f.engine.browse(f.alex, 'artists', 'query');
+  await f.engine.remove(f.participant(f.alex).me!.id, f.host().revision); resolveBrowse(empty());
   await assert.rejects(removed, status(401));
 });
 
-test('search failures never silently fall back to the demo catalogue', async t => {
-  const f = await fixture({ configured: true, async search() { throw new AppError(502, 'Music Assistant search unavailable.'); } }); t.after(() => f.adapter.close());
-  await assert.rejects(f.engine.search(f.alex, f.host().turnId!, 'Northern'), status(502));
+test('catalogue failures are reported, and nothing can be found or played without Music Assistant', async t => {
+  const f = await fixture({ configured: true, async browse() { throw new AppError(502, 'Music Assistant browsing unavailable.'); } }); t.after(() => f.adapter.close());
+  await assert.rejects(f.engine.browse(f.alex, 'artists', 'Northern'), status(502));
   assert.equal(f.host().current!.nickname, 'Alex');
+  const unconnected = await fixture({ configured: false }); t.after(() => unconnected.adapter.close());
+  await assert.rejects(unconnected.engine.browse(unconnected.alex, 'artists', 'Northern'), status(422));
+  await assert.rejects(unconnected.engine.play(unconnected.alex, unconnected.host().turnId!, null, 'demo:aurora'), status(422));
+  assert.deepEqual(unconnected.participant(unconnected.alex).catalogue, { configured: false, playbackAvailable: false });
 });
 
 test('role-filtered rotation positions stay authoritative through wrapping, reordering, direct joining, and removal', async t => {

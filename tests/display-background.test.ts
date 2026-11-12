@@ -10,7 +10,7 @@ import { DisplayBackground, backgroundSettingsSchema } from '../src/display-back
 import { defaultBackgroundSettings, type BackgroundSnapshot } from '../src/background-settings.js';
 import { AppError, type State, type View } from '../src/model.js';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 
 async function directory(t: TestContext) {
@@ -114,7 +114,7 @@ test('background API projects saved settings to the display and rejects invalid,
   saved.settings.qrPlacement = 'play-order';
   const stored = JSON.stringify({ ...saved, settings: { ...saved.settings, width: 80 } });
   await writeFile(join(dataDir, 'display-background.json'), stored);
-  const server = createServer(); const adapter = new DemoAdapter(3600);
+  const server = createServer(); const adapter = new FakePlayback(3600);
   let closeApp = () => {};
   t.after(() => { closeApp(); adapter.close(); server.closeAllConnections(); server.close(); });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
@@ -122,7 +122,7 @@ test('background API projects saved settings to the display and rejects invalid,
   let state: State = { schema: 3, room: null };
   const engine = new Engine({ load: async () => structuredClone(state), save: async next => { state = structuredClone(next); } }, adapter, base);
   await engine.init();
-  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: base, dataDir, demoSeconds: 3600 }, 'web');
+  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: base, dataDir }, 'web');
   closeApp = close; server.on('request', app);
   const post = (body: unknown, origin = base) => fetch(`${base}/api/host/background-settings`, {
     method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify(body),

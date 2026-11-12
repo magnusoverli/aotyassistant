@@ -22,11 +22,14 @@ const maxPreparationBytes = 32 * 1024 * 1024;
 const metadata = z.object({
   title: z.string().min(1).max(1000), artist: z.string().max(1000), album: z.string().max(1000),
   version: z.string().max(500), provider: z.string().max(200), duration: z.number().finite().nonnegative().nullable(),
+  // 'demo-cover' only appears on songs saved before demo mode was removed; it shows no artwork.
   artworkId: image.or(z.literal('demo-cover')).optional(), artistArtworkId: image.optional(),
 }).strict();
 
 /** Server-owned descriptors, not expiring browse references or arbitrary browser-provided media objects. */
 export const savedSelectionSchema = z.discriminatedUnion('source', [
+  // Songs saved from the removed demo catalogue still load, so a list never fails over them. They cannot be
+  // played or added any more: they stay as unavailable entries the owner can remove or replace.
   z.object({ source: z.literal('demo'), trackId: z.string().regex(/^demo:[a-z0-9-]+$/).max(200), metadata }).strict(),
   z.object({ source: z.literal('music-assistant'), sourceBindingId: id,
     recording: recordingDescriptorSchema, metadata,
@@ -81,7 +84,7 @@ export interface PreparationStore {
 }
 /** Whether a saved selection can play through the current connection. */
 export function savedSourceAvailable(integrations?: { configured: boolean; uploadPlaybackAvailable: boolean; sourceBindingId: string | null }) {
-  return (selection: SavedSelection) => selection.source === 'demo' ? !integrations?.configured
+  return (selection: SavedSelection) => selection.source === 'demo' ? false
     : selection.source === 'upload' ? Boolean(integrations?.uploadPlaybackAvailable) : selection.sourceBindingId === integrations?.sourceBindingId;
 }
 
@@ -207,8 +210,8 @@ export class PreparationManager {
       title: item.selection.metadata.title, artist: item.selection.metadata.artist, album: item.selection.metadata.album,
       version: item.selection.metadata.version, provider: item.selection.metadata.provider, duration: item.selection.metadata.duration,
       addedAt: item.addedAt, ...(item.playedAt === undefined ? {} : { playedAt: item.playedAt }), playCount: item.playbackIds.length,
-      ...(item.selection.metadata.artworkId || (item.selection.source === 'upload' && item.selection.artworkAssetId)
-        ? { artwork: item.selection.metadata.artworkId === 'demo-cover' ? '/demo-cover.svg' : `/api/participant/preparations/artwork/${item.id}/artwork` } : {}),
+      ...((item.selection.metadata.artworkId && item.selection.metadata.artworkId !== 'demo-cover') || (item.selection.source === 'upload' && item.selection.artworkAssetId)
+        ? { artwork: `/api/participant/preparations/artwork/${item.id}/artwork` } : {}),
       ...(item.selection.metadata.artistArtworkId ? { artistArtwork: `/api/participant/preparations/artwork/${item.id}/artistArtwork` } : {}),
       ...(this.sourceAvailable ? { sourceAvailable: this.sourceAvailable(item.selection) } : {}) });
     return { ownerId: state.ownerId, revision: state.revision, capacity: { upcoming: preparationLimits.upcoming, entries: preparationLimits.entries },

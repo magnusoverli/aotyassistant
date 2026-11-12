@@ -53,7 +53,8 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
   app.post(`${prefix}/add`, jsonBody(z.strictObject({ operation: preparationOperationSchema, trackId: z.string().min(1).max(1000) }), async (input, req, res) => {
     res.json(await manager.addCaptured(credential(req), input.operation, input.trackId, async () => {
       const context = engine.catalogueContext(member(req));
-      const saved = integrations?.configured ? await integrations.captureSaved(input.trackId, context) : await engine.captureDemo(member(req), input.trackId);
+      if (!integrations?.configured) throw new AppError(409, 'Connect Music Assistant in Settings before adding songs. Your list was kept.');
+      const saved = await integrations.captureSaved(input.trackId, context);
       if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed. Your list was kept.'); return saved;
     }));
   }));

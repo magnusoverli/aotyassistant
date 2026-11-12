@@ -12,7 +12,6 @@ import { UploadAssets, analyzeUpload, type UploadPreview } from '../src/uploads.
 import { AppError, type View } from '../src/model.js';
 import { Engine } from '../src/engine.js';
 import { FileStore, writePrivateJson } from '../src/store.js';
-import { DemoAdapter } from '../src/playback.js';
 import { ManagedPlayback } from '../src/live-playback.js';
 import { IntegrationFileStore, IntegrationManager } from '../src/integrations.js';
 import { PreparationFileStore, type PreparationResult, type PreparationView } from '../src/preparations.js';
@@ -29,9 +28,9 @@ async function fixture(t: TestContext, analyze = fixtureUploadAnalysis) {
   const remote = await startMusicAssistantFixture(); const directory = await mkdtemp('/tmp/opencode/doom-room-uploads-');
   const server = createServer(); server.listen(0, '0.0.0.0'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: directory, demoSeconds: 3600 };
+  const config = { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: directory };
   const integrations = new IntegrationManager(new IntegrationFileStore(directory)); await integrations.init();
-  const adapter = new ManagedPlayback(new DemoAdapter(3600), integrations, 20);
+  const adapter = new ManagedPlayback(integrations, 20);
   const engine = new Engine(new FileStore(directory), adapter, origin, integrations); await engine.init();
   const uploads = new UploadAssets(directory, analyze);
   const http = createApp(engine, config, 'dist/web', integrations, undefined, uploads); server.on('request', http.app);

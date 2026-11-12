@@ -1,3 +1,4 @@
+import { findTrack } from './fixtures/find-track.js';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
@@ -9,7 +10,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import type { AddressInfo } from 'node:net';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { ManagedPlayback } from '../src/live-playback.js';
-import { DemoAdapter } from '../src/playback.js';
 import { Engine } from '../src/engine.js';
 import { FileStore } from '../src/store.js';
 import { createApp } from '../src/http.js';
@@ -35,24 +35,24 @@ async function live(t: TestContext, afterSave = () => {}) {
   const file = new IntegrationFileStore(directory);
   const manager = new IntegrationManager({ load: () => file.load(), save: async state => { await file.save(state); afterSave(); } });
   await manager.init(); await manager.save(remote.origin, 'fixture-token', 0); await manager.selectDestination('sonos:room', manager.view().revision);
-  const adapter = new ManagedPlayback(new DemoAdapter(), manager, 60_000);
+  const adapter = new ManagedPlayback(manager, 60_000);
   const engine = new Engine(new FileStore(directory), adapter, 'http://localhost:3000', manager); await engine.init();
   t.after(async () => { adapter.close(); manager.close(); remote.close(); await rm(directory, { recursive: true, force: true }); });
   const credential = await engine.join('Current'); const turn = engine.view({ kind: 'host' }).turnId!;
-  const track = (await engine.search(credential, turn, 'fixture')).tracks[0]!;
+  const track = await findTrack(engine, credential, 'fixture');
   return { remote, directory, file, manager, adapter, engine, credential, turn, track };
 }
 
 test('playback recovery leaves the watchdog live, membership/catalogue available, and audio ownership guarded', async t => {
   const f = await live(t); const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
-  const http = createApp(f.engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: f.directory, demoSeconds: 30 }, 'web', f.manager);
+  const http = createApp(f.engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir: f.directory }, 'web', f.manager);
   server.on('request', http.app); t.after(() => { http.close(); server.closeAllConnections(); server.close(); });
   f.remote.failNextPlaybackVerification(); await assert.rejects(f.engine.play(f.credential, f.turn, null, f.track.id));
   f.remote.fail(false); await f.manager.check(f.manager.view().revision);
   const response = await fetch(origin + '/api/health'); assert.equal(response.status, 200);
   assert.equal((await response.json()).playbackAvailable, false);
-  await f.engine.join('During recovery'); assert.ok((await f.engine.search(f.credential, f.turn, 'fixture')).tracks.length);
+  await f.engine.join('During recovery'); assert.ok(await findTrack(f.engine, f.credential, 'fixture'));
   assert.equal(f.adapter.ownsPlayback, true); assert.equal(f.manager.output.state, 'recovery');
   await assert.rejects(f.engine.play(f.credential, f.turn, null, f.track.id));
   assert.equal(f.remote.calls.filter(call => call.command === 'player_queues/play_media').length, 1);
@@ -85,7 +85,7 @@ test('an ambiguous first connection save cannot fall back to demo playback', asy
   const directory = await mkdtemp('/tmp/opencode/doom-room-first-save-'); const file = new IntegrationFileStore(directory);
   let fail = true;
   const manager = new IntegrationManager({ load: () => file.load(), save: async state => { await file.save(state); if (fail) throw new Error('After replacement'); } });
-  await manager.init(); const adapter = new ManagedPlayback(new DemoAdapter(), manager);
+  await manager.init(); const adapter = new ManagedPlayback(manager);
   const engine = new Engine(new FileStore(directory), adapter, 'http://localhost:3000', manager); await engine.init();
   t.after(async () => { adapter.close(); manager.close(); await rm(directory, { recursive: true, force: true }); });
   const member = await engine.join('Current'); const turn = engine.view({ kind: 'host' }).turnId!;

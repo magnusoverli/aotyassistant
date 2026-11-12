@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSong, fixtureSongOnDisplay } from './app-fixture';
 import { openNavigation } from './navigation-helpers';
 
 const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
@@ -226,15 +226,16 @@ test('display header stays mounted through menus/fullscreen/reveal/removal witho
   try {
     const joined = await participantContext.request.post(isolatedApp.origin + '/api/participant/join', { data: { pin: '1234', nickname: 'A listener <literal>' }, headers: { Origin: isolatedApp.origin } }); expect(joined.ok()).toBe(true);
     session = await (await host.request.get('/api/host/state')).json();
-    const playing = await participantContext.request.post(isolatedApp.origin + '/api/participant/play', { data: { turnId: session.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } }); const own = await playing.json();
+    await isolatedApp.connect(); const track = await catalogueTrack(participantContext.request, isolatedApp.origin);
+    const playing = await participantContext.request.post(isolatedApp.origin + '/api/participant/play', { data: { turnId: session.turnId, previousPlaybackId: null, trackId: track.id }, headers: { Origin: isolatedApp.origin } }); const own = await playing.json();
     const tv = await displayContext.newPage(); await tv.goto(session.displayUrl); await expect(tv.getByRole('heading', { name: 'Track details hidden.' })).toBeVisible();
     await tv.evaluate(() => { (window as any).headerRef = document.querySelector('header'); (window as any).recordRef = document.querySelector('.room-record'); (window as any).spinRef = document.querySelector('.room-record')!.getAnimations()[0]; });
     await openNavigation(tv); await expect(tv.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
-    expect(await tv.getByRole('banner').innerHTML()).not.toContain('Northern Lights'); expect(await tv.getByRole('banner').innerHTML()).not.toContain('#access=');
+    expect(await tv.getByRole('banner').innerHTML()).not.toContain(fixtureSong); expect(await tv.getByRole('banner').innerHTML()).not.toContain('#access=');
     await tv.getByRole('button', { name: 'Full screen', exact: true }).click(); await expect(tv.getByRole('button', { name: 'Exit full screen', exact: true })).toBeVisible();
     await tv.getByRole('button', { name: 'Exit full screen', exact: true }).click();
     await participantContext.request.post(isolatedApp.origin + '/api/participant/reveal', { data: { turnId: session.turnId, playbackId: own.ownPlayback.id }, headers: { Origin: isolatedApp.origin } });
-    await expect(tv.getByRole('heading', { name: 'Northern Lights', exact: true })).toBeVisible();
+    await expect(tv.getByRole('heading', { name: fixtureSongOnDisplay, exact: true })).toBeVisible();
     expect(await tv.evaluate(() => (window as any).headerRef === document.querySelector('header') && (window as any).recordRef === document.querySelector('.room-record') && (window as any).spinRef === document.querySelector('.room-record')!.getAnimations()[0])).toBe(true);
     expect(await tv.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 2)).toBe(true);
     session = await (await host.request.get('/api/host/state')).json(); await post('/api/host/remove', { id: session.current.id, revision: session.revision });

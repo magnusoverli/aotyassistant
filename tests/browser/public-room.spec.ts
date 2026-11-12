@@ -1,9 +1,11 @@
 import { expect, type APIRequestContext, type Browser, type Page } from '@playwright/test';
 import type { View } from '../../src/model';
-import { test } from './app-fixture';
+import { test, catalogueTrack } from './app-fixture';
 import { recordLabels, recordLabelStorageKey } from '../../web/record-labels';
 
-async function setup(browser: Browser, host: Page, origin: string, nickname = 'Alex') {
+/** The test app parts the room needs: its address and the fixture Music Assistant to play through. */
+async function setup(browser: Browser, host: Page, app: { origin: string; connect(): Promise<void> }, nickname = 'Alex') {
+  const { origin } = app; await app.connect();
   const post = async (request: APIRequestContext, path: string, data: unknown): Promise<View> => {
     const response = await request.post(path, { data, headers: { Origin: origin } }); expect(response.ok()).toBe(true); return response.json();
   };
@@ -15,7 +17,8 @@ async function setup(browser: Browser, host: Page, origin: string, nickname = 'A
   await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
   const current = async (): Promise<View> => (await guest.request.get('/api/participant/state')).json();
   return { tv, screen,
-    async play(id = 'demo:aurora') { const view = await current(); return post(guest.request, '/api/participant/play', { turnId: view.turnId, previousPlaybackId: view.ownPlayback?.id ?? null, trackId: id }); },
+    /** Plays a song from the fixture album by title (the fixture song by default). */
+    async play(title?: string) { const view = await current(); const track = await catalogueTrack(guest.request, origin, title); return post(guest.request, '/api/participant/play', { turnId: view.turnId, previousPlaybackId: view.ownPlayback?.id ?? null, trackId: track.id }); },
     async control(action: 'pause' | 'resume' | 'stop') { const view = await current(); await post(guest.request, '/api/participant/control', { turnId: view.turnId, playbackId: view.ownPlayback!.id, action }); },
     async reveal() { const view = await current(); await post(guest.request, '/api/participant/reveal', { turnId: view.turnId, playbackId: view.ownPlayback!.id }); },
     async finish() { const view = await current(); await post(guest.request, '/api/participant/finish', { turnId: view.turnId }); },
@@ -29,7 +32,7 @@ async function fits(tv: Page) {
 }
 
 test('the display uses the shared listening order without numbers and retains it across playback updates', async ({ browser, page: host, isolatedApp }) => {
-  const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
+  const f = await setup(browser, host, isolatedApp); const tv = f.tv;
   const listeners = [];
   const list = tv.getByRole('list', { name: 'Participant rotation' });
   try {
@@ -88,7 +91,7 @@ test('the display uses the shared listening order without numbers and retains it
 });
 
 test('the public room is clean while idle/stopped and preserves the exact animation timelines through reveal and telemetry', async ({ browser, page: host, isolatedApp }) => {
-  const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
+  const f = await setup(browser, host, isolatedApp); const tv = f.tv;
   try {
     await expect(tv.locator('.now-playing')).toBeHidden(); await expect(tv.locator('.room-record')).toBeHidden();
     await expect(tv.locator('.vinyl-label.is-personalized')).toHaveCount(0);
@@ -136,9 +139,10 @@ test('the public room is clean while idle/stopped and preserves the exact animat
 });
 
 test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and natural completion keep the public room honest and uncluttered', async ({ browser, page: host, isolatedApp }) => {
-  const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
+  const f = await setup(browser, host, isolatedApp); const tv = f.tv;
   try {
-    await f.play('demo:night'); await f.control('pause');
+    isolatedApp.addTracks([{ title: 'Night Bus Home', artist: 'Echo Garden' }]);
+    await f.play('Night Bus Home'); await f.control('pause');
     await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'paused');
     const frozen = await tv.locator('.now-playing').evaluateHandle(node => node.getAnimations({ subtree: true }));
     await f.reveal(); await expect(tv.getByRole('heading', { name: 'Night Bus Home', exact: true })).toBeVisible();
@@ -158,12 +162,11 @@ test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and na
     await expect(tv.getByRole('heading', { name: 'Night Bus Home', exact: true })).toBeVisible();
     await expect(tv.locator('.room-turn')).toBeVisible();
     await f.finish(); await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
-    const track = isolatedApp.demo.catalogue[0]!;
-    track.title = 'A beautifully long song title that should never push the listening room beyond the television screen';
-    track.artist = 'A remarkably long artist name for a comfortably uncluttered listening room';
-    track.album = 'A very long album name that stays on one quiet line';
-    await tv.route('**/demo-cover.svg', route => route.abort());
-    await f.play(); await f.reveal();
+    const track = { title: 'A beautifully long song title that should never push the listening room beyond the television screen',
+      artist: 'A remarkably long artist name for a comfortably uncluttered listening room', album: 'A very long album name that stays on one quiet line' };
+    isolatedApp.addTracks([track]);
+    await tv.route('**/api/display/artwork/**', route => route.abort());
+    await f.play(track.title); await f.reveal();
     await expect(tv.getByRole('heading', { name: track.title, exact: true })).toBeVisible();
     await expect(tv.getByAltText('Current album artwork')).toHaveCount(0);
     await expect(tv.locator('.room-record .vinyl-owner')).toHaveText(track.title);
@@ -175,7 +178,8 @@ test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and na
     await tv.setViewportSize({ width: 390, height: 844 });
     expect(await tv.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
     await tv.screenshot({ path: 'test-results/public-room-revealed-record-long-390.png', fullPage: true });
-    await f.finish(); track.duration = .8; await f.play();
+    // The song ends by itself, as Music Assistant reports it.
+    await f.finish(); await f.play(track.title); isolatedApp.remote.finish();
     await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     await expect(tv.getByRole('heading', { name: 'Nothing playing.' })).toBeVisible();
     await expect(tv.locator('.room-turn')).toBeHidden();
@@ -186,7 +190,7 @@ test('reduced motion, paused reveal, disconnect/reconnect, long metadata, and na
 
 test('only the small sticker is personalized, its shuffled history survives refresh, and the label spins with the disc', async ({ browser, page: host, isolatedApp }) => {
   const nickname = 'Magnus <img src=x> & mysterious friends';
-  const f = await setup(browser, host, isolatedApp.origin, nickname); const tv = f.tv;
+  const f = await setup(browser, host, isolatedApp, nickname); const tv = f.tv;
   try {
     const caption = 'EARS NOW, OPINIONS LATER';
     await tv.evaluate(({ key, index, size }) => localStorage.setItem(key, JSON.stringify({ version: 1, size, remaining: [index], current: null })),
@@ -233,7 +237,7 @@ test('only the small sticker is personalized, its shuffled history survives refr
 });
 
 test('record captions fit with different system fonts and display sizes', async ({ browser, page: host, isolatedApp }) => {
-  const f = await setup(browser, host, isolatedApp.origin, 'A long participant display name'); const tv = f.tv;
+  const f = await setup(browser, host, isolatedApp, 'A long participant display name'); const tv = f.tv;
   try {
     await f.play(); await expect(tv.locator('.vinyl-caption')).toBeVisible();
     for (const [width, height] of [[1366, 768], [1920, 1080], [390, 844], [320, 700]]) {
@@ -258,7 +262,7 @@ test('record captions fit with different system fonts and display sizes', async 
 });
 
 test('the visible sticker text turns with the record instead of only advancing an invisible rotation clock', async ({ browser, page: host, isolatedApp }) => {
-  const f = await setup(browser, host, isolatedApp.origin); const tv = f.tv;
+  const f = await setup(browser, host, isolatedApp); const tv = f.tv;
   try {
     await f.play(); await expect(tv.locator('.display-page')).toHaveAttribute('data-playback', 'playing');
     await expect(tv.locator('.room-record .vinyl-owner')).toHaveText('Alex');

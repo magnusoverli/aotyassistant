@@ -1,8 +1,8 @@
 import { expect } from '@playwright/test';
-import { test } from './app-fixture';
+import { test, catalogueTrack, fixtureSong, fixtureSongOnDisplay } from './app-fixture';
 
 test('the shared playback component preserves host and participant actions, privacy and turn permissions', async ({ page: host, browser, isolatedApp }) => {
-  const headers = { Origin: isolatedApp.origin };
+  const headers = { Origin: isolatedApp.origin }; await isolatedApp.connect();
   const joined = await (await host.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Current listener' } })).json();
   const other = await browser.newContext({ baseURL: isolatedApp.origin });
   try {
@@ -17,11 +17,12 @@ test('the shared playback component preserves host and participant actions, priv
     await expect(host.locator('[data-playback-role] #player-transport, [data-playback-role] #player-reveal')).toHaveCount(0);
     await expect(participant.locator('#host-skip-turn, #host-stop')).toHaveCount(0);
     await expect(waiting.locator('#finish-my-turn')).toBeDisabled();
-    const start = await participant.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId: null, trackId: 'demo:aurora' } });
+    const track = await catalogueTrack(participant.request, isolatedApp.origin);
+    const start = await participant.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId: null, trackId: track.id } });
     expect(start.ok()).toBe(true);
     await expect(participant.locator('#player-transport')).toBeEnabled();
-    await expect(participant.locator('.private-now-playing h2')).toHaveText('Northern Lights');
-    await expect(host.locator('.host-live')).not.toContainText('Northern Lights');
+    await expect(participant.locator('.private-now-playing h2')).toHaveText(fixtureSongOnDisplay);
+    await expect(host.locator('.host-live')).not.toContainText(fixtureSong);
     const record = await host.locator('#host-player .room-record').elementHandle();
     await expect(host.locator('#host-player .room-record')).toHaveCSS('animation-play-state', 'running');
     for (const width of [390, 1440]) {
@@ -38,7 +39,7 @@ test('the shared playback component preserves host and participant actions, priv
     await expect(waiting.locator('#player-transport')).toBeDisabled();
     await expect(waiting.locator('#player-reveal')).toBeDisabled();
     await expect(waiting.getByRole('slider')).toBeDisabled();
-    await expect(waiting.locator('.playback-card')).not.toContainText('Northern Lights');
+    await expect(waiting.locator('.playback-card')).not.toContainText(fixtureSong);
     const writes: string[] = [];
     for (const page of [host, participant]) page.on('request', request => { if (request.method() === 'POST') writes.push(new URL(request.url()).pathname); });
     await participant.locator('#player-transport').click();
@@ -46,8 +47,7 @@ test('the shared playback component preserves host and participant actions, priv
     await expect(host.locator('.host-playback-status')).toContainText('Paused');
     await participant.locator('#player-reveal').click();
     await expect(host.locator('.host-reveal-status')).toHaveText('Visible on room display');
-    await expect(host.locator('.host-live')).not.toContainText('Northern Lights');
-    const track = isolatedApp.demo.catalogue.find(track => track.id === 'demo:aurora')!;
+    await expect(host.locator('.host-live')).not.toContainText(fixtureSong);
     const html = await host.locator('#host-player').innerHTML();
     for (const value of [track.title, track.artist, track.album, track.artwork, track.artistArtwork]) if (value) expect(html).not.toContain(value);
     expect(await record!.evaluate(node => node === document.querySelector('#host-player .room-record'))).toBe(true);
@@ -66,13 +66,14 @@ test('the shared playback component preserves host and participant actions, priv
 });
 
 test('host pause/resume and both players’ mute/stop controls preserve the turn and use the correct endpoints', async ({ page: host, browser, isolatedApp }) => {
-  const headers = { Origin: isolatedApp.origin };
+  const headers = { Origin: isolatedApp.origin }; await isolatedApp.connect();
   const joined = await (await host.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Player' } })).json();
   const other = await browser.newContext({ baseURL: isolatedApp.origin });
   try {
     await other.request.post('/api/participant/join', { headers, data: { pin: '1234', nickname: 'Waiting' } });
     const participant = await host.context().newPage(); const waiting = await other.newPage();
-    await participant.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId: null, trackId: 'demo:aurora' } });
+    const track = await catalogueTrack(participant.request, isolatedApp.origin);
+    await participant.request.post('/api/participant/play', { headers, data: { turnId: joined.turnId, previousPlaybackId: null, trackId: track.id } });
     await host.goto('/host'); await participant.goto('/participant'); await waiting.goto('/participant');
     const calls: { path: string; data: { level?: number; action?: string } }[] = [];
     for (const page of [host, participant]) page.on('request', request => { if (request.method() === 'POST') calls.push({ path: new URL(request.url()).pathname, data: request.postDataJSON() }); });

@@ -7,7 +7,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Engine } from '../src/engine.js';
-import { DemoAdapter } from '../src/playback.js';
+import { FakePlayback } from './fixtures/fake-playback.js';
 import { createApp } from '../src/http.js';
 import { AppError, stateSchema, type State } from '../src/model.js';
 import type { Store } from '../src/store.js';
@@ -19,7 +19,7 @@ class MemoryStore implements Store {
   async save(state: State) { this.state = structuredClone(state); }
 }
 async function room(seconds = 200) {
-  const adapter = new DemoAdapter(seconds); const engine = new Engine(new MemoryStore(), adapter, 'http://localhost:3000'); await engine.init();
+  const adapter = new FakePlayback(seconds); const engine = new Engine(new MemoryStore(), adapter, 'http://localhost:3000'); await engine.init();
   const alex = await engine.join('Alex'); const sam = await engine.join('Sam');
   const host = () => engine.view({ kind: 'host' });
   const own = () => engine.view({ kind: 'participant', credential: alex });
@@ -78,13 +78,13 @@ test('participants learn the room’s song-end mode, which decides whether Play 
 
 test('the seek API is participant-only, validated and cannot be used across the origin boundary', async t => {
   const dataDir = await mkdtemp(join(tmpdir(), 'doom-room-seek-')); t.after(() => rm(dataDir, { recursive: true, force: true }));
-  const adapter = new DemoAdapter(200); const server = createServer();
+  const adapter = new FakePlayback(200); const server = createServer();
   let closeApp = () => {};
   t.after(() => { closeApp(); adapter.close(); server.closeAllConnections(); server.close(); });
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const base = `http://127.0.0.1:${port}`;
   const engine = new Engine(new MemoryStore(), adapter, base); await engine.init();
-  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: base, dataDir, demoSeconds: 200 }, 'web');
+  const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: base, dataDir }, 'web');
   closeApp = close; server.on('request', app);
   const alex = await engine.join('Alex'); await engine.join('Sam');
   const turnId = engine.view({ kind: 'host' }).turnId!;

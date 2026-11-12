@@ -29,9 +29,9 @@ Lists allow 200 upcoming choices and 1,000 retained entries including history. C
 - Faster services are tried first. Music Assistant limits each service's requests: its shared Spotify login allows one every 2 seconds, while Tidal allows 4 a second. So Tidal, Qobuz, Deezer and Apple Music albums and a search of your library and those services come before anything on Spotify. With Tidal connected, most songs never touch Spotify.
 - Songs someone else already imported are found instantly. Music Assistant also remembers albums and tracks it looked up, for days to months, so lists that share albums get faster.
 - The import runs on the server: you can close the window, lock your phone or reload the page. Choose **Import** again to see its progress or summary.
-- Songs that weren't found are listed with a **Search** button. Search for them yourself or [upload a file](uploaded-audio.md).
+- Songs that weren't found are listed with **Find artist**, which searches for the song's artist so you can choose it from an album yourself, or [upload a file](uploaded-audio.md).
 - **Stop** ends an import; songs added so far are kept. A full playlist (200 songs) also stops it, and so do several lookups failing in a row, for example while a music service is limiting requests. Importing again later skips the songs already added.
-- Importing needs a Music Assistant connection; there is no demo version. Imported songs are private like any other choice: the host, other participants and the display see nothing.
+- Importing needs a Music Assistant connection. Imported songs are private like any other choice: the host, other participants and the display see nothing.
 
 Doom Room opens the link like any public web address. The two apps share no accounts or settings, and any SuShe Online server works. Only `https` links on the public internet are opened, never addresses on your home network. A link that stopped working or expired says so; share the list again in SuShe Online for a new week.
 
