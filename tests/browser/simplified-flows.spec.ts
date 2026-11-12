@@ -42,7 +42,7 @@ test('one player separates reveal, volume and finish while keeping search availa
   await page.getByRole('searchbox').fill('Northern'); await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.getByRole('button', { name: 'Play', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Reveal details' })).toBeEnabled();
-  await expect(page.locator('.player-ending').getByRole('button', { name: 'Finish turn' })).toBeEnabled();
+  await expect(page.locator('.playback-transport').getByRole('button', { name: 'Finish turn' })).toBeEnabled();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeVisible();
   await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Reveal details' }).click(); await expect(page.locator('.playback-card .privacy-tag')).toHaveText('Visible on room display');

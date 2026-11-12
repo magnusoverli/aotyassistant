@@ -17,22 +17,27 @@ test('real frequency analysis distinguishes bass and treble, silence and anti-ph
   assert.ok(Math.max(...frequencyBins([tone(1000, 2048, 0, .08)], 48000)) < Math.max(...frequencyBins([mono], 48000)));
 });
 
-test('spectrum includes 50 Hz bass and upper treble through 15 kHz while excluding a 16 kHz tone', () => {
-  const bass = frequencyBins([tone(50)], 48000);
-  assert.equal(bass.indexOf(Math.max(...bass)), 0);
-  const treble = frequencyBins([tone(14500)], 48000);
-  assert.equal(treble.indexOf(Math.max(...treble)), spectrumBins - 1);
-  assert.ok(Math.max(...bass) > 200 && Math.max(...treble) > 200);
-  assert.deepEqual(frequencyBins([tone(16000)], 48000), Array(spectrumBins).fill(0));
+// The low edge is limited by FFT resolution (about 22 Hz per bin), so only the upper cutoff is sharp.
+test('spectrum includes 70 Hz bass and upper treble through 16 kHz while excluding a 17 kHz tone', () => {
+  for (const rate of [44100, 48000]) {
+    const sine = (hz: number) => Float32Array.from({ length: 2048 }, (_, i) => .8 * Math.sin(2 * Math.PI * hz * i / rate));
+    const bass = frequencyBins([sine(75)], rate);
+    assert.equal(bass.indexOf(Math.max(...bass)), 0);
+    const treble = frequencyBins([sine(15500)], rate);
+    assert.equal(treble.indexOf(Math.max(...treble)), spectrumBins - 1);
+    assert.ok(Math.max(...bass) > 200 && Math.max(...treble) > 200);
+    assert.deepEqual(frequencyBins([sine(17000)], rate), Array(spectrumBins).fill(0), `${rate} Hz: 17 kHz is excluded.`);
+  }
 });
 
-test('a gentle treble lift gives equal-amplitude high frequencies more presence without raising the noise floor', () => {
+test('equal-amplitude tones read equally across frequency on an unscaled 65 dB range', () => {
   // Exact FFT-bin tones avoid differences due to spectral leakage.
   const peak = (hz: number, amplitude: number) => Math.max(...frequencyBins([tone(hz, 2048, 0, amplitude)], 48000));
   const middle = peak(937.5, .03); const high = peak(12000, .03);
-  const liftDb = (high - middle) * 65 / 255;
-  assert.ok(liftDb > 2.3 && liftDb < 3.1, 'Upper treble approaches a 3 dB visual lift.');
-  assert.equal(peak(12000, .0001), 0, 'Input below the original noise floor remains invisible.');
+  assert.ok(Math.abs(high - middle) <= 1, 'No treble lift is applied.');
+  // A 0.03 amplitude tone sits at about -30.5 dB, i.e. 53% of the 65 dB range. Screens apply sensitivity.
+  assert.ok(Math.abs(middle - (20 * Math.log10(.03) + 65) / 65 * 255) <= 1, 'Analysis does not apply sensitivity.');
+  assert.equal(peak(12000, .0001), 0, 'Input below the noise floor remains invisible.');
 });
 
 test('bass starts at the lower-left and treble meets at the upper-right on both perimeter paths', () => {
@@ -52,11 +57,19 @@ test('bass starts at the lower-left and treble meets at the upper-right on both 
       }
     }
   }
-  const silent = spectrumNeedleLevel(0, 0); const quiet = spectrumNeedleLevel(.2, 0); const loud = spectrumNeedleLevel(1, 0);
-  assert.ok(silent.opacity < .1 && silent.scale < .05);
+  const silent = spectrumNeedleLevel(0, 0); const quiet = spectrumNeedleLevel(.35, 0); const loud = spectrumNeedleLevel(1, 0);
+  assert.ok(silent.opacity === 0 && silent.scale < .05);
   assert.ok(silent.opacity < quiet.opacity); assert.equal(quiet.opacity, loud.opacity);
   assert.ok(silent.scale < quiet.scale && quiet.scale < loud.scale);
   assert.equal(loud.scale, 1);
+});
+
+test('frequency colours interpolate from purple through blue and cyan to green without wrapping', () => {
+  for (const [position, hue] of [[0, 270], [.2, 240], [.5, 195], [.6, 180], [1, 120]]) {
+    assert.equal(spectrumBandHue(position!), hue);
+  }
+  assert.equal(spectrumBandHue(-1), 270, 'Positions below bass clamp to purple.');
+  assert.equal(spectrumBandHue(2), 120, 'Positions above treble clamp to green.');
 });
 
 test('weak treble survives the full analysis-to-needle path while bass and silence retain their response', () => {
@@ -78,15 +91,16 @@ test('weak treble survives the full analysis-to-needle path while bass and silen
     assert.deepEqual(spectrumNeedleLevel(1, position), spectrumNeedleLevel(1, 0));
     assert.deepEqual(spectrumNeedleLevel(Math.max(...belowFloor) / 255, position), spectrumNeedleLevel(0, 0));
   }
-  assert.deepEqual(spectrumNeedleLevel(.2, .5), spectrumNeedleLevel(.2, 0), 'Bass and lower mids retain their response.');
+  // Position .45 is just below 1 kHz in the 70 Hz to 16 kHz range.
+  assert.deepEqual(spectrumNeedleLevel(.2, .45), spectrumNeedleLevel(.2, 0), 'Bass and lower mids retain their response.');
 });
 
-test('needle opacity rises from 5% to 90% by 20% input and stays there across all frequencies', () => {
+test('needle opacity rises from 0% to 5% by 10% input, then to 90% by 35% input across all frequencies', () => {
   for (const position of [0, .25, .5, .75, 1]) {
-    for (const [input, opacity] of [[-1, .05], [0, .05], [.05, .2625], [.1, .475], [.2, .9], [.5, .9], [1, .9], [2, .9]]) {
+    for (const [input, opacity] of [[-1, 0], [0, 0], [.05, .025], [.1, .05], [.225, .475], [.35, .9], [.5, .9], [1, .9], [2, .9]]) {
       assert.ok(Math.abs(spectrumNeedleLevel(input!, position).opacity - opacity!) < 1e-12);
     }
-    assert.ok(spectrumNeedleLevel(.2, position).scale < spectrumNeedleLevel(1, position).scale,
+    assert.ok(spectrumNeedleLevel(.35, position).scale < spectrumNeedleLevel(1, position).scale,
       'Length continues responding above the brightness plateau.');
   }
 });
@@ -122,7 +136,7 @@ test('stream-ahead buffer is bounded, preserves delayed frames and discards out-
   assert.ok(visible.length > 75 && visible.length < 85);
   assert.ok(visible.every(frame => frame.at >= 1850 && frame.at <= 3200));
   const clock = new SpectrumClock(); clock.synchronize(1990, 2010, 2000);
-  clock.accept({ epoch: '60fps', roomId: 'room', participantId: 'person', active: true, frames: visible }, 2000);
+  clock.accept({ epoch: '60fps', roomId: 'room', participantId: 'person', active: true, sensitivity: 1, frames: visible }, 2000);
   assert.ok(clock.sample(2000, 'room', 'person'), 'The browser accepts the larger 60 fps frame batch.');
   const delayed = buffer.window(6000, 5000);
   assert.ok(delayed.some(frame => frame.at === 6000));
@@ -135,7 +149,7 @@ test('browser schedules ahead-of-time frames using clock probes, not network arr
   const clock = new SpectrumClock();
   clock.synchronize(100, 120, 1110); // Server clock is 1000ms ahead.
   clock.synchronize(120, 420, 1300); // A slower, asymmetric observation must not win.
-  const packet: SpectrumPacket = { epoch: 'stream-1', roomId: 'room', participantId: 'person', active: true,
+  const packet: SpectrumPacket = { epoch: 'stream-1', roomId: 'room', participantId: 'person', active: true, sensitivity: 1,
     frames: [{ at: 1500, bins: Array(spectrumBins).fill(0) }, { at: 1600, bins: Array(spectrumBins).fill(255) }] };
   clock.accept(packet, 200);
   assert.equal(clock.sample(400, 'room', 'person'), undefined, 'Never show a future frame early.');
@@ -147,4 +161,19 @@ test('browser schedules ahead-of-time frames using clock probes, not network arr
   assert.equal(clock.sample(550, 'room', 'person'), undefined);
   clock.reset(); clock.accept(packet, 200);
   assert.equal(clock.sample(550, 'room', 'person'), undefined, 'Reconnections need a new clock mapping.');
+});
+
+test('screens apply the packet sensitivity linearly on the next packet, clamp at full scale and reject invalid values', () => {
+  const clock = new SpectrumClock(); clock.synchronize(100, 120, 110);
+  const frame = (at: number) => ({ at, bins: Array.from({ length: spectrumBins }, (_, i) => i < 12 ? 102 : 204) });
+  const packet: SpectrumPacket = { epoch: 'stream', roomId: 'room', participantId: 'person', active: true, sensitivity: .9, frames: [frame(500), frame(600)] };
+  const level = (sensitivity: number) => { clock.accept({ ...packet, sensitivity }, 500); return clock.sample(500, 'room', 'person')!; };
+  const reduced = level(.9);
+  assert.ok(Math.abs(reduced[0]! - .4 * .9) < 1e-12 && Math.abs(reduced[23]! - .8 * .9) < 1e-12);
+  const boosted = level(1.5);
+  assert.ok(Math.abs(boosted[0]! - .6) < 1e-12); assert.equal(boosted[23], 1, 'Levels never exceed full scale.');
+  for (const sensitivity of [.4, 1.6, NaN, undefined]) {
+    clock.accept({ ...packet, sensitivity } as unknown as SpectrumPacket, 500);
+    assert.equal(clock.sample(500, 'room', 'person'), undefined, `Sensitivity ${sensitivity} is rejected.`);
+  }
 });

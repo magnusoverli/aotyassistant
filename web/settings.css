@@ -101,6 +101,7 @@
   .background-field:has(output) { display:grid; grid-template-columns:1fr auto; gap:6px 10px; }
   .background-field > output { grid-column:2; grid-row:1; color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; }
   .background-field > input[type='range'] { grid-column:1 / -1; width:100%; padding:0; accent-color:var(--accent); }
+  .visualizer-sensitivity > .field-hint { grid-column:1 / -1; }
   .background-toggle { display:flex; align-items:center; gap:12px; min-height:44px; }
   .background-toggle input { width:18px; height:18px; min-height:0; accent-color:var(--accent); order:-1; }
   .background-controls > .actions { grid-column:1 / -1; }

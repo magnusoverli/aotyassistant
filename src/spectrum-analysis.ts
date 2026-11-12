@@ -1,4 +1,4 @@
-import { spectrumBins, spectrumRate } from './spectrum.js';
+import { spectrumBins, spectrumMaxHz, spectrumMinHz, spectrumRate } from './spectrum.js';
 
 const size = 2048;
 const window = Float64Array.from({ length: size }, (_, i) => .5 - .5 * Math.cos(2 * Math.PI * i / (size - 1)));
@@ -28,19 +28,15 @@ export function frequencyBins(channels: Float32Array[], sampleRate: number): num
     }
     for (let i = 1; i < power.length; i++) power[i] = power[i]! + (re[i]! ** 2 + im[i]! ** 2) / channels.length;
   }
-  const minHz = 50; const maxHz = Math.min(15000, sampleRate / 2);
+  const minHz = spectrumMinHz; const maxHz = Math.min(spectrumMaxHz, sampleRate / 2);
   return Array.from({ length: spectrumBins }, (_, band) => {
     const low = Math.max(1, Math.floor(minHz * (maxHz / minHz) ** (band / spectrumBins) * size / sampleRate));
     const high = Math.min(power.length, Math.max(low + 1, Math.ceil(minHz * (maxHz / minHz) ** ((band + 1) / spectrumBins) * size / sampleRate)));
     let peak = 0;
     for (let bin = low; bin < high; bin++) peak = Math.max(peak, power[bin]!);
     const db = 20 * Math.log10(Math.max(1e-9, Math.sqrt(peak) * 4 / size));
-    // A gentle visual treble lift offsets music's bass-heavy energy distribution.
-    // Keep the original noise floor so this never lights a band with no usable input.
-    if (db <= -65) return 0;
-    const centerHz = minHz * (maxHz / minHz) ** ((band + .5) / spectrumBins);
-    const trebleLiftDb = 3 * Math.max(0, Math.min(1, Math.log(centerHz / 1000) / Math.log(maxHz / 1000)));
-    return Math.round(Math.max(0, Math.min(1, (db + trebleLiftDb + 65) / 65)) * 255);
+    // Sensitivity is applied by each screen while drawing, so a settings change takes effect immediately.
+    return Math.round(Math.max(0, Math.min(1, (db + 65) / 65)) * 255);
   });
 }
 

@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EventEmitter } from 'node:events';
@@ -65,7 +65,7 @@ test('silent receiver persists identity, receives PCM, verifies the room group a
   f.target.playing = true; await f.service.wake(); client.audio();
   const packet = f.service.packet();
   assert.equal(packet.active, true); assert.ok(packet.frames.length > 20);
-  assert.deepEqual(Object.keys(packet).sort(), ['active', 'epoch', 'frames', 'participantId', 'roomId']);
+  assert.deepEqual(Object.keys(packet).sort(), ['active', 'epoch', 'frames', 'participantId', 'roomId', 'sensitivity']);
   assert.equal(JSON.stringify(packet).includes(client.pairingToken), false);
   assert.ok(f.commands.includes('sendspin/pair_web_player'));
   assert.ok(f.commands.every(command => ['sendspin/pair_web_player', 'player_queues/get_active_queue'].includes(command)));
@@ -94,6 +94,28 @@ test('pause, turn changes, disabling and stale revisions cannot leave another pa
   await f.service.save({ revision: 1, enabled: false, delayMs: 0 });
   assert.equal(f.service.view().state, 'disabled'); assert.equal(f.clients[0]!.isConnected, false);
   assert.ok(f.sockets.every(socket => socket.terminated));
+});
+
+test('sensitivity changes reach the live packet immediately without restarting the receiver or stream', async t => {
+  const f = await fixture(t);
+  await writeFile(join(f.directory, 'visualizer.json'), JSON.stringify({ revision: 3, enabled: false, delayMs: 40 }));
+  const legacy = new RoomVisualizer(f.directory, f.deps); t.after(async () => { legacy.close(); await legacy.drain(); });
+  await legacy.ready;
+  assert.equal(legacy.view().sensitivity, .9, 'Settings saved before sensitivity existed use the default.');
+  legacy.close();
+  await f.service.save({ revision: 0, enabled: true, delayMs: 0 });
+  await eventually(() => f.service.view().state === 'ready');
+  f.target.playing = true; await f.service.wake(); f.clients[0]!.audio();
+  const before = f.service.packet(); assert.equal(before.sensitivity, .9); assert.ok(before.frames.length > 20);
+  await f.service.save({ revision: 1, enabled: true, delayMs: 0, sensitivity: 1.25 });
+  const after = f.service.packet();
+  assert.equal(after.sensitivity, 1.25); assert.equal(after.epoch, before.epoch);
+  assert.deepEqual(after.frames, before.frames, 'Buffered frames are kept; screens rescale them.');
+  assert.equal(f.clients.length, 1); assert.equal(f.clients[0]!.isConnected, true);
+  for (const sensitivity of [.45, 1.55, Number.NaN]) {
+    await assert.rejects(f.service.save({ revision: 2, enabled: true, delayMs: 0, sensitivity }));
+  }
+  assert.equal(f.service.view().sensitivity, 1.25);
 });
 
 test('a temporary queue-read failure keeps the persistent receiver connected and recovers without pairing again', async t => {

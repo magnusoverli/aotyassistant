@@ -1,4 +1,4 @@
-import { spectrumBins, type SpectrumPacket } from '../src/spectrum';
+import { spectrumBins, visualizerSensitivity, type SpectrumPacket } from '../src/spectrum';
 
 /** Use the least-delayed clock probe, not SSE arrival time, as the presentation clock. */
 export class SpectrumClock {
@@ -14,6 +14,7 @@ export class SpectrumClock {
   }
   accept(packet: SpectrumPacket, now: number) {
     if (!packet || typeof packet.epoch !== 'string' || !Array.isArray(packet.frames) || packet.frames.length > 100 ||
+      typeof packet.sensitivity !== 'number' || !(packet.sensitivity >= visualizerSensitivity.min && packet.sensitivity <= visualizerSensitivity.max) ||
       packet.frames.some(frame => !Number.isFinite(frame.at) || !Array.isArray(frame.bins) || frame.bins.length !== spectrumBins ||
         frame.bins.some(bin => !Number.isFinite(bin) || bin < 0 || bin > 255))) { this.clear(); return; }
     this.packet = packet; this.receivedAt = now;
@@ -28,6 +29,8 @@ export class SpectrumClock {
     if (!previous || time - previous.at > 150) return;
     const following = next >= 0 ? packet.frames[next] : undefined;
     const mix = following ? Math.min(1, (time - previous.at) / Math.max(1, following.at - previous.at)) : 0;
-    return previous.bins.map((value, i) => (value + ((following?.bins[i] ?? value) - value) * mix) / 255);
+    // Applied per sample so a sensitivity change reaches the needles with the next 200 ms packet.
+    const scale = packet.sensitivity / 255;
+    return previous.bins.map((value, i) => Math.min(1, (value + ((following?.bins[i] ?? value) - value) * mix) * scale));
   }
 }

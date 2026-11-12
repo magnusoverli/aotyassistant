@@ -134,7 +134,8 @@ for (const paused of [false, true]) test(`finishing from the ${paused ? 'paused'
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });
       await expect(page.getByRole('button', { name: 'Finish turn', exact: true })).toHaveCount(1);
-      await expect(page.locator('.player-ending').getByRole('button', { name: 'Finish turn', exact: true })).toBeVisible();
+      // Phones carry Finish turn in the transport row; desktop keeps it beside Reveal.
+      await expect(page.locator(width < 1100 ? '.playback-transport' : '.player-ending').getByRole('button', { name: 'Finish turn', exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
       await expect(page.locator('.finish-turn')).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);

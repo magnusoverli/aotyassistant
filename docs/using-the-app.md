@@ -48,7 +48,7 @@ Choose a still JPEG, PNG or WebP image up to 10 MB and 40 megapixels. Camera cap
 
 ### Listening order
 
-In the listening order, highlighted cards identify the current and next participants. Cards are narrower, with vertically centered names and no status subtitles; screen readers still announce current, next and your own turn. A multicolour spectrum border appears on the current participant only during playback, with closely spaced needles extending entirely inside the card. It disappears while choosing a song, paused, stopped or disconnected. With the visualizer configured, the needles react to the room’s audio; quiet or missing bands remain short and faint. Reduced-motion preferences keep the border static during playback.
+In the listening order, highlighted cards identify the current and next participants. Cards are narrower, with vertically centered names and no status subtitles; screen readers still announce current, next and your own turn. A multicolour spectrum border appears on the current participant only during playback, with closely spaced needles extending entirely inside the card. It disappears while choosing a song, paused, stopped or disconnected. With the visualizer receiving audio, the needles react to the room’s audio; quiet bands remain short and faint, and silent bands are invisible. Reduced-motion preferences keep the border static during playback.
 
 On mobile, the compact listening order starts with the current participant, followed by the next. Cards rotate as turns advance; scroll horizontally to see the remaining participants. Your own card stays highlighted. This presentation does not change the saved turn order or desktop layout.
 
@@ -56,17 +56,21 @@ On **Host desk**, drag any participant card into a new position. Neighbouring ca
 
 ### Audio-reactive turn border
 
-Corner needles use the same full length response as the straight edges. Needle opacity rises linearly from 5% at zero input to 90% at 20% input, then stays at 90%. Needle length continues to react across the full input range.
+Corner needles use the same full length response as the straight edges. Needle opacity rises linearly from 0% at zero input to 5% at 10% input, then linearly to 90% at 35% input, and stays at 90% above that. Needle length continues to react across the full input range.
 
 1. In **Settings → Playback → Audio-reactive turn border**, check **Enable Doom Room Visualizer** and save.
 2. In Music Assistant, create a permanent speaker group containing **Doom Room Visualizer** and your speakers.
 3. Select that group as Doom Room’s **Speaker or group**, then play a song. The visualizer status should report that it is receiving real audio spectrum.
 
-The visualizer is a persistent silent receiver on the app server. It reconnects after restart and sends timestamped frequency data to every room screen, including `/display`; screens need no microphone or browser audio permission. It analyses approximately **50–15,000 Hz** across **24 frequency bands**, producing **60 spectrum frames per second**. Frequencies and their colours rise together from bass at the lower-left corner to treble at the upper-right along both sides of the card. A gentle visual treble lift above 1 kHz reaches approximately +3 dB at the top end; a progressively gentler needle-length response also makes weak treble easier to see. Silent bands stay faint, and the audio is unaffected. Screens interpolate the needles at their display refresh rate. Track titles and artwork are not included in the spectrum feed.
+The visualizer is a persistent silent receiver on the app server. It reconnects after restart and sends timestamped frequency data to every room screen, including `/display`; screens need no microphone or browser audio permission. It analyses approximately **70–16,000 Hz** across **24 frequency bands**, producing **60 spectrum frames per second**. Frequencies rise from bass at the lower-left corner to treble at the upper-right along both sides of the card, with colours following a continuous linear hue gradient from purple through blue and cyan to green. Every band uses the same level scale with no treble lift, multiplied by the **Sensitivity** setting; a progressively gentler needle-length response makes weak treble easier to see. Silent bands are invisible, and the audio is unaffected. Screens interpolate the needles at their display refresh rate. Track titles and artwork are not included in the spectrum feed.
 
 Sendspin-compatible groups share playback timing. For supported Sonos devices, use Music Assistant’s [AirPlay/Sendspin bridging](https://www.music-assistant.io/player-support/sonos/#airplay-functionality) for synchronized grouping. A native Sonos player can instead share a [Universal Group](https://www.music-assistant.io/faq/groups/) with the receiver, but Universal Groups do **not** guarantee synchronized playback.
 
-Start with **Visual timing adjustment** at **0 ms**. Positive values show the spectrum later; negative values show it earlier, up to 5000 ms in either direction. This can compensate for a steady offset, but cannot correct drift between unsynchronized speakers. If the receiver is disconnected or outside the selected playback group, the needles settle to their faint baseline during playback.
+Start with **Visual timing adjustment** at **0 ms**. Positive values show the spectrum later; negative values show it earlier, up to 5000 ms in either direction. This can compensate for a steady offset, but cannot correct drift between unsynchronized speakers.
+
+**Sensitivity** (50–150%, default 90%) scales every band's level linearly before needle length and opacity are calculated; levels above full scale are capped. Changes apply on every room screen within about 200 ms while you drag the slider, and save automatically without affecting unsaved timing or enable changes.
+
+If the receiver is disconnected or outside the selected playback group, the needles settle to their faint baseline during playback.
 
 ## Prepare selections
 
@@ -85,6 +89,8 @@ See [private lists](private-lists.md) and [uploaded audio](uploaded-audio.md). W
 ## Play a turn
 
 Only the current participant can start a track or reveal its details. Participant playback controls are available only during their turn, and search results show **Play** only then. Choose **Play** from a search result or **Play first selection** (**Play pick** on phones) in the player to start the first entry in **Your playlist**.
+
+On phones, the compact participant player places **Finish** / **Pass** alongside the playback controls, with captions beneath their icons. **Reveal details** has its own bottom row; switching Secret playback off removes that row and makes the player shorter.
 
 On phones, while someone else has the turn, the player shows whose turn it is, whether they are choosing or playing, how many turns until yours, your next pick and the speaker. When your turn starts, the player shows its controls and its border lights up, the browser tab title starts with **● Your turn**, and phones that support it vibrate briefly. If you have scrolled away from the player, a bar at the bottom of the screen says **It’s your turn** with **Go to player**; the same bar reports a lost connection. Dragging a song to the top changes which saved track comes first without starting playback. Playing takes over the chosen Music Assistant speaker or group with one track, replacing its existing queue and disabling repeat, shuffle, and autoplay.
 

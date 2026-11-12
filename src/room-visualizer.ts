@@ -9,9 +9,12 @@ import { SerialQueue } from './serial.js';
 import { MusicAssistantTransport } from './music-assistant-transport.js';
 import { openSpeakerSocket, configureBrowserPlayer, type SpeakerConnection } from './browser-speakers.js';
 import { SpectrumAnalyser } from './spectrum-analysis.js';
-import { SpectrumBuffer, type SpectrumPacket, type VisualizerSettings, type VisualizerView } from './spectrum.js';
+import { SpectrumBuffer, visualizerSensitivity, type SpectrumPacket, type VisualizerSettings, type VisualizerView } from './spectrum.js';
 
-export const visualizerSettingsSchema = z.object({ revision: z.number().int().nonnegative(), enabled: z.boolean(), delayMs: z.number().int().min(-5000).max(5000) }).strict();
+// Settings saved before sensitivity existed load with the default.
+export const visualizerSettingsSchema = z.object({ revision: z.number().int().nonnegative(), enabled: z.boolean(), delayMs: z.number().int().min(-5000).max(5000),
+  sensitivity: z.number().finite().min(visualizerSensitivity.min).max(visualizerSensitivity.max).default(visualizerSensitivity.default) }).strict();
+export type VisualizerSettingsInput = z.input<typeof visualizerSettingsSchema>;
 const secretsSchema = z.record(z.string().max(200), z.string().max(8192));
 const name = 'Doom Room Visualizer';
 export type VisualizerTarget = { roomId: string | null; participantId: string | null; playbackId: string | null; playing: boolean; destination: string | null };
@@ -28,7 +31,7 @@ type Dependencies = {
  * MA owns grouping. Only frequency magnitudes and presentation times leave this service. */
 export class RoomVisualizer {
   readonly ready: Promise<void>;
-  private settings: VisualizerSettings = { revision: 0, enabled: false, delayMs: 0 };
+  private settings: VisualizerSettings = { revision: 0, enabled: false, delayMs: 0, sensitivity: visualizerSensitivity.default };
   private secrets: Record<string, string> = Object.create(null);
   private writes = new SerialQueue();
   private unavailable = false;
@@ -70,7 +73,7 @@ export class RoomVisualizer {
     } catch { this.unavailable = true; this.state = 'error'; this.message = 'Visualizer storage could not be read. Check storage and restart the app.'; }
   }
   view(): VisualizerView { return { ...this.settings, name, state: this.state, message: this.message }; }
-  async save(input: VisualizerSettings) {
+  async save(input: VisualizerSettingsInput) {
     await this.ready;
     return this.writes.run(async () => {
       if (this.unavailable || this.closed) throw new AppError(503, 'Visualizer storage is unavailable. Restart after checking storage.');
@@ -83,9 +86,11 @@ export class RoomVisualizer {
         throw new AppError(503, this.message);
       }
       const reconnect = next.enabled !== this.settings.enabled;
+      const retimed = next.delayMs !== this.settings.delayMs;
       this.settings = next;
       if (reconnect) { this.drop(); this.nextAttempt = 0; }
-      else this.epoch = randomUUID();
+      // Sensitivity is applied by screens while drawing, so it changes live without restarting the stream.
+      else if (retimed) this.epoch = randomUUID();
       this.state = next.enabled ? this.client ? this.state : 'connecting' : 'disabled';
       this.message = next.enabled ? this.client ? this.message : 'Connecting to Music Assistant…' : 'Visualizer client disabled.';
       // Leave the write lane before a connection flushes newly generated identity keys.
@@ -139,7 +144,7 @@ export class RoomVisualizer {
   packet(): SpectrumPacket {
     const target = this.observeTarget(); const now = performance.now();
     const active = target.playing && this.matched && now - this.verifiedAt < 6000 && Boolean(this.client?.isConnected && this.client.timeSyncInfo.synced);
-    return { epoch: this.epoch, roomId: target.roomId, participantId: target.participantId, active,
+    return { epoch: this.epoch, roomId: target.roomId, participantId: target.participantId, active, sensitivity: this.settings.sensitivity,
       frames: active ? this.frames.window(now, this.settings.delayMs) : [] };
   }
   async wake() {

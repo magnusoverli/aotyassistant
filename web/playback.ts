@@ -54,7 +54,12 @@ export class Playback {
   /** Host-only: the playback the card last showed, and a stop the host is waiting on. */
   private hostUi = { identity: '', pending: '' };
 
-  constructor(private options: HostOptions | ParticipantOptions) {}
+  /** Phones place Finish turn in the transport row; crossing the breakpoint moves it back. */
+  private mobile = matchMedia('(max-width:1099px)');
+
+  constructor(private options: HostOptions | ParticipantOptions) {
+    if (options.role === 'participant') this.mobile.addEventListener('change', () => { if (this.state) this.update(this.state); });
+  }
 
   /** The song this role may see: the host's status-only view, or the participant's own while it is their turn. */
   private playbackOf({ view, projected }: PlaybackState) {
@@ -194,7 +199,7 @@ export class Playback {
     });
   }
 
-  private transport(state: PlaybackState) {
+  private transport(state: PlaybackState, finish?: HTMLButtonElement) {
     const host = this.options.role === 'host'; const { view, online, starting } = state;
     const playback = this.playbackOf(state);
     const permitted = online && view.connected && (host || view.myTurn);
@@ -238,7 +243,7 @@ export class Playback {
       play.classList.toggle('is-next-track', skip);
     }
     // The host never starts a song, so its player has no Play button at all.
-    children(controls, play, transport, stop);
+    children(controls, play, transport, stop, finish);
     return controls;
   }
 
@@ -358,11 +363,14 @@ export class Playback {
         : song.status === 'stopped' ? `Finish your turn?${after}` : `Finish your turn? Your song stops now.${after}`)) return;
       void options.run(() => options.finish());
     }, true);
-    this.decorate(finish, playback ? 'Finish turn' : 'Pass turn', 'advance');
+    // The phone transport row has room for a one-word caption; the accessible name stays complete.
+    const finishCaption = playback ? 'Finish turn' : 'Pass turn';
+    this.decorate(finish, finishCaption, 'advance', playback ? 'Finish' : 'Pass'); attr(finish, 'aria-label', finishCaption);
     prop(finish, 'title', playback ? 'Finish your turn and pass to the next participant' : 'Pass to the next participant');
     prop(finish, 'disabled', busy || !online || !view.connected || !view.myTurn || starting);
-    const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, secret && reveal, finish);
-    children(card, this.waitingSummary(state), now, this.transport(state), progress, this.footer(ending), details.dialog);
+    const inTransport = this.mobile.matches;
+    const ending = v.el('ending', 'div', undefined, 'player-ending'); children(ending, secret && reveal, !inTransport && finish);
+    children(card, this.waitingSummary(state), now, this.transport(state, inTransport ? finish : undefined), progress, this.footer(ending), details.dialog);
   }
 
   /** Phones, while someone else has the turn: the room's state and your place instead of disabled controls. */

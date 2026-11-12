@@ -40,7 +40,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
       await expect(page.locator('.player-mobile-privacy')).toBeEmpty();
       expect(await page.locator('.player-details-open').evaluate(node => getComputedStyle(node, '::after').content)).toBe('none');
       const before = await geometry(page);
-      expect(before[0]!.height).toBe(272);
+      expect(before[0]!.height).toBe(260);
       expect(await page.locator('#participant-player').evaluate(player => player.getBoundingClientRect().top
         - document.querySelector('.app-header')!.getBoundingClientRect().bottom)).toBe(10);
       const unchanged = async () => {
@@ -124,7 +124,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 360, height: 740 }
       finish.release(); await expect(page.locator('.player-waiting-turn')).toHaveText('Next listener’s turn');
       await expect(page.locator('.player-waiting-distance')).toHaveText('You’re next');
       await expect(page.locator('#player-play-next')).toBeHidden();
-      expect((await page.locator('#participant-player').boundingBox())!.height).toBeLessThan(272);
+      expect((await page.locator('#participant-player').boundingBox())!.height).toBeLessThan(260);
       const host = await (await page.request.get('/api/host/state')).json();
       await post('/api/host/advance', { turnId: host.turnId });
       await expect(page.locator('.player-mobile-notice')).toHaveText('Your turn · choose a song'); await unchanged();
@@ -137,7 +137,7 @@ test('mobile details close on desktop and enlarged text scales the frame, not it
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('/participant');
   await expect(page.getByRole('button', { name: 'Player details', exact: true })).toBeVisible();
   await page.evaluate(() => { document.documentElement.style.fontSize = '20px'; });
-  expect((await page.locator('#participant-player').boundingBox())!.height).toBe(339.5);
+  expect((await page.locator('#participant-player').boundingBox())!.height).toBe(324.5);
   const before = await geometry(page);
   const state = await (await page.request.get('/api/participant/state')).json();
   await page.request.post('/api/participant/play', { data: { turnId: state.turnId, previousPlaybackId: null, trackId: 'demo:aurora' }, headers: { Origin: isolatedApp.origin } });
@@ -152,5 +152,5 @@ test('mobile details close on desktop and enlarged text scales the frame, not it
   await expect(page.locator('#player-reveal')).toHaveAccessibleName('Reveal details');
   expect(await page.locator('#participant-player').evaluate(node => getComputedStyle(node).gridTemplateAreas)).toBe('"identity transport" "timeline timeline" "footer footer"');
   await page.setViewportSize({ width: 390, height: 844 });
-  expect((await page.locator('#participant-player').boundingBox())!.height).toBe(339.5);
+  expect((await page.locator('#participant-player').boundingBox())!.height).toBe(324.5);
 });

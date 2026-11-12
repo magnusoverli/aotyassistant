@@ -22,6 +22,8 @@
       grid-template-areas:'identity' 'timeline' 'transport' 'volume' 'ending';
       align-items:stretch; gap:.25rem; padding:.75rem;
     }
+    /* Half the vertical padding of the host card; the fixed frame shrinks by the same .75rem. */
+    #participant-player { padding-block:.375rem; block-size:calc(16.125rem + 2px); }
     :is(#participant-player,#host-player) .player-mobile-only { display:inline; }
     :is(#participant-player,#host-player) .player-desktop-only { display:none; }
     :is(#participant-player,#host-player) .private-now-playing { position:relative; align-items:center; gap:.625rem; min-width:0; margin:0; }
@@ -57,6 +59,9 @@
       font-size:.8125rem; line-height:1rem;
     }
     :is(#participant-player,#host-player) .playback-transport button > span { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; overflow-wrap:normal; }
+    /* Four controls share the row (Play pick, Pause, Stop, Finish): captions sit under their icons to fit 320px phones. */
+    #participant-player .playback-transport { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    #participant-player .playback-transport button,#participant-player #player-play-next[hidden] { flex-direction:column; gap:.125rem; font-size:.75rem; }
     /* An empty list disables Play pick; only desktop removes the button. */
     :is(#participant-player,#host-player) .playback-transport .player-desktop-only { display:none; }
     :is(#participant-player,#host-player) :is(#player-transport,#host-transport) { background:transparent; color:var(--text); border-color:var(--line); }
@@ -77,11 +82,14 @@
     :is(#participant-player,#host-player) .player-ending button > span { position:static; width:auto; height:auto; margin:0; overflow:hidden; clip:auto; white-space:nowrap; text-overflow:ellipsis; }
     :is(#participant-player,#host-player) .player-ending .player-desktop-only { display:none; }
     #participant-player #player-reveal { background:transparent; color:var(--accent); }
-    /* Ending a turn sits apart from Reveal, smaller, and asks before it acts. */
-    #participant-player .player-ending { grid-template-columns:minmax(0,1fr) 8rem; gap:1.25rem; }
-    /* Without secret playback there is no Reveal: Finish turn takes the row, as on the host desk. */
-    #participant-player.without-reveal .player-ending { grid-template-columns:minmax(0,1fr); }
-    #participant-player #finish-my-turn { width:100%; padding-inline:.5rem; }
+    /* Finish turn lives in the transport row (and still asks before it acts), so Reveal has the bottom row to itself. */
+    #participant-player .player-ending { grid-template-columns:minmax(0,1fr); }
+    /* Without secret playback there is no Reveal, so the bottom row is dropped and the card is one row shorter. */
+    #participant-player.without-reveal:not(.is-waiting) {
+      block-size:calc(13.125rem + 2px); grid-template-rows:3.625rem 2.5rem 2.75rem 2.75rem;
+      grid-template-areas:'identity' 'timeline' 'transport' 'volume';
+    }
+    #participant-player.without-reveal .player-ending { display:none; }
     #participant-player.is-turn-ready .player-mobile-notice { color:var(--accent); font-weight:650; }
 
     /* Waiting: the room's state and your place, instead of controls you cannot use yet. */
@@ -113,6 +121,6 @@
     body[data-view='participant']:has(#participant-player) .app-content > :is(.error,.connection) { display:none; }
   }
   @media(max-width:359px) {
-    :is(#participant-player,#host-player) .playback-transport button,#participant-player #player-play-next[hidden] { font-size:.75rem; gap:0; }
+    #host-player .playback-transport button { font-size:.75rem; gap:0; }
   }
 }

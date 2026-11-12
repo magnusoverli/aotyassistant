@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-11-12
+
+- Analyse 70–16,000 Hz (previously 50–15,000 Hz) across the 24 spectrum bands.
+- Remove the visual treble lift so all frequency bands share the same level scale.
+- Add a visualizer **Sensitivity** slider (50–150%, default 90%) that linearly scales every band, applies live on every room screen while dragging and saves automatically.
+- Ramp needle opacity linearly from 0% at zero input to 5% at 10% input, then to 90% at 35% input.
+- Colour the spectrum from purple bass through blue and cyan to green treble, with a continuous linear hue gradient.
+- Make the phone participant player more compact, move **Finish** / **Pass** into the transport row, and remove the bottom **Reveal details** row when Secret playback is off.
+
 ## [2.1.0] — 2026-11-12
 
 - Reduce the visual treble lift from approximately +6 dB to +3 dB at the top end.
