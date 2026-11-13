@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.1.9] — 2026-11-13
+
+- Cancel abandoned catalogue reads promptly and enforce each caller's time limit while preserving shared requests still needed by another viewer. Bound pending catalogue work so obsolete searches do not hold up new browsing.
+- Open host and display screens directly from their live connection, retry connections that close during startup, and let participant room controls connect while the private playlist loads.
+- Stop read-only requests when leaving a page or closing the replacement dialog. Clean up import polling and dialogs on navigation while allowing the server-side import to continue and be recovered when reopened.
+- Reduce visualizer processing overhead by reusing spectrum buffers and Music Assistant HTTP connections.
+
 ## [2.1.8] — 2026-11-13
 
 - Keep the playlist usable while changes save. Moves, removals and **Add back** show at once, and you can keep dragging, removing or adding songs while earlier changes are still saving; they are saved in order in the background, with **Saving…** shown meanwhile. **Needs attention** appears only when a change fails or was interrupted, still with **Retry** and **Discard**.

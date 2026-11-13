@@ -7,7 +7,7 @@ import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
 import { PreparationManager, preparationOperationSchema, preparationLimits } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
-import { artworkSize, body, jsonBody, sendArtwork, setParticipantCookie } from './http-utils.js';
+import { artworkSize, body, catalogueRead, jsonBody, sendArtwork, setParticipantCookie } from './http-utils.js';
 import type { ArtworkData } from './music-assistant-transport.js';
 import { RateLimiter, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
@@ -186,7 +186,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
     }));
     res.json({ view: result.value, preparation: result.preparation, warning: result.warning });
   }));
-  app.get(`${prefix}/artwork/:entryId/:kind`, async (req, res) => {
+  app.get(`${prefix}/artwork/:entryId/:kind`, async (req, res) => catalogueRead(req, 'saved-artwork', async () => {
     const entryId = uuid.parse(req.params.entryId); const kind = z.enum(['artwork', 'artistArtwork']).parse(req.params.kind);
     const selection = await manager.selection(credential(req), entryId);
     // Served here rather than redirected to the catalogue URL: one request per cover
@@ -204,7 +204,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       const latest = await manager.selection(credential(req), entryId);
       if (JSON.stringify(selection) !== JSON.stringify(latest)) throw new AppError(403, 'Saved artwork access changed.');
     });
-  });
+  }));
   // This path receives both HttpOnly cookies. One connection carries independently filtered feeds.
   app.get(`${prefix}/live`, async (req, res) => {
     const role = { kind: 'participant' as const, credential: member(req) };

@@ -9,6 +9,7 @@ import type WebSocket from 'ws';
 import { RoomVisualizer, type VisualizerTarget } from '../src/room-visualizer.js';
 import { createVisualizerClient, visualizerIdentity, type VisualizerClient, type VisualizerClientConfig, type VisualizerChunk } from '../src/sendspin-server.js';
 import { publicRoute } from '../src/public-listener.js';
+import { MusicAssistantTransport } from '../src/music-assistant-transport.js';
 
 class Socket extends EventEmitter { terminated = false; terminate() { this.terminated = true; } ping() {} }
 class Client implements VisualizerClient {
@@ -128,6 +129,31 @@ test('a temporary queue-read failure keeps the persistent receiver connected and
   assert.equal(f.clients[0]!.isConnected, true); assert.equal(f.sockets[0]!.terminated, false);
   f.deps.read = read; await f.service.wake(); f.clients[0]!.audio();
   assert.equal(f.service.packet().active, true); assert.equal(f.clients.length, 1);
+});
+
+test('visualizer HTTP reads reuse one transport until connection settings change and close it on shutdown', async t => {
+  const f = await fixture(t); f.service.close();
+  await writeFile(join(f.directory, 'visualizer.json'), JSON.stringify({ revision: 0, enabled: true, delayMs: 0 }));
+  // Start with an existing identity so this network-lifetime test needs no persistence writes.
+  const identity = new Map<string, string>();
+  visualizerIdentity({
+    getItem: key => identity.get(key) ?? null, setItem: (key, value) => { identity.set(key, value); },
+  });
+  await writeFile(join(f.directory, 'visualizer-identity.json'), JSON.stringify(Object.fromEntries([...identity].map(([key, value]) => [`fixture:${key}`, value]))));
+  Reflect.deleteProperty(f.deps, 'read'); f.target.playing = true;
+  const reads: MusicAssistantTransport[] = []; const closed = new Set<MusicAssistantTransport>();
+  t.mock.method(MusicAssistantTransport.prototype, 'read', async function(this: MusicAssistantTransport, _path: string, command: string) {
+    reads.push(this); return command === 'player_queues/get_active_queue' ? { queue_id: 'room-group', available: true } : null;
+  });
+  const close = MusicAssistantTransport.prototype.close;
+  t.mock.method(MusicAssistantTransport.prototype, 'close', function(this: MusicAssistantTransport) { closed.add(this); close.call(this); });
+  const service = new RoomVisualizer(f.directory, f.deps); t.after(() => service.close());
+  await eventually(() => reads.length >= 3);
+  await service.wake(); assert.ok(reads.length >= 5);
+  assert.equal(new Set(reads).size, 1); assert.equal(closed.size, 0);
+  const connection = f.deps.connection(); f.deps.connection = () => ({ ...connection, epoch: 'two' });
+  await service.wake(); assert.equal(new Set(reads).size, 2); assert.equal(closed.has(reads[0]!), true);
+  service.close(); assert.equal(closed.has(reads.at(-1)!), true);
 });
 
 test('disabling or losing configuration while a socket opens closes the late socket without pairing', async t => {

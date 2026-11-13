@@ -8,7 +8,7 @@ import { MusicAssistantTransport, type ArtworkData, type ArtworkSize } from './m
 import { MusicAssistantEvents, type PlaybackEvent } from './music-assistant-events.js';
 import { verifiedPlaybackSchemas, supportsPlaybackSchema, supportsReadOnlySchema } from './music-assistant-policy.js';
 import { UpstreamError } from './upstream-error.js';
-import { background, budget, operationSignal, requestPriority } from './operation.js';
+import { background, budget, operation, operationSignal, remaining, requestPriority, waitForRead } from './operation.js';
 import { BoundedCache } from './bounded-cache.js';
 import { WorkQueue } from './serial.js';
 import { reportedStreamInfoSchema } from './stream-info.js';
@@ -97,18 +97,23 @@ export class MusicAssistantClient implements MusicAssistantReader {
   private browseImages = new BoundedCache<{ image?: z.infer<typeof imageSchema> }>(128);
   /** Listings are the same for everyone in the room. Kept as JSON text: exact size, no shared objects. */
   private listings = new BoundedCache<string>(64, 16 * 1024 * 1024);
-  private listingReads = new Map<string, Promise<string>>();
+  private listingReads = new Map<string, { read: Promise<string>; controller: AbortController; callers: number }>();
   private prefetching = false;
   /** `cacheListings: false` reads every listing upstream and never prefetches (tests that count reads). */
-  constructor(origin: string, private token: string, timeoutMs = 8000,
+  constructor(origin: string, private token: string, private timeoutMs = 8000,
     private transport: Pick<MusicAssistantTransport, 'read'> & Partial<Pick<MusicAssistantTransport, 'close'>> = new MusicAssistantTransport(origin, token, timeoutMs),
     private options: { cacheListings?: boolean } = {}) {
     this.events = new MusicAssistantEvents(origin, token);
   }
 
-  close() { this.events.close(); this.transport.close?.(); }
+  close() {
+    this.events.close();
+    for (const shared of this.listingReads.values()) shared.controller.abort();
+    this.listingReads.clear(); this.transport.close?.();
+  }
   subscribePlayback(listener: (event: PlaybackEvent) => void) { return this.events.subscribe(listener); }
   private read(path: Parameters<MusicAssistantTransport['read']>[0], command?: Command, args = {}, binary = false) {
+    remaining(Infinity);
     // Browsing back, or a second guest opening the same artist, reuses a recent listing.
     // Playback resolution always reads fresh availability.
     if (!command || !listingCommands.has(command) || requestPriority() === 'playback' || this.options.cacheListings === false) return this.transport.read(path, command, args, binary);
@@ -116,17 +121,26 @@ export class MusicAssistantClient implements MusicAssistantReader {
     if (cached !== undefined) return Promise.resolve(JSON.parse(cached) as unknown);
     let shared = this.listingReads.get(key);
     if (!shared) {
-      // A tap during the prefetch, or two guests at once, share one upstream read. It runs
-      // detached from the asking request, so one browser leaving never cancels it for others.
-      const read = background(() => this.transport.read(path, command, args, binary)).then(value => {
-        const text = JSON.stringify(value); this.listings.set(key, text, { expires: Date.now() + listingLifetime, size: text.length });
+      if (this.listingReads.size >= 64) return Promise.reject(new AppError(429, 'Too many pending catalogue reads. Try again shortly.'));
+      // Each caller keeps its own deadline. The shared read has a separate bounded lifetime
+      // and is cancelled only after the last caller (including a prefetch) leaves.
+      const controller = new AbortController();
+      const lifetime = Math.max(this.timeoutMs, requestPriority() === 'bulk' ? 30_000 : 12_000);
+      const read = background(() => operation('catalogue-read', () => this.transport.read(path, command, args, binary), lifetime, controller.signal)).then(value => {
+        const text = JSON.stringify(value);
+        if (!controller.signal.aborted) this.listings.set(key, text, { expires: Date.now() + listingLifetime, size: text.length });
         return text;
       });
-      shared = read; this.listingReads.set(key, read);
-      const clear = () => { if (this.listingReads.get(key) === read) this.listingReads.delete(key); };
+      shared = { read, controller, callers: 0 }; this.listingReads.set(key, shared);
+      const clear = () => { if (this.listingReads.get(key)?.read === read) this.listingReads.delete(key); };
       void read.then(clear, clear);
     }
-    return shared.then(text => JSON.parse(text) as unknown);
+    const current = shared; current.callers++;
+    return waitForRead(current.read).then(text => JSON.parse(text) as unknown).finally(() => {
+      if (--current.callers === 0 && this.listingReads.get(key) === current) {
+        this.listingReads.delete(key); current.controller.abort();
+      }
+    });
   }
   private redact(value: string): string { return value.replaceAll(this.token, '[redacted]'); }
   private image(media: { image?: z.infer<typeof imageSchema> | null; metadata?: { images: z.infer<typeof imageSchema>[] } } | null | undefined): string | undefined {
@@ -154,7 +168,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
         const clear = () => { if (this.imageRequests.get(key) === queued) this.imageRequests.delete(key); };
         void queued.then(clear, clear);
       }
-      try { return await request; }
+      try { return await waitForRead(request); }
       catch (error) {
         // Another viewer left before this shared fetch started; queue it again for this one.
         if (error instanceof AppError && error.status === 499 && !operationSignal()?.aborted) continue;
@@ -250,6 +264,7 @@ export class MusicAssistantClient implements MusicAssistantReader {
     const groups = kind === 'track' ? groupCatalogueItems(kind, items).map(items => ({ items, matchKind: 'identity' as const }))
       : browseCatalogueItems(kind, items);
     if (kind !== 'track') await this.enrichArtwork(kind, groups.map(group => group.items));
+    remaining(Infinity);
     return groups.map(({ items: group, matchKind }) => {
       const variants = new Map<string, R>();
       // Prefer real provider rows to metadata inherited from a library mapping.
@@ -291,9 +306,14 @@ export class MusicAssistantClient implements MusicAssistantReader {
       while (next < selected.length) {
         const index = next++;
         try { results[index] = { status: 'fulfilled', value: await load(selected[index]!) }; }
-        catch (reason) { results[index] = { status: 'rejected', reason }; }
+        catch (reason) {
+          results[index] = { status: 'rejected', reason };
+          // Finish both workers before propagating the caller's cancellation/deadline.
+          try { remaining(Infinity); } catch { return; }
+        }
       }
     }));
+    remaining(Infinity);
     // Preserve source/album order even when a later provider finishes first.
     for (let i = 0; i < results.length; i++) {
       const result = results[i]!;

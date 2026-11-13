@@ -78,7 +78,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
 
   async function request(path: string, data?: unknown): Promise<IntegrationView> {
     try {
-      const result = await requestJson<IntegrationView>(`/api/host/integrations${path}`, data, 60_000);
+      const result = await requestJson<IntegrationView>(`/api/host/integrations${path}`, data, 60_000, data === undefined ? signal : undefined);
       speakerFreshness.receive(result);
       online = true; return result;
     } catch (error) {
@@ -117,7 +117,7 @@ export async function mountSettings(container: HTMLElement, signal: AbortSignal)
     freshnessTimer = setTimeout(() => { render(); scheduleSpeakerExpiry(); void refreshSnapshot(); }, Math.ceil(remaining) + 1);
   }
   async function loadSetup(refresh = false) {
-    const next = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000);
+    const next = await requestJson<SetupView>(`/api/host/setup${refresh ? '/refresh' : ''}`, refresh ? {} : undefined, 120_000, refresh ? undefined : signal);
     return applySetup(next);
   }
   function applySetup(next: SetupView) {

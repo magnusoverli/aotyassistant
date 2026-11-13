@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { ReplaceTrack } from '../web/replace-track.js';
 import { UploadPanel } from '../web/upload-panel.js';
+import { ListImport } from '../web/list-import.js';
 import type { PreparationController } from '../web/preparation-controller.js';
 import type { PreparationView, PreparedEntryView } from '../src/preparations.js';
 
@@ -45,6 +46,7 @@ class Element extends EventTarget {
   showModal() { this.open = true; }
   close() { if (this.open) { this.open = false; queueMicrotask(() => this.dispatchEvent(new Event('close'))); } }
   click() { this.onclick?.(); }
+  focus() {}
 }
 class Transfer {
   static all: Transfer[] = [];
@@ -57,9 +59,14 @@ class Transfer {
   finish() { this.response = { id: this.id, filename: 'new.mp3', title: 'New song', artist: 'New artist', album: '', duration: 30 }; this.onload?.(); }
 }
 const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+function responseGate() {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>(done => { resolve = done; });
+  return { promise, resolve };
+}
 function fixture(t: TestContext) {
   const body = new Element('body'); const storage = new Map<string, string>(); const requests: string[] = []; Transfer.all = [];
-  const globals = { document: { body, createElement: (tag: string) => new Element(tag), querySelector: () => null }, navigator: { onLine: true },
+  const globals = { document: { body, createElement: (tag: string) => new Element(tag), querySelector: () => null }, navigator: { onLine: true }, window: { isSecureContext: false },
     XMLHttpRequest: Transfer, localStorage: { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) },
     fetch: async (path: string) => { requests.push(path); return new Response(JSON.stringify({ discarded: true, saved: false }), { status: 200 }); } };
   for (const [key, value] of Object.entries(globals)) {
@@ -135,4 +142,54 @@ test('album loading can be retried without reopening the replacement dialog', as
   assert.equal(retry.textContent, 'Try again'); retry.click(); await tick();
   assert.equal(attempts, 2); assert.equal(f.root.open, true);
   assert.equal(f.root.querySelector('h3')!.textContent, 'Album · Artist');
+});
+
+test('closing a replacement dialog aborts album reads and late replies cannot remount it', async t => {
+  const f = fixture(t); const response = responseGate(); let signal: AbortSignal | undefined;
+  globalThis.fetch = async (_path, options) => { signal = options?.signal ?? undefined; return response.promise; };
+  f.dialog.open({ ...f.entry, source: 'music-assistant' }); await tick();
+  assert.equal(signal?.aborted, false);
+  f.dialog.stop(); await tick(); assert.equal(signal?.aborted, true);
+  response.resolve(new Response(JSON.stringify({ album: { name: 'Late album', artist: '' }, tracks: [], current: -1 })));
+  await tick(); assert.equal(f.root.open, false); assert.equal(f.root.isConnected, false); assert.equal(f.root.querySelector('h3'), null);
+});
+
+test('disposing import polling aborts its read, removes the dialog and ignores late replies', async t => {
+  fixture(t); t.mock.timers.enable({ apis: ['setTimeout'] });
+  const pending = responseGate(); let signal: AbortSignal | undefined; let reads = 0; let changes = 0;
+  const job = { list: { name: 'Import' }, total: 10, checked: 1, added: 1, finished: false };
+  globalThis.fetch = async (_path, options) => {
+    assert.equal(options?.method, undefined, 'Disposal never stops the server-side import.');
+    reads++;
+    if (reads === 1) return new Response(JSON.stringify({ import: job }));
+    signal = options?.signal ?? undefined; return pending.promise;
+  };
+  const importer = new ListImport({ search() {}, changed: () => { changes++; } });
+  const dialog = importer.dialog as unknown as Element;
+  await importer.open(); assert.equal(importer.busy, true);
+  t.mock.timers.tick(1000); await tick(); assert.equal(reads, 2);
+  importer.dispose(); assert.equal(signal?.aborted, true); assert.equal(dialog.isConnected, false); assert.equal(dialog.open, false);
+  pending.resolve(new Response(JSON.stringify({ import: job }))); await tick();
+  t.mock.timers.tick(10_000); await tick(); assert.equal(reads, 2); assert.equal(changes, 0); assert.equal(importer.busy, false);
+  globalThis.fetch = async () => new Response(JSON.stringify({ import: job }));
+  await importer.open(); assert.equal(dialog.open, true); assert.equal(importer.busy, true, 'Reopening discovers the continuing import.');
+  importer.dispose();
+});
+
+test('an import start acknowledged after page disposal cannot restart polling or update the old page', async t => {
+  fixture(t); t.mock.timers.enable({ apis: ['setTimeout'] });
+  const pending = responseGate(); let requests = 0; let changes = 0;
+  globalThis.fetch = async (_path, options) => {
+    requests++;
+    if (!options?.method) return new Response(JSON.stringify({ import: null }));
+    return pending.promise;
+  };
+  const importer = new ListImport({ search() {}, changed: () => { changes++; } });
+  await importer.open(); const root = importer.dialog as unknown as Element;
+  root.querySelector('input')!.value = 'https://example.test/list';
+  root.querySelector('form')!.onsubmit!({ preventDefault() {} }); await tick();
+  importer.dispose();
+  pending.resolve(new Response(JSON.stringify({ import: { list: { name: 'Import' }, total: 10, checked: 0, added: 0, finished: false } })));
+  await tick(); t.mock.timers.tick(10_000); await tick();
+  assert.equal(changes, 0); assert.equal(requests, 2); assert.equal(root.isConnected, false); assert.equal(importer.busy, false);
 });

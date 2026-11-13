@@ -18,6 +18,7 @@ export class ListImport {
   /** A finished import's summary is shown once, then the form returns. */
   private summarized = false;
   private link = '';
+  private lifecycle = new AbortController();
 
   constructor(private options: Options) {
     this.dialog.id = 'list-import'; this.dialog.setAttribute('aria-labelledby', 'list-import-title');
@@ -32,16 +33,26 @@ export class ListImport {
   get busy() { return this.starting || Boolean(this.job && !this.job.finished); }
 
   async open() {
+    if (this.lifecycle.signal.aborted) this.lifecycle = new AbortController();
+    const { signal } = this.lifecycle;
     if (!this.dialog.isConnected) document.body.append(this.dialog);
     this.render();
     if (!this.dialog.open) this.dialog.showModal();
     // An import may be running already, for example after a reload or on another device.
     if (!this.busy) {
       try {
-        const { import: job } = await requestJson<{ import: ImportView | null }>(path);
+        const { import: job } = await requestJson<{ import: ImportView | null }>(path, undefined, 15_000, signal);
+        if (signal.aborted) return;
         if (job && !job.finished) { this.job = job; this.summarized = false; this.render(); this.follow(); }
       } catch { /* The form still works; starting reports any problem. */ }
     }
+  }
+
+  /** Stop following this page's import; the server job remains recoverable on the next open. */
+  dispose() {
+    this.lifecycle.abort(); clearTimeout(this.follower); this.follower = undefined;
+    this.starting = false; this.job = undefined;
+    this.dialog.close(); this.dialog.remove();
   }
 
   private render() {
@@ -101,16 +112,19 @@ export class ListImport {
   }
 
   private async start(link: string) {
-    if (this.busy) return;
+    const { signal } = this.lifecycle;
+    if (this.busy || signal.aborted) return;
     this.starting = true; this.render();
     try {
       // Reading the link can take a while: another server answers it.
       const { import: job } = await requestJson<{ import: ImportView }>(path, { link }, 30_000);
+      if (signal.aborted) return;
       this.job = job; this.summarized = false;
     } catch (error) {
+      if (signal.aborted) return;
       this.starting = false;
       // A running import (from another device) is followed instead of reported as an error.
-      if (error instanceof RequestError && error.status === 409) { await this.open(); if (this.busy) return; }
+      if (error instanceof RequestError && error.status === 409) { await this.open(); if (signal.aborted || this.busy) return; }
       this.showPaste(message(error, 'The list could not be read. Try again.')); return;
     }
     this.starting = false; this.render(); this.options.changed(); this.follow();
@@ -119,11 +133,15 @@ export class ListImport {
   /** Checks progress about once a second until the import finishes, also while this window is closed. */
   private follow() {
     clearTimeout(this.follower);
+    const { signal } = this.lifecycle;
+    if (signal.aborted) return;
     this.follower = setTimeout(async () => {
       try {
-        const { import: job } = await requestJson<{ import: ImportView | null }>(path);
+        const { import: job } = await requestJson<{ import: ImportView | null }>(path, undefined, 15_000, signal);
+        if (signal.aborted) return;
         this.job = job ?? undefined;
       } catch (error) {
+        if (signal.aborted) return;
         // Signed out or the list is unavailable: stop following; other errors are retried.
         if (error instanceof RequestError && [401, 403].includes(error.status)) { this.job = undefined; this.render(); this.options.changed(); return; }
       }
@@ -134,8 +152,11 @@ export class ListImport {
   }
 
   private async stop() {
-    try { const { import: job } = await requestJson<{ import: ImportView | null }>(`${path}/stop`, {}); if (job) this.job = job; }
+    const { signal } = this.lifecycle;
+    if (signal.aborted) return;
+    try { const { import: job } = await requestJson<{ import: ImportView | null }>(`${path}/stop`, {}); if (!signal.aborted && job) this.job = job; }
     catch { /* Following the import shows whether it stopped. */ }
+    if (signal.aborted) return;
     if (this.dialog.open) this.render();
   }
 

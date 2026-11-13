@@ -41,6 +41,7 @@ export class RoomVisualizer {
   private client?: VisualizerClient;
   private socket?: WebSocket;
   private connectionEpoch = '';
+  private transport?: { epoch: string; client: MusicAssistantTransport };
   private state: VisualizerView['state'] = 'disabled';
   private message = 'Enable the client, then add it to your Music Assistant speaker group.';
   private timer: NodeJS.Timeout;
@@ -115,13 +116,16 @@ export class RoomVisualizer {
   }
   private async read(connection: SpeakerConnection, command: string, args: Record<string, unknown>) {
     if (this.deps.read) return this.deps.read(connection, command, args);
-    const transport = new MusicAssistantTransport(connection.origin, connection.token, 10_000);
-    try { return await transport.read('/api', command, args); }
-    finally { transport.close(); }
+    if (this.transport?.epoch !== connection.epoch) {
+      this.transport?.client.close();
+      this.transport = { epoch: connection.epoch, client: new MusicAssistantTransport(connection.origin, connection.token, 10_000) };
+    }
+    return this.transport.client.read('/api', command, args);
   }
   private resetFrames() { this.frames.clear(); this.analyser.clear(); this.epoch = randomUUID(); }
   private drop() {
     this.generation++; this.matched = false; this.verifiedAt = 0;
+    this.transport?.client.close(); this.transport = undefined;
     const core = this.client; this.client = undefined;
     if (core) {
       core.onAudioData = undefined; core.onConnectionClose = undefined; core.onStreamStart = undefined;

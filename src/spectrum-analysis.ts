@@ -43,6 +43,7 @@ export function frequencyBins(channels: Float32Array[], sampleRate: number): num
 /** Analyse decoded samples ahead of playback; timestamps refer to the window centre. */
 export class SpectrumAnalyser {
   private ring: Float32Array[] = [];
+  private ordered: Float32Array[] = [];
   private position = 0;
   private count = 0;
   private untilFrame = size;
@@ -50,13 +51,13 @@ export class SpectrumAnalyser {
   private generation = -1;
   private expectedUs = 0;
   constructor(private emit: (serverTimeUs: number, bins: number[]) => void) {}
-  clear() { this.ring = []; this.position = this.count = 0; this.untilFrame = size; this.expectedUs = 0; }
+  clear() { this.ring = []; this.ordered = []; this.position = this.count = 0; this.untilFrame = size; this.expectedUs = 0; }
   push(chunk: { samples: Float32Array[]; sampleRate: number; serverTimeUs: number; generation: number }) {
     const { samples, sampleRate, serverTimeUs, generation } = chunk;
     const length = samples[0]?.length ?? 0;
     if (!length || ![44100, 48000].includes(sampleRate) || samples.length > 2 || samples.some(channel => channel.length !== length)) return;
     if (generation !== this.generation || sampleRate !== this.rate || samples.length !== this.ring.length || Math.abs(serverTimeUs - this.expectedUs) > 2000) {
-      this.clear(); this.ring = samples.map(() => new Float32Array(size)); this.rate = sampleRate; this.generation = generation;
+      this.clear(); this.ring = samples.map(() => new Float32Array(size)); this.ordered = samples.map(() => new Float32Array(size)); this.rate = sampleRate; this.generation = generation;
     }
     this.expectedUs = serverTimeUs + length / sampleRate * 1e6;
     for (let i = 0; i < length; i++) {
@@ -64,8 +65,12 @@ export class SpectrumAnalyser {
       this.position = (this.position + 1) % size; this.count++;
       if (--this.untilFrame > 0 || this.count < size) continue;
       this.untilFrame = Math.round(sampleRate / spectrumRate);
-      const ordered = this.ring.map(ring => Float32Array.from({ length: size }, (_, j) => ring[(this.position + j) % size]!));
-      this.emit(serverTimeUs + (i - (size - 1) / 2) / sampleRate * 1e6, frequencyBins(ordered, sampleRate));
+      // Reuse the FFT input buffers; copying two spans avoids thousands of callbacks per frame.
+      for (let ch = 0; ch < this.ring.length; ch++) {
+        const ring = this.ring[ch]!; const ordered = this.ordered[ch]!;
+        ordered.set(ring.subarray(this.position)); ordered.set(ring.subarray(0, this.position), size - this.position);
+      }
+      this.emit(serverTimeUs + (i - (size - 1) / 2) / sampleRate * 1e6, frequencyBins(this.ordered, sampleRate));
     }
   }
 }

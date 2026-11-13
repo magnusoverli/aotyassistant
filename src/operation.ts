@@ -19,6 +19,22 @@ export function operationWait() {
   const current = operations.getStore();
   return current?.active ? { deadline: current.deadline, signal: current.signal } : {};
 }
+/** Bound one caller's wait for shared read-only work, without cancelling other callers. */
+export function waitForRead<T>(read: Promise<T>): Promise<T> {
+  const { deadline, signal } = operationWait();
+  return new Promise<T>((resolve, reject) => {
+    let timer: NodeJS.Timeout | undefined;
+    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener('abort', aborted); };
+    const aborted = () => { cleanup(); reject(new AppError(499, 'Request cancelled.')); };
+    const expired = () => { cleanup(); reject(new AppError(504, 'Operation timed out. Refresh the current state before trying again.')); };
+    // Always observe the shared promise, including when this caller has already left.
+    void read.then(value => { cleanup(); resolve(value); }, error => { cleanup(); reject(error); });
+    if (signal?.aborted) { aborted(); return; }
+    if (deadline !== undefined && deadline <= performance.now()) { expired(); return; }
+    signal?.addEventListener('abort', aborted, { once: true });
+    if (deadline !== undefined) timer = setTimeout(expired, Math.max(1, deadline - performance.now()));
+  });
+}
 export async function drainOperations() {
   while (pending.size) await Promise.allSettled([...pending]);
 }

@@ -131,6 +131,7 @@ function searchClosed() {
   restoringFocus = true; document.getElementById('music-search-open')?.focus({ preventScroll: true }); restoringFocus = false;
 }
 let stream: { close(): void } | undefined;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let releaseEvents = () => {};
 let qrUrl = '';
 let qrImage = '';
@@ -313,7 +314,7 @@ if (page === 'participant') {
 async function api<T>(path: string, data?: unknown): Promise<T> {
   // Playback may include upstream resolution and bounded transport verification.
   signal.throwIfAborted();
-  const result = await requestJson<T>(path, data, data === undefined ? 15_000 : 120_000);
+  const result = await requestJson<T>(path, data, data === undefined ? 15_000 : 120_000, data === undefined ? signal : undefined);
   signal.throwIfAborted();
   return result;
 }
@@ -441,9 +442,11 @@ function accept(next: View) {
 }
 function subscribe(role: 'host' | 'participant' | 'display') {
   if (signal.aborted) return;
+  clearTimeout(reconnectTimer);
   stream?.close();
   const state = (event: MessageEvent) => {
     if (signal.aborted || stream !== connection || !navigator.onLine) return;
+    if (!view) error = '';
     const reconnecting = !realtime; realtime = true;
     accept(JSON.parse((event as MessageEvent).data) as View);
     if (reconnecting) render();
@@ -457,9 +460,15 @@ function subscribe(role: 'host' | 'participant' | 'display') {
   };
   const failed = () => {
     if (signal.aborted || stream !== connection) return;
+    if (!view && role !== 'participant') error = 'Cannot connect to the app. Check the connection and reload.';
     realtime = false; player.cancel(); render();
     // Removal can race the initial/reopened stream before it can emit revoked.
     if (role === 'participant') void participantAccess.check();
+    // EventSource retries network interruptions itself, but some HTTP failures close it permanently.
+    else if (connection instanceof EventSource && connection.readyState === EventSource.CLOSED) {
+      connection.close(); stream = undefined;
+      reconnectTimer = setTimeout(() => { if (!signal.aborted && navigator.onLine && !accessEnded) subscribe(role); }, 3000);
+    }
   };
   const connection = role === 'participant'
     ? { close: participantEvents.subscribe('room', { state, revoked, error: failed }) }
@@ -845,30 +854,29 @@ async function init() {
   if (page === 'home') return;
   if (page === 'display') {
     history.replaceState(null, '', appPath('/display'));
-    try {
-      accept(await api<View>('/api/display/state')); subscribe('display');
-    } catch (cause) { error = (cause as Error).message; render(); }
+    // The authorized stream supplies the initial snapshot and retries transient failures.
+    subscribe('display');
   } else if (page === 'host') {
-    try { accept(await api<View>('/api/host/state')); subscribe('host'); }
-    catch { error = 'Cannot connect to the app. Check the connection and reload.'; render(); }
+    subscribe('host');
     // The host desk links to Settings; fetch that code in the background so it opens at once.
     whenIdle(() => { void import('./settings').catch(() => {}); });
   } else {
     if (page === 'join') history.replaceState(null, '', appPath('/join'));
-    // Learn membership and load the list before the live connection opens, so it opens
-    // once with both feeds instead of opening for the room and reopening for the list.
+    // Wait for membership, but let room controls connect while a slow private list loads.
+    // The shared connection refreshes when the list's authorization becomes ready.
     releaseEvents(); releaseEvents = participantEvents.hold();
     void library.start();
     void loadUsers();
-    try { await participantAccess.check(); if (!signal.aborted) await library.start(); } finally { releaseEvents(); }
+    try { await participantAccess.check(); } finally { releaseEvents(); }
   }
 }
 // CSS decides QR placement; the listening order measures its own available space.
 if (page === 'display') observeDisplayLayout(() => { updateHeader(); renderDisplay(); }, signal);
 void init();
-window.addEventListener('pagehide', () => { realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); listeningOrder.stop(); library.stop(); music.stopUploads(); }, { signal });
+window.addEventListener('pagehide', () => { clearTimeout(reconnectTimer); realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); stream = undefined; listeningOrder.stop(); library.stop(); music.stopUploads(); }, { signal });
 window.addEventListener('pageshow', event => { if (event.persisted) void init(); }, { signal });
 window.addEventListener('offline', () => {
+  clearTimeout(reconnectTimer);
   listeningOrder.stop(); listeningOrder.update(view, false);
   if (page === 'settings' || page === 'home') return;
   realtime = false; player.cancel(); catalogue.cancel(); stream?.close(); stream = undefined; render();
@@ -884,10 +892,14 @@ window.addEventListener('online', () => {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || !navigator.onLine || !['participant', 'host', 'display'].includes(page)) return;
   if (page === 'participant') { void participantAccess.check(); void library.start(); }
-  else void api<View>(`/api/${page}/state`).then(accept).catch(() => { realtime = false; render(); });
+  else {
+    if (!stream) subscribe(page as 'host' | 'display');
+    void api<View>(`/api/${page}/state`).then(accept).catch(() => { realtime = false; render(); });
+  }
 }, { signal });
 return () => {
   lifecycle.abort();
+  clearTimeout(reconnectTimer);
   listeningOrder.setDisplayInvitation();
   realtime = false; player.cancel(); catalogue.cancel(); resetCatalogueTask();
   stream?.close(); stream = undefined; library.stop(); music.stopUploads(); releaseEvents();

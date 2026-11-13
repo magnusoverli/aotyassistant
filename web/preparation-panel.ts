@@ -176,7 +176,7 @@ export class PreparationPanel {
     if (focused && replacement && document.activeElement === document.body) replacement.focus({ preventScroll: true });
     if (scrollY !== top) window.scrollTo({ top, behavior: 'instant' });
   }
-  stopUploads() { this.uploads.stop(); this.replacer.stop(); }
+  stopUploads() { this.uploads.stop(); this.replacer.stop(); this.importer.dispose(); }
   updateAddButton(button: HTMLButtonElement) {
     const trackId = button.dataset.preparationTrack!;
     const added = this.library.added.has(trackId);

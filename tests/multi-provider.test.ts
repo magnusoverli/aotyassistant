@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { MusicAssistantClient } from '../src/music-assistant.js';
 import { IntegrationManager, IntegrationFileStore } from '../src/integrations.js';
 import { AppError } from '../src/model.js';
-import { playbackResolution } from '../src/operation.js';
+import { operation, playbackResolution } from '../src/operation.js';
 import { browseCatalogueItems, groupCatalogueItems, presentCatalogueItems, sameCatalogueItem, sameMetadataPresentation, type IdentityMedia } from '../src/catalogue-grouping.js';
 import { metadataOnly } from './fixtures/music-assistant.js';
 
@@ -93,6 +93,25 @@ test('recent listings are shared, an exact artist match loads its albums ahead, 
   const searches = count('music/search');
   await playbackResolution(() => client.search('Enter Sandman')); await playbackResolution(() => client.search('Enter Sandman'));
   assert.equal(count('music/search'), searches + 2, 'Playback resolution always reads fresh availability.');
+});
+
+test('cancelling grouped browsing stops both workers before they start more sources', async t => {
+  let finish!: (value: unknown) => void;
+  const pending = new Promise(resolve => { finish = resolve; }); t.after(() => finish([]));
+  const calls: string[] = [];
+  const client = new MusicAssistantClient('http://127.0.0.1:1', 'fixture-token', 8000, { async read(_path, command, args = {}) {
+    if (command === 'music/search') return { artists: ['alpha', 'beta', 'gamma', 'delta'].map(provider => ({ ...artist(provider), image: { proxy_id: 'a'.repeat(64) } })) };
+    calls.push((args as { provider_instance_id_or_domain: string }).provider_instance_id_or_domain);
+    return pending;
+  } });
+  t.after(() => client.close());
+  const group = (await client.artists('query')).items[0]!;
+  const controller = new AbortController();
+  const browsing = operation('browse', () => client.albums(group.id), 2000, controller.signal);
+  const rejected = assert.rejects(browsing, (error: AppError) => error.status === 499);
+  assert.equal(calls.length, 2); controller.abort(); await rejected;
+  finish([]); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.length, 2);
 });
 
 test('strong identities group artists across sources, not names or malformed/unsupported IDs', () => {

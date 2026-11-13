@@ -17,6 +17,7 @@ export class ReplaceTrack {
   private upload?: UploadPanel;
   private ownerId?: string;
   private closing = false;
+  private loading?: AbortController;
   private get locked() { return this.saving || Boolean(this.upload && this.library.saving); }
 
   constructor(private library: PreparationController, private replaced: (from: string, to: string) => void, private member = () => true) {
@@ -30,6 +31,7 @@ export class ReplaceTrack {
     // A late album answer never replaces a newer one.
     this.dialog.addEventListener('close', () => {
       this.sequence++;
+      this.loading?.abort(); this.loading = undefined;
       const upload = this.upload; this.upload = undefined;
       if (upload) {
         this.closing = true;
@@ -62,7 +64,7 @@ export class ReplaceTrack {
     const close = this.dialog.querySelector<HTMLButtonElement>('.list-dialog-header button');
     if (close) close.disabled = this.locked;
   }
-  stop() { this.sequence++; this.dialog.close(); this.upload?.stop(); this.dialog.remove(); }
+  stop() { this.sequence++; this.loading?.abort(); this.loading = undefined; this.dialog.close(); this.upload?.stop(); this.dialog.remove(); }
 
   private header() {
     const header = el('div', undefined, 'list-dialog-header'); const heading = el('h2', 'Replace song'); heading.id = 'replace-track-title';
@@ -76,8 +78,9 @@ export class ReplaceTrack {
 
   private async load(entry: PreparedEntryView) {
     const sequence = ++this.sequence;
+    this.loading?.abort(); const controller = new AbortController(); this.loading = controller;
     try {
-      const album = await requestJson<Album>('/api/participant/preparations/album', { entryId: entry.id }, 35_000);
+      const album = await requestJson<Album>('/api/participant/preparations/album', { entryId: entry.id }, 35_000, controller.signal);
       if (sequence === this.sequence) this.showAlbum(entry, album);
     } catch (error) {
       if (sequence !== this.sequence) return;
@@ -87,7 +90,7 @@ export class ReplaceTrack {
       };
       const actions = el('div', undefined, 'list-dialog-actions'); actions.append(retry);
       this.show(entry, alert, actions);
-    }
+    } finally { if (this.loading === controller) this.loading = undefined; }
   }
 
   private showAlbum(entry: PreparedEntryView, album: Album, error = '') {

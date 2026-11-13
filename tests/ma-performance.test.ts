@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -6,7 +6,8 @@ import type { AddressInfo } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { MusicAssistantTransport } from '../src/music-assistant-transport.js';
 import { MusicAssistantClient } from '../src/music-assistant.js';
-import { operation } from '../src/operation.js';
+import { operation, operationSignal } from '../src/operation.js';
+import { AppError } from '../src/model.js';
 import { startMusicAssistantFixture } from './fixtures/music-assistant.js';
 import { MusicAssistantEvents } from '../src/music-assistant-events.js';
 
@@ -86,6 +87,77 @@ test('cancelling a catalogue read aborts its upstream request without retrying i
   const reading = operation('browse', () => transport.read('/api', 'music/search', {}), 12_000, controller.signal);
   const rejected = assert.rejects(reading); await waiting; controller.abort(); await rejected; await closed;
   assert.equal(requests, 1);
+});
+
+function pendingListings(t: TestContext) {
+  const reads: { signal: AbortSignal; finish(value?: unknown): void }[] = [];
+  const client = new MusicAssistantClient('http://127.0.0.1:1', 'fixture-token', 8000, {
+    read: () => new Promise(resolve => {
+      reads.push({ signal: operationSignal()!, finish: (value = { tracks: [] }) => resolve(value) });
+    }),
+  });
+  t.after(() => { client.close(); for (const read of reads) read.finish(); });
+  return { client, reads };
+}
+
+test('shared catalogue callers have independent cancellation and deadlines', { timeout: 3000 }, async t => {
+  for (const cancel of [true, false]) {
+    const { client, reads } = pendingListings(t); const leaving = new AbortController();
+    const first = operation('first', () => client.search('shared'), cancel ? 2000 : 30, leaving.signal);
+    const staying = operation('staying', () => client.search('shared'), 2000);
+    const rejected = assert.rejects(first, (error: AppError) => error.status === (cancel ? 499 : 504));
+    if (cancel) leaving.abort();
+    await rejected;
+    assert.equal(reads.length, 1); assert.equal(reads[0]!.signal.aborted, false, 'Another caller still needs this upstream read.');
+    reads[0]!.finish(); assert.deepEqual(await staying, []);
+    assert.deepEqual(await client.search('shared'), []); assert.equal(reads.length, 1, 'Successful shared results still populate the cache.');
+  }
+});
+
+test('the last catalogue caller leaving cancels upstream work and an immediate retry gets fresh work', async t => {
+  const { client, reads } = pendingListings(t); const leaving = new AbortController();
+  const old = operation('old', () => client.search('same'), 2000, leaving.signal);
+  const rejected = assert.rejects(old, (error: AppError) => error.status === 499);
+  leaving.abort(); await rejected;
+  assert.equal(reads[0]!.signal.aborted, true);
+  const next = client.search('same'); assert.equal(reads.length, 2);
+  reads[0]!.finish(); await delay(0);
+  const shared = client.search('same'); assert.equal(reads.length, 2, 'A late abandoned response cannot evict or populate the new read.');
+  reads[1]!.finish(); assert.deepEqual(await next, []); assert.deepEqual(await shared, []);
+});
+
+test('catalogue admission is bounded and cancelled callers release their places', async t => {
+  const { client, reads } = pendingListings(t); const leaving = new AbortController();
+  const pending = Array.from({ length: 64 }, (_, index) => operation('browse', () => client.search(`query-${index}`), 2000, leaving.signal));
+  const settled = Promise.allSettled(pending);
+  await assert.rejects(client.search('overflow'), (error: AppError) => error.status === 429);
+  assert.equal(reads.length, 64);
+  leaving.abort(); assert.ok((await settled).every(result => result.status === 'rejected'));
+  assert.ok(reads.every(read => read.signal.aborted));
+  const next = client.search('admitted'); assert.equal(reads.length, 65);
+  reads.at(-1)!.finish(); await next;
+});
+
+test('cached listings cannot turn a cancelled caller into a successful request', async t => {
+  const { client, reads } = pendingListings(t);
+  const initial = client.search('cached'); reads[0]!.finish(); await initial;
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(operation('cancelled', () => client.search('cached'), 1000, controller.signal), (error: AppError) => error.status === 499);
+  assert.equal(reads.length, 1);
+});
+
+test('cancelling through the shared client closes the real upstream connection', { timeout: 3000 }, async t => {
+  let enter!: () => void; let disconnect!: () => void;
+  const entered = new Promise<void>(resolve => { enter = resolve; }); const disconnected = new Promise<void>(resolve => { disconnect = resolve; });
+  const server = createServer((req, res) => { req.resume(); res.on('close', disconnect); enter(); });
+  server.listen(0, '127.0.0.1'); await once(server, 'listening');
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const client = new MusicAssistantClient(`http://127.0.0.1:${(server.address() as AddressInfo).port}`, 'fixture-token');
+  t.after(() => client.close());
+  const controller = new AbortController();
+  const reading = operation('browse', () => client.search('leave'), 2000, controller.signal);
+  const rejected = assert.rejects(reading, (error: AppError) => error.status === 499);
+  await entered; controller.abort(); await rejected; await disconnected;
 });
 
 test('opt-in timings correlate commands and include no token, URI, arguments or response data', async t => {
