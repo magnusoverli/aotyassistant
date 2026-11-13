@@ -16,6 +16,7 @@ import { background } from './operation.js';
 import { mediaRange } from './http-utils.js';
 import { durability } from './backup.js';
 import { analyzeUpload, analysisSchema } from './upload-analysis.js';
+import { nativeWork } from './native-work.js';
 export { analyzeUpload, type UploadAnalysis } from './upload-analysis.js';
 
 export const uploadExtensions = ['mp3', 'm4a', 'flac', 'wav', 'aif', 'aiff', 'ogg', 'oga', 'opus'] as const;
@@ -147,10 +148,13 @@ export class UploadAssets {
   private async verify(value: Manifest) {
     const file = await open(join(this.path(value.id), 'audio'), 'r').catch(() => { throw new AppError(404, 'The uploaded audio is missing. Your list entry was kept.'); });
     try {
-      const info = await file.stat(); if (!info.isFile() || info.size !== value.bytes) throw new AppError(422, 'The uploaded audio changed or is incomplete. Your list entry was kept.');
-      const digest = createHash('sha256'); const buffer = Buffer.alloc(64 * 1024);
+      const info = await file.stat({ bigint: true }); if (!info.isFile() || info.size !== BigInt(value.bytes)) throw new AppError(422, 'The uploaded audio changed or is incomplete. Your list entry was kept.');
+      // Reuse larger reads to reduce filesystem dispatches without skipping any integrity checks.
+      const digest = createHash('sha256'); const buffer = Buffer.allocUnsafe(256 * 1024);
       for (;;) { const { bytesRead } = await file.read(buffer, 0, buffer.length, null); if (!bytesRead) break; digest.update(buffer.subarray(0, bytesRead)); }
       if (digest.digest('hex') !== value.sha256) throw new AppError(422, 'The uploaded recording failed its integrity check. Your list entry was kept; no substitute was selected.');
+      const after = await file.stat({ bigint: true });
+      if (info.size !== after.size || info.mtimeNs !== after.mtimeNs || info.ctimeNs !== after.ctimeNs) throw new AppError(422, 'The uploaded audio changed during verification. Your list entry was kept.');
     }
     finally { await file.close(); }
   }
@@ -171,8 +175,8 @@ export class UploadAssets {
     const request = background(() => this.artworkLine.run(async () => {
       const input = await readFile(join(this.path(assetId), 'cover.png'));
       if (input.length > maxCoverBytes) throw new AppError(404, 'Artwork unavailable.');
-      const body = await sharp(input, { limitInputPixels: 16 * 1024 * 1024, animated: false })
-        .rotate().resize(size, size, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer();
+      const body = await nativeWork(() => sharp(input, { limitInputPixels: 16 * 1024 * 1024, animated: false })
+        .rotate().resize(size, size, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#ffffff' }).jpeg({ quality: 80 }).toBuffer());
       const data = { body, contentType: 'image/jpeg' as const };
       this.artworkCache.set(key, data, { expires: this.now() + 60 * 60_000, size: body.length });
       return data;

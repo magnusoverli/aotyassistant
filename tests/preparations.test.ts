@@ -8,7 +8,7 @@ import { Engine } from '../src/engine.js';
 import { FakePlayback } from './fixtures/fake-playback.js';
 import { FileStore } from '../src/store.js';
 import { PreparationManager, PreparationFileStore, preparationLimits, preparationStateSchema,
-  type PreparationStore, type PreparationState, type PreparationOperation, type PreparationView, type SavedSelection } from '../src/preparations.js';
+  encodePreparationView, type PreparationStore, type PreparationState, type PreparationOperation, type PreparationView, type SavedSelection } from '../src/preparations.js';
 
 class MemoryStore implements PreparationStore {
   states = new Map<string, PreparationState>();
@@ -150,6 +150,27 @@ test('read access requires the private owner secret, never a nickname or owner I
   for (const credential of ['Alex', f.owner.view.ownerId, '../state', `${f.owner.view.ownerId}.${'z'.repeat(43)}`, `${randomUUID()}.${'z'.repeat(43)}`, '', null as unknown as string]) {
     await assert.rejects(f.manager.read(credential), status(401));
   }
+});
+
+test('list fanout shares immutable owner projections and refreshes availability and revocation without a revision change', async () => {
+  let available = true; let allowed = true;
+  const manager = new PreparationManager(new MemoryStore(), Date.now, () => available);
+  const owner = await manager.createOwner(); const other = await manager.createOwner();
+  const one: (PreparationView | null)[] = []; const two: typeof one = []; const foreign: typeof one = [];
+  const off = await manager.subscribe(owner.credential, view => { one.push(view); if (view) view.upcoming.length = 0; });
+  const offTwo = await manager.subscribe(owner.credential, view => two.push(view));
+  const offOther = await manager.subscribe(other.credential, view => foreign.push(view));
+  try {
+    await manager.add(owner.credential, { id: randomUUID(), revision: 0, issuedAt: Date.now() }, selected());
+    assert.strictEqual(one[0], two[0]); assert.ok(Object.isFrozen(two[0]));
+    assert.equal(two[0]!.upcoming.length, 1); assert.equal(foreign.length, 0);
+    assert.deepEqual(JSON.parse(encodePreparationView(two[0]!)), two[0]);
+    available = false; await manager.notifyIdentity(owner.view.ownerId);
+    assert.equal(two[1]!.revision, two[0]!.revision); assert.equal(two[1]!.upcoming[0]!.sourceAvailable, false);
+    assert.notEqual(encodePreparationView(two[1]!), encodePreparationView(two[0]!));
+    manager.setCredentialPolicy(() => allowed); allowed = false;
+    await manager.notifyIdentity(owner.view.ownerId); assert.equal(one.at(-1), null); assert.equal(two.at(-1), null);
+  } finally { off(); offTwo(); offOther(); }
 });
 
 test('participant binding keeps existing authorization and saves only hashed credentials', async () => {

@@ -4,7 +4,7 @@ import { open, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { AppError } from './model.js';
-import { writePrivateJson, removePrivateFile } from './store.js';
+import { writePrivateJson, removePrivateFile, fileStamp } from './store.js';
 import { KeyedSerialQueue } from './serial.js';
 import { BoundedCache } from './bounded-cache.js';
 import { diagnostics } from './diagnostics.js';
@@ -65,13 +65,14 @@ export const preparationStateSchema = z.preprocess(value => {
   pendingUploadDeletions: z.array(id).optional(), // Absent on older records; migrated on first cleanup.
 }).strict().superRefine((state, context) => {
   const unique = (values: string[]) => new Set(values).size === values.length;
-  const upcoming = state.entries.filter(item => item.state === 'upcoming').map(item => item.id);
-  if (!unique(state.entries.map(item => item.id)) || !unique(state.order) || state.order.length !== upcoming.length || state.order.some(key => !upcoming.includes(key)) ||
+  const upcoming = new Set(state.entries.filter(item => item.state === 'upcoming').map(item => item.id));
+  const deleted = new Set(state.deletedUploads);
+  if (!unique(state.entries.map(item => item.id)) || !unique(state.order) || state.order.length !== upcoming.size || state.order.some(key => !upcoming.has(key)) ||
     !unique(state.credentials.map(item => item.hash)) || !unique(state.receipts.map(item => item.id)) ||
     !unique(state.entries.flatMap(item => item.playbackIds)) || !unique(state.deletedUploads ?? []) || !unique(state.pendingUploadDeletions ?? []) ||
-    state.pendingUploadDeletions?.some(asset => !state.deletedUploads?.includes(asset)) || state.receipts.some(item => item.revision > state.revision) ||
-    state.entries.some(item => item.selection.source === 'upload' && state.deletedUploads?.includes(item.selection.assetId)) ||
-    (state.pendingPlay && !upcoming.includes(state.pendingPlay.entryId)) ||
+    state.pendingUploadDeletions?.some(asset => !deleted.has(asset)) || state.receipts.some(item => item.revision > state.revision) ||
+    state.entries.some(item => item.selection.source === 'upload' && deleted.has(item.selection.assetId)) ||
+    (state.pendingPlay && !upcoming.has(state.pendingPlay.entryId)) ||
     state.entries.some(item => (item.state === 'played' && (item.playedAt === undefined || !item.playbackIds.length)) || (item.state === 'removed' && item.removedAt === undefined))) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid preparation state.' });
   }
@@ -94,7 +95,7 @@ export function savedSourceAvailable(integrations?: { configured: boolean; uploa
 export class PreparationFileStore implements PreparationStore {
   private directory: string;
   private cache = new BoundedCache<{ stamp: string; state: PreparationState }>(64, maxPreparationBytes);
-  constructor(dataDirectory: string) { this.directory = join(dataDirectory, 'preparations'); }
+  constructor(dataDirectory: string, private write = writePrivateJson) { this.directory = join(dataDirectory, 'preparations'); }
   async load(ownerId: string): Promise<PreparationState | null> {
     return structuredClone(await this.snapshot(ownerId));
   }
@@ -104,20 +105,19 @@ export class PreparationFileStore implements PreparationStore {
     ownerId = input(id, ownerId);
     try {
       const filename = join(this.directory, `${ownerId}.json`);
-      const stamp = (info: Awaited<ReturnType<typeof fileStat>>) => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
       const info = await fileStat(filename);
       if (info.size > BigInt(maxPreparationBytes)) throw new Error('Oversized preparation state.');
       const cached = this.cache.get(ownerId);
-      if (cached?.stamp === stamp(info)) return cached.state;
+      if (cached?.stamp === fileStamp(info)) return cached.state;
       this.forget(ownerId);
       const file = await open(filename, 'r');
       try {
         const before = await file.stat({ bigint: true });
         if (before.size > BigInt(maxPreparationBytes)) throw new Error('Oversized preparation state.');
         const state = preparationStateSchema.parse(JSON.parse(await file.readFile('utf8')));
-        if (state.ownerId !== ownerId || stamp(before) !== stamp(await file.stat({ bigint: true }))) throw new Error('Mismatching or changing owner file.');
+        if (state.ownerId !== ownerId || fileStamp(before) !== fileStamp(await file.stat({ bigint: true }))) throw new Error('Mismatching or changing owner file.');
         freezeSnapshot(state);
-        this.cache.set(ownerId, { stamp: stamp(before), state }, { size: Number(before.size) });
+        this.cache.set(ownerId, { stamp: fileStamp(before), state }, { size: Number(before.size) });
         return state;
       } finally { await file.close(); }
     } catch (error) {
@@ -130,9 +130,12 @@ export class PreparationFileStore implements PreparationStore {
     this.forget(state.ownerId);
     try {
       const checked = preparationStateSchema.parse(state);
-      await writePrivateJson(this.directory, `${checked.ownerId}.json`, checked, maxPreparationBytes);
-    } catch { throw new AppError(503, 'The list save could not be confirmed. Refresh the list before retrying.'); }
-    finally { this.forget(state.ownerId); }
+      const committed = await this.write(this.directory, `${checked.ownerId}.json`, checked, maxPreparationBytes, true);
+      if (committed) {
+        freezeSnapshot(checked);
+        this.cache.set(checked.ownerId, { stamp: fileStamp(committed), state: checked }, { size: Number(committed.size) });
+      }
+    } catch { this.forget(state.ownerId); throw new AppError(503, 'The list save could not be confirmed. Refresh the list before retrying.'); }
   }
   async remove(ownerId: string) {
     ownerId = input(id, ownerId); this.forget(ownerId);
@@ -159,6 +162,14 @@ export type PreparationView = {
   starting?: true;
 };
 export type PreparationResult = { view: PreparationView; entryId: string; entryIds?: string[]; replayed: boolean; warning?: string };
+const encodedViews = new WeakMap<PreparationView, string>();
+/** Emitted projections are immutable and shared only within one owner's change. */
+export function encodePreparationView(view: PreparationView): string {
+  if (!Object.isFrozen(view)) return JSON.stringify(view);
+  let json = encodedViews.get(view);
+  if (json === undefined) { json = JSON.stringify(view); encodedViews.set(view, json); }
+  return json;
+}
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 /** What a receipt records about its change, so a reused operation id with another change is refused. The
  * first form leaves out the revision the browser saw (2.1.8); the second matches receipts saved before. */
@@ -184,7 +195,7 @@ export class PreparationManager {
   private credentialAllowed: (ownerId: string, hash: string) => boolean = () => true;
   setCredentialPolicy(policy: (ownerId: string, hash: string) => boolean) { this.credentialAllowed = policy; }
   withOwner<T>(ownerId: string, work: () => Promise<T>) { return this.serial(ownerId, work); }
-  async notifyIdentity(ownerId: string) { const state = await this.store.load(ownerId); if (state) this.events.emit(ownerId, state); }
+  async notifyIdentity(ownerId: string) { const state = await (this.store.snapshot?.(ownerId) ?? this.store.load(ownerId)); if (state) this.publish(state); }
   async deleteOwner(ownerId: string) {
     await this.serial(input(id, ownerId), async () => {
       if (!this.store.remove) throw new AppError(503, 'This storage backend does not support permanent deletion.');
@@ -231,7 +242,16 @@ export class PreparationManager {
   private async save(state: PreparationState) {
     try { await this.store.save(state); }
     catch { throw new AppError(503, 'The list save could not be confirmed. Refresh the list before retrying.'); }
-    this.events.emit(state.ownerId, state);
+    this.publish(state);
+  }
+  private publish(state: PreparationState) {
+    let shared: PreparationView | undefined;
+    // Rebuild for each event, including identity/source availability and play state
+    // changes that need not change the persisted revision. Revocation stays per listener.
+    this.events.emit(state.ownerId, state, () => {
+      if (!shared) { shared = this.view(state); freezeSnapshot(shared); }
+      return shared;
+    });
   }
   async createOwner() {
     const ownerId = randomUUID(); const credential = newCredential(ownerId);
@@ -258,8 +278,8 @@ export class PreparationManager {
     const access = identity(credential);
     return this.serial(access.ownerId, async () => {
       await this.authorize(access.ownerId, access.secretHash, true);
-      const send = (state: PreparationState) => {
-        try { listener(this.credentialAllowed(access.ownerId, access.secretHash) && state.credentials.some(item => sameHash(item.hash, access.secretHash)) ? this.view(state) : null); }
+      const send = (state: PreparationState, projection: () => PreparationView) => {
+        try { listener(this.credentialAllowed(access.ownerId, access.secretHash) && state.credentials.some(item => sameHash(item.hash, access.secretHash)) ? projection() : null); }
         catch { /* A disconnected subscriber must not turn a committed save into an error. */ }
       };
       this.events.on(access.ownerId, send); return () => { this.events.off(access.ownerId, send); };

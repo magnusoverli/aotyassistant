@@ -1,5 +1,6 @@
 import type { CatalogueTrack } from './model.js';
 import type { SharedSong } from './shared-list.js';
+import { WorkQueue } from './serial.js';
 
 /** What finding a shared song needs from Music Assistant. */
 export type SongFinder = {
@@ -122,8 +123,7 @@ export async function findSong(finder: SongFinder, song: SharedSong): Promise<Ca
  * More would only queue longer inside Music Assistant and run into time limits. */
 const serviceCapacity: Record<string, number> = { spotify: 1, deezer: 1, qobuz: 2, tidal: 3, library: 4 };
 export class ServiceGates {
-  private active = new Map<string, number>();
-  private waiting = new Map<string, (() => void)[]>();
+  private queues = new Map<string, WorkQueue>();
   constructor(private capacity: Record<string, number> = serviceCapacity, private fallback = 2) {}
   /** The gate for a lookup: the slowest service it touches. */
   static key(providers: readonly string[] | undefined) {
@@ -131,15 +131,10 @@ export class ServiceGates {
     return [...providers].sort((a, b) => (serviceCapacity[a] ?? 2) - (serviceCapacity[b] ?? 2))[0] ?? 'library';
   }
   async run<T>(key: string, work: () => Promise<T>): Promise<T> {
-    const active = this.active.get(key) ?? 0;
-    // A finished request hands its slot straight to the next in line, so newcomers cannot jump ahead.
-    if (active >= (this.capacity[key] ?? this.fallback)) await new Promise<void>(resolve => { const queue = this.waiting.get(key) ?? []; queue.push(resolve); this.waiting.set(key, queue); });
-    else this.active.set(key, active + 1);
-    try { return await work(); }
-    finally {
-      const next = this.waiting.get(key)?.shift();
-      if (next) next(); else this.active.set(key, this.active.get(key)! - 1);
-    }
+    let queue = this.queues.get(key);
+    if (!queue) { queue = new WorkQueue(256, this.capacity[key] ?? this.fallback); this.queues.set(key, queue); }
+    try { return await queue.run(work, 'import-service'); }
+    finally { if (!queue.busy && this.queues.get(key) === queue) this.queues.delete(key); }
   }
 }
 

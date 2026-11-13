@@ -6,6 +6,9 @@ import { AppError, type RoomLogoView } from './model.js';
 import { removePrivateFile, syncDirectory } from './store.js';
 import { durability } from './backup.js';
 import { stage } from './operation.js';
+import { setImmediate as yieldTurn } from 'node:timers/promises';
+import { SerialQueue } from './serial.js';
+import { nativeWork } from './native-work.js';
 
 /** Uploaded originals are capped; the stored logo is at most this many pixels on its longest side. */
 export const maxLogoBytes = 10 * 1024 * 1024;
@@ -28,8 +31,23 @@ function checkSvg(input: Buffer) {
  * artwork uses its difference from the background colour along the image edge, so light-on-dark and
  * dark-on-light both work. Empty margins are trimmed. Undefined when nothing stands out. */
 export function logoShape(pixels: Buffer, width: number, height: number) {
+  const steps = shapeSteps(pixels, width, height);
+  let result = steps.next();
+  while (!result.done) result = steps.next();
+  return result.value;
+}
+async function cooperativeLogoShape(pixels: Buffer, width: number, height: number) {
+  const steps = shapeSteps(pixels, width, height);
+  let result = steps.next();
+  while (!result.done) { await yieldTurn(); result = steps.next(); }
+  return result.value;
+}
+function* shapeSteps(pixels: Buffer, width: number, height: number) {
   let seeThrough = 0;
-  for (let i = 3; i < pixels.length; i += 4) if (pixels[i]! < 250) seeThrough++;
+  for (let i = 3; i < pixels.length; i += 4) {
+    if (pixels[i]! < 250) seeThrough++;
+    if ((i & 0x3ffff) === 3) yield;
+  }
   const transparent = seeThrough > width * height * .02;
   const lum = (i: number) => .2126 * pixels[i]! + .7152 * pixels[i + 1]! + .0722 * pixels[i + 2]!;
   let ground = 0, spread = 0;
@@ -38,16 +56,22 @@ export function logoShape(pixels: Buffer, width: number, height: number) {
     for (let x = 0; x < width; x++) { sum += lum(x * 4) + lum(((height - 1) * width + x) * 4); count += 2; }
     for (let y = 0; y < height; y++) { sum += lum(y * width * 4) + lum((y * width + width - 1) * 4); count += 2; }
     ground = sum / count;
-    for (let i = 0; i < pixels.length; i += 4) spread = Math.max(spread, Math.abs(lum(i) - ground));
+    for (let i = 0; i < pixels.length; i += 4) {
+      spread = Math.max(spread, Math.abs(lum(i) - ground));
+      if ((i & 0x3ffff) === 0) yield;
+    }
     if (spread < 24) return undefined;
   }
   const shape = Buffer.alloc(pixels.length);
   let left = width, top = height, right = -1, bottom = -1;
-  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    const i = (y * width + x) * 4;
-    const alpha = transparent ? pixels[i + 3]! : Math.min(255, Math.round(Math.abs(lum(i) - ground) / spread * 290));
-    shape[i] = shape[i + 1] = shape[i + 2] = 255; shape[i + 3] = alpha;
-    if (alpha > 14) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const alpha = transparent ? pixels[i + 3]! : Math.min(255, Math.round(Math.abs(lum(i) - ground) / spread * 290));
+      shape[i] = shape[i + 1] = shape[i + 2] = 255; shape[i + 3] = alpha;
+      if (alpha > 14) { left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y); }
+    }
+    if (y % 32 === 0) yield;
   }
   if (right < 0) return undefined;
   const pad = Math.round(Math.max(right - left, bottom - top) * .015);
@@ -56,7 +80,10 @@ export function logoShape(pixels: Buffer, width: number, height: number) {
 }
 
 /** Decode a PNG, JPEG, WebP or SVG upload into the stored logo PNG. */
-export async function prepareLogo(input: Buffer): Promise<{ png: Buffer; width: number; height: number }> {
+export function prepareLogo(input: Buffer): Promise<{ png: Buffer; width: number; height: number }> {
+  return nativeWork(() => convertLogo(input));
+}
+async function convertLogo(input: Buffer): Promise<{ png: Buffer; width: number; height: number }> {
   if (!input.length) throw new AppError(400, 'Choose an image file to upload.');
   if (input.length > maxLogoBytes) throw new AppError(413, 'The logo file is larger than 10 MB. Export a smaller PNG or SVG.');
   const svg = /<svg[\s>]/i.test(input.subarray(0, 65_536).toString('latin1'));
@@ -75,7 +102,7 @@ export async function prepareLogo(input: Buffer): Promise<{ png: Buffer; width: 
       .ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   } catch { throw new AppError(415, 'This image could not be read. Try exporting it again as a PNG.'); }
   const { width, height } = decoded.info;
-  const shape = logoShape(decoded.data, width, height);
+  const shape = await cooperativeLogoShape(decoded.data, width, height);
   if (!shape) throw new AppError(400, 'This image looks empty. Try a logo with more contrast against its background.');
   const png = await sharp(shape.pixels, { raw: { width, height, channels: 4 } }).extract(shape.box).png({ compressionLevel: 9 }).toBuffer();
   return { png, width: shape.box.width, height: shape.box.height };
@@ -85,7 +112,7 @@ export async function prepareLogo(input: Buffer): Promise<{ png: Buffer; width: 
 export class RoomLogo {
   readonly ready: Promise<void>;
   private current?: { version: string; width: number; height: number; bytes: Buffer };
-  private queue: Promise<unknown> = Promise.resolve();
+  private queue = new SerialQueue(4);
   constructor(private directory: string, private changed: () => void = () => {}) {
     this.ready = this.load();
   }
@@ -117,14 +144,12 @@ export class RoomLogo {
   private async load() {
     try {
       const bytes = await readFile(join(this.directory, filename));
-      const { width, height } = await sharp(bytes).metadata();
+      const { width, height } = await nativeWork(() => sharp(bytes).metadata());
       if (width && height) this.current = { version: version(bytes), width, height, bytes };
     } catch { /* No logo. */ }
   }
   private serial<T>(work: () => Promise<T>): Promise<T> {
-    const run = this.queue.then(() => this.ready).then(work);
-    this.queue = run.catch(() => {});
-    return run;
+    return this.queue.run(async () => { await this.ready; return work(); }, 'logo');
   }
 }
 

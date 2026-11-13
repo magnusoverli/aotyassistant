@@ -5,7 +5,7 @@ import { AppError } from './model.js';
 import type { Engine } from './engine.js';
 import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
-import { PreparationManager, preparationOperationSchema, preparationLimits } from './preparations.js';
+import { PreparationManager, preparationOperationSchema, preparationLimits, encodePreparationView } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
 import { artworkSize, body, catalogueRead, jsonBody, sendArtwork, setParticipantCookie } from './http-utils.js';
 import type { ArtworkData } from './music-assistant-transport.js';
@@ -222,7 +222,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       const sendList = (view: Awaited<ReturnType<PreparationManager['read']>> | null) => {
         if (!ready) { pending = view; return; }
         if (!view) { stream.send('preparation-revoked', {}); return; }
-        const key = JSON.stringify(view);
+        const key = encodePreparationView(view);
         if (key !== previousList) { previousList = key; stream.sendEncoded('preparation', key); }
       };
       if (credential(req)) {
@@ -255,7 +255,7 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       let previous = '';
       const send = (view: Awaited<ReturnType<PreparationManager['read']>> | null) => {
         if (!view) { stream.send('revoked', {}); return; }
-        const key = JSON.stringify(view);
+        const key = encodePreparationView(view);
         if (key !== previous) { previous = key; stream.sendEncoded('state', key); }
       };
       const subscription = await manager.subscribe(credential(req), view => {

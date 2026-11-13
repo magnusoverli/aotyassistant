@@ -15,21 +15,32 @@ export type VisualizerView = VisualizerSettings & {
 
 /** Bounded stream-ahead storage, in the Doom Room server's monotonic clock domain. */
 export class SpectrumBuffer {
-  private frames: SpectrumFrame[] = [];
-  clear() { this.frames = []; }
+  private readonly capacity = Math.ceil(spectrumRate * 41);
+  private frames: (SpectrumFrame | undefined)[] = new Array(this.capacity);
+  private head = 0;
+  private length = 0;
+  clear() { this.frames.fill(undefined); this.head = this.length = 0; }
+  private at(index: number) { return this.frames[(this.head + index) % this.capacity]!; }
+  private shift() { this.frames[this.head] = undefined; this.head = (this.head + 1) % this.capacity; this.length--; }
   push(frame: SpectrumFrame, now: number) {
     if (!Number.isFinite(frame.at) || frame.at < now - 5000 || frame.at > now + 35_000 ||
-      frame.at <= (this.frames.at(-1)?.at ?? -Infinity)) return;
-    this.frames.push(frame);
+      frame.at <= (this.length ? this.at(this.length - 1).at : -Infinity)) return;
+    if (this.length === this.capacity) this.shift();
+    this.frames[(this.head + this.length++) % this.capacity] = frame;
     this.prune(now);
   }
   private prune(now: number) {
     // Retain the full delay + stream-ahead window at the analysis frame rate.
-    this.frames = this.frames.filter(frame => frame.at >= now - 5500).slice(-Math.ceil(spectrumRate * 41));
+    while (this.length && this.at(0).at < now - 5500) this.shift();
   }
   window(now: number, delayMs: number) {
     this.prune(now);
-    return this.frames.filter(frame => frame.at + delayMs >= now - 150 && frame.at + delayMs <= now + 1200)
-      .map(frame => ({ at: frame.at + delayMs, bins: frame.bins }));
+    const visible: SpectrumFrame[] = [];
+    for (let i = 0; i < this.length; i++) {
+      const frame = this.at(i); const at = frame.at + delayMs;
+      if (at > now + 1200) break;
+      if (at >= now - 150) visible.push({ at, bins: frame.bins });
+    }
+    return visible;
   }
 }

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.1.11] — 2026-11-13
+
+- Keep room controls responsive during image processing and sign-in by coordinating expensive background work, and make APIs ready independently of profile-picture indexing.
+- Reuse validated saved-list snapshots after durable commits and share immutable list updates across authorized subscribers, preserving corruption detection and revocation.
+- Process visualizer and logo-analysis bursts in small batches; reuse FFT scratch space and bounded spectrum storage without changing frequency levels or presentation timestamps.
+- Bound pending logo/import work, cancel abandoned import waiters, and reduce uploaded-file verification I/O overhead while retaining full content checks.
+
 ## [2.1.10] — 2026-11-13
 
 - Reduce online/Tailscale Funnel traffic by compressing live room, spectrum and playlist updates, flushing every event immediately. A local fixture used about 90% fewer spectrum bytes and 91% fewer bytes for a large playlist snapshot, with identical event contents and visual timing.

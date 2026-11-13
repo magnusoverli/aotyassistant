@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { setTimeout as delay } from 'node:timers/promises';
+import { setTimeout as delay, setImmediate as nextTurn } from 'node:timers/promises';
 import type WebSocket from 'ws';
 import { RoomVisualizer, type VisualizerTarget } from '../src/room-visualizer.js';
 import { createVisualizerClient, visualizerIdentity, type VisualizerClient, type VisualizerClientConfig, type VisualizerChunk } from '../src/sendspin-server.js';
@@ -24,10 +24,12 @@ class Client implements VisualizerClient {
   }
   async connect() { this.isConnected = true; }
   disconnect() { this.isConnected = false; }
-  audio() {
+  async audio() {
     const start = performance.now() * 1000;
     this.onAudioData?.({ samples: [Float32Array.from({ length: 48000 }, (_, i) => .8 * Math.sin(2 * Math.PI * 1000 * i / 48000))],
-      sampleRate: 48000, serverTimeUs: start, generation: 1 });
+       sampleRate: 48000, serverTimeUs: start, generation: 1 });
+    // Allow the 48,000-sample fixture to finish its bounded 4,096-sample turns.
+    for (let turn = 0; turn < 12; turn++) await nextTurn();
   }
 }
 async function eventually(check: () => boolean) {
@@ -63,7 +65,7 @@ test('silent receiver persists identity, receives PCM, verifies the room group a
   await eventually(() => f.service.view().state === 'ready');
   const client = f.clients[0]!;
   assert.deepEqual(client.config.codecs, ['pcm']); assert.equal(client.config.unpairedAccess, false);
-  f.target.playing = true; await f.service.wake(); client.audio();
+  f.target.playing = true; await f.service.wake(); await client.audio();
   const packet = f.service.packet();
   assert.equal(packet.active, true); assert.ok(packet.frames.length > 20);
   assert.deepEqual(Object.keys(packet).sort(), ['active', 'epoch', 'frames', 'participantId', 'roomId', 'sensitivity']);
@@ -73,7 +75,7 @@ test('silent receiver persists identity, receives PCM, verifies the room group a
   client.onStreamEnd?.(); assert.ok(f.service.packet().frames.length > 20, 'Stream end preserves already scheduled audio.');
   const before = packet.epoch; client.onStreamClear?.();
   assert.notEqual(f.service.packet().epoch, before); assert.deepEqual(f.service.packet().frames, []);
-  client.audio(); f.mismatch(); await f.service.wake();
+  await client.audio(); f.mismatch(); await f.service.wake();
   assert.equal(f.service.packet().active, false); assert.deepEqual(f.service.packet().frames, []);
   await f.service.drain();
   const stored = JSON.parse(await readFile(join(f.directory, 'visualizer-identity.json'), 'utf8'));
@@ -87,7 +89,7 @@ test('silent receiver persists identity, receives PCM, verifies the room group a
 test('pause, turn changes, disabling and stale revisions cannot leave another participant reacting', async t => {
   const f = await fixture(t); await f.service.save({ revision: 0, enabled: true, delayMs: 100 });
   await eventually(() => f.service.view().state === 'ready');
-  f.target.playing = true; await f.service.wake(); f.clients[0]!.audio(); assert.equal(f.service.packet().active, true);
+  f.target.playing = true; await f.service.wake(); await f.clients[0]!.audio(); assert.equal(f.service.packet().active, true);
   f.target.participantId = 'next'; assert.equal(f.service.packet().active, false);
   await f.service.wake(); assert.deepEqual(f.service.packet().frames, [], 'New participant cannot inherit buffered audio.');
   f.target.playing = false; await f.service.wake(); assert.deepEqual(f.service.packet().frames, []);
@@ -106,7 +108,7 @@ test('sensitivity changes reach the live packet immediately without restarting t
   legacy.close();
   await f.service.save({ revision: 0, enabled: true, delayMs: 0 });
   await eventually(() => f.service.view().state === 'ready');
-  f.target.playing = true; await f.service.wake(); f.clients[0]!.audio();
+  f.target.playing = true; await f.service.wake(); await f.clients[0]!.audio();
   const before = f.service.packet(); assert.equal(before.sensitivity, .9); assert.ok(before.frames.length > 20);
   await f.service.save({ revision: 1, enabled: true, delayMs: 0, sensitivity: 1.25 });
   const after = f.service.packet();
@@ -122,12 +124,12 @@ test('sensitivity changes reach the live packet immediately without restarting t
 test('a temporary queue-read failure keeps the persistent receiver connected and recovers without pairing again', async t => {
   const f = await fixture(t); await f.service.save({ revision: 0, enabled: true, delayMs: 0 });
   await eventually(() => f.service.view().state === 'ready');
-  f.target.playing = true; await f.service.wake(); f.clients[0]!.audio();
+  f.target.playing = true; await f.service.wake(); await f.clients[0]!.audio();
   const read = f.deps.read;
   f.deps.read = async () => { throw new Error('Temporarily unavailable'); };
   await f.service.wake(); assert.equal(f.service.packet().active, false);
   assert.equal(f.clients[0]!.isConnected, true); assert.equal(f.sockets[0]!.terminated, false);
-  f.deps.read = read; await f.service.wake(); f.clients[0]!.audio();
+  f.deps.read = read; await f.service.wake(); await f.clients[0]!.audio();
   assert.equal(f.service.packet().active, true); assert.equal(f.clients.length, 1);
 });
 

@@ -88,7 +88,7 @@ test('atomic picture files survive restart and account cleanup removes them', { 
   await fresh.remove(id); assert.deepEqual(await files.ids(), []);
 });
 
-async function appFixture(t: TestContext, inOrder = true) {
+async function appFixture(t: TestContext, inOrder = true, files = new MemoryPictures()) {
   const dataDir = await directory(t);
   const people = ['First', 'Second'].map(nickname => ({ id: randomUUID(), nickname, token: randomBytes(32).toString('base64url') }));
   await writeFile(join(dataDir, 'users.json'), JSON.stringify({ schema: 1, deleted: [], users: people.map(person => ({
@@ -101,7 +101,7 @@ async function appFixture(t: TestContext, inOrder = true) {
   const server = createServer(); server.listen(0, '127.0.0.1'); await once(server, 'listening');
   const port = (server.address() as AddressInfo).port; const origin = `http://127.0.0.1:${port}`;
   const engine = new Engine({ async load() { return structuredClone(state); }, async save(next) { state = structuredClone(next); } }, new FakePlayback(3600), origin); await engine.init();
-  const files = new MemoryPictures(); const pictures = new UserPictures(files);
+  const pictures = new UserPictures(files);
   const { app, close } = createApp(engine, { port, listenHost: '127.0.0.1', guestUrl: origin, dataDir }, 'web', undefined, undefined, undefined, undefined, undefined, undefined, pictures);
   server.on('request', app);
   t.after(() => { close(); engine.adapter.close(); server.closeAllConnections(); server.close(); });
@@ -114,6 +114,19 @@ async function appFixture(t: TestContext, inOrder = true) {
   });
   return { origin, engine, app, people, pictures, files, post, upload };
 }
+
+test('room and identity APIs are ready while optional picture indexing is still pending', async t => {
+  const files = new MemoryPictures(); let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  files.ids = async () => { await waiting; return []; }; t.after(() => release());
+  const f = await appFixture(t, true, files);
+  try {
+    const response = await fetch(f.origin + '/api/participant/identity', { signal: AbortSignal.timeout(3000) });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json() as UserDirectory).users.length, 2);
+    assert.equal((await fetch(f.origin + '/api/host/state', { signal: AbortSignal.timeout(3000) })).status, 200);
+  } finally { release(); await f.pictures.ready; }
+});
 
 test('an authenticated listener uploads outside their turn, with photo projections and cache-safe removal', async t => {
   const f = await appFixture(t); const before = f.engine.view({ kind: 'host' }); const image = await raster();

@@ -2,12 +2,16 @@ import { spectrumBins, spectrumMaxHz, spectrumMinHz, spectrumRate } from './spec
 
 const size = 2048;
 const window = Float64Array.from({ length: size }, (_, i) => .5 - .5 * Math.cos(2 * Math.PI * i / (size - 1)));
+const scratch = () => ({ power: new Float64Array(size / 2), re: new Float64Array(size), im: new Float64Array(size) });
 
 /** Hann-windowed radix-2 FFT; channel powers are combined so anti-phase stereo survives. */
 export function frequencyBins(channels: Float32Array[], sampleRate: number): number[] {
-  const power = new Float64Array(size / 2);
+  return analyseFrequency(channels, sampleRate, scratch());
+}
+function analyseFrequency(channels: Float32Array[], sampleRate: number, { power, re, im }: ReturnType<typeof scratch>): number[] {
+  power.fill(0);
   for (const samples of channels) {
-    const re = new Float64Array(size); const im = new Float64Array(size);
+    im.fill(0);
     for (let i = 0, j = 0; i < size; i++) {
       re[j] = (samples[i] ?? 0) * window[i]!;
       let bit = size >> 1;
@@ -42,6 +46,7 @@ export function frequencyBins(channels: Float32Array[], sampleRate: number): num
 
 /** Analyse decoded samples ahead of playback; timestamps refer to the window centre. */
 export class SpectrumAnalyser {
+  private fft = scratch();
   private ring: Float32Array[] = [];
   private ordered: Float32Array[] = [];
   private position = 0;
@@ -70,7 +75,7 @@ export class SpectrumAnalyser {
         const ring = this.ring[ch]!; const ordered = this.ordered[ch]!;
         ordered.set(ring.subarray(this.position)); ordered.set(ring.subarray(0, this.position), size - this.position);
       }
-      this.emit(serverTimeUs + (i - (size - 1) / 2) / sampleRate * 1e6, frequencyBins(this.ordered, sampleRate));
+      this.emit(serverTimeUs + (i - (size - 1) / 2) / sampleRate * 1e6, analyseFrequency(this.ordered, sampleRate, this.fft));
     }
   }
 }

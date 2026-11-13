@@ -8,7 +8,7 @@ import { readPrivateJson, writePrivateJson } from './store.js';
 import { SerialQueue } from './serial.js';
 import { MusicAssistantTransport } from './music-assistant-transport.js';
 import { openSpeakerSocket, configureBrowserPlayer, type SpeakerConnection } from './browser-speakers.js';
-import { SpectrumAnalyser } from './spectrum-analysis.js';
+import { ScheduledSpectrumAnalyser } from './scheduled-spectrum.js';
 import { SpectrumBuffer, visualizerSensitivity, type SpectrumPacket, type VisualizerSettings, type VisualizerView } from './spectrum.js';
 
 // Settings saved before sensitivity existed load with the default.
@@ -47,7 +47,7 @@ export class RoomVisualizer {
   private timer: NodeJS.Timeout;
   private heartbeat?: NodeJS.Timeout;
   private frames = new SpectrumBuffer();
-  private analyser: SpectrumAnalyser;
+  private analyser: ScheduledSpectrumAnalyser;
   private epoch = randomUUID();
   private matched = false;
   private verifiedAt = 0;
@@ -57,7 +57,7 @@ export class RoomVisualizer {
   private failures = 0;
 
   constructor(private directory: string, private deps: Dependencies) {
-    this.analyser = new SpectrumAnalyser((serverTimeUs, bins) => {
+    this.analyser = new ScheduledSpectrumAnalyser((serverTimeUs, bins) => {
       const core = this.client;
       if (!core?.timeSyncInfo.synced) return;
       const at = core._timeFilter.computeClientTime(serverTimeUs) / 1000;
@@ -184,7 +184,7 @@ export class RoomVisualizer {
         core.onStreamStart = () => this.resetFrames();
         core.onStreamClear = () => this.resetFrames();
         // End-of-stream can arrive ahead of playback: let already scheduled frames drain.
-        core.onStreamEnd = () => this.analyser.clear();
+        core.onStreamEnd = () => this.analyser.end();
         core.onConnectionClose = () => {
           if (this.client !== core) return;
           this.drop(); this.state = 'connecting'; this.message = 'Visualizer disconnected. Reconnecting…';

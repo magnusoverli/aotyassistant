@@ -143,7 +143,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.post('/api/participant/preparations/add-album', express.json({ limit: '2mb' }));
   app.use(express.json({ limit: '16kb' }));
   app.use(compressJson);
-  app.use('/api', async (_req, _res, next) => { try { await users.migrate(); await pictures.ready; next(); } catch (error) { next(error); } });
+  app.use('/api', async (_req, _res, next) => { try { await users.migrate(); next(); } catch (error) { next(error); } });
   if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess,
     req => users.directoryView(participantCredential(req)).current?.nickname);
   const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users, spectrum);

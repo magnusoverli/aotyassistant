@@ -8,6 +8,7 @@ import { PreparationIdentity, bindingDirectory, readBinding, selectionCredential
 import { SerialQueue } from './serial.js';
 import { listDirectory, readPrivateJson, writePrivateJson, removePrivateFile } from './store.js';
 import { operation, remaining } from './operation.js';
+import { nativeWork } from './native-work.js';
 import type { UserPictures } from './user-pictures.js';
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -66,7 +67,7 @@ export class UserManager {
     return this.healthy && this.state.users.some(user => user.id === id && !user.deleting) ? this.pictures?.url(id) : undefined;
   }
   private profile(user: User): UserProfile {
-    const avatarUrl = this.pictureUrl(user.id);
+    const avatarUrl = this.healthy && !user.deleting ? this.pictures?.url(user.id) : undefined;
     return { ...profile(user), ...(avatarUrl ? { avatarUrl } : {}) };
   }
   /** Serializes cosmetic commits with account deletion and session revocation, not audio commands. */
@@ -154,8 +155,8 @@ export class UserManager {
     } else this.hashes++;
     try {
       remaining(Infinity);
-      return await new Promise<Buffer>((resolve, reject) => scrypt(pin, Buffer.from(salt, 'hex'), 32,
-        { N: 16384, r: 8, p: 5, maxmem: 32 * 1024 * 1024 }, (error, key) => error ? reject(error) : resolve(key)));
+      return await nativeWork(() => new Promise<Buffer>((resolve, reject) => scrypt(pin, Buffer.from(salt, 'hex'), 32,
+        { N: 16384, r: 8, p: 5, maxmem: 32 * 1024 * 1024 }, (error, key) => error ? reject(error) : resolve(key))));
     } finally { const next = this.hashWaiters.shift(); if (next) next(); else this.hashes--; }
   }
   private async makePin(pin: string): Promise<z.infer<typeof pinRecord>> {

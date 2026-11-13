@@ -14,6 +14,137 @@ Scope: browser startup and navigation, HTTP request lifetimes, real-time events,
 
 Measurements use local synthetic fixtures. They are not measurements of a deployed Home Assistant system, real network, physical speaker, or mobile browser. Source line references describe the code at investigation time.
 
+## 2.1.11 server improvements
+
+- Coordinate scrypt, image conversions, artwork resizes and picture indexing through one bounded native-work queue, with conservative CPU-aware image concurrency and headroom for filesystem/compression work.
+- Retain immutable validated list snapshots after successful durable commits, using descriptor-derived file identity and checking for external changes on every read. Share one immutable projection and encoding per owner event while keeping authorization checks per subscriber.
+- Make unrelated APIs ready independently of profile-picture indexing; inspect pictures with bounded concurrency and publish their URLs when ready.
+- Yield between bounded visualizer/logo-analysis batches, reuse FFT scratch space, and use a fixed-capacity spectrum ring. Preserve spectral output, sample timestamps, stream resets and end-of-stream draining.
+- Bound pending logo and import work, remove cancelled import waiters, avoid repeated user-directory scans, and use larger reusable integrity-check reads with a post-read file-change check. Uploaded audio still receives a full checksum verification.
+
+Local verification includes focused regression tests, typecheck, release validation and the production build. The full local suite still encounters Windows persistence failures and stalls; the local Docker Linux daemon is unavailable. Release publication is gated on Linux application checks and native amd64/aarch64 packaged tests. No additional performance measurements or diagnostics were added for this implementation.
+
+## 2.1.10 server hardware and latency investigation
+
+Date: 2026-11-13. Scope: local server CPU, scheduling, memory accounting, startup and storage, independently of network latency. This section records remaining issues and measurements, rather than repeating mechanisms already working well.
+
+The remaining opportunities are workload isolation and avoiding repeated work. The current implementation does not establish a hardware capacity or tail-latency guarantee. These findings do not justify a server-language rewrite or multiple independent HTTP processes: room state, leases, subscriptions and file ownership currently assume one authoritative process.
+
+### Measurement conditions
+
+- Windows x64, Node.js 26.13.0, Intel Core Ultra 7 258V, eight available logical CPUs, approximately 31.5 GiB RAM. This is the development workstation, not the Home Assistant host.
+- Actual application functions with synthetic data. Each component benchmark warms up before measuring; most use 20 samples. Figures below are medians, unless specified otherwise. They are not HTTP response-time measurements or promises of production speedup.
+- List fixture: 1,000 entries (200 upcoming, 800 removed), 5,000 replay receipts, approximately 1.89 MB persisted JSON. These are supported upper-bound counts, not an assertion about typical lists. Subscriber tests attach multiple subscribers to the same owner.
+- Storage reads are warm-page-cache workstation reads. Durable Linux writes, SD-card/eMMC performance, cgroup throttling, actual deployment memory and concurrent whole-application load were not measured. Docker's Linux daemon was unavailable; Windows directory-sync incompatibility prevents using local saves to estimate production commit latency.
+- No production source/configuration changes were made for this investigation.
+
+### S1. Independent background features compete for the same native worker pool
+
+**Evidence:** [src/users.ts](../src/users.ts), lines 149-159, allows two asynchronous scrypt operations. [src/user-pictures.ts](../src/user-pictures.ts), lines 18-30, independently allows two image conversions. Uploaded-artwork resizing has another two slots in [src/uploads.ts](../src/uploads.ts), lines 46 and 165-179. Filesystem operations and asynchronous gzip also use the process's libuv pool. Neither the Docker image nor entrypoint sets its size, so the default is four unless the deployment overrides it.
+
+The mixed-load probe used two scrypt calls with the application's parameters and two actual `prepareUserPicture()` calls on approximately 7.1 MB, 4,000 × 4,000 JPEGs. After a 10 ms head start, it measured an unrelated small-file `stat` and level-1 gzip operation. Ten measured samples followed two warmups; each pass awaited all work before continuing.
+
+| Workload | Pool size | File stat median | Gzip median |
+| --- | ---: | ---: | ---: |
+| Idle | 4 | 0.38 ms | 0.76 ms |
+| Two scrypt operations | 4 | 0.25 ms | 0.52 ms |
+| Two picture conversions | 4 | 0.25 ms | 0.62 ms |
+| Both simultaneously | 4 | 92.60 ms | 92.90 ms |
+| Both simultaneously | 8 | 0.27 ms | 0.79 ms |
+
+**Impact:** Work can be asynchronous and still delay unrelated persistence, file reads and compressed updates. Event-loop-delay monitoring alone does not detect this queueing. The pool-size comparison proves a contention mechanism on this workstation, not a universal setting or a measured SSE improvement.
+
+**Recommendation:** Establish a bounded shared budget for expensive native work and benchmark pool size together with Sharp's internal concurrency on the target hardware. Configure the pool before Node starts. A worker thread can isolate JavaScript CPU work but does not create a separate libuv pool; a separate process does. Avoid increasing all concurrency limits independently, especially on small HA hosts.
+
+References: [Node thread-pool configuration](https://nodejs.org/api/cli.html#uv_threadpool_sizesize), [libuv's process-global pool](https://docs.libuv.org/en/v1.x/threadpool.html), [Sharp concurrency/performance](https://sharp.pixelplumbing.com/performance/).
+
+### S2. Large list mutations discard expensive validated snapshots
+
+**Evidence:** [src/preparations.ts](../src/preparations.ts), lines 94-146, clones the full snapshot for writes, validates the complete state on save, and evicts the cached snapshot before and after saving. The next access therefore rereads, parses, validates and recursively freezes the saved file. [src/store.ts](../src/store.ts), lines 66-79, serializes and durably replaces the complete file.
+
+| Component, upper-bound fixture | Median |
+| --- | ---: |
+| Clone complete state | 8.85 ms |
+| Validate complete state | 13.47 ms |
+| Serialize complete state | 3.91 ms |
+| Reload, validate and freeze file after a cache miss | 21.39 ms |
+| Unchanged cached snapshot, including file stat | 0.08 ms |
+
+These component times must not be reported as one measured mutation latency. The disk commit, manager operations and event fanout add their own costs. Independent owners have separate application queues, but all of this synchronous JavaScript still shares one event loop.
+
+Receipts contribute materially: with the same entries but no receipts, clone and validation measured 4.55 ms and 5.24 ms. Removing receipts is not an acceptable optimization: they preserve replay/idempotency semantics.
+
+**Recommendation:** First retain a validated, immutable post-save snapshot tied to the exact committed file identity, preserving external-change/corruption checks. Reduce duplicate full-state passes while retaining validation and durable acknowledgement. If deployed storage measurements still show large-list commit costs dominating, evaluate incremental transactional persistence as a later, separate change. Do not trade away fsync or acknowledge unsaved mutations.
+
+### S3. Private-list fanout repeats projection and serialization per subscriber
+
+**Evidence:** [src/preparations.ts](../src/preparations.ts), lines 215-229 and 257-265, rebuilds and sorts the list projection separately for each subscriber. [src/preparation-http.ts](../src/preparation-http.ts), lines 222-226, serializes that projection separately before deduplicating it. The 2.1.10 wire compression reduces transfer size after this work has already happened.
+
+The probe emitted the same committed fixture through the manager's real subscription callbacks, with a JSON-encoding listener. It excluded disk, gzip and sockets.
+
+| Subscribers to one owner's list | Projection + serialization median |
+| --- | ---: |
+| 1 | 1.48 ms |
+| 5 | 4.15 ms |
+| 20 | 21.20 ms |
+
+**Recommendation:** Build and encode an owner-scoped projection once per relevant change, then reuse it across authorized listeners. Continue checking each subscription's access/revocation and account for source availability and starting-play changes; revision alone is not sufficient for every invalidation.
+
+### S4. CPU-heavy JavaScript still runs beside HTTP handling
+
+**Evidence:** [src/room-visualizer.ts](../src/room-visualizer.ts), line 183, invokes the analyser directly. FFT temporary arrays remain allocated inside [src/spectrum-analysis.ts](../src/spectrum-analysis.ts), lines 8-10. [src/spectrum.ts](../src/spectrum.ts), lines 20-33, copies/filter-scans frame storage on each push/window. [src/room-logo.ts](../src/room-logo.ts), lines 30-55 and 78, scans pixels synchronously on the request's event loop.
+
+| Work | Median | Interpretation |
+| --- | ---: | --- |
+| Steady analyser + frame buffer, 20 ms audio chunk | 0.10 ms | Small steady-state cost; no evidence of continuously saturated CPU |
+| One-second audio batch | 6.25 ms | Synthetic burst |
+| Five-second audio batch | 33.36 ms | Synthetic burst, not an observed production packet |
+| 30 seconds fed as 1,500 consecutive 20 ms chunks | 221.33 ms | No-yield stress workload; real socket dispatch can interleave differently |
+| Logo shape extraction, 1,600 × 1,600 pixels | 27.02 ms | Only synchronous shape computation; excludes decoding and encoding |
+
+The latest FFT timings supersede the older F12 measurements for the current implementation. They include the improvements already shipped in 2.1.9. The 30-second result must not be described as an observed 221 ms production stall.
+
+**Recommendation:** Keep compute bursts outside the HTTP event loop using a bounded worker or bounded yielding, preserving timestamps, ordering and generation resets. Reuse FFT scratch storage and consider a ring buffer instead of per-frame array copies. Prioritize actual burst measurements over adding workers for already-cheap steady chunks. Logo processing is an occasional but definite long synchronous task.
+
+### S5. Most API requests wait for a serial scan of every saved profile picture
+
+**Evidence:** [src/http.ts](../src/http.ts), line 146, awaits `pictures.ready` in general API middleware. [src/user-pictures.ts](../src/user-pictures.ts), lines 87-98, reads, inspects and hashes every saved picture sequentially. The health route runs before this middleware, so health can report live while other API requests are still waiting.
+
+**Measurement:** The actual `UserPictures` startup path with a simple filesystem adapter took 43 ms for 100 pictures and 464 ms for 1,000 pictures; each fixture picture was only 544 bytes. Three measured runs followed warmup. This excludes the production adapter's extra open/stat work and does not measure full application startup.
+
+**Recommendation:** Allow unrelated APIs to become available independently of optional picture indexing. Use bounded scan concurrency or a verified version index with lazy repair. Keep per-picture validation and publish the updated URLs when ready. Avoid launching every decode simultaneously into the same shared worker pool.
+
+### S6. Uploaded-file playback rereads and hashes the entire recording
+
+**Evidence:** [src/uploads.ts](../src/uploads.ts), lines 140-155 and 227-232, verifies all bytes during capture and again before each playback lease.
+
+**Measurement:** An equivalent 64 KiB read/SHA-256 loop over warm local files took 17.39 ms for 16 MiB and 103.49 ms for 128 MiB. This is verification-path work, not a complete playback latency measurement. It yields between reads rather than blocking JavaScript for the entire duration, but still consumes storage bandwidth, native-pool work and hashing CPU.
+
+**Recommendation:** Measure on the actual storage before choosing a change. Consider ahead-of-time verification or reuse only under an explicit immutable-file identity/invalidation contract. A timestamp-only shortcut cannot guarantee the same content-integrity check.
+
+### S7. Capacity and memory-pressure diagnostics are insufficient
+
+**Evidence:** [src/diagnostics.ts](../src/diagnostics.ts), lines 7-24, retains lifetime count/total/max aggregates and one event-loop maximum per minute. There is no rolling per-action p95/p99, event-loop utilization, process CPU, heap/external-buffer/RSS history, GC pause distribution, native-work queue latency, cache occupancy or container CPU/memory-limit reporting.
+
+**Impact:** It is not possible to establish from current host diagnostics whether latency is caused by CPU, worker saturation, storage, garbage collection or a deployment limit. JSON-byte budgets used for parsed-object caches are not heap-byte budgets; image buffers, gzip contexts and child processes also need accounting. The audit process's final RSS is not a deployed application memory estimate.
+
+**Recommendation:** Add small fixed-cardinality rolling measurements and a reproducible mixed-load probe. Capture container-visible CPU/memory limits and child-process use on the real host. Compare idle, normal room playback and simultaneous list edits/images/sign-ins, keeping networking and audible playback latency separate. Do not size pools, heaps or listener capacity from the workstation's eight cores/32 GB.
+
+### Secondary source findings
+
+| Area | Finding | Priority |
+| --- | --- | --- |
+| Logo admission | `RoomLogo.serial()` chains an uncapped promise queue, retaining each buffered upload while waiting. | Bound pending work and memory; no accumulation measurement was performed. |
+| Import service waiting | `ServiceGates.run()` does not remove aborted/expired waiters. An isolated 20 ms-budget call still waited roughly 88 ms for release after abort. Real downstream transport rechecks the budget, so this does not prove a cancelled HTTP call was sent. | Reuse deadline-aware admission when revisiting import scheduling. |
+| User directory | Projection repeatedly searches all users for each picture URL. At 1,000 synthetic users it took 1.95 ms; current-user lookup took 0.015 ms. | Lower priority than worker contention and large lists. |
+| Catalogue grouping | Grouping alone took 2.41 ms for 500 synthetic items and 9.42 ms for 2,000; this excludes upstream work, validation and response encoding. | Profile complete large-result processing before further optimization. |
+
+### Recommended next changes
+
+Start with shared native-work scheduling/pool tuning and retaining validated post-save list snapshots. Then reuse owner-scoped projections and decouple API readiness from picture scanning. Apply CPU-worker or incremental-storage changes where deployed burst/storage measurements justify them. A small resource/tail-latency probe should accompany these changes so improvements can be distinguished from moving work to another queue.
+
+Local investigation artifacts are in `C:\Users\me513\AppData\Local\Temp\opencode`: `doom-room-server-audit.mjs`, `doom-room-server-audit-results.jsonl` and `doom-room-threadpool-audit.mjs`. The scripts use synthetic records, temporary directories and direct imports from this checkout; they do not modify live application data. Run with `node --import tsx <script>` from the checkout. The thread-pool comparison used separate Node processes with `UV_THREADPOOL_SIZE` unset/default and set to `8`; script paths are workstation-specific.
+
 ## 2.1.10 bandwidth follow-up
 
 Implemented all five online-audio follow-up items: shared playback/telemetry limits (500–4,000 ms across LAN/online policies), per-receiver transfer measurements, promptly flushed SSE gzip, current Sendspin format renegotiation, and Opus negotiation/fallback diagnostics and contract tests.

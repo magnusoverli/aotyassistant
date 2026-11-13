@@ -9,6 +9,7 @@ import { operation, stage } from './operation.js';
 import { listDirectory, removePrivateFile, syncDirectory } from './store.js';
 import { SerialQueue } from './serial.js';
 import { maxUserPictureBytes, maxUserPicturePixels, userPictureSize } from './user-picture-format.js';
+import { nativeWork } from './native-work.js';
 
 const idSchema = z.uuid();
 const maxStoredBytes = 1024 * 1024;
@@ -20,13 +21,13 @@ export async function prepareUserPicture(input: Buffer): Promise<Buffer> {
   if (input.length > maxUserPictureBytes) throw new AppError(413, 'Choose a picture smaller than 10 MB.');
   if (processing >= 2) throw new AppError(429, 'Other pictures are being processed. Try again shortly.');
   processing++;
-  try {
+  try { return await nativeWork(async () => {
     const metadata = await sharp(input, { limitInputPixels: maxUserPicturePixels }).metadata();
     if (!['jpeg', 'png', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) > 1) throw new Error();
     // Decode and re-encode even browser-cropped pictures. Originals and EXIF/GPS never enter storage.
     return await sharp(input, { limitInputPixels: maxUserPicturePixels, animated: false }).rotate()
       .resize(userPictureSize, userPictureSize, { fit: 'cover' }).webp({ quality: 85 }).timeout({ seconds: 15 }).toBuffer();
-  } catch { throw new AppError(415, 'Use a still JPEG, PNG or WebP picture.'); }
+  }); } catch (error) { if (error instanceof AppError) throw error; throw new AppError(415, 'Use a still JPEG, PNG or WebP picture.'); }
   finally { processing--; }
 }
 
@@ -87,13 +88,16 @@ export class UserPictures {
   private async load() {
     try {
       // Keep only tiny hashes in memory, rather than all saved users' image buffers.
-      for (const id of await this.files.ids()) {
-        try {
-          const bytes = await this.files.read(id); if (!bytes) continue;
-          const metadata = await sharp(bytes).metadata();
-          if (metadata.format === 'webp' && metadata.width === userPictureSize && metadata.height === userPictureSize) this.versions.set(id, version(bytes));
-        } catch { /* An unreadable photo falls back to the initial; an explicit replacement can repair it. */ }
-      }
+      const ids = (await this.files.ids())[Symbol.iterator]();
+      await Promise.all(Array.from({ length: 2 }, async () => {
+        for (const id of ids) {
+          try {
+            const bytes = await this.files.read(id); if (!bytes) continue;
+            const metadata = await nativeWork(() => sharp(bytes).metadata());
+            if (metadata.format === 'webp' && metadata.width === userPictureSize && metadata.height === userPictureSize) this.versions.set(id, version(bytes));
+          } catch { /* An unreadable photo falls back to the initial; an explicit replacement can repair it. */ }
+        }
+      }));
     } catch { this.available = false; }
   }
   async image(id: string, requested: string) {

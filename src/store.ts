@@ -1,6 +1,7 @@
 import { mkdir, open, readdir, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import type { BigIntStats } from 'node:fs';
 import type { z } from 'zod';
 import { stateSchema, type State } from './model.js';
 import { durability } from './backup.js';
@@ -51,9 +52,12 @@ export class FileStore implements Store {
   }
 }
 
-/** Shared atomic persistence for application-owned files, including integration secrets. */
-export async function writePrivateJson(directory: string, filename: string, data: unknown, maxBytes = Infinity): Promise<void> {
-  try { return await stage('persistence', () => durability.run(() => commitPrivateJson(directory, filename, data, maxBytes))); }
+/** Metadata identity includes nanosecond change time, not just length/modification time. */
+export const fileStamp = (info: BigIntStats) => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`;
+
+/** Atomic persistence; optionally return the committed descriptor's identity for a validated cache. */
+export async function writePrivateJson(directory: string, filename: string, data: unknown, maxBytes = Infinity, snapshot = false): Promise<BigIntStats | undefined> {
+  try { return await stage('persistence', () => durability.run(() => commitPrivateJson(directory, filename, data, maxBytes, snapshot))); }
   catch (error) { throw error instanceof PersistenceError ? error : new PersistenceError('not-committed'); }
 }
 /** Idempotent deletion with the same backup and durability guarantees as JSON commits. */
@@ -63,18 +67,27 @@ export async function removePrivateFile(directory: string, filename: string): Pr
     await syncDirectory(directory, true);
   });
 }
-async function commitPrivateJson(directory: string, filename: string, data: unknown, maxBytes: number): Promise<void> {
+async function commitPrivateJson(directory: string, filename: string, data: unknown, maxBytes: number, snapshot: boolean): Promise<BigIntStats | undefined> {
   const json = JSON.stringify(data);
   if (Buffer.byteLength(json) > maxBytes) throw new Error('Persistent record exceeds its readable size limit.');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const temporary = join(directory, `.${filename}-${randomUUID()}.tmp`);
   const handle = await open(temporary, 'wx', 0o600);
+  let renamed = false;
   try {
-    try {
-      await handle.writeFile(json);
-      await handle.sync();
-    } finally { await handle.close(); }
+    await handle.writeFile(json);
+    await handle.sync();
+    const before = snapshot ? await handle.stat({ bigint: true }).catch(() => undefined) : undefined;
     await rename(temporary, join(directory, filename));
+    renamed = true;
     await syncDirectory(directory).catch(() => { throw new PersistenceError('uncertain'); });
-  } finally { await unlink(temporary).catch(() => {}); }
+    // Read identity from the descriptor we wrote, never from a pathname that could
+    // now name a replacement. Cache failure must not turn a durable save into failure.
+    const after = before ? await handle.stat({ bigint: true }).catch(() => undefined) : undefined;
+    if (before && after && after.nlink > 0n && before.dev === after.dev && before.ino === after.ino &&
+      before.size === after.size && before.mtimeNs === after.mtimeNs) return after;
+  } finally {
+    try { await handle.close().catch(error => { throw renamed ? new PersistenceError('uncertain') : error; }); }
+    finally { await unlink(temporary).catch(() => {}); }
+  }
 }

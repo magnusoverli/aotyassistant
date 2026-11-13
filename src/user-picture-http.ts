@@ -15,6 +15,7 @@ export function mountUserPictures(app: Express, users: UserManager, pictures: Us
   const rates = new RateLimiter(1000);
   const raw = express.raw({ type: 'application/octet-stream', limit: maxUserPictureBytes });
   app.get('/api/user-pictures/:userId/:version.webp', async (req, res) => {
+    await pictures.ready;
     const id = z.uuid().parse(req.params.userId); const version = z.string().regex(userPictureVersionPattern).parse(req.params.version);
     const url = `/api/user-pictures/${id}/${version}.webp`;
     if (users.pictureUrl(id) !== url) throw new AppError(404, 'This picture is no longer in use.');
