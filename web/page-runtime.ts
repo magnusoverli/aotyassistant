@@ -15,6 +15,7 @@ import { displayHasSideRail, observeDisplayLayout } from './display-stage';
 import { joinQrImage } from './join-qr';
 import { PreparationController, operationId } from './preparation-controller';
 import { PreparationPanel, searchIcon } from './preparation-panel';
+import { receiveSpectrum } from './room-spectrum';
 import type { PreparationView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
@@ -292,14 +293,21 @@ root.addEventListener('focusin', () => {
   const focused = document.activeElement;
   if (!restoringFocus) requestAnimationFrame(() => { if (document.activeElement === focused) keepMusicFocusVisible(); });
 }, { signal });
+/** Short screens (and the on-screen keyboard) get a smaller list. Only the flag is written, and only when it
+ * changes: iOS fires viewport resizes continuously while the address bar collapses or the keyboard moves. */
+function applyMusicViewport() {
+  const short = String(Math.min(innerHeight, window.visualViewport?.height ?? innerHeight) < 600);
+  if (document.body.dataset.shortViewport !== short) document.body.dataset.shortViewport = short;
+}
+let viewportFrame = 0;
+/** Resize bursts become one update, and one focus check, per animation frame. */
 function updateMusicViewport() {
-  const height = Math.min(innerHeight, window.visualViewport?.height ?? innerHeight);
-  document.documentElement.style.setProperty('--music-viewport-height', `${height}px`);
-  document.body.dataset.shortViewport = String(height < 600);
-  requestAnimationFrame(keepMusicFocusVisible);
+  if (viewportFrame) return;
+  viewportFrame = requestAnimationFrame(() => { viewportFrame = 0; if (signal.aborted) return; applyMusicViewport(); keepMusicFocusVisible(); });
 }
 if (page === 'participant') {
-  updateMusicViewport(); window.addEventListener('resize', updateMusicViewport, { signal }); window.visualViewport?.addEventListener('resize', updateMusicViewport, { signal });
+  applyMusicViewport(); window.addEventListener('resize', updateMusicViewport, { signal }); window.visualViewport?.addEventListener('resize', updateMusicViewport, { signal });
+  signal.addEventListener('abort', () => cancelAnimationFrame(viewportFrame), { once: true });
 }
 
 async function api<T>(path: string, data?: unknown): Promise<T> {
@@ -388,7 +396,8 @@ function accept(next: View) {
   if (signal.aborted) return;
   accessEnded = false;
   if (next.me) { closeUserDirectory?.(); closeUserDirectory = undefined; }
-  if (view?.roomId === next.roomId && view.revision > next.revision) return;
+  // Revisions only order views from one server run: a restarted server may continue from a lower one.
+  if (view?.roomId === next.roomId && view.epoch === next.epoch && view.revision > next.revision) return;
   if (view?.volume?.revision === next.volume?.revision && (view?.volume?.generation ?? 0) > (next.volume?.generation ?? 0)) next = { ...next, volume: view!.volume };
   if (catalogueIdentity(view) !== catalogueIdentity(next)) {
     catalogueRows.clear();
@@ -457,6 +466,7 @@ function subscribe(role: 'host' | 'participant' | 'display') {
     : new EventSource(appPath(`/api/${role}/events`));
   stream = connection;
   if (connection instanceof EventSource) {
+    receiveSpectrum(connection);
     connection.addEventListener('state', event => state(event as MessageEvent));
     connection.addEventListener('revoked', revoked); connection.onerror = failed;
   }
@@ -759,7 +769,7 @@ function render() {
   if (page === 'display') { renderDisplay(); return; }
   const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const selection = focused instanceof HTMLInputElement && ['text', 'search', 'password'].includes(focused.type) ? [focused.selectionStart, focused.selectionEnd] as const : null;
-  const scrollRegions = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(node => [node.dataset.scrollKey, node.scrollTop] as const);
+  const scrollRegions = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].map(node => [node.dataset.scrollKey, node, node.scrollTop] as const);
   const scrollY = window.scrollY;
   const playerCard = page === 'participant' ? root.querySelector<HTMLElement>('#participant-player') : null;
   const playerBefore = playerCard?.getBoundingClientRect();
@@ -787,7 +797,13 @@ function render() {
       actions); content.push(main);
   }
   children(pageContent, ...content);
-  for (const [key, top] of scrollRegions) { const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(node => node.dataset.scrollKey === key); if (region) prop(region, 'scrollTop', top); }
+  // Regions are reused nodes that keep their own scroll position. Only a replaced one needs it restored:
+  // reading or setting scrollTop right after the update above would force a layout of the whole page.
+  for (const [key, node, top] of scrollRegions) {
+    if (node.isConnected) continue;
+    const region = [...root.querySelectorAll<HTMLElement>('[data-scroll-key]')].find(candidate => candidate.dataset.scrollKey === key);
+    if (region && top) region.scrollTop = top;
+  }
   const replacement = focused?.id ? document.getElementById(focused.id)
     : focused?.dataset.focusKey ? [...root.querySelectorAll<HTMLElement>('[data-focus-key]')].find(node => node.dataset.focusKey === focused.dataset.focusKey) : null;
   if (replacement instanceof HTMLElement && replacement !== document.activeElement) {

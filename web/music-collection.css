@@ -7,6 +7,13 @@
   #music-collection > .preparation-list,#music-collection .list-body { overscroll-behavior:auto; }
   #music-collection .saved-track .result-identity strong { font-size:1.25rem; line-height:1.25; }
   .preparation-list .list-title-short { display:none; }
+  /* Long lists: rows out of view skip layout and painting until they come near it, which changes nothing on
+     screen. The block sizes are each row's usual content height until the browser has drawn and remembered
+     the real one, so scrolling and drag positions stay steady. overflow-clip-margin lets focus rings on the
+     row's edge buttons draw past the row, as they did before the row was contained. */
+  #music-collection .list-body .saved-track,#music-collection .catalogue-results .track-row { content-visibility:auto; overflow-clip-margin:8px; }
+  #music-collection .list-body .saved-track { contain-intrinsic-block-size:auto 47px; }
+  #music-collection .catalogue-results .track-row { contain-intrinsic-block-size:auto 80px; }
   /* Parts of the phone search sheet. Desktop lays the wrappers out as if absent and never shows the rest. */
   .search-sheet-bar,.search-sheet-top { display:contents; }
   .list-search-open,.search-sheet-done,.search-sheet-toast,.search-clear,.search-form > .search-icon,
@@ -70,6 +77,7 @@
     #music-collection .list-empty { display:flex; align-items:center; height:auto; margin:0; padding:.5rem 0; font-size:.875rem; }
     #music-collection .saved-tracks { margin:0; padding:0; }
     #music-collection .saved-track { display:grid; grid-template-columns:16px minmax(0,1fr) auto; align-items:center; gap:8px; min-width:0; min-height:56px; padding:6px 0; border-top:1px solid var(--line); }
+    #music-collection .list-body .saved-track,#music-collection .catalogue-results .track-row { contain-intrinsic-block-size:auto 44px; }
     #music-collection .saved-track.is-next { border-top-color:#61704c; }
     #music-collection .saved-track.is-unavailable { border-top-color:var(--accent); }
     #music-collection .saved-number { width:auto; font-size:11px; letter-spacing:0; }

@@ -163,19 +163,19 @@ export class PreparationPanel {
   refresh() {
     const focused = document.activeElement instanceof HTMLElement && document.activeElement.closest('.music-workspace') ? document.activeElement : undefined;
     const key = focused?.dataset.focusKey; const id = focused?.id;
-    const scroll = this.list?.querySelector('.list-body')?.scrollTop ?? 0;
     const top = scrollY;
+    // The list body is one persistent node, so it keeps its own scroll position. Every DOM write comes
+    // before the one layout read below (scrollY): reading between writes would lay out the page each time.
     this.renderList();
     this.uploads.render();
     this.replacer.refresh();
-    const body = this.list?.querySelector('.list-body'); if (body) prop(body, 'scrollTop', scroll);
-    const replacement = id ? document.getElementById(id) : key ? [...this.list?.querySelectorAll<HTMLElement>('[data-focus-key]') ?? []].find(node => node.dataset.focusKey === key) : undefined;
-    if (focused && replacement && document.activeElement === document.body) replacement.focus({ preventScroll: true });
-    if (scrollY !== top) window.scrollTo({ top, behavior: 'instant' });
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-preparation-track]')) {
       this.updateAddButton(button);
     }
     if (this.albumAdd?.button.isConnected) this.updateAlbumButton();
+    const replacement = id ? document.getElementById(id) : key ? [...this.list?.querySelectorAll<HTMLElement>('[data-focus-key]') ?? []].find(node => node.dataset.focusKey === key) : undefined;
+    if (focused && replacement && document.activeElement === document.body) replacement.focus({ preventScroll: true });
+    if (scrollY !== top) window.scrollTo({ top, behavior: 'instant' });
   }
   stopUploads() { this.uploads.stop(); this.replacer.stop(); }
   updateAddButton(button: HTMLButtonElement) {

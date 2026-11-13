@@ -2,6 +2,7 @@ import type { ListeningOrderView, Person, View } from '../src/model';
 import { el, link } from './dom';
 import { avatar } from './visuals';
 import { appPath } from './paths';
+import { receiveSpectrum } from './room-spectrum';
 import { ViewNodes, children, prop, attr, text } from './view-nodes';
 import { OrderDrag, type OrderMove } from './order-drag';
 import { stackedLayout } from './page-layout';
@@ -108,7 +109,7 @@ export class ListeningOrder {
     if (view) {
       this.stop();
       if (view.me) this.me = view.me;
-      this.accept({ roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [], playbackStatus: view.playbackStatus ?? 'unavailable' });
+      this.accept({ epoch: view.epoch, roomId: view.roomId, revision: view.revision, current: view.current, next: view.next, rotation: view.rotation ?? [], playbackStatus: view.playbackStatus ?? 'unavailable' });
       this.connection(online);
     } else {
       if (!navigator.onLine) { this.stop(); this.connection(false); }
@@ -116,7 +117,7 @@ export class ListeningOrder {
         // A route change hands off between feeds without making the retained
         // order flash a reconnecting row. Actual connection errors still surface.
         if (!this.snapshot) text(this.status, 'Connecting…');
-        const source = new EventSource(appPath('/api/listening-order/events')); this.source = source;
+        const source = new EventSource(appPath('/api/listening-order/events')); this.source = source; receiveSpectrum(source);
         source.addEventListener('state', event => {
           if (this.source !== source) return;
           this.accept(JSON.parse((event as MessageEvent).data) as ListeningOrderView); this.connection(true);
@@ -140,7 +141,7 @@ export class ListeningOrder {
   }
 
   private accept(snapshot: ListeningOrderView) {
-    if (this.snapshot?.roomId === snapshot.roomId && this.snapshot.revision > snapshot.revision) return;
+    if (this.snapshot?.roomId === snapshot.roomId && this.snapshot.epoch === snapshot.epoch && this.snapshot.revision > snapshot.revision) return;
     if (!snapshot.rotation.some(person => person.id === this.me?.id)) this.me = undefined;
     this.snapshot = snapshot; this.render();
   }

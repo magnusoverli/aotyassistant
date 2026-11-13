@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import { AppError } from './model.js';
-type StreamEvent = 'state' | 'setup' | 'revoked' | 'preparation' | 'preparation-revoked';
+type StreamEvent = 'state' | 'setup' | 'revoked' | 'preparation' | 'preparation-revoked' | 'spectrum';
 
 /** Reserve before asynchronous authorization. Headers/data still wait for authorization. */
 export class EventStreams {

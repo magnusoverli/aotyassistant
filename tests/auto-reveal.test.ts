@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Engine } from '../src/engine.js';
 import { FakePlayback } from './fixtures/fake-playback.js';
-import { stateSchema, type State, type Track } from '../src/model.js';
+import { AppError, stateSchema, type State, type Track } from '../src/model.js';
 import type { Store } from '../src/store.js';
 
 class MemoryStore implements Store {
@@ -39,12 +39,12 @@ test('auto reveal defaults on, triggers at exactly 70% once, and preserves role 
   await f.tick(69.999); assert.equal(f.display().nowPlaying?.revealed, false);
   const saves = f.store.saves;
   await f.tick(70); assert.equal(f.display().nowPlaying?.revealed, true);
-  assert.equal(f.store.saves, saves + 1);
+  assert.equal(f.store.saves, saves, 'Startup discards playback, so a reveal is not written to disk.');
   for (const view of [f.host(), f.display(), f.own()]) assert.equal(view.progress?.autoRevealAt, undefined);
   for (const view of [f.host(), f.engine.view({ kind: 'participant', credential: f.other })]) {
     for (const secret of ['Northern Lights', 'The Paper Satellites', 'After the Winter', '/demo-cover.svg']) assert.ok(!JSON.stringify(view).includes(secret));
   }
-  await f.tick(90); assert.equal(f.store.saves, saves + 1);
+  await f.tick(90); assert.equal(f.store.saves, saves, 'Revealed once: later progress changes nothing.');
   assert.equal(f.host().turnId, turn); assert.equal(f.host().hostPlayback!.id, id); assert.deepEqual(f.adapter.controls, []);
 });
 
@@ -83,7 +83,7 @@ test('unknown duration, missing samples, stopped playback, disconnection and shu
   f.engine.beginShutdown(); await f.tick(90); assert.equal(f.display().nowPlaying?.revealed, false);
 });
 
-test('a queued reveal rechecks a disabling setting and failed persistence never publishes revealed metadata', async () => {
+test('a queued reveal rechecks a disabling setting, and a failing disk is caught by the next durable change without publishing it', async () => {
   const f = await fixture(); let release!: () => void;
   f.store.gate = new Promise<void>(resolve => { release = resolve; });
   const disabling = f.engine.setAutoReveal(false, 0);
@@ -91,10 +91,13 @@ test('a queued reveal rechecks a disabling setting and failed persistence never 
   release(); await disabling; await f.engine.drain();
   assert.equal(f.display().nowPlaying?.revealed, false);
   f.adapter.sample = { elapsed: 0, duration: 100 }; await f.engine.setAutoReveal(true, 1);
+  // A reveal changes only playback, which startup discards, so it neither waits on nor fails with the disk.
   f.store.fail = true; await f.tick(80);
-  assert.equal(f.engine.storageAvailable, false); assert.equal(f.display().nowPlaying?.revealed, false);
-  assert.equal(f.store.state.room?.playback?.revealed, false);
+  assert.equal(f.display().nowPlaying?.revealed, true); assert.equal(f.engine.storageAvailable, true);
   assert.deepEqual(f.adapter.controls, []);
+  // The next change that must survive a restart still finds the failing disk, and is not published.
+  await assert.rejects(f.engine.setAutoReveal(false, 2), error => error instanceof AppError && error.status === 503);
+  assert.equal(f.engine.storageAvailable, false); assert.equal(f.engine.playbackSettings().enabled, true);
 });
 
 test('pause and seek use observed position, rather than wall-clock time, to reveal', async () => {

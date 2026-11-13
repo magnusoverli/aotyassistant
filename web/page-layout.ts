@@ -20,7 +20,9 @@ export function slot<T extends HTMLElement>(node: T, name: 'primary' | 'secondar
   return node;
 }
 
-/** CSS is the source of truth for the responsive mode, including before mount. */
+/** The stacked (phone) layout: the same breakpoint that sets --layout-stacked in ui-layouts.css. A cached
+ * media query answers without the style recalculation reading that variable would force. */
+const stacked = typeof matchMedia === 'function' ? matchMedia('(max-width:1099px)') : undefined;
 export function stackedLayout() {
-  return getComputedStyle(document.documentElement).getPropertyValue('--layout-stacked').trim() === '1';
+  return stacked ? stacked.matches : getComputedStyle(document.documentElement).getPropertyValue('--layout-stacked').trim() === '1';
 }

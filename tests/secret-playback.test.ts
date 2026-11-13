@@ -50,7 +50,7 @@ test('without secret playback a song starts shown on the display, with no marker
   await f.play();
   const display = f.display();
   assert.equal(shown(display), 'Northern Lights'); assert.equal(display.progress?.duration, 100);
-  assert.equal(f.store.state.room?.playback?.revealed, true);
+  assert.equal(f.own().ownPlayback?.revealed, true); // Playback is held in memory; startup discards it.
   for (const view of [f.host(), display, f.own()]) assert.equal(view.progress?.autoRevealAt, undefined);
   // Revealed artwork passes the reveal check; the demo cover simply has no stored artwork.
   assert.throws(() => f.engine.displayArtwork(display.progress!.id, 'artwork'), /Artwork unavailable/);
@@ -78,5 +78,5 @@ test('switching off reveals the current song in the same save; switching on keep
 test('a song starting while secret playback is switched off is shown whichever lands first', async () => {
   const f = await fixture();
   await Promise.all([f.play(), f.engine.setSecretPlayback(false, 0)]);
-  assert.equal(shown(f.display()), 'Northern Lights'); assert.equal(f.store.state.room?.playback?.revealed, true);
+  assert.equal(shown(f.display()), 'Northern Lights'); assert.equal(f.own().ownPlayback?.revealed, true);
 });

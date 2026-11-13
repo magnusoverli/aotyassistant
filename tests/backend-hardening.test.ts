@@ -221,5 +221,6 @@ test('shutdown drains an admitted Play before disposing its transport and preser
   let drained = false; const draining = f.engine.drain().then(() => { drained = true; }); await delay(10); assert.equal(drained, false);
   held.release(); await playing; await draining;
   assert.equal(f.engine.live, false); assert.equal(f.adapter.ownsPlayback, true);
-  assert.equal((await new FileStore(f.directory).load()).room!.playback!.track.id, f.track.id);
+  // The admitted Play's commit is kept; playback lives in memory (startup discards it), so the room is not rewritten.
+  assert.equal(f.engine.view({ kind: 'participant', credential: f.credential }).ownPlayback?.track.id, f.track.id);
 });

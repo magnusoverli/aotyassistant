@@ -1,4 +1,5 @@
 import { appPath } from './paths';
+import { receiveSpectrum } from './room-spectrum';
 
 type Listener = { state(event: MessageEvent): void; revoked(): void; error?(): void };
 
@@ -30,7 +31,7 @@ export class ParticipantEvents {
     if (mode === this.mode && !force) return;
     this.source?.close(); this.source = undefined; this.mode = mode;
     if (!mode || !navigator.onLine) return;
-    const source = new EventSource(appPath(`/api/participant/preparations/${mode}`)); this.source = source;
+    const source = new EventSource(appPath(`/api/participant/preparations/${mode}`)); this.source = source; receiveSpectrum(source);
     source.addEventListener('state', event => {
       if (this.source === source) (mode === 'live' ? this.room : this.library)?.state(event as MessageEvent);
     });

@@ -19,6 +19,8 @@ type PlayActor = { kind: 'participant'; credential: string } | { kind: 'autoplay
 export class Engine extends EventEmitter {
   private state: State = { schema: 3, room: null };
   private queue = new SerialQueue();
+  /** Identifies this run: room revisions are only comparable within one (playback-only changes are not saved). */
+  readonly epoch = randomUUID();
   private audioQueue = new SerialQueue();
   private storageHealthy = true;
   private initialized = false;
@@ -105,7 +107,16 @@ export class Engine extends EventEmitter {
   }
   /** The only place room state is persisted. A failed save disables controls and, unless
    * the caller opts out, stops the app-owned song so it cannot continue unrecorded. */
+  /** What must survive a restart. Startup discards playback (init), so its state and the revision bump it
+   * caused are not part of it. */
+  private static durable(state: State) {
+    return JSON.stringify({ ...state, room: state.room && { ...state.room, playback: null, revision: 0 } });
+  }
   private async commit(next: State, { stopOnFailure = true } = {}): Promise<boolean> {
+    // Play, pause, resume, seek, reveal and stop change only playback: keep them in memory, without a disk
+    // write and fsync inside the room lane. Views carry this run's epoch, so clients never compare revisions
+    // with a restarted server that did not keep these increments.
+    if (Engine.durable(next) === Engine.durable(this.state)) { this.state = next; this.emit('change'); return true; }
     try { await this.store.save(next); this.state = next; return true; }
     catch { this.storageHealthy = false; if (stopOnFailure) await this.adapter.control('stop').catch(() => {}); return false; }
     finally { this.emit('change'); }
@@ -276,7 +287,7 @@ export class Engine extends EventEmitter {
   }
   listeningOrder(): ListeningOrderView {
     const room = this.room(); const person = this.people(room);
-    return { roomId: room.id, revision: room.revision, current: person(room.currentId), next: person(this.nextId(room)),
+    return { epoch: this.epoch, roomId: room.id, revision: room.revision, current: person(room.currentId), next: person(this.nextId(room)),
       rotation: room.active.map(id => person(id)!), playbackStatus: this.playbackStatus(room) };
   }
   private onlineSharing?: () => { guestAccess: NonNullable<View['guestAccess']>; joinUrl?: string; displayUrl?: string } | undefined;
@@ -287,7 +298,7 @@ export class Engine extends EventEmitter {
     const room = this.room();
     if (role.kind === 'participant') this.participant(role.credential, room);
     const person = this.people(room);
-    const base: View = { connected: this.ready, roomId: room.id, logo: this.roomLogo?.() ?? null,
+    const base: View = { epoch: this.epoch, connected: this.ready, roomId: room.id, logo: this.roomLogo?.() ?? null,
       playbackAvailable: this.playbackAvailable, playbackStatus: this.playbackStatus(room),
       ...(role.kind !== 'display' && this.catalogue?.configured ? { output: this.catalogue.output } : {}),
       revision: room.revision, turnId: room.turnId, current: person(room.currentId), next: person(this.nextId(room)),

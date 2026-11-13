@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.1.7] — 2026-11-13
+
+- Keep phones responsive with long playlists: updates no longer make the browser lay out the whole page several times in a row, rows out of view skip layout until they scroll near, and screen resizes (such as the address bar or keyboard moving) are handled once per frame. On a slowed phone profile with 150 songs and 700 in history, closing search and starting a song now take about half as long.
+- Carry the visualizer's spectrum on each screen's existing live connection instead of a second one per tab, and send it only while it is active, so many open tabs no longer use up the browser's connections.
+- Play, pause, resume, seek, reveal and stop no longer write the room to disk (playback is reset on restart anyway), so playback controls do not wait for the storage card.
+
 ## [2.1.6] — 2026-11-13
 
 - Add an **Add album** button beside the album heading on phones, with **Adding…** and **Added** feedback inside the button. Missing songs are appended in album order while songs already queued keep their positions. The whole addition saves together, checks playlist capacity, and can be retried after a lost response without adding duplicates.

@@ -33,6 +33,7 @@ import { DisplayBackground, backgroundSnapshotSchema } from './display-backgroun
 import { UserPictures, UserPictureFiles } from './user-pictures.js';
 import { mountUserPictures, mountUserDirectoryEvents } from './user-picture-http.js';
 import { RoomVisualizer, visualizerSettingsSchema } from './room-visualizer.js';
+import { SpectrumBroadcast } from './spectrum-broadcast.js';
 
 const turn = z.uuid();
 const revision = z.number().int().nonnegative();
@@ -68,6 +69,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     },
   });
   void background.ready.then(() => { engine.emit('change'); });
+  // Every room stream carries the spectrum; screens never open a second connection for it.
+  const spectrum = new SpectrumBroadcast(() => visualizer.packet());
   engine.setRoomLogo(() => roomLogo.view());
   void roomLogo.ready.then(() => { if (roomLogo.view()) engine.emit('change'); });
   const app = express();
@@ -143,7 +146,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.use('/api', async (_req, _res, next) => { try { await users.migrate(); await pictures.ready; next(); } catch (error) { next(error); } });
   if (browserSpeakers) mountBrowserSpeakers(app, browserSpeakers, () => config.guestUrl, config.port, onlineAccess,
     req => users.directoryView(participantCredential(req)).current?.nickname);
-  const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users);
+  const closePreparations = mountPreparations(app, preparations, engine, config, integrations, uploads, users, spectrum);
   void uploads.cleanup();
   const uploadCleanup = setInterval(() => { void uploads.cleanup(); }, 60 * 60_000); uploadCleanup.unref();
   app.get('/api/media/uploads/:assetId/:key/:filename', async (req, res) => { await uploads.serve(req, res); });
@@ -315,12 +318,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
 
   const streams = new EventStreams(500, 'Too many live connections. Close unused tabs and try again.');
   mountUserDirectoryEvents(app, users, engine, streams, participantCredential);
+  // Screens align spectrum frames to this clock; the frames themselves arrive on each room stream.
   app.get('/api/display/spectrum/clock', (_req, res) => res.json({ now: performance.now() }));
-  app.get('/api/display/spectrum/events', (_req, res) => {
-    const stream = streams.reserve(res); if (!stream.open()) return;
-    const send = () => stream.send('state', visualizer.packet());
-    send(); stream.every(send, 200);
-  });
   app.get('/api/listening-order/events', (_req, res) => {
     const snapshot = (): ListeningOrderView => engine.listeningOrder();
     const initial = snapshot(); const stream = streams.reserve(res); if (!stream.open()) return;
@@ -332,6 +331,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const changed = (kind?: EngineChange) => { if (kind !== 'playback') send(); };
     send(initial); engine.on('change', changed);
     stream.onClose(() => engine.off('change', changed));
+    stream.onClose(spectrum.subscribe(json => stream.sendEncoded('spectrum', json)));
     stream.every(() => { stream.send('state', snapshot()); }, 15_000);
   });
   // Public-role projections may be shared; participant authorization always runs per recipient.
@@ -356,6 +356,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     stream.send('state', initial);
     engine.on('change', send);
     stream.onClose(() => engine.off('change', send));
+    stream.onClose(spectrum.subscribe(json => stream.sendEncoded('spectrum', json)));
     // Periodic filtered snapshots keep idle displays and reconnecting browsers in sync.
     stream.every(() => { if (role.kind !== 'participant') publicSnapshots.delete(role.kind); send(); }, 15_000);
   };
@@ -404,6 +405,6 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     res.status(status === 413 ? 413 : 500).json({ error: status === 413 ? 'Request is too large.' : 'The request could not be completed.' });
     // Do not log raw errors: upstream details may contain private metadata or secrets.
   });
-  return { app, close: () => { visualizer.close(); engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); },
+  return { app, close: () => { spectrum.close(); visualizer.close(); engine.off('change', invalidatePublic); displayArtwork?.close(); closeIntegrations(); closeAuthorization(); closePreparations(); checks.close(); uploads.close(); clearInterval(uploadCleanup); clearInterval(cleanup); streams.close(); },
     stopVisualizer: () => visualizer.close(), drainVisualizer: () => visualizer.drain() };
 }

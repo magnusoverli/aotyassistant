@@ -170,10 +170,11 @@ test('the real headless SDK advertises PCM and decodes timestamped samples witho
   assert.deepEqual(chunks[0]!.samples.map(channel => [...channel]), [[.5, .25], [-.5, -.25]]);
 });
 
-test('invited screens can read magnitudes and clock but cannot administer the receiver', () => {
-  assert.equal(publicRoute('GET', '/api/display/spectrum/events'), true);
+test('invited screens can read the spectrum clock but cannot administer the receiver', () => {
+  // Magnitudes arrive on each screen's room stream; there is no separate spectrum stream.
+  assert.equal(publicRoute('GET', '/api/display/spectrum/events'), false);
   assert.equal(publicRoute('GET', '/api/display/spectrum/clock'), true);
-  assert.equal(publicRoute('POST', '/api/display/spectrum/events'), false);
+  assert.equal(publicRoute('POST', '/api/display/spectrum/clock'), false);
   assert.equal(publicRoute('GET', '/api/host/visualizer'), false);
   assert.equal(publicRoute('POST', '/api/host/visualizer'), false);
 });

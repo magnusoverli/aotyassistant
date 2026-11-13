@@ -78,7 +78,7 @@ export type Role = { kind: 'host' } | { kind: 'display' } | { kind: 'participant
 export type Person = { id: string; nickname: string; avatarUrl?: string };
 export type UserProfile = Person & { pinRequired: boolean; deletionPending?: boolean };
 export type UserDirectory = { users: UserProfile[]; current: UserProfile | null };
-export type ListeningOrderView = { roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[]; playbackStatus: NonNullable<View['playbackStatus']> };
+export type ListeningOrderView = { epoch?: string; roomId: string | null; revision: number; current: Person | null; next: Person | null; rotation: Person[]; playbackStatus: NonNullable<View['playbackStatus']> };
 export type RotationPosition = { seat: number; total: number; turnsUntil: number };
 export type VolumeState = { available: boolean; level: number | null; revision?: string; pending?: boolean; generation?: number };
 /** Public output identity/health only; never a queue payload or current recording. */
@@ -94,7 +94,8 @@ export type GuestAccess = { status: 'ready' | 'checking' | 'unavailable' | 'ambi
 /** The room's logo: one shape drawn in the room's colours. `url` changes whenever the image does. */
 export type RoomLogoView = { url: string; width: number; height: number };
 export type View = {
-  connected: boolean; roomId: string | null;
+  /** The server run this view comes from: revisions are only compared within one run. */
+  epoch?: string; connected: boolean; roomId: string | null;
   playbackAvailable?: boolean;
   output?: OutputState;
   playbackStatus?: 'idle' | 'playing' | 'paused' | 'unavailable';

@@ -11,6 +11,7 @@ import { artworkSize, body, jsonBody, sendArtwork, setParticipantCookie } from '
 import type { ArtworkData } from './music-assistant-transport.js';
 import { RateLimiter, readCookie } from './http-guards.js';
 import { EventStreams } from './event-streams.js';
+import type { SpectrumBroadcast } from './spectrum-broadcast.js';
 import { operation } from './operation.js';
 import type { UserManager } from './users.js';
 import { ListImports } from './list-import-jobs.js';
@@ -22,7 +23,7 @@ const cookieName = 'doom_room_preparation';
 const empty = z.object({}).strict();
 
 /** Private library routes deliberately use a separate credential, revision, rate lane, and event stream. */
-export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets, users: UserManager) {
+export function mountPreparations(app: Express, manager: PreparationManager, engine: Engine, config: Config, integrations: IntegrationManager | undefined, uploads: UploadAssets, users: UserManager, spectrum?: SpectrumBroadcast) {
   const streams = new EventStreams(200, 'Too many private-list connections. Close unused tabs.');
   const rates = new RateLimiter(5000);
   const member = (req: Request) => readCookie(req, 'doom_room_participant');
@@ -236,6 +237,8 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       if (!stream.open()) return;
       ready = true; sendRoom(); if (pending !== undefined) sendList(pending);
       engine.on('change', sendRoom); stream.onClose(() => engine.off('change', sendRoom));
+      // The room's spectrum rides on this one connection, as on every other room stream.
+      if (spectrum) stream.onClose(spectrum.subscribe(json => stream.sendEncoded('spectrum', json)));
       let reading = false;
       stream.every(() => {
         sendRoom(); stream.heartbeat();

@@ -419,3 +419,24 @@ test('empty persistent rooms and single-person circles have a valid first turn w
   await f.engine.advance(f.host().turnId!);
   assert.equal(f.participant(person).position!.turnsUntil, 0);
 });
+
+test('playback-only changes stay in memory without a disk write, and views carry the run epoch that scopes revisions', async t => {
+  const f = await fixture(); t.after(() => f.adapter.close());
+  let saves = 0; const save = f.store.save.bind(f.store); f.store.save = async state => { saves++; return save(state); };
+  const turn = f.host().turnId!; const before = f.host().revision;
+  await f.engine.play(f.alex, turn, null, 'demo:aurora'); const id = f.participant(f.alex).ownPlayback!.id;
+  await f.engine.control(f.alex, turn, id, 'pause'); await f.engine.control(f.alex, turn, id, 'resume');
+  await f.engine.reveal(f.alex, turn, id);
+  assert.equal(saves, 0, 'Startup discards playback, so play, pause, resume and reveal are not written.');
+  assert.ok(f.host().revision > before, 'Views still advance their revision for every change.');
+  assert.equal(f.participant(f.alex).ownPlayback!.revealed, true);
+  await f.engine.advance(turn);
+  assert.equal(saves, 1, 'A turn change is durable and written once.');
+  assert.equal(f.store.state.room!.currentId, f.host().current!.id);
+  // Revisions are only comparable within one run: a restart reports another epoch.
+  for (const view of [f.host(), f.display(), f.participant(f.sam)]) assert.equal(view.epoch, f.engine.epoch);
+  assert.equal(f.engine.listeningOrder().epoch, f.engine.epoch);
+  const restarted = new Engine(f.store, f.adapter, 'http://localhost:3000'); await restarted.init();
+  assert.notEqual(restarted.view({ kind: 'host' }).epoch, f.engine.epoch);
+  assert.equal(restarted.view({ kind: 'host' }).hostPlayback ?? null, null);
+});
