@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AudioPolicy, browserCodecs, onlineAudio } from '../web/audio-policy.js';
 import { probeFrame, probeCodec } from '../web/audio-probe.js';
+import { browserAudioHealth } from '../src/browser-audio-health.js';
+import { codecSelection } from '../src/audio-codec-selection.js';
 
 test('codec preference preserves browser-specific exclusions and a PCM fallback', () => {
   assert.deepEqual(browserCodecs('Mozilla Chrome/130 Safari/537', true), ['opus', 'flac', 'pcm']);
@@ -52,8 +54,21 @@ test('online buffering starts higher and may grow further, but never drops below
     for (let n = 0; n < 5; n++) { timestamp++; policy.received(timestamp, 1, time); policy.decoded(timestamp, 1, time, true); }
   }
   assert.equal(buffers.at(-1), 4000); assert.equal(Math.max(...buffers), 4000);
+  assert.equal(browserAudioHealth.safeParse(policy.health).success, true, 'Online recovery telemetry accepts the full playback range.');
+  for (const minBufferMs of [499, 4001, Infinity, 1500.5]) assert.equal(browserAudioHealth.safeParse({ ...policy.health, minBufferMs }).success, false);
   for (let time = 300_000; time <= 2_000_000; time += 60_000) { policy.received(++timestamp, 1, time); policy.decoded(timestamp, 1, time, false); }
   assert.equal(policy.health.minBufferMs, 1500);
+});
+
+test('codec diagnostics distinguish receiver failures from server choices without assuming an override', () => {
+  const audio = { decodedChunks: 1, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 4000,
+    codec: 'flac' as const, advertisedCodecs: ['opus', 'flac', 'pcm'] as ('opus' | 'flac' | 'pcm')[], opusSupport: 'native' as const };
+  assert.equal(codecSelection(audio, 'automatic'), 'server-selected-fallback');
+  assert.equal(codecSelection(audio, 'flac:48000:16:2'), 'ma-format-override');
+  assert.equal(codecSelection({ ...audio, codec: 'opus' }), 'opus');
+  for (const reason of ['probe-failed', 'browser-excluded', 'sdk-excluded'] as const) assert.equal(codecSelection({ ...audio, opusSupport: reason }), reason);
+  assert.equal(codecSelection({ ...audio, opusSupport: 'decoder-failed' }), 'decoder-fallback');
+  assert.equal(browserAudioHealth.safeParse({ ...audio, advertisedCodecs: ['opus', 'flac', 'pcm', 'opus'] }).success, false);
 });
 
 test('bundled Opus probe actually decodes using the shipping software decoder', async () => {

@@ -48,3 +48,23 @@ test('send errors and closed targets stop both relay directions through their ow
   const closed = fixture(); closed.target.readyState = 3; closed.relay.forward(Buffer.from('two'), true);
   assert.equal(closed.failures(), 1); assert.equal(closed.writes.length, 0);
 });
+
+test('transfer rates exclude startup from steady windows, age idle traffic out, and ignore failed writes', () => {
+  const f = fixture();
+  assert.equal(f.relay.rates().steadyKbps, null);
+  const send = (bytes: number) => { f.relay.forward(Buffer.alloc(bytes), true); f.writes.at(-1)!.complete(); };
+  send(1_000_000);
+  for (let second = 1; second <= 90; second++) {
+    f.time(second * 1000); send(16_000);
+    if (second === 29) assert.equal(f.relay.rates().phase, 'startup');
+    if (second === 30) { assert.equal(f.relay.rates().phase, 'settling'); assert.equal(f.relay.rates().steadyKbps, null); }
+    if (second === 60) { assert.equal(f.relay.rates().phase, 'steady'); assert.equal(f.relay.rates().steadyKbps, 128); }
+  }
+  const rates = f.relay.rates();
+  assert.equal(rates.startupBytes, 1_000_000 + 29 * 16_000); assert.equal(rates.steadyKbps, 128);
+  for (let second = 91; second <= 121; second++) { f.time(second * 1000); f.relay.check(); }
+  assert.equal(f.relay.rates().recentKbps, 0);
+  f.relay.forward(Buffer.alloc(1000), true); f.writes.at(-1)!.complete(new Error('failed'));
+  const closed = f.relay.rates(); assert.equal(closed.phase, 'closed'); assert.equal(closed.steadyKbps, null);
+  f.time(1_000_000); assert.deepEqual(f.relay.rates(), closed);
+});

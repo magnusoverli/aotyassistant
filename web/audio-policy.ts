@@ -2,14 +2,8 @@ export type AudioCodec = 'opus' | 'flac' | 'pcm';
 export type DecoderMode = 'native' | 'software';
 import type { AudioHealth } from '../src/browser-audio-health';
 export type { AudioHealth } from '../src/browser-audio-health';
-
-/** Buffering for the connection the browser speaker uses. */
-export type AudioNetwork = { leadTimeMs: number; minBufferMs: number; maxBufferMs: number; bufferCapacity?: number };
-export const lanAudio: AudioNetwork = { leadTimeMs: 250, minBufferMs: 500, maxBufferMs: 2000 };
-/** Funnel adds relay latency and limited bandwidth: start later and keep more buffered.
- * The server sends up to 30 s ahead; capping that at Opus's 512 kbps maximum never
- * limits Opus, but stops a FLAC/PCM burst (up to 6 MB) flooding the link at each track start. */
-export const onlineAudio: AudioNetwork = { leadTimeMs: 1000, minBufferMs: 1500, maxBufferMs: 4000, bufferCapacity: 64_000 * 30 };
+import { lanAudio } from '../src/audio-network';
+export { lanAudio, onlineAudio, type AudioNetwork } from '../src/audio-network';
 
 /** Match the pinned SDK's compatibility exclusions, not just MIME support. */
 export function browserCodecs(userAgent: string, nativeOpus: boolean): AudioCodec[] {

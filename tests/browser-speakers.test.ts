@@ -286,7 +286,8 @@ test('Ingress blocks speaker HTTP routes and websocket upgrades without contacti
 test('browser audio diagnostics are bounded, owner-scoped and cleared when the connection ends', async t => {
   const f = await fixture(t);
   const audio = browserAudioHealth.parse({ codec: 'opus', sampleRate: 48000, channels: 2, bitDepth: 16,
-    decodedChunks: 100, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 500 });
+    decodedChunks: 100, decodeFailures: 0, recoveries: 0, lateChunks: 0, minBufferMs: 4000,
+    advertisedCodecs: ['opus', 'flac', 'pcm'], opusSupport: 'native' });
   assert.throws(() => f.speakers.report(f.input.id, owner, f.context, audio), /not connected/);
   const socket = f.connect(); await once(socket, 'open');
   assert.throws(() => f.speakers.report(f.input.id, 'other-owner', f.context, audio), /expired/);
@@ -295,12 +296,15 @@ test('browser audio diagnostics are bounded, owner-scoped and cleared when the c
   const status = f.speakers.status(f.input.id, owner, f.context);
   assert.deepEqual(status.audio, audio); assert.ok(status.audioReportedAt);
   assert.equal(status.transfer?.bytesToBrowser, 512); assert.equal(status.transfer?.connections, 1);
+  assert.equal(status.codecSelection, 'opus'); assert.equal(status.transfer?.rate.phase, 'startup');
+  assert.equal(status.transfer?.rate.steadyKbps, null);
   for (const extra of [{ codec: 'arbitrary' }, { sampleRate: Infinity }, { decodedChunks: -1 }, { token: 'untrusted' }]) {
     assert.equal(browserAudioHealth.safeParse({ ...audio, ...extra }).success, false);
   }
   const upstreamClosed = once([...f.upstreamSockets][0]!, 'close');
   const closed = once(socket, 'close'); socket.close(); await closed; await upstreamClosed;
   assert.equal(f.speakers.status(f.input.id, owner, f.context).audio, undefined);
+  assert.equal(f.speakers.status(f.input.id, owner, f.context).transfer?.rate.phase, 'closed');
 });
 
 test('HTTP speaker setup uses an HttpOnly cookie and read-only sanitized info', async t => {
@@ -343,11 +347,11 @@ test('player naming/group configuration failure leaves audio paired and retries 
 test('configuration patches only the bound player name/visibility and refuses malformed or stale reads', async t => {
   const calls: Array<{ command: string; args: { player_id: string; values?: Record<string, unknown> } }> = [];
   const name = browserSpeakerName('Mac', 'Magnus');
-  let config: unknown = { player_id: clientId, name, values: { hide_in_ui: { value: false } } };
+  let config: unknown = { player_id: clientId, name, values: { hide_in_ui: { value: false }, preferred_sendspin_format: { value: 'flac:48000:16:2' } } };
   const app = express(); app.use(express.json());
   app.post('/api', (req, res) => { calls.push(req.body); res.json(config); });
   const server = await listen(t, app); const upstream = { ...connection, origin: server.url };
-  await configureBrowserPlayer(upstream, clientId, name, () => true);
+  assert.deepEqual(await configureBrowserPlayer(upstream, clientId, name, () => true), { preferredFormat: 'flac:48000:16:2' });
   assert.equal(calls.length, 1); // Already configured: no write.
   config = { player_id: 'another-player', name, values: { hide_in_ui: { value: true } } };
   await assert.rejects(configureBrowserPlayer(upstream, clientId, name, () => true));

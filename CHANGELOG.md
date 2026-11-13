@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.1.10] — 2026-11-13
+
+- Reduce online/Tailscale Funnel traffic by compressing live room, spectrum and playlist updates, flushing every event immediately. A local fixture used about 90% fewer spectrum bytes and 91% fewer bytes for a large playlist snapshot, with identical event contents and visual timing.
+- Keep verified Opus available when an unrelated codec probe fails. Use current Sendspin format renegotiation while preserving player state, software decoding and compatible codec fallbacks.
+- Accept the full four-second online audio buffer in diagnostics. Report each receiver's negotiated codec, offered formats, fallback reason, Music Assistant format override and measured transfer rates, separating connection startup from the later rolling window.
+
 ## [2.1.9] — 2026-11-13
 
 - Cancel abandoned catalogue reads promptly and enforce each caller's time limit while preserving shared requests still needed by another viewer. Bound pending catalogue work so obsolete searches do not hold up new browsing.

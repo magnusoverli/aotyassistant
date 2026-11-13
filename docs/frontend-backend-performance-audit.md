@@ -14,6 +14,47 @@ Scope: browser startup and navigation, HTTP request lifetimes, real-time events,
 
 Measurements use local synthetic fixtures. They are not measurements of a deployed Home Assistant system, real network, physical speaker, or mobile browser. Source line references describe the code at investigation time.
 
+## 2.1.10 bandwidth follow-up
+
+Implemented all five online-audio follow-up items: shared playback/telemetry limits (500–4,000 ms across LAN/online policies), per-receiver transfer measurements, promptly flushed SSE gzip, current Sendspin format renegotiation, and Opus negotiation/fallback diagnostics and contract tests.
+
+The main bandwidth change mitigates F02/F03 without changing event JSON, visualizer analysis/frame rate, or list projections. `EventStreams` negotiates gzip, uses compression level 1 and `Z_SYNC_FLUSH` after every event/heartbeat, and retains bounded backpressure, coalescing and revocation cleanup. Clients that do not accept gzip receive the existing plain stream.
+
+Reproduce with `node --import tsx scripts/stream-bench.ts`. The fixture uses 300 overlapping spectrum packets (60 seconds at five packets/second), pseudo-random band values, and a real preparation projection with 200 upcoming/800 history entries. It checks decoded events byte-for-byte. Events are sent as fast as acknowledgements allow; these are loopback results, not a live Funnel measurement.
+
+| Measurement | Plain | Gzip |
+| --- | ---: | ---: |
+| Spectrum payload per viewer over 60 seconds | 2,925,351 bytes | 294,652 bytes |
+| Equivalent spectrum bandwidth per viewer | 390.0 kbit/s | 39.3 kbit/s |
+| 1,000-entry list snapshot | 341,060 bytes | 31,762 bytes |
+| Spectrum delivery p95, one viewer | 0.142 ms | 0.365 ms |
+| Spectrum delivery p95, 20 viewers | 0.945 ms | 2.202 ms |
+| CPU for 20 viewers' 60-second spectrum fixture | 203 ms | 657 ms |
+
+CPU measurements include both the server and loopback clients' decompression/verification. The extra 454 ms per minute for 20 viewers is about 0.76% of one CPU core on this Windows machine, not a Raspberry Pi estimate. List delivery on unrestricted loopback was 1.41 → 3.33 ms; at a hypothetical 1 Mbit/s bottleneck, payload serialization alone drops from approximately 2.73 s to 0.25 s. TLS, TCP, proxy and real-network costs are excluded.
+
+### Receiver diagnostics
+
+The existing authenticated `/api/host/diagnostics` response now includes `browserSpeakers`; each receiver's owner-scoped status also includes the same sanitized measurements. These fields do not contain pairing material or upstream credentials.
+
+| Field | Interpretation |
+| --- | --- |
+| `network` | Server-observed LAN or online connection |
+| `audio.codec`, `audioReportedAt` | Actual last reported stream format and report freshness, rather than assumed preference |
+| `audio.advertisedCodecs`, `audio.opusSupport` | Actual SDK hello order, browser exclusions, probe failures, native/software support or decoder failure |
+| `codecSelection` | Opus, receiver fallback, matching MA format override, unexplained server selection, or unknown |
+| `preferredFormat`, `configurationCheckedAt` | Validated MA setting from the existing player configuration read; mismatches refresh at most once/minute |
+| `transfer.bytesToBrowser` | Cumulative successful WebSocket payload writes across reconnects |
+| `transfer.rate` | Current connection's first-30-second startup bytes/rate and approximately 30-second rolling rate in decimal kbit/s; `steadyKbps` stays null until a full post-startup window exists at 60 seconds |
+
+Rates include Sendspin control/encryption payloads, but not WebSocket/TCP/TLS overhead. They describe transport throughput, not the Opus encoder bitrate. Startup is measured from the first transferred frame on a connection; a later track-start burst can still raise the rolling rate. Idle windows decay to zero; closed connections have no current/steady rate. Existing 30-second client telemetry throttling is retained.
+
+`AutomaticAudioPlayer` now uses `client/state.player.format`, selecting a format actually present in its hello. The preference accompanies the SDK's complete player state and persists through later volume/buffer updates, with SDK activation/clock gates intact. Ignored recovery requests retain the bounded reconnect with reduced codec capabilities. SDK 6.0.0 speaks rc1/player@v1; a legacy-wire server cannot complete that handshake, so no speculative legacy message or MA-version guess is used.
+
+Real-SDK tests check Opus-first hello and returned stream format under simulated Chrome/iOS capabilities, plus Firefox exclusions, software fallback, SDK filtering and failed probes. A failed FLAC probe no longer discards verified Opus. MA's `preferred_sendspin_format` setting is observed, not overwritten; a fallback without matching override evidence is labelled server-selected rather than inventing its cause. Protocol references: [Sendspin specification](https://www.sendspin-audio.com/build/spec/) and [MA Sendspin player implementation](https://github.com/music-assistant/server/blob/dev/music_assistant/providers/sendspin/player.py).
+
+Local validation: focused codec/relay/runtime/SSE tests passed; typecheck, release validation, production build and built-asset validation passed. Five broader visualizer tests failed during Windows persistence setup; the full Windows suite again stalled and was terminated after 180 seconds. Local packaged tests were unavailable because Docker's Linux daemon was stopped. Release CI supplies the required Linux full-suite and native amd64/aarch64 packaged checks. Actual Funnel/browser throughput, proxy flushing and physical audible latency still require deployed testing; no Playwright run was requested.
+
 ## Priority summary
 
 P1 means address first because the issue directly affects request responsiveness, event delivery, or recovery. P2 means a meaningful latency or verification gap. P3 means a lower-priority optimization candidate. These are performance priorities, not security severity ratings.

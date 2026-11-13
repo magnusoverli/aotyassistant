@@ -14,8 +14,10 @@ type Internals = {
     connect(): Promise<void>; handleStreamStart(format: StreamFormat, update: boolean): void;
     handleStreamEnd(): void; handleStreamClear(): void;
     _stateManager: { currentStreamFormat: StreamFormat | null; streamGeneration: number };
-    protocolHandler: { codecs: AudioCodec[]; sendClientHello(): void; requiredLeadTimeMs: number; minBufferMs: number };
-    transport: { sendControl(message: unknown): void };
+    protocolHandler: { codecs: AudioCodec[]; sendClientHello(): void; requiredLeadTimeMs: number; minBufferMs: number;
+      sendStateUpdate(): void; activated: boolean; activeRoles: Set<string>; timeFilter: object;
+      handleServerMessage(message: unknown, receivedAtUs: number): void };
+    transport: { send(type: number, body: Uint8Array): void };
     decoder: Omit<SendspinDecoder, never> & { useNativeOpus: boolean };
   };
   scheduler: {
@@ -32,11 +34,28 @@ async function fixture(t: TestContext, probe: (codec: AudioCodec, mode?: Decoder
   const core = internals.core; const scheduler = internals.scheduler; const messages: unknown[] = [];
   core.connect = async () => {};
   Object.defineProperty(core, 'isConnected', { get: () => true });
-  core.transport.sendControl = message => { messages.push(message); };
+  core.transport.send = (_type, body) => { messages.push(JSON.parse(new TextDecoder().decode(body))); };
   scheduler.initAudioContext = () => {}; scheduler.resumeAudioContext = async () => {}; scheduler.startAudioElement = () => {};
   scheduler.handleDecodedChunk = () => { output++; }; scheduler.close = () => { closes++; };
   t.after(() => player.destroy());
   await internals.preparation;
+  // Simulated browser availability only at the SDK's real hello filter. Probes
+  // remain injected; this does not claim browser decoding was measured in Node.
+  const hello = () => {
+    const decoder = Object.getOwnPropertyDescriptor(globalThis, 'AudioDecoder');
+    const navigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    try {
+      Object.defineProperty(globalThis, 'AudioDecoder', { configurable: true, value: class {} });
+      Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userAgent: ua } });
+      core.protocolHandler.sendClientHello();
+    } finally {
+      if (decoder) Object.defineProperty(globalThis, 'AudioDecoder', decoder); else Reflect.deleteProperty(globalThis, 'AudioDecoder');
+      if (navigator) Object.defineProperty(globalThis, 'navigator', navigator); else Reflect.deleteProperty(globalThis, 'navigator');
+    }
+  };
+  hello(); messages.length = 0;
+  core.protocolHandler.activated = true; core.protocolHandler.activeRoles = new Set(['player@v1']);
+  Object.defineProperty(core.protocolHandler.timeFilter, 'is_synchronized', { get: () => true });
   const start = (codec: AudioCodec, update = false) => {
     const format = { codec, sample_rate: 48000, channels: 2, bit_depth: 16 };
     core._stateManager.currentStreamFormat = format; core.handleStreamStart(format, update);
@@ -45,7 +64,7 @@ async function fixture(t: TestContext, probe: (codec: AudioCodec, mode?: Decoder
     for (let n = 0; n < 3; n++) internals.policy.received(n, core._stateManager.streamGeneration, 0);
     internals.policy.check(3000);
   };
-  return { player, internals, core, scheduler, messages, start, fail, store, retries: () => retries, output: () => output, closes: () => closes };
+  return { player, internals, core, scheduler, messages, start, fail, store, hello, retries: () => retries, output: () => output, closes: () => closes };
 }
 
 test('SDK extension contract is pinned and real client hello advertises only verified codecs', async t => {
@@ -68,6 +87,42 @@ test('online (Funnel) speakers start later, buffer more and cap stream-ahead byt
   assert.equal(f.player.diagnostics().minBufferMs, 1500);
 });
 
+test('compatible online hello prefers Opus and diagnostics reflect the server stream, not the preference', async t => {
+  for (const ua of ['Chrome/130 Safari/537', 'iPhone Version/18 Safari/604']) {
+    const f = await fixture(t, undefined, ua, onlineAudio); f.hello();
+    const hello = f.messages.at(-1) as { payload: { 'player@v1_support': { supported_formats: StreamFormat[] } } };
+    const formats = hello.payload['player@v1_support'].supported_formats;
+    assert.equal(formats[0]!.codec, 'opus'); assert.ok(formats.some(format => format.codec === 'pcm'));
+    f.core.protocolHandler.handleServerMessage({ type: 'stream/start', payload: { player: formats[0] } }, 0);
+    assert.equal(f.player.diagnostics().codec, 'opus'); assert.equal(f.player.diagnostics().opusSupport, 'native');
+    f.core.protocolHandler.handleServerMessage({ type: 'stream/start', payload: { player: formats.at(-1) } }, 0);
+    assert.equal(f.player.diagnostics().codec, 'pcm', 'A server override must not be reported as Opus.');
+  }
+  const firefox = await fixture(t, undefined, 'Firefox/130', onlineAudio); firefox.hello();
+  assert.deepEqual(firefox.player.diagnostics().advertisedCodecs, ['flac', 'pcm']);
+  assert.equal(firefox.player.diagnostics().opusSupport, 'browser-excluded');
+  const failed = await fixture(t, async codec => codec !== 'opus', undefined, onlineAudio); failed.hello();
+  assert.equal(failed.player.diagnostics().opusSupport, 'probe-failed');
+  const software = await fixture(t, async (codec, mode) => codec !== 'opus' || mode === 'software', undefined, onlineAudio); software.hello();
+  assert.equal(software.player.diagnostics().advertisedCodecs?.[0], 'opus'); assert.equal(software.player.diagnostics().opusSupport, 'software');
+});
+
+test('a failed probe for another codec does not discard verified online Opus', async t => {
+  const f = await fixture(t, async codec => { if (codec === 'flac') throw new Error('FLAC unavailable'); return true; }, undefined, onlineAudio);
+  f.hello(); assert.deepEqual(f.player.diagnostics().advertisedCodecs, ['opus', 'pcm']);
+});
+
+test('format recovery obeys role activation and does not mistake the rejected codec for acknowledgement', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const f = await fixture(t, async (_codec, mode) => mode !== 'software');
+  await f.player.connect(); f.start('opus'); f.core.protocolHandler.activeRoles.clear(); f.fail();
+  const state = f.messages.at(-1) as { type: string; payload: { player?: unknown } };
+  assert.equal(state.type, 'client/state'); assert.equal(state.payload.player, undefined);
+  f.start('opus', true); assert.equal(f.player.diagnostics().formatRequest, 'pending');
+  t.mock.timers.tick(4000); t.mock.timers.tick(250); assert.equal(f.player.diagnostics().formatRequest, 'ignored'); assert.equal(f.retries(), 1);
+  assert.ok(!JSON.stringify(f.messages).includes('stream/request-format'));
+});
+
 test('failed capability probes automatically select PCM; denied probes cannot prevent connection', async t => {
   const f = await fixture(t, async () => false); assert.deepEqual(f.core.protocolHandler.codecs, ['pcm']);
   await f.player.connect();
@@ -80,8 +135,16 @@ test('native failure uses verified software Opus before negotiating another code
   const id = f.player.clientId; const token = f.player.pairingToken;
   f.fail(); assert.equal(f.core.decoder.useNativeOpus, false); assert.equal(f.messages.length, 0);
   f.fail();
-  assert.deepEqual(f.messages.at(-1), { type: 'stream/request-format', payload: { player: { codec: 'flac', sample_rate: 48000, channels: 2, bit_depth: 16 } } });
+  const state = f.messages.at(-1) as { type: string; payload: { available: boolean; player: Record<string, unknown> } };
+  assert.equal(state.type, 'client/state'); assert.equal(state.payload.available, true);
+  assert.deepEqual(state.payload.player.format, { codec: 'flac', sample_rate: 48000, channels: 2, bit_depth: 16 });
+  assert.equal(state.payload.player.min_buffer_ms, 500); assert.equal(state.payload.player.required_lead_time_ms, 250);
+  assert.equal(typeof state.payload.player.volume, 'number'); assert.equal(typeof state.payload.player.muted, 'boolean');
+  assert.deepEqual(state.payload.player.supported_commands, ['volume', 'mute', 'set_output_delay']);
   f.start('flac', true); assert.equal(f.player.diagnostics().codec, 'flac');
+  assert.equal(f.player.diagnostics().formatRequest, 'accepted');
+  f.player.setMinBufferMs(750);
+  assert.deepEqual((f.messages.at(-1) as typeof state).payload.player.format, state.payload.player.format, 'Later SDK state must retain the preference.');
   f.fail(); assert.deepEqual(f.core.protocolHandler.codecs, ['pcm']); f.start('pcm', true);
   assert.equal(f.player.clientId, id); assert.equal(f.player.pairingToken, token);
   assert.equal(f.internals.scheduler, f.scheduler); assert.equal(f.closes(), 0);

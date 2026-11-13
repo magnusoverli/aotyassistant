@@ -22,8 +22,31 @@ export class SpeakerRelay {
   private progressAt: number;
   bytes = 0;
   peakBytes = 0;
+  private startedAt?: number;
+  private closedAt?: number;
+  private startupBytes = 0;
+  private samples: { at: number; bytes: number }[] = [];
   constructor(private source: RelaySocket, private target: RelaySocket, private fail: () => void,
-    private valid: () => boolean, private now = Date.now) { this.progressAt = now(); }
+    private valid: () => boolean, private now = () => performance.now()) { this.progressAt = now(); }
+  /** Successful WebSocket payload writes, including protocol/encryption bytes,
+   * not codec bitrate or TCP/TLS overhead. First 30 s are startup; a full later
+   * 30 s window is required before calling the rate steady. No polling dependency. */
+  rates() {
+    const now = this.closedAt ?? this.now(); this.sample(now);
+    const elapsed = this.startedAt === undefined ? 0 : Math.max(0, now - this.startedAt);
+    const first = this.samples[0]; const windowMs = first ? Math.max(0, now - first.at) : 0;
+    const recentKbps = windowMs ? (this.bytes - first!.bytes) * 8 / windowMs : 0;
+    const startupMs = Math.min(elapsed, 30_000);
+    return { phase: this.closed ? 'closed' as const : elapsed < 30_000 ? 'startup' as const : elapsed < 60_000 ? 'settling' as const : 'steady' as const,
+      windowMs, recentKbps: this.closed ? 0 : recentKbps, steadyKbps: !this.closed && elapsed >= 60_000 ? recentKbps : null,
+      startupBytes: this.startupBytes, startupKbps: startupMs ? this.startupBytes * 8 / startupMs : 0 };
+  }
+  private sample(now: number) {
+    if (this.startedAt === undefined || this.closed) return;
+    const last = this.samples.at(-1);
+    if (!last || now - last.at >= 1000) this.samples.push({ at: now, bytes: this.bytes });
+    while (this.samples.length > 1 && this.samples[1]!.at <= now - 30_000) this.samples.shift();
+  }
   /** A paused reader cannot consume pong frames. Give it one heartbeat period
    * after resuming; the separate stall deadline still bounds a blocked relay. */
   get heartbeatDeferred() { return this.paused || this.now() - this.resumedAt < 20_000; }
@@ -54,17 +77,22 @@ export class SpeakerRelay {
       this.target.send(frame.data, { binary: frame.binary }, error => {
         if (this.closed) return;
         if (error) { this.fail(); return; }
+        const now = this.now();
+        if (this.startedAt === undefined) { this.startedAt = now; this.samples.push({ at: now, bytes: 0 }); }
+        if (now - this.startedAt < 30_000) this.startupBytes += frame.bytes;
         this.sending = false; this.queuedBytes -= frame.bytes; this.bytes += frame.bytes;
+        this.sample(now);
         this.progressAt = this.now(); this.flow(); this.pump();
       });
     } catch { this.fail(); }
   }
   check() {
     if (this.closed) return;
+    this.sample(this.now());
     if (!this.valid()) { this.fail(); return; }
     if ((this.sending || this.queue.length) && this.now() - this.progressAt >= stallLimitMs) {
       diagnostics.record('audio-relay-stall', 1); this.fail();
     }
   }
-  close() { this.closed = true; this.queue = []; this.queuedBytes = 0; }
+  close() { this.closedAt ??= this.now(); this.closed = true; this.queue = []; this.queuedBytes = 0; }
 }

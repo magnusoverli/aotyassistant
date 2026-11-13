@@ -12,11 +12,13 @@ import { browserDevices, browserSpeakerName, type BrowserDevice } from './browse
 import { SpeakerRelay } from './speaker-relay.js';
 import { diagnostics } from './diagnostics.js';
 import type { AudioHealth } from './browser-audio-health.js';
+import { codecSelection } from './audio-codec-selection.js';
 
 export type SpeakerConnection = { origin: string; token: string; epoch: string; scope: string; version: string; serverId: string };
 export type SpeakerContext = { origin: string; base: string; kind: 'lan' | 'ingress' | 'public'; valid: () => boolean };
-type Transfer = { bytesToBrowser: number; peakQueuedBytes: number; connections: number };
-export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number; configurationError?: string; audio?: AudioHealth; audioReportedAt?: number; transfer?: Transfer };
+type Transfer = { bytesToBrowser: number; peakQueuedBytes: number; connections: number; rate: ReturnType<SpeakerRelay['rates']> };
+export type BrowserSpeakerView = { id: string; name: string; active: boolean; connected: boolean; paired: boolean; expiresAt: number; configurationError?: string; audio?: AudioHealth; audioReportedAt?: number; transfer?: Transfer;
+  network?: 'lan' | 'online'; preferredFormat?: string; configurationCheckedAt?: number; codecSelection?: ReturnType<typeof codecSelection> };
 type Session = BrowserSpeakerView & { clientId: string; device: BrowserDevice; owner: string; epoch: string; context: SpeakerContext; leaseUntil: number; close?: () => void; pairing?: Promise<void>; configuring?: Promise<void>; configuredName?: string; revoked: boolean; transferStats?: () => Transfer };
 export const speakerCookie = 'doom_room_browser_speaker';
 export const speakerPath = '/api/browser-speaker';
@@ -70,19 +72,21 @@ async function pair(connection: SpeakerConnection, token: string) {
 }
 
 /** Patch only this paired player's display settings; MA still owns groups and playback. */
-export async function configureBrowserPlayer(connection: SpeakerConnection, clientId: string, name: string, current: () => boolean) {
+export async function configureBrowserPlayer(connection: SpeakerConnection, clientId: string, name: string, current: () => boolean): Promise<{ preferredFormat?: string } | void> {
   const transport = new MusicAssistantTransport(connection.origin, connection.token, 20_000);
   const schema = z.object({ player_id: z.literal(clientId), name: z.string().nullable().optional(),
-    values: z.object({ hide_in_ui: z.object({ value: z.boolean().nullable() }) }) });
+    values: z.object({ hide_in_ui: z.object({ value: z.boolean().nullable() }),
+      preferred_sendspin_format: z.object({ value: z.string().nullable() }).optional() }) });
   try {
     const config = schema.parse(await transport.read('/api', 'config/players/get', { player_id: clientId }));
     if (!current()) return;
     const values: Record<string, string | boolean> = {};
     if (config.name !== name) values.name = name;
     if (config.values.hide_in_ui.value !== false) values.hide_in_ui = false;
-    if (!Object.keys(values).length) return;
-    const saved = schema.parse(await transport.read('/api', 'config/players/save', { player_id: clientId, values }));
+    const saved = Object.keys(values).length ? schema.parse(await transport.read('/api', 'config/players/save', { player_id: clientId, values })) : config;
     if (saved.name !== name || saved.values.hide_in_ui.value !== false) throw new Error('Browser player settings were not confirmed.');
+    const preferred = saved.values.preferred_sendspin_format?.value;
+    return { preferredFormat: preferred && /^(automatic|(opus|flac|pcm):\d{4,6}:\d{1,2}:\d)$/.test(preferred) ? preferred : undefined };
   } finally { transport.close(); }
 }
 
@@ -113,6 +117,8 @@ export class BrowserSpeakers {
     }
   }
   private view(s: Session): BrowserSpeakerView { return { id: s.id, name: s.name, active: s.active, connected: s.connected, paired: s.paired, expiresAt: s.expiresAt,
+    network: s.context.kind === 'public' ? 'online' : 'lan', preferredFormat: s.preferredFormat, configurationCheckedAt: s.configurationCheckedAt,
+    codecSelection: codecSelection(s.audio, s.preferredFormat),
     ...(s.configurationError ? { configurationError: s.configurationError } : {}),
     ...(s.audio ? { audio: { ...s.audio }, audioReportedAt: s.audioReportedAt } : {}),
     ...(s.transferStats ? { transfer: s.transferStats() } : {}) }; }
@@ -124,13 +130,15 @@ export class BrowserSpeakers {
   }
   private syncPlayer(s: Session): Promise<void> {
     if (s.configuring) return s.configuring;
-    if (!s.active || !s.connected || !s.paired || s.configuredName === s.name) return Promise.resolve();
+    const mismatch = s.audio?.codec && s.audio.advertisedCodecs?.[0] === 'opus' && s.audio.codec !== 'opus';
+    if (!s.active || !s.connected || !s.paired || s.configuredName === s.name && !(mismatch && this.now() - (s.configurationCheckedAt ?? 0) >= 60_000)) return Promise.resolve();
     const name = s.name; const connection = this.connection(); const close = s.close;
     const current = () => this.usable(s) && s.connected && s.close === close && s.name === name;
-    s.configuring = this.configure(connection, s.clientId, name, current).then(() => {
-      if (current()) { s.configuredName = name; s.configurationError = undefined; this.changed(); }
+    s.configurationCheckedAt = this.now();
+    s.configuring = this.configure(connection, s.clientId, name, current).then(result => {
+      if (current()) { s.preferredFormat = result?.preferredFormat; s.configuredName = name; s.configurationError = undefined; this.changed(); }
     }).catch(() => {
-      if (current()) s.configurationError = 'Browser player naming/group visibility could not be updated. Check Music Assistant player-configuration permissions.';
+      if (current()) { s.preferredFormat = undefined; s.configurationError = 'Browser player naming/group visibility could not be updated. Check Music Assistant player-configuration permissions.'; }
     }).finally(() => { s.configuring = undefined; });
     return s.configuring;
   }
@@ -219,14 +227,15 @@ export class BrowserSpeakers {
           toMa.close(); toBrowser.close();
           diagnostics.record('audio-relay-bytes', toBrowser.bytes); diagnostics.record('audio-relay-peak', toBrowser.peakBytes);
           client.terminate(); remote.terminate();
-          s.audio = undefined; s.audioReportedAt = undefined;
+          s.audio = undefined; s.audioReportedAt = undefined; s.preferredFormat = undefined; s.configurationCheckedAt = undefined;
           s.connected = false; s.paired = false; s.active = false; s.close = undefined; s.configuredName = undefined; s.expiresAt = this.now() + 60_000; this.changed();
         };
         const toMa = new SpeakerRelay(client, remote, finish, () => this.usable(s));
         const toBrowser = new SpeakerRelay(remote, client, finish, () => this.usable(s));
         const previousTransfer = s.transferStats?.();
         s.transferStats = () => ({ bytesToBrowser: (previousTransfer?.bytesToBrowser ?? 0) + toBrowser.bytes,
-          peakQueuedBytes: Math.max(previousTransfer?.peakQueuedBytes ?? 0, toBrowser.peakBytes), connections: (previousTransfer?.connections ?? 0) + 1 });
+          peakQueuedBytes: Math.max(previousTransfer?.peakQueuedBytes ?? 0, toBrowser.peakBytes), connections: (previousTransfer?.connections ?? 0) + 1,
+          rate: toBrowser.rates() });
         const flowTimer = setInterval(() => { toMa.check(); toBrowser.check(); }, 1000); flowTimer.unref();
         s.close = finish;
         // Any frame proves a peer is alive. Over Funnel a ping can wait behind queued

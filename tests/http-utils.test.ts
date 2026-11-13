@@ -70,6 +70,8 @@ class SocketResponse extends EventEmitter {
   writableEnded = false;
   frames: string[] = [];
   writable = true;
+  req = { acceptsEncodings: () => false };
+  vary() { return this; }
   set() { return this; }
   flushHeaders() {}
   write(frame: string) { this.frames.push(frame); return this.writable; }

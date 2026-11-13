@@ -1,5 +1,5 @@
 import { SendspinPlayer, type SendspinPlayerConfig, type SendspinCore, type SendspinDecoder,
-  type AudioScheduler, type DecodedAudioChunk, type StreamFormat } from '@sendspin/sendspin-js';
+  type AudioScheduler, type DecodedAudioChunk, type StreamFormat, type ClientMessage } from '@sendspin/sendspin-js';
 import { AudioPolicy, browserCodecs, lanAudio, type AudioCodec, type AudioHealth, type AudioNetwork } from './audio-policy';
 import { probeCodec, softwareDecoder } from './audio-probe';
 
@@ -9,8 +9,8 @@ import { probeCodec, softwareDecoder } from './audio-probe';
  * No monkey-patched prototypes, replaced audio output, or raw encrypted frames. */
 type CoreBridge = Omit<SendspinCore, never> & {
   decoder: SendspinDecoder;
-  protocolHandler: { codecs: AudioCodec[] };
-  transport: { sendControl(message: unknown): void };
+  protocolHandler: { codecs: AudioCodec[]; lastSentState: string | null; sendStateUpdate(): void };
+  transport: { sendControl(message: ClientMessage, role?: string): void };
   _onAudioData?: (chunk: DecodedAudioChunk) => void;
 };
 type Bridge = { core: CoreBridge; scheduler: AudioScheduler };
@@ -29,6 +29,8 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
   private stopped = false;
   private destroyed = false;
   private revision = 0;
+  private advertisedFormats: StreamFormat[] = [];
+  private preferredFormat?: StreamFormat;
   constructor(config: SendspinPlayerConfig, private retry: () => void, capabilities: Capabilities = {
     userAgent: navigator.userAgent, nativeOpus: typeof (globalThis as { AudioDecoder?: unknown }).AudioDecoder !== 'undefined', probe: probeCodec,
   }, network: AudioNetwork = lanAudio) {
@@ -37,6 +39,22 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
     this.bridge = this as unknown as Bridge;
     const { core, scheduler } = this.bridge;
     this.policy = new AudioPolicy(() => this.recover(), ms => this.setMinBufferMs(ms), network);
+    // Observe the actual hello after the SDK's second compatibility filter, and
+    // augment its full state (never send a partial player object). SDK 6 speaks
+    // rc1/player@v1; older wire protocols cannot complete its handshake.
+    const send = core.transport.sendControl.bind(core.transport);
+    core.transport.sendControl = (message, role) => {
+      if (message.type === 'client/hello') {
+        this.advertisedFormats = message.payload['player@v1_support']?.supported_formats ?? [];
+        this.policy.health.advertisedCodecs = [...new Set(this.advertisedFormats.map(format => format.codec as AudioCodec))];
+        if (this.verified.includes('opus') && !this.policy.health.advertisedCodecs.includes('opus')) this.policy.health.opusSupport = 'sdk-excluded';
+        if (this.preferredFormat && !this.advertisedFormats.some(format => this.sameFormat(format, this.preferredFormat!))) this.preferredFormat = undefined;
+      }
+      if (message.type === 'client/state' && message.payload.player && this.preferredFormat) {
+        message = { ...message, payload: { ...message.payload, player: { ...message.payload.player, format: this.preferredFormat } } } as ClientMessage;
+      }
+      send(message, role);
+    };
     const decode = core.decoder.handleBinaryMessage.bind(core.decoder);
     core.decoder.handleBinaryMessage = async (data, format, generation) => {
       if (new Uint8Array(data)[0] === 4 && data.byteLength >= 13) {
@@ -69,13 +87,15 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
   }
   private async prepare(capabilities: Capabilities) {
     const candidates = browserCodecs(capabilities.userAgent, capabilities.nativeOpus);
-    const probe = capabilities.probe;
+    this.policy.health.opusSupport = candidates.includes('opus') ? 'probe-failed' : 'browser-excluded';
+    const probe: typeof probeCodec = async (...args) => { try { return await capabilities.probe(...args); } catch { return false; } };
     const checks = await Promise.all(candidates.map(async codec => {
       if (codec === 'pcm') return codec;
       if (codec === 'flac') return (await Promise.all([probe(codec), probe(codec, 'native', 44100)])).every(Boolean) ? codec : undefined;
       const [native, software] = await Promise.all([capabilities.nativeOpus ? probe(codec) : Promise.resolve(false), probe(codec, 'software')]);
       this.softwareOpus = software;
       this.usingSoftware = !native && software;
+      this.policy.health.opusSupport = native ? 'native' : software ? 'software' : 'probe-failed';
       return native || software ? codec : undefined;
     }));
     if (this.destroyed) return;
@@ -88,7 +108,12 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
     if (!['opus', 'flac', 'pcm'].includes(format.codec)) return;
     health.codec = format.codec as AudioCodec; health.sampleRate = format.sample_rate;
     health.bitDepth = format.bit_depth; health.channels = format.channels;
-    if (this.verified.includes(health.codec)) { clearTimeout(this.formatDeadline); this.formatDeadline = undefined; }
+    if (this.preferredFormat && this.sameFormat(format, this.preferredFormat)) {
+      clearTimeout(this.formatDeadline); this.formatDeadline = undefined; health.formatRequest = 'accepted';
+    }
+  }
+  private sameFormat(a: StreamFormat, b: StreamFormat) {
+    return a.codec === b.codec && a.sample_rate === b.sample_rate && a.channels === b.channels && a.bit_depth === b.bit_depth;
   }
   private recover() {
     if (this.destroyed || this.stopped || !this.isConnected || this.formatDeadline) return;
@@ -97,27 +122,30 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
     if (codec === 'opus' && !this.usingSoftware && this.softwareOpus) {
       // Preserve the scheduler, its unlocked AudioContext, and queued audio.
       core.decoder.clearState(); softwareDecoder(core.decoder); this.usingSoftware = true;
+      this.policy.health.opusSupport = 'software';
       this.policy.health.recoveries++;
       return;
     }
     if (codec !== 'opus' && codec !== 'flac') return;
     this.policy.health.recoveries++;
     this.verified = this.verified.filter(item => item !== codec);
+    if (codec === 'opus') this.policy.health.opusSupport = 'decoder-failed';
     core.protocolHandler.codecs = [...this.verified];
-    const next = this.verified[0]!;
-    // MA 2.10.9 accepts this legacy request; newer servers can use client/state
-    // format. If ignored (including an operator override), reconnect with the
-    // failed codec removed from capabilities. Never write MA player settings.
+    const next = this.verified.find(codec => this.advertisedFormats.some(format => format.codec === codec));
+    const formats = this.advertisedFormats.filter(format => format.codec === next);
+    this.preferredFormat = formats.find(format => format.sample_rate === this.currentFormat?.sample_rate) ?? formats[0];
+    this.policy.health.requestedCodec = next; this.policy.health.formatRequest = 'pending';
+    // An ignored preference (including a server override) gets one bounded
+    // reconnect with reduced capabilities, not a speculative legacy message.
     this.formatDeadline = setTimeout(() => {
       this.formatDeadline = undefined;
       if (this.destroyed || this.stopped) return;
+      this.policy.health.formatRequest = 'ignored';
       super.disconnect('restart'); this.policy.reset(-1);
       this.reconnectTimer = setTimeout(() => { this.reconnectTimer = undefined; if (!this.destroyed && !this.stopped) this.retry(); }, 250);
     }, 4000);
-    core.transport.sendControl({ type: 'stream/request-format', payload: { player: {
-      codec: next, sample_rate: next === 'opus' ? 48000 : this.currentFormat?.sample_rate === 44100 ? 44100 : 48000,
-      channels: 2, bit_depth: 16,
-    } } });
+    core.protocolHandler.lastSentState = null;
+    if (this.preferredFormat) core.protocolHandler.sendStateUpdate();
   }
   async connect() {
     this.stopped = false;
@@ -131,7 +159,8 @@ export class AutomaticAudioPlayer extends SendspinPlayer {
     }, 500);
     await super.connect();
   }
-  diagnostics(): AudioHealth { return { ...this.policy.health }; }
+  diagnostics(): AudioHealth { return { ...this.policy.health,
+    ...(this.policy.health.advertisedCodecs ? { advertisedCodecs: [...this.policy.health.advertisedCodecs] } : {}) }; }
   disconnect(reason?: Parameters<SendspinPlayer['disconnect']>[0]) {
     this.stopped = true; this.revision++;
     clearInterval(this.monitor); this.monitor = undefined;

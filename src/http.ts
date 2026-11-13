@@ -174,7 +174,7 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
   app.post('/api/host/autoplay-settings', jsonBody(autoplaySettingsSchema, async (input, _req, res) => {
     res.json(await engine.setAutoplay(input.mode, input.revision));
   }));
-  app.get('/api/host/diagnostics', (_req, res) => res.json(diagnostics.snapshot()));
+  app.get('/api/host/diagnostics', (_req, res) => res.json({ ...diagnostics.snapshot(), browserSpeakers: browserSpeakers?.list() ?? [] }));
   app.get('/api/host/visualizer', async (_req, res) => { await visualizer.ready; res.json(visualizer.view()); });
   app.post('/api/host/visualizer', jsonBody(visualizerSettingsSchema, async (input, _req, res) => {
     res.json(await visualizer.save(input));
