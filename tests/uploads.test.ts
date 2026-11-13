@@ -89,7 +89,7 @@ test('uploaded replacement swaps in place, retains the original file and discard
   assert.equal(f.remote.calls.filter(call => /play_media|add_track/.test(call.command)).length, 0);
 });
 
-test('uploaded replacement rejects foreign, missing, changed and stale drafts without changing the original; cancellation removes only the draft', async t => {
+test('uploaded replacement rejects foreign, missing and changed drafts without changing the original; cancellation removes only the draft', async t => {
   const f = await fixture(t); const original = await f.add(); const uploadId = randomUUID();
   assert.equal((await f.upload(f.first.credentials, uploadId, Buffer.concat([uploadBytes, Buffer.from('new')]))).status, 200);
   const body = { operation: op(original.view.revision), entryId: original.entryId, uploadId, text: { title: 'Replacement', artist: '', album: '' } };
@@ -98,7 +98,6 @@ test('uploaded replacement rejects foreign, missing, changed and stale drafts wi
   assert.equal((await f.request(prefix + '/replace-upload', { ...body, uploadId: randomUUID() }, f.first.credentials)).status, 404);
   const foreignResponse = await f.upload(f.second.credentials); const foreign = (await foreignResponse.json() as UploadPreview).id;
   assert.equal((await f.request(prefix + '/replace-upload', { ...body, uploadId: foreign }, f.first.credentials)).status, 404);
-  assert.equal((await f.request(prefix + '/replace-upload', { ...body, operation: op(0) }, f.first.credentials)).status, 409);
   await writeFile(join(f.directory, 'uploads', uploadId, 'audio'), Buffer.alloc(uploadBytes.length + 3));
   assert.equal((await f.request(prefix + '/replace-upload', body, f.first.credentials)).status, 422);
   assert.deepEqual(await f.json(prefix + '/state', undefined, f.first.library), original.view);

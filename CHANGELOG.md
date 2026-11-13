@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [2.1.8] — 2026-11-13
+
+- Keep the playlist usable while changes save. Moves, removals and **Add back** show at once, and you can keep dragging, removing or adding songs while earlier changes are still saving; they are saved in order in the background, with **Saving…** shown meanwhile. **Needs attention** appears only when a change fails or was interrupted, still with **Retry** and **Discard**.
+- The server now checks each list change against the playlist as it is, rather than refusing any change made from a page that had not yet seen the latest save. A song played or another page's edit no longer turns an unrelated move, removal or addition into a conflict; a change that no longer fits (such as moving a song before one that was removed) still asks for attention. **Clear list** still only clears the list you confirmed.
+- A lost reply is resent automatically a few times before the change asks for attention. Unsaved changes are kept in the browser in order, and are restored for **Retry** after a reload. **Play** waits for earlier list changes to save, so the song that starts is the one shown first.
+
 ## [2.1.7] — 2026-11-13
 
 - Keep phones responsive with long playlists: updates no longer make the browser lay out the whole page several times in a row, rows out of view skip layout until they scroll near, and screen resizes (such as the address bar or keyboard moving) are handled once per frame. On a slowed phone profile with 150 songs and 700 in history, closing search and starting a song now take about half as long.

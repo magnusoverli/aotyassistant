@@ -102,13 +102,14 @@ test('concurrent retries share album capture and save exactly once', async () =>
   assert.deepEqual(results[0]!.entryIds, results[1]!.entryIds); assert.equal(results[1]!.view.revision, 1);
 });
 
-test('album capture does not hold the owner lane and cannot overwrite a concurrent list edit', async () => {
+test('album capture does not hold the owner lane and commits after a concurrent list edit without overwriting it', async () => {
   const f = await fixture(); const started = deferred<void>(); const held = deferred<SavedSelection[]>();
   const pending = f.manager.addAlbumCaptured(f.owner.credential, await f.op(), 'album', ['one'], async () => { started.resolve(); return held.promise; });
   await started.promise;
   const other = await f.manager.add(f.owner.credential, await f.op(), selected(2));
-  held.resolve([selected(1)]); await assert.rejects(pending, status(409));
-  assert.deepEqual(await f.manager.read(f.owner.credential), other.view);
+  held.resolve([selected(1)]); const album = await pending;
+  assert.deepEqual(album.view.upcoming.map(entry => entry.id), [other.entryId, album.entryId]);
+  assert.deepEqual(await f.manager.read(f.owner.credential), album.view);
 });
 
 test('revoked list ownership during album capture prevents the commit', async () => {

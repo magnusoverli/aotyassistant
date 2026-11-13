@@ -70,7 +70,7 @@ function fixture(t: TestContext) {
   const view: PreparationView = { ownerId: randomUUID(), revision: 1, capacity: { upcoming: 200, entries: 1000 }, upcoming: [entry], played: [], removed: [] };
   const edits: { path: string; payload: { entryId?: string; uploadId?: string } }[] = [];
   const library = { view, loading: false, saving: false, pending: undefined, error: '', locked: false, lastSavedUploadId: undefined as string | undefined,
-    async ensureOwner() {}, async edit(path: string, payload: { entryId?: string; uploadId?: string }) { edits.push({ path, payload }); } };
+    async ensureOwner() {}, async edit(path: string, payload: { entryId?: string; uploadId?: string }) { edits.push({ path, payload }); return true; } };
   let member = true;
   const replaced: string[][] = [];
   const dialog = new ReplaceTrack(library as unknown as PreparationController, (from, to) => replaced.push([from, to]), () => member);
@@ -107,7 +107,7 @@ test('uncertain replacement saves retain their upload draft; regular upload stor
   const normal = new UploadPanel(f.library as unknown as PreparationController, () => true, () => {}, () => {});
   const normalInput = (normal.render() as unknown as Element).querySelector('input')!;
   assert.notEqual(normalInput.id, f.root.querySelector('input')!.id);
-  f.library.edit = async (path, payload) => { f.edits.push({ path, payload }); f.library.pending = {} as never; f.library.error = 'Unconfirmed save'; };
+  f.library.edit = async (path, payload) => { f.edits.push({ path, payload }); f.library.pending = {} as never; f.library.error = 'Unconfirmed save'; return false; };
   form.onsubmit!({ preventDefault() {} }); await tick();
   assert.equal(f.root.open, true); f.root.close(); await tick();
   assert.equal(f.requests.length, 0, 'No draft is discarded while a save needs reconciliation.');

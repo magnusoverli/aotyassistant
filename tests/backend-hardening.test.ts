@@ -138,7 +138,7 @@ test('private capture releases the owner lane, coalesces retries and drains the 
   assert.equal(replay.replayed, true); assert.equal((await manager.read(owner.credential)).upcoming.length, 1);
 });
 
-test('capture reauthorizes and checks the current revision after provider work', async t => {
+test('capture reauthorizes and checks the current list after provider work', async t => {
   const directory = await mkdtemp('/tmp/opencode/doom-room-capture-revocation-'); t.after(() => rm(directory, { recursive: true, force: true }));
   const store = new PreparationFileStore(directory); const manager = new PreparationManager(store); const owner = await manager.createOwner();
   const held = gate(); t.after(held.release);
@@ -149,8 +149,10 @@ test('capture reauthorizes and checks the current revision after provider work',
   const replacement = await manager.createOwner();
   const stale = gate(); t.after(stale.release); const view = await manager.read(replacement.credential);
   const pending = manager.addCaptured(replacement.credential, edit(view.revision), 'reference', async () => { stale.enter(); await stale.pending; return selected; });
-  const conflict = assert.rejects(pending, /changed in another page/); await stale.entered;
-  await manager.add(replacement.credential, edit(view.revision), selected); stale.release(); await conflict;
+  await stale.entered;
+  const added = await manager.add(replacement.credential, edit(view.revision), selected); stale.release();
+  // The same recording was saved meanwhile: the capture confirms that entry rather than adding a duplicate.
+  const captured = await pending; assert.equal(captured.entryId, added.entryId); assert.equal(captured.view.upcoming.length, 1);
 });
 
 test('completed upload deletions are not retried; legacy tombstones migrate in bounded durable batches', async t => {

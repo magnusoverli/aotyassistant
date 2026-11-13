@@ -70,16 +70,22 @@ test('equivalent-source descriptors deduplicate across provider additions and st
   assert.deepEqual(await f.manager.selection(f.owner.credential, first.entryId), original);
 });
 
-test('concurrent edits use independent list revisions and cannot overwrite additions or newer order', async () => {
+test('concurrent edits from one view each apply to the current list and never overwrite one another', async () => {
   const f = await fixture(); const operation = await f.op();
-  const outcomes = await Promise.allSettled([f.manager.add(f.owner.credential, operation, selected()),
+  const [one, two] = await Promise.all([f.manager.add(f.owner.credential, operation, selected()),
     f.manager.add(f.owner.credential, { ...operation, id: randomUUID() }, selected(2))]);
-  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
-  const rejected = outcomes.find(result => result.status === 'rejected') as PromiseRejectedResult; assert.ok(status(409)(rejected.reason));
-  const second = await f.add(2); const first = second.view.upcoming[0]!;
+  const first = { id: one.entryId }; const second = two;
+  assert.deepEqual(two.view.upcoming.map(item => item.id), [one.entryId, two.entryId]);
+  // A change made against an older view still applies when it makes sense on the list as it is now.
   const stale = await f.op(); const third = await f.add(3);
-  await assert.rejects(f.manager.move(f.owner.credential, stale, second.entryId, first.id), status(409));
+  const reordered = await f.manager.move(f.owner.credential, stale, second.entryId, first.id);
+  assert.deepEqual(reordered.view.upcoming.map(item => item.id), [second.entryId, first.id, third.entryId]);
+  await f.manager.move(f.owner.credential, await f.op(), second.entryId, third.entryId);
   assert.deepEqual((await f.manager.read(f.owner.credential)).upcoming.map(item => item.id), [first.id, second.entryId, third.entryId]);
+  // One that no longer makes sense is refused: the place it named is not upcoming any more.
+  const removed = await f.op(); await f.manager.remove(f.owner.credential, await f.op(), first.id);
+  await assert.rejects(f.manager.move(f.owner.credential, removed, third.entryId, first.id), status(409));
+  await f.manager.restore(f.owner.credential, await f.op(), first.id, second.entryId);
   const moved = await f.manager.move(f.owner.credential, await f.op(), third.entryId, first.id);
   assert.deepEqual(moved.view.upcoming.map(item => item.id), [third.entryId, first.id, second.entryId]);
   const bottom = await f.manager.move(f.owner.credential, await f.op(), third.entryId, null);
@@ -103,8 +109,8 @@ test('played history is non-destructive; stale play requests and add retries nev
   const f = await fixture(); const operation = await f.op(); const first = await f.manager.add(f.owner.credential, operation, selected()); const second = await f.add(2);
   let starts = 0; const start = async () => { starts++; return { playbackId: randomUUID(), value: undefined }; };
   await assert.rejects(f.manager.playHead(f.owner.credential, second.entryId, second.view.revision, start), status(409));
-  await assert.rejects(f.manager.playHead(f.owner.credential, first.entryId, first.view.revision, start), status(409));
-  const played = (await f.manager.playHead(f.owner.credential, first.entryId, second.view.revision, start)).preparation!;
+  // The revision a page saw is not compared: the first song is still first after the second was added.
+  const played = (await f.manager.playHead(f.owner.credential, first.entryId, first.view.revision, start)).preparation!;
   assert.deepEqual(played.upcoming.map(item => item.id), [second.entryId]); assert.equal(played.played[0]!.id, first.entryId); assert.equal(played.played[0]!.playCount, 1);
   await assert.rejects(f.manager.playHead(f.owner.credential, first.entryId, second.view.revision, start), status(409));
   const retry = await f.manager.add(f.owner.credential, operation, selected()); assert.equal(retry.replayed, true); assert.deepEqual(retry.view, played);
@@ -135,7 +141,7 @@ test('private owner events disclose nothing to another owner and disconnected li
   await f.manager.read(f.owner.credential); assert.equal(ownerEvents.length, 0);
   const added = await f.add(); assert.equal(ownerEvents.length, 1); assert.equal(otherEvents.length, 0);
   assert.deepEqual(ownerEvents[0], added.view);
-  await assert.rejects(f.manager.move(f.owner.credential, { ...await f.op(), revision: 0 }, added.entryId, null), status(409));
+  await assert.rejects(f.manager.move(f.owner.credential, await f.op(), randomUUID(), null), status(404));
   assert.equal(ownerEvents.length, 1); off(); offOther(); offBroken();
 });
 
@@ -285,11 +291,10 @@ test('private uploads share the same persistent ordering and history without dis
   await assert.rejects(f.manager.add(f.owner.credential, await f.op(), { ...upload, path: '/etc/passwd' } as SavedSelection), status(400));
 });
 
-test('Play first selection pins the exact head/revision, serializes double clicks once, and retains confirmed played history', async () => {
+test('Play first selection pins the exact head, serializes double clicks once, and retains confirmed played history', async () => {
   const f = await fixture(); const first = await f.add(); const second = await f.add(2); let starts = 0;
   const work = async (selection: SavedSelection) => { starts++; assert.deepEqual(selection, selected()); return { playbackId: randomUUID(), value: 'confirmed' }; };
   await assert.rejects(f.manager.playHead(f.owner.credential, second.entryId, second.view.revision, work), status(409));
-  await assert.rejects(f.manager.playHead(f.owner.credential, first.entryId, first.view.revision, work), status(409));
   assert.equal(starts, 0);
   const results = await Promise.allSettled([f.manager.playHead(f.owner.credential, first.entryId, second.view.revision, work), f.manager.playHead(f.owner.credential, first.entryId, second.view.revision, work)]);
   assert.equal(starts, 1); assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
@@ -459,9 +464,17 @@ test('uploaded replacement capture errors, revision conflicts and failed saves k
   const pending = f.manager.replaceCaptured(f.owner.credential, await f.op(), retry.entryId, 'slow-upload', () => { entered(); return new Promise(resolve => { release = resolve; }); });
   await started;
   await assert.rejects(f.manager.discardUpload(f.owner.credential, randomUUID(), async () => {}), status(409));
-  const moved = await f.manager.move(f.owner.credential, await f.op(), retry.entryId, null);
-  release(uploaded(4)); await assert.rejects(pending, status(409));
-  assert.deepEqual(await f.manager.read(f.owner.credential), moved.view);
+  await f.manager.move(f.owner.credential, await f.op(), retry.entryId, null);
+  // The song is still in the playlist after the unrelated edit, so the slow replacement still applies.
+  release(uploaded(4)); const replaced = await pending;
+  assert.deepEqual(replaced.view.upcoming.map(item => item.id), [replaced.entryId]); assert.notEqual(replaced.entryId, retry.entryId);
+  const lateStarted = new Promise<void>(resolve => { entered = resolve; });
+  const removing = f.manager.replaceCaptured(f.owner.credential, await f.op(), replaced.entryId, 'late-upload', () => { entered(); return new Promise(resolve => { release = resolve; }); });
+  await lateStarted;
+  const removed = await f.manager.remove(f.owner.credential, await f.op(), replaced.entryId);
+  // Removed meanwhile: nothing is left to replace, and the removal stands.
+  release(uploaded(5)); await assert.rejects(removing, status(409));
+  assert.deepEqual(await f.manager.read(f.owner.credential), removed.view);
 });
 
 test('uploaded replacement duplicate, capacity and deletion guards never drop the original', async () => {
@@ -481,4 +494,30 @@ test('uploaded replacement duplicate, capacity and deletion guards never drop th
   await store.save(state); const before = await f.manager.read(f.owner.credential);
   await assert.rejects(f.manager.replaceCaptured(f.owner.credential, await f.op(), old.entryId, 'full', async () => uploaded(4)), status(409));
   assert.deepEqual(await f.manager.read(f.owner.credential), before);
+});
+
+test('a change sent after unrelated saves still applies, and a played song is not removed or reordered by an older edit', async () => {
+  const f = await fixture(); const first = await f.add(); const second = await f.add(2);
+  const fromOldView = { remove: await f.op(), move: await f.op() };
+  await f.manager.playHead(f.owner.credential, first.entryId, 0, async () => ({ playbackId: randomUUID(), value: undefined }));
+  // The song was played meanwhile: removing or moving it changes nothing, and it stays in Previously played.
+  const removed = await f.manager.remove(f.owner.credential, fromOldView.remove, first.entryId);
+  assert.equal(removed.view.played[0]!.id, first.entryId); assert.equal(removed.view.removed.length, 0);
+  const moved = await f.manager.move(f.owner.credential, fromOldView.move, first.entryId, null);
+  assert.deepEqual(moved.view.upcoming.map(entry => entry.id), [second.entryId]);
+  // A lost acknowledgement of either replays instead of applying again.
+  assert.equal((await f.manager.remove(f.owner.credential, fromOldView.remove, first.entryId)).replayed, true);
+});
+
+test('a resent change whose receipt was saved before revision-free validation still replays', async () => {
+  const store = new MemoryStore(); const f = await fixture(store); const first = await f.add();
+  const operation = await f.op(); const removed = await f.manager.remove(f.owner.credential, operation, first.entryId);
+  // Rewrite the receipt as 2.1.7 hashed it: with the revision the page saw.
+  const state = store.states.get(f.owner.view.ownerId)!; const receipt = state.receipts.find(item => item.id === operation.id)!;
+  const { createHash } = await import('node:crypto'); const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  receipt.intent = hash(JSON.stringify(['remove', operation.revision, operation.issuedAt, { entryId: first.entryId }]));
+  const replay = await f.manager.remove(f.owner.credential, operation, first.entryId);
+  assert.equal(replay.replayed, true); assert.deepEqual(replay.view, removed.view);
+  // The same operation id for another change is still refused.
+  await assert.rejects(f.manager.restore(f.owner.credential, operation, first.entryId), status(409));
 });

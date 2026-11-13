@@ -120,9 +120,10 @@ export class ReplaceTrack {
     if (this.saving) return;
     if (this.library.locked || !this.library.view) { this.showAlbum(entry, album, 'Wait until your playlist shows Saved, then try again.'); return; }
     this.saving = true; this.showAlbum(entry, album);
-    try { await this.library.edit('replace', { entryId: entry.id, trackId: track.id }, track.title); }
+    let replaced = false;
+    try { replaced = await this.library.edit('replace', { entryId: entry.id, trackId: track.id }, track.title); }
     finally { this.saving = false; }
-    if (this.library.pending || this.library.error) { this.showAlbum(entry, album, this.library.error || 'The song could not be replaced. Try again.'); return; }
+    if (!replaced) { this.showAlbum(entry, album, this.library.error || 'The song could not be replaced. Try again.'); return; }
     this.dialog.close(); this.replaced(entry.title, track.title);
   }
 }

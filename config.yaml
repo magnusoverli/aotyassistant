@@ -1,5 +1,5 @@
 name: Doom Room
-version: "2.1.7"
+version: "2.1.8"
 slug: doom_room
 url: https://github.com/magnusoverli/doom-room
 description: Turn-based music sharing for Home Assistant, powered by Music Assistant.

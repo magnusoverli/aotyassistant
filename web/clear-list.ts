@@ -53,10 +53,11 @@ export class ClearList {
   private async clear() {
     if (this.clearing) return;
     if (this.library.locked || !this.library.view) { this.show('Wait until your playlist shows Saved, then try again.'); return; }
-    this.clearing = true; this.show();
-    try { await this.library.edit('clear', {}, 'Clear list'); }
+    this.clearing = true; this.show(); let cleared = false;
+    // Clearing is checked against the list as saved, so edits still being saved go first.
+    try { cleared = await this.library.settled() && await this.library.edit('clear', {}, 'Clear list'); }
     finally { this.clearing = false; }
-    if (this.library.pending || this.library.error) { this.show(this.library.error || 'The list could not be cleared. Try again.'); return; }
+    if (!cleared) { this.show(this.library.error || 'The list could not be cleared. Try again.'); return; }
     this.dialog.close(); this.cleared();
   }
 }

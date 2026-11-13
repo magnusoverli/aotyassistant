@@ -27,8 +27,6 @@ export function searchIcon() {
 export class PreparationPanel {
   /** Drag-and-drop reordering of the upcoming songs, always available. */
   private drag?: ListDrag;
-  /** The order shown while a dropped move is being saved, so the song does not jump back. */
-  private moving?: string[];
   private open = new Set<string>();
   private feedback = el('span', undefined, 'sr-only');
   private list?: HTMLElement;
@@ -63,9 +61,9 @@ export class PreparationPanel {
       else options.changed();
     }, () => {});
   }
-  private button(text: string, action: () => void | Promise<void>, secondary = true, key = '') {
+  private button(text: string, action: () => unknown, secondary = true, key = '') {
     const button = el('button', text, secondary ? 'secondary' : ''); button.type = 'button';
-    button.disabled = this.library.saving || !navigator.onLine; if (key) button.dataset.focusKey = key;
+    button.disabled = this.library.locked; if (key) button.dataset.focusKey = key;
     button.onclick = () => {
       void Promise.resolve(action()).finally(() => {
         // Saving temporarily disables/remounts this control. Restore keyboard focus
@@ -76,12 +74,13 @@ export class PreparationPanel {
       });
     }; return button;
   }
-  private control(key: string, caption: string, work: () => void | Promise<void>, secondary = true) {
+  private control(key: string, caption: string, work: () => unknown, secondary = true) {
     const state = this.nodes.get(`control-${key}`, () => {
       const state = { work, button: undefined as unknown as HTMLButtonElement };
       state.button = this.button(caption, () => state.work(), secondary, key); return state;
     });
-    state.work = work; text(state.button, caption); prop(state.button, 'disabled', this.library.saving || !navigator.onLine); return state.button;
+    // Paging through history never waits for a save.
+    state.work = work; text(state.button, caption); prop(state.button, 'disabled', (this.library.saving && !key.startsWith('more-')) || !navigator.onLine); return state.button;
   }
   private details(key: string, caption: string) {
     const cached = this.disclosures.get(key);
@@ -124,7 +123,7 @@ export class PreparationPanel {
     if (!this.albumAdd) return;
     const { button, album, tracks, online } = this.albumAdd;
     const added = tracks.length > 0 && tracks.every(track => this.library.added.has(track.id));
-    const saving = this.library.saving && this.library.pending?.path === 'add-album' && this.library.pending.body.albumId === album.id;
+    const saving = !added && this.library.isQueued('add-album', body => body.albumId === album.id);
     const caption = saving ? 'Adding…' : added ? 'Added' : 'Add album';
     text(button.querySelector('.catalogue-action-short')!, caption);
     updateButtonIcon(button.querySelector<SVGSVGElement>('.catalogue-action-icon')!, saving ? 'progress' : added ? 'check' : 'add');
@@ -181,8 +180,8 @@ export class PreparationPanel {
   updateAddButton(button: HTMLButtonElement) {
     const trackId = button.dataset.preparationTrack!;
     const added = this.library.added.has(trackId);
-    const saving = !added && this.library.saving && this.library.pending?.path === 'add' && this.library.pending.body.trackId === trackId;
-    // Only the pending song says Saving. Keep both captions and the SVG mounted across state changes.
+    const saving = !added && this.library.isQueued('add', body => body.trackId === trackId);
+    // Only the queued songs say Saving. Keep both captions and the SVG mounted across state changes.
     text(button.querySelector('.catalogue-action-full')!, added ? 'Added ✓' : 'Add to list');
     text(button.querySelector('.catalogue-action-short')!, added ? 'Added' : saving ? 'Saving' : 'Add');
     updateButtonIcon(button.querySelector<SVGSVGElement>('.catalogue-action-icon')!, added ? 'check' : saving ? 'progress' : 'add');
@@ -197,8 +196,8 @@ export class PreparationPanel {
     const library = this.library; const snapshot = library.view;
     const v = this.nodes;
     const canImport = Boolean(this.options.getView()?.catalogue?.configured);
-    const key = JSON.stringify([snapshot, library.loading, library.saving, library.pending, library.error, library.warning, library.conflict,
-      this.moving, [...this.open], this.historyLimits.played, this.historyLimits.removed, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport, this.importer.busy]);
+    const key = JSON.stringify([snapshot, library.loading, library.saving, library.stalled, library.queued.length, library.pending?.title, library.error, library.warning, library.conflict,
+      [...this.open], this.historyLimits.played, this.historyLimits.removed, this.withSearch, this.options.starting(), Boolean(this.options.getView()?.myTurn), navigator.onLine, canImport, this.importer.busy]);
     if (this.list && key === this.listKey) return this.list;
     this.listKey = key;
     const list = this.list ??= slot(el('aside', undefined, 'panel preparation-list'), 'list'); prop(list, 'id', 'music-list'); attr(list, 'aria-label', 'Your playlist');
@@ -214,7 +213,11 @@ export class PreparationPanel {
     const countLabel = v.el('count', 'span', count === undefined ? '' : `${count} ${count === 1 ? 'track' : 'tracks'}`, 'list-count');
     prop(countLabel, 'hidden', count === undefined);
     const summary = v.el('summary', 'div', undefined, 'list-summary');
-    const attention = Boolean(library.error || library.warning || library.pending || (snapshot?.reviewEntryId && !snapshot.starting) || snapshot?.upcoming.some(entry => entry.sourceAvailable === false));
+    // Every edit stays queued in this browser until the server confirms it. While the queue is being saved
+    // that is normal (the list shows "Saving…"); only a change nothing is saving (a failed or interrupted
+    // save) needs attention.
+    const unconfirmed = Boolean(library.pending && !library.saving);
+    const attention = Boolean(library.error || library.warning || unconfirmed || (snapshot?.reviewEntryId && !snapshot.starting) || snapshot?.upcoming.some(entry => entry.sourceAvailable === false));
     list.classList.toggle('needs-attention', attention);
     attr(list, 'data-save-state', library.loading ? 'loading' : library.saving ? 'saving' : library.pending ? 'pending' : !navigator.onLine ? 'offline' : 'ready');
     const preview = v.el('preview', 'p', attention ? 'Needs attention' : snapshot?.upcoming[0] ? `Your next pick: ${snapshot.upcoming[0].title}` : 'Save songs for your turn', 'list-preview');
@@ -270,10 +273,10 @@ export class PreparationPanel {
     if (!snapshot?.upcoming.length && !library.error && !library.loading) bodyNodes.push(v.el('empty', 'p', canImport ? 'No songs yet. Search for an artist to add one, or import a list.' : 'No songs yet.', 'muted list-empty'));
     const ordered = v.el('ordered', 'ol'); attr(ordered, 'class', `saved-tracks${!snapshot?.upcoming.length ? ' is-empty' : ''}`); attr(ordered, 'aria-label', 'Your prepared tracks');
     const drag = this.drag ??= new ListDrag(ordered, body, {
-      enabled: () => !this.library.locked && !this.library.loading && !this.moving && (this.library.view?.upcoming.length ?? 0) > 1,
-      commit: (id, ids) => { void this.move(id, ids); },
+      enabled: () => !this.library.locked && !this.library.loading && (this.library.view?.upcoming.length ?? 0) > 1,
+      commit: (id, ids) => this.move(id, ids),
     });
-    const upcoming = this.displayed(snapshot?.upcoming ?? []);
+    const upcoming = snapshot?.upcoming ?? [];
     const upcomingRows = upcoming.map(entry => this.savedRow(entry, upcoming.indexOf(entry), canImport));
     // A song being dragged keeps its place only while the rows stay the same.
     drag.retain(upcomingRows);
@@ -326,18 +329,9 @@ export class PreparationPanel {
     return list;
   }
 
-  /** The saved order, or the dropped order while that move is being saved. */
-  private displayed(upcoming: PreparedEntryView[]) {
-    const order = this.moving;
-    if (!order || order.length !== upcoming.length || upcoming.some(entry => !order.includes(entry.id))) return upcoming;
-    return [...upcoming].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  }
-
-  /** Saves a dropped song's new place: before the song that now follows it. */
-  private async move(id: string, ids: string[]) {
-    this.moving = ids; this.refresh();
-    try { await this.library.edit('move', { entryId: id, beforeId: ids[ids.indexOf(id) + 1] ?? null }); }
-    finally { this.moving = undefined; this.refresh(); }
+  /** Queues a dropped song's new place: before the song that now follows it. The list shows it at once. */
+  private move(id: string, ids: string[]) {
+    void this.library.edit('move', { entryId: id, beforeId: ids[ids.indexOf(id) + 1] ?? null });
   }
 
   private savedRow(entry: PreparedEntryView, index: number, catalogue: boolean) {

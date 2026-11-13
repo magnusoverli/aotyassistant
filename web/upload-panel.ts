@@ -214,8 +214,8 @@ export class UploadPanel {
         if (disabled || this.library.saving || this.library.pending || this.library.view?.reviewEntryId || this.uploadId !== preview.id) return;
         void (async () => {
           const epoch = this.epoch;
-          await this.library.edit(this.replacement ? 'replace-upload' : 'add-upload', { ...(this.replacement ? { entryId: this.replacement.entryId } : {}), uploadId: preview.id, text: { ...this.text } }, this.text.title);
-          if (epoch === this.epoch && this.uploadId === preview.id && !this.library.pending && !this.library.error) {
+          const saved = await this.library.edit(this.replacement ? 'replace-upload' : 'add-upload', { ...(this.replacement ? { entryId: this.replacement.entryId } : {}), uploadId: preview.id, text: { ...this.text } }, this.text.title);
+          if (epoch === this.epoch && this.uploadId === preview.id && saved) {
             this.complete(); this.changed();
           }
         })();

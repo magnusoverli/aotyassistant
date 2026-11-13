@@ -16,7 +16,7 @@ import { joinQrImage } from './join-qr';
 import { PreparationController, operationId } from './preparation-controller';
 import { PreparationPanel, searchIcon } from './preparation-panel';
 import { receiveSpectrum } from './room-spectrum';
-import type { PreparationView } from '../src/preparations';
+import type { PreparationView, PreparedEntryView } from '../src/preparations';
 import { requestJson } from './request';
 import { CatalogueController, catalogueIdentity } from './catalogue-controller';
 import { participantEvents } from './participant-events';
@@ -534,16 +534,25 @@ function renderPlayback(current: View) {
   return playback!.update({ view: current, projected: player.project(current), online: realtime, busy, starting: player.starting,
     error,
     firstSelection: page === 'participant' ? library.view?.upcoming[0] : undefined,
-    selectionReady: !library.loading && !library.saving && !library.pending && !library.view?.reviewEntryId });
+    // Edits still being saved do not hold Play back: it waits for them (playFirstSelection).
+    selectionReady: !library.loading && !library.stalled && !library.view?.reviewEntryId });
 }
 /** `confirmReplace` false: Next track in the "continue this playlist" mode, which replaces the song without asking. */
 function playFirstSelection(confirmReplace = true) {
   error = '';
-  const entry = library.view?.upcoming[0];
-  if (!entry || !library.view) return;
+  if (!library.view?.upcoming[0] || (confirmReplace && !replaceConfirmed())) return;
+  void (async () => {
+    // List changes made before Play are saved first, so the song that starts is the one shown first.
+    if (!await library.settled()) { render(); return; }
+    const entry = library.view?.upcoming[0];
+    if (!entry || !library.view) return;
+    playPrepared(entry, library.view.revision);
+  })();
+}
+function playPrepared(entry: PreparedEntryView, revision: number) {
   const track: CatalogueTrack = { id: `prepared:${entry.id}`, title: entry.title, artist: entry.artist, album: entry.album, version: entry.version,
     provider: entry.provider, duration: entry.duration, available: entry.sourceAvailable !== false, artwork: entry.artwork, artistArtwork: entry.artistArtwork };
-  playTrack(track, { entryId: entry.id, revision: library.view.revision }, confirmReplace);
+  player.play(track, { entryId: entry.id, revision });
 }
 function participant() {
   if (!view?.me) return participantEntry();
@@ -681,8 +690,11 @@ function participant() {
   children(main, hero, view.user?.pinRequired && enrollmentPanel(), musicPanel);
   return main;
 }
+function replaceConfirmed() {
+  return !view?.ownPlayback || view.ownPlayback.status === 'stopped' || confirm('Replace the current song? Playing this song will stop the current one.');
+}
 function playTrack(track: CatalogueTrack, prepared?: { entryId: string; revision: number }, confirmReplace = true) {
-  if (confirmReplace && view?.ownPlayback && view.ownPlayback.status !== 'stopped' && !confirm('Replace the current song? Playing this song will stop the current one.')) return;
+  if (confirmReplace && !replaceConfirmed()) return;
   player.play(track, prepared);
 }
 async function loadUsers() {

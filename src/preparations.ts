@@ -160,6 +160,11 @@ export type PreparationView = {
 };
 export type PreparationResult = { view: PreparationView; entryId: string; entryIds?: string[]; replayed: boolean; warning?: string };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+/** What a receipt records about its change, so a reused operation id with another change is refused. The
+ * first form leaves out the revision the browser saw (2.1.8); the second matches receipts saved before. */
+const intentsOf = (kind: string, operation: PreparationOperation, payload: unknown) => [
+  hash(JSON.stringify([kind, operation.issuedAt, payload])), hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload])),
+] as const;
 const sameHash = (a: string, b: string) => timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 function input<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
   const parsed = schema.safeParse(value); if (!parsed.success) throw new AppError(400, 'Invalid list request. Refresh your list and try again.'); return parsed.data;
@@ -263,15 +268,19 @@ export class PreparationManager {
   private find(state: PreparationState, entryId: string) {
     const entry = state.entries.find(item => item.id === entryId); if (!entry) throw new AppError(404, 'Saved track not found.'); return entry;
   }
-  private validateMutation(state: PreparationState, operation: PreparationOperation, intent: string, kind: string) {
+  /** Each change is checked against the list as it is now (the entry still exists, is upcoming, there is
+   * room), never against the revision the browser last saw: an unrelated change saved meanwhile, such as a
+   * song played or an edit from another page, does not conflict. A receipt makes a resent change a replay. */
+  private validateMutation(state: PreparationState, operation: PreparationOperation, intents: readonly string[], kind: string) {
     const previous = state.receipts.find(receipt => receipt.id === operation.id);
     if (previous) {
-      if (previous.intent !== intent) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
+      if (!intents.includes(previous.intent)) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
       return previous;
     }
     const now = this.now();
     if (now - operation.issuedAt > preparationLimits.operationLifetime || operation.issuedAt - now > preparationLimits.futureClockTolerance) throw new AppError(409, 'This list change expired. Refresh the list before trying again.');
-    if (operation.revision !== state.revision) throw new AppError(409, 'The saved list changed in another page. Refresh it before trying again.');
+    // Clearing is the one change made against what the page showed: songs saved since are never cleared blindly.
+    if (kind === 'clear' && operation.revision !== state.revision) throw new AppError(409, 'The saved list changed in another page. Refresh it before trying again.');
     if (state.pendingPlay && kind !== 'review') throw new AppError(409, 'A previous play attempt needs review. Your saved entry was kept.');
     if (this.playing.has(state.ownerId)) throw new AppError(409, 'This saved track is still starting. Wait for the player before reviewing it.');
     state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
@@ -279,10 +288,10 @@ export class PreparationManager {
   }
   private async mutate(credential: string, operation: PreparationOperation, kind: string, payload: unknown, change: (state: PreparationState) => string | string[] | Promise<string | string[]>): Promise<PreparationResult> {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);
-    const intent = hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload]));
+    const intents = intentsOf(kind, operation, payload); const intent = intents[0];
     return this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
-      const previous = this.validateMutation(state, operation, intent, kind);
+      const previous = this.validateMutation(state, operation, intents, kind);
       if (previous) {
         return { view: this.view(state), entryId: previous.entryId, ...(previous.entryIds ? { entryIds: previous.entryIds } : {}), replayed: true };
       }
@@ -322,11 +331,11 @@ export class PreparationManager {
   private async captureOutsideTransaction(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection[]>,
     kind: 'capture' | 'replace' | 'album', apply: (state: PreparationState, selections: SavedSelection[]) => string | string[]) {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);
-    const payload = hash(reference); const intent = hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload]));
+    const payload = hash(reference); const intents = intentsOf(kind, operation, payload); const intent = intents[0];
     const key = `${access.ownerId}:${operation.id}`;
     const reservation = await this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
-      if (this.validateMutation(state, operation, intent, kind)) return undefined;
+      if (this.validateMutation(state, operation, intents, kind)) return undefined;
       const existing = this.captures.get(key);
       if (existing && existing.intent !== intent) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
       if (!existing && this.captures.size >= 64) throw new AppError(429, 'Too many tracks are being captured. Try again when the current additions finish.');
@@ -499,14 +508,16 @@ export class PreparationManager {
       });
     }
   }
-  /** Durably reserve the head, then release the owner lane during audio work. Never retry audio. */
+  /** Durably reserve the head, then release the owner lane during audio work. Never retry audio. The revision
+   * the browser saw is accepted for older pages but not compared: only the song being first matters. */
   playHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
     return this.track(this.playReservedHead(credential, entryId, expectedRevision, work));
   }
-  private async playReservedHead<T>(credential: string, entryId: string, expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
+  private async playReservedHead<T>(credential: string, entryId: string, _expectedRevision: number, work: (selection: SavedSelection) => Promise<{ playbackId: string; value: T }>) {
     const access = identity(credential); entryId = input(id, entryId);
     const result = await this.playReserved(access.ownerId, () => this.authorize(access.ownerId, access.secretHash), state => {
-      if (state.revision !== expectedRevision || state.order[0] !== entryId) throw new AppError(409, 'The next prepared track changed. Review your list.');
+      // The song asked for must still be first; other changes saved since the browser's view do not matter.
+      if (state.order[0] !== entryId) throw new AppError(409, 'The next prepared track changed. Review your list.');
       return entryId;
     }, work);
     return result!; // Always reserved (or thrown) here, and `work` never declines.
@@ -580,7 +591,9 @@ export class PreparationManager {
   async move(credential: string, operation: PreparationOperation, entryId: string, beforeId: string | null) {
     entryId = input(id, entryId); beforeId = input(id.nullable(), beforeId);
     return this.mutate(credential, operation, 'move', { entryId, beforeId }, state => {
-      if (this.find(state, entryId).state !== 'upcoming' || (beforeId !== null && this.find(state, beforeId).state !== 'upcoming')) throw new AppError(409, 'Only upcoming entries can be reordered.');
+      // A song played or removed since it was dragged has nothing left to reorder.
+      if (this.find(state, entryId).state !== 'upcoming') return entryId;
+      if (beforeId !== null && this.find(state, beforeId).state !== 'upcoming') throw new AppError(409, 'Only upcoming entries can be reordered.');
       if (entryId !== beforeId) {
         state.order = state.order.filter(key => key !== entryId);
         state.order.splice(beforeId === null ? state.order.length : state.order.indexOf(beforeId), 0, entryId);
@@ -592,7 +605,8 @@ export class PreparationManager {
     entryId = input(id, entryId);
     return this.mutate(credential, operation, 'remove', { entryId }, state => {
       const entry = this.find(state, entryId);
-      if (entry.state !== 'removed') { entry.state = 'removed'; entry.removedAt = this.now(); state.order = state.order.filter(key => key !== entryId); }
+      // Only an upcoming song is removed: one played meanwhile stays in Previously played.
+      if (entry.state === 'upcoming') { entry.state = 'removed'; entry.removedAt = this.now(); state.order = state.order.filter(key => key !== entryId); }
       return entryId;
     });
   }
