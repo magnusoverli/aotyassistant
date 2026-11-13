@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [2.1.6] — 2026-11-13
+
+- Add an **Add album** button beside the album heading on phones, with **Adding…** and **Added** feedback inside the button. Missing songs are appended in album order while songs already queued keep their positions. The whole addition saves together, checks playlist capacity, and can be retried after a lost response without adding duplicates.
+- Use compact rounded-rectangle **Add** and **Play** buttons in phone search, with icons above captions inside each button. Only the song being saved shows progress; successful additions show **Added** in place of a separate toast, while save errors retain recovery controls and accessible announcements.
+- Make the mobile **Playlist** heading slightly larger, vertically align it with its buttons, and reduce the header's vertical padding. Attention messages appear below the heading row.
+- Give upcoming song titles more room on phones by moving Swap and Remove slightly right and keeping a 2px gap between their full-size touch targets.
+
 ## [2.1.5] — 2026-11-12
 
 - Clean up phone search: one search field like the playlist's, with the magnifier and **×** inside it and a plain **Done** beside it. The keyboard's Search key searches (the separate button is gone), and the playlist line under the field is replaced by a short confirmation at the bottom when a song is added, or a lasting one when a save needs attention.

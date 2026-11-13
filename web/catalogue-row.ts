@@ -1,7 +1,8 @@
 import type { CatalogueAlbum, CatalogueArtist, CatalogueTrack } from '../src/model';
 import { ArtworkView } from './media';
-import { ViewNodes, children, attr, prop, text } from './view-nodes';
+import { ViewNodes, children, attr, prop } from './view-nodes';
 import type { PreparationPanel } from './preparation-panel';
+import { buttonIcon } from './button-icon';
 
 type Item = CatalogueArtist | CatalogueAlbum | CatalogueTrack;
 type Options = {
@@ -70,8 +71,14 @@ export class CatalogueRow {
       attr(add, 'data-source-selectable', 'true');
       options.music.updateAddButton(add);
       row.classList.toggle('is-prepared', add.getAttribute('aria-disabled') === 'true');
-      const play = v.el('play', 'button'); prop(play, 'type', 'button');
-      text(play, !track.available ? 'Unavailable' : !options.playbackAvailable ? 'Choose a speaker' : 'Play');
+      const play = v.el('play', 'button', undefined, 'catalogue-action'); prop(play, 'type', 'button');
+      const caption = !track.available ? 'Unavailable' : !options.playbackAvailable ? 'Choose a speaker' : 'Play';
+      const reason = !track.available ? 'Unavailable' : !options.playbackAvailable ? 'Choose a speaker'
+        : !options.online ? 'Offline' : options.starting ? 'Playback is starting' : undefined;
+      attr(play, 'aria-label', reason ? `Play — ${reason}` : 'Play');
+      const short = v.el('play-short', 'span', 'Play', 'catalogue-action-short'); attr(short, 'aria-hidden', 'true');
+      children(play, v.get('play-icon', () => buttonIcon('play', 'catalogue-action-icon')),
+        v.el('play-caption', 'span', caption, 'catalogue-action-full'), short);
       const ready = options.online && options.canPlay && track.available && options.playbackAvailable;
       attr(play, 'data-player-ready', String(ready)); prop(play, 'disabled', !ready || options.starting);
       play.onclick = () => options.play(track);

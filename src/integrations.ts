@@ -380,6 +380,22 @@ export class IntegrationManager implements CatalogueProvider {
     if (epoch !== this.catalogueRevision || sourceBindingId !== this.sourceBindingId) throw new AppError(409, 'The catalogue changed during capture. Browse again; your saved list was kept.');
     return { source: 'music-assistant', sourceBindingId, ...descriptor };
   }
+  /** Bounded bulk reads preserve the displayed album order and keep playback/browse connections free. */
+  async captureSavedAlbum(ids: string[], context: string): Promise<SavedSelection[]> {
+    const epoch = this.catalogueRevision; const binding = this.sourceBindingId;
+    return bulkCatalogue(async () => {
+      const selections: SavedSelection[] = [];
+      for (let index = 0; index < ids.length; index += 4) {
+        const batch = await Promise.allSettled(ids.slice(index, index + 4).map(id => this.captureSaved(id, context)));
+        for (const result of batch) {
+          if (result.status === 'rejected') throw result.reason;
+          selections.push(result.value);
+        }
+        if (epoch !== this.catalogueRevision || binding !== this.sourceBindingId) throw new AppError(409, 'The catalogue changed during capture. Browse again; your saved list was kept.');
+      }
+      return selections;
+    });
+  }
   private savedSource(selection: SavedSelection) {
     if (selection.source !== 'music-assistant' || selection.sourceBindingId !== this.sourceBindingId) throw new AppError(409, 'This saved track belongs to a different catalogue connection. It was kept in your list.');
     return selection;

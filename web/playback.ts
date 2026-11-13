@@ -9,6 +9,7 @@ import { panel } from './ui-components';
 import { ViewNodes, attr, children, prop, text } from './view-nodes';
 import { ParticipantPlayerDetails } from './participant-player-details';
 import { SeekBar } from './seek-bar';
+import { buttonIcon, updateButtonIcon, type ButtonIcon } from './button-icon';
 
 type CommonOptions = {
   volume(level: number, commit: boolean): void;
@@ -122,20 +123,9 @@ export class Playback {
     }, true);
   }
 
-  private decorate(button: HTMLButtonElement, caption: string, icon: 'play' | 'pause' | 'stop' | 'volume' | 'muted' | 'reveal' | 'advance' | 'next', mobileCaption?: string) {
-    const paths = { play: 'M8 5l11 7-11 7Z', pause: 'M8 5v14M16 5v14', stop: 'M6 6h12v12H6Z', next: 'M5 5l10 7-10 7ZM19 5v14',
-      volume: 'M11 5 6 9H3v6h3l5 4ZM15 8a6 6 0 0 1 0 8M18 5a10 10 0 0 1 0 14',
-      muted: 'M11 5 6 9H3v6h3l5 4ZM16 9l6 6M22 9l-6 6',
-      reveal: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
-      advance: 'M4 12h16M14 6l6 6-6 6' };
-    const image = this.nodes.get(`${button.id}-icon`, () => {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('focusable', 'false');
-      svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
-      svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.classList.add('playback-icon');
-      svg.append(document.createElementNS('http://www.w3.org/2000/svg', 'path')); return svg;
-    });
-    attr(image.firstElementChild!, 'd', paths[icon]);
+  private decorate(button: HTMLButtonElement, caption: string, icon: ButtonIcon, mobileCaption?: string) {
+    const image = this.nodes.get(`${button.id}-icon`, () => buttonIcon(icon, 'playback-icon'));
+    updateButtonIcon(image, icon);
     // Keep descriptive names where the short visible label is already contained
     // in it (e.g. Reveal details); Play pick uses its own visible mobile name.
     attr(button, 'aria-label', mobileCaption && mobileCaption !== 'Play pick' ? caption : undefined);

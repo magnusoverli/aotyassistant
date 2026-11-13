@@ -10,7 +10,8 @@
   /* Parts of the phone search sheet. Desktop lays the wrappers out as if absent and never shows the rest. */
   .search-sheet-bar,.search-sheet-top { display:contents; }
   .list-search-open,.search-sheet-done,.search-sheet-toast,.search-clear,.search-form > .search-icon,
-  .browse-heading,.catalogue-results .result-number,.catalogue-results .result-meta { display:none; }
+  .browse-heading,.album-add,.catalogue-results .result-number,.catalogue-results .result-meta { display:none; }
+  .catalogue-results :is(.catalogue-action-icon,.catalogue-action-short) { display:none; }
 
   @media(min-width:1100px) {
     .music-workspace.workspace-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'player' 'collection'; }
@@ -46,14 +47,17 @@
     #music-collection .saved-track .result-identity strong { font-size:1.125rem; }
     #music-collection { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:var(--radius-panel); background:var(--panel); }
     /* An ordinary card above the search (the playlist bar summarises it while browsing below). */
-    #music-collection > .preparation-list { position:relative; top:auto; z-index:auto; width:100%; padding:10px 14px 12px; border:0; border-bottom:1px solid var(--line); border-radius:13px 13px 0 0; background:var(--panel); box-shadow:none; max-height:none; overflow:visible; }
-    /* A one-line header, "Playlist", ruled off from the scrolling songs. No track count or save status:
-       a failed save still shows "Needs attention" here and Retry in the list. */
-    #music-collection .list-heading { min-height:44px; padding-bottom:8px; border-bottom:1px solid var(--line); }
-    #music-collection .list-heading h2 { font-size:1.25rem; line-height:1.5rem; white-space:nowrap; }
+    #music-collection > .preparation-list { position:relative; top:auto; z-index:auto; width:100%; padding:6px 14px 12px; border:0; border-bottom:1px solid var(--line); border-radius:13px 13px 0 0; background:var(--panel); box-shadow:none; max-height:none; overflow:visible; }
+    /* Title and actions share one centred row. Only an attention message adds a second row, so empty
+       metadata never offsets the title. Retry remains in the list below. */
+    #music-collection .list-heading { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:0 8px; min-height:44px; padding-bottom:4px; border-bottom:1px solid var(--line); }
+    #music-collection .list-summary { display:contents; }
+    #music-collection .list-heading h2 { grid-column:1; grid-row:1; font-size:1.375rem; line-height:1.75rem; white-space:nowrap; }
+    #music-collection .list-heading-actions { grid-column:2; grid-row:1; }
     #music-collection .list-title-full { display:none; }
     #music-collection .list-title-short { display:inline; }
-    #music-collection .list-meta { margin-top:2px; line-height:1rem; }
+    #music-collection .list-meta { display:none; grid-column:1 / -1; grid-row:2; min-height:0; margin-top:2px; line-height:1rem; }
+    #music-collection .needs-attention .list-meta { display:flex; }
     #music-collection .list-meta .list-preview { margin:0; }
     #music-collection .list-count { display:none; }
     #music-collection .list-preview { display:none; font-size:.75rem; line-height:1rem; margin:2px 0 0; }
@@ -76,6 +80,10 @@
     #music-collection .saved-track p { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.75rem; line-height:18px; }
     #music-collection .saved-next-label,#music-collection .saved-source { display:none; }
     #music-collection .saved-actions { grid-column:3; justify-content:flex-end; gap:4px; margin:0; }
+    /* Upcoming rows use the scroller's 4px right inset. Let their actions consume half the 8px grid
+       gutter and keep just 2px between the full 44px touch targets, giving the song copy 10px more. */
+    #music-collection .list-body > ol.saved-tracks { margin-right:-4px; }
+    #music-collection .list-body > ol.saved-tracks > .saved-track > .saved-actions { flex-wrap:nowrap; gap:2px; margin-left:-4px; }
     #music-collection .saved-unavailable { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.75rem; line-height:18px; margin:0; }
     #music-collection .list-tools { display:block; }
     #music-collection .list-tools:empty { display:none; }
@@ -128,7 +136,7 @@
     #music-collection .search-form:has(input:placeholder-shown) .search-clear { display:none; }
     /* Done is a plain text action at the field's height, as on the phone's own search screens. */
     #music-collection .search-sheet-done { display:inline-flex; flex:none; min-height:44px; padding:0 2px; border:0; background:transparent; color:var(--accent); font-size:1rem; font-weight:600; }
-    /* The playlist stays out of search: a brief toast confirms an added song, or says a save needs attention. */
+    /* The playlist stays out of search: only save problems need a notice; additions confirm on the button. */
     #music-collection .search-sheet-toast:not([hidden]) {
       display:block; position:fixed; z-index:20; left:var(--workspace-gutter); right:var(--workspace-gutter); bottom:calc(16px + env(safe-area-inset-bottom,0px));
       max-width:684px; margin:0 auto; padding:12px 16px; border:1px solid #4a6040; border-radius:12px; background:#1f2c22; box-shadow:0 4px 24px #0006;
@@ -138,8 +146,8 @@
     /* Inside an artist or album: a chevron back, the cover, then the title over "Artist · Year" or "Albums". */
     #music-collection .browse-crumbs { gap:8px; margin:8px 0 6px; }
     #music-collection .browse-crumbs > h3 { display:none; }
-    #music-collection .browse-crumbs > button { flex:none; justify-content:flex-start; width:32px; min-width:32px; min-height:44px; padding:0; border:0; background:transparent; color:var(--text); font-size:0; }
-    #music-collection .browse-crumbs > button::before { content:'‹'; content:'‹' / ''; font-size:2.25rem; font-weight:300; line-height:1; }
+    #music-collection .browse-crumbs > .browse-back { flex:none; justify-content:flex-start; width:32px; min-width:32px; min-height:44px; padding:0; border:0; background:transparent; color:var(--text); font-size:0; }
+    #music-collection .browse-crumbs > .browse-back::before { content:'‹'; content:'‹' / ''; font-size:2.25rem; font-weight:300; line-height:1; }
     #music-collection .browse-heading { display:grid; flex:1; grid-template-columns:48px minmax(0,1fr); column-gap:12px; align-items:center; min-width:0; }
     #music-collection .browse-heading .browse-heading-art { grid-row:1 / 3; width:48px; height:48px; flex-basis:48px; }
     #music-collection .browse-heading h3 { align-self:end; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-family:var(--font-read); font-size:1.0625rem; font-weight:650; letter-spacing:0; line-height:1.375rem; }
@@ -164,21 +172,24 @@
     #music-collection .catalogue-results .result-identity strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.9375rem; line-height:1.25rem; }
     #music-collection .catalogue-results .result-identity p { margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:.8125rem; line-height:1.125rem; }
     #music-collection .catalogue-results .row-actions { flex-wrap:nowrap; gap:8px; }
-    /* Both actions are 44px round icons whose text stays the accessible name. Scoped through .row-actions
-       so they outrank the shared result-button rules. Add (+, the task here) is outlined in the accent and
-       fills green as ✓; Play (only during your turn) is a quieter outlined triangle, so a long album does not
-       read as a column of calls to action. The icons are decoration: "/ ''" keeps them out of the name (the
-       plain value is for older browsers). */
-    #music-collection .catalogue-results .row-actions button { display:inline-flex; align-items:center; justify-content:center; width:44px; min-width:44px; max-width:none; height:44px; min-height:0; padding:0;
-      border:1px solid var(--line); border-radius:50%; background:transparent; color:var(--text); font-size:0; white-space:nowrap; overflow:hidden; }
-    #music-collection .catalogue-results .row-actions button:hover:not(:disabled) { filter:none; border-color:var(--muted); }
-    #music-collection .catalogue-results .row-actions [data-preparation-track] { border-color:var(--accent); color:var(--accent); }
-    #music-collection .catalogue-results .row-actions [data-preparation-track][aria-disabled='true'] { border-color:var(--green); background:var(--green); color:var(--bg); }
-    #music-collection .catalogue-results [data-preparation-track]::before { content:'+'; content:'+' / ''; font-size:1.5rem; font-weight:500; line-height:1; }
-    #music-collection .catalogue-results [data-preparation-track][aria-disabled='true']::before { content:'✓'; content:'✓' / ''; font-size:1.125rem; font-weight:700; }
-    #music-collection .catalogue-results .row-actions button:not([data-preparation-track])::before {
-      content:''; content:'' / ''; width:11px; height:13px; margin-left:3px; background:currentColor; clip-path:polygon(0 0,100% 50%,0 100%);
-    }
+    /* The player's compact icon-over-caption layout, entirely inside each button. Inherit the shared
+       button corners and focus treatment; use secondary colours for these repeated actions. Rem-sized
+       slots grow with text settings and stay the same width through Add, Saving and Added. */
+    #music-collection .catalogue-results .catalogue-action { display:inline-flex; flex-direction:column; align-items:center; justify-content:center; flex:0 0 3.25rem;
+      width:3.25rem; min-width:44px; max-width:none; height:2.75rem; min-height:44px; padding:.25rem .125rem; gap:.125rem;
+      border-color:var(--line); background:transparent; color:var(--text); font-size:.75rem; line-height:1rem; white-space:nowrap; overflow:hidden; }
+    #music-collection .catalogue-results .catalogue-action:hover:not(:disabled) { filter:none; border-color:var(--muted); }
+    #music-collection .catalogue-results :is([data-preparation-track],.album-add) { color:var(--accent); }
+    #music-collection .catalogue-results .catalogue-action[aria-disabled='true'] { border-color:#4a6040; color:var(--green); cursor:default; }
+    #music-collection .catalogue-results .album-add { flex-basis:5rem; width:5rem; }
+    #music-collection .catalogue-results .catalogue-action-full { display:none; }
+    #music-collection .catalogue-results .catalogue-action-icon { display:block; flex-shrink:0; width:1rem; height:1rem; }
+    #music-collection .catalogue-results .catalogue-action-short { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    #music-collection .catalogue-results [aria-busy='true'] .catalogue-action-icon { animation:catalogue-saving .8s linear infinite; }
     #music-collection .catalogue-results .browse-row::after { content:'›'; content:'›' / ''; padding-inline:4px 2px; color:var(--muted); font-size:1.5rem; line-height:1; }
+  }
+  @keyframes catalogue-saving { to { transform:rotate(360deg); } }
+  @media(prefers-reduced-motion:reduce) {
+    #music-collection .catalogue-results [aria-busy='true'] .catalogue-action-icon { animation:none; }
   }
 }

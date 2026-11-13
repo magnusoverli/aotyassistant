@@ -58,9 +58,11 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     const rows = page.locator('.catalogue-results .track-row:not(.browse-row)'); await expect(rows).toHaveCount(1 + songs.length);
     const row = (index: number) => rows.filter({ has: page.getByText(songs[index]!, { exact: true }) });
     // Album rows: the track number (no repeated cover), the title over its length (no artist or album), and
-    // round icons whose names are still "Add to list" and "Play" while their text stays out of sight.
-    const add = row(0).getByRole('button', { name: 'Add to list', exact: true });
-    expect(await add.evaluate(node => [node.getBoundingClientRect().width, node.getBoundingClientRect().height, getComputedStyle(node).fontSize])).toEqual([44, 44, '0px']);
+    // compact player-style buttons with both the icon and short caption inside their borders.
+    const add = row(0).locator('[data-preparation-track]');
+    await expect(add).toHaveAccessibleName('Add to list');
+    expect(await add.evaluate(node => [node.getBoundingClientRect().width, node.getBoundingClientRect().height, getComputedStyle(node).fontSize])).toEqual([52, 44, '12px']);
+    await expect(add.locator('.catalogue-action-icon')).toBeVisible(); await expect(add.locator('.catalogue-action-short')).toHaveText('Add');
     await expect(row(0).locator('.result-artist')).toBeHidden(); await expect(row(0).locator('.result-artwork')).toBeHidden();
     await expect(row(0).locator('.result-number')).toHaveText('2'); await expect(row(0).locator('.result-meta')).toHaveText('10:00');
     await expect(row(0).getByText('Fixture album')).toBeHidden();
@@ -73,7 +75,10 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await page.route('**/api/participant/preparations/add', async route => { await held; await route.continue(); });
     try {
       await add.click(); await expect(list).toHaveAttribute('data-save-state', 'saving');
-      release(); await expect(toast).toHaveText(`Added ${songs[0]} to your playlist`); await expect(page.locator('.list-count')).toHaveText('1 track');
+      await expect(add).toHaveAttribute('aria-busy', 'true'); await expect(add.locator('.catalogue-action-short')).toHaveText('Saving');
+      await expect(row(1).locator('.catalogue-action-short').first()).toHaveText('Add');
+      release(); await expect(add.locator('.catalogue-action-short')).toHaveText('Added'); await expect(toast).toBeHidden();
+      await expect(page.locator('.list-count')).toHaveText('1 track');
       expect(await fieldTop()).toBe(pinned);
     } finally { release(); await page.unroute('**/api/participant/preparations/add'); }
     await expect(row(0).getByRole('button', { name: 'Added ✓', exact: true })).toBeVisible();
@@ -100,6 +105,12 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     // Reopening shows the last search; Back steps out of an album and an artist, then closes search.
     await opener.click(); await expect(input).toHaveValue('Fixture artist'); await expect(artistButton).toBeVisible();
     await artistButton.click(); await albumButton.click(); await expect(rows).toHaveCount(1 + songs.length);
+    // The album action sits beside the heading and adds only missing songs, with all captions inside it.
+    const addAlbum = page.locator('.album-add'); await expect(addAlbum).toBeVisible();
+    expect(await addAlbum.evaluate(node => [node.getBoundingClientRect().width, node.getBoundingClientRect().height])).toEqual([80, 44]);
+    await addAlbum.click(); await expect(addAlbum.locator('.catalogue-action-short')).toHaveText('Added');
+    await expect(rows.getByRole('button', { name: 'Added ✓', exact: true })).toHaveCount(1 + songs.length);
+    await expect(page.locator('.list-count')).toHaveText(`${1 + songs.length} tracks`); await expect(toast).toBeHidden();
     await page.goBack(); await expect(albumButton).toBeVisible();
     await page.goBack(); await expect(artistButton).toBeVisible();
     await page.goBack(); await expect(input).toBeHidden(); await expect(list).toBeVisible();

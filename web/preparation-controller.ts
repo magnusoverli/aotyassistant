@@ -1,12 +1,12 @@
-import type { CatalogueTrack } from '../src/model';
+import type { CatalogueAlbum, CatalogueTrack } from '../src/model';
 import type { PreparationView, PreparationResult, PreparationOperation } from '../src/preparations';
 import { requestJson, RequestError } from './request';
 import { participantEvents } from './participant-events';
 import { storageKey } from './paths';
 
 const prefix = '/api/participant/preparations';
-type Path = 'add' | 'add-upload' | 'replace-upload' | 'purge-upload' | 'clear' | 'replace' | 'move' | 'remove' | 'restore' | 'review';
-type Edit = { trackId?: string; entryId?: string; beforeId?: string | null; uploadId?: string; text?: { title: string; artist: string; album: string } };
+type Path = 'add' | 'add-album' | 'add-upload' | 'replace-upload' | 'purge-upload' | 'clear' | 'replace' | 'move' | 'remove' | 'restore' | 'review';
+type Edit = { trackId?: string; albumId?: string; trackIds?: string[]; entryId?: string; beforeId?: string | null; uploadId?: string; text?: { title: string; artist: string; album: string } };
 type Pending = { ownerId: string; path: Path; body: Edit & { operation: PreparationOperation }; title: string };
 // randomUUID is secure-context-only; guest phones also join over plain HTTP on a trusted LAN.
 export const operationId = () => {
@@ -15,7 +15,7 @@ export const operationId = () => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 };
 export async function preparationRequest<T>(path: string, data?: unknown): Promise<T> {
-  return requestJson<T>(prefix + path, data);
+  return requestJson<T>(prefix + path, data, path === '/add-album' ? 95_000 : 15_000);
 }
 
 /** A separate save lane: never replays transport, reveal, or volume commands. */
@@ -48,9 +48,11 @@ export class PreparationController {
     if (this.pending?.ownerId === ownerId) return;
     this.pending = undefined;
     try {
-      const raw = localStorage.getItem(this.storageKey(ownerId)); if (!raw || raw.length > 20_000) return;
+      const raw = localStorage.getItem(this.storageKey(ownerId)); if (!raw || raw.length > 2 * 1024 * 1024) return;
       const saved = JSON.parse(raw) as Pending;
-      if (saved.ownerId === ownerId && ['add', 'add-upload', 'replace-upload', 'purge-upload', 'clear', 'replace', 'move', 'remove', 'restore', 'review'].includes(saved.path) && saved.body?.operation?.id && typeof saved.title === 'string') {
+      if (saved.path === 'add-album' && (typeof saved.body?.albumId !== 'string' || !Array.isArray(saved.body.trackIds) || !saved.body.trackIds.length || saved.body.trackIds.length > 2000 ||
+        saved.body.trackIds.some(id => typeof id !== 'string' || !id.length || id.length > 1000))) return;
+      if (saved.ownerId === ownerId && ['add', 'add-album', 'add-upload', 'replace-upload', 'purge-upload', 'clear', 'replace', 'move', 'remove', 'restore', 'review'].includes(saved.path) && saved.body?.operation?.id && typeof saved.title === 'string') {
         this.pending = saved; this.error = 'A previous list change needs confirmation. Retry it to check whether it was saved.';
       }
     } catch { /* The server list is still authoritative if local draft storage is unavailable. */ }
@@ -127,6 +129,13 @@ export class PreparationController {
     try { await this.ensureOwner(); await this.edit('add', { trackId: track.id }, track.title); }
     catch (error) { this.error = error instanceof Error ? error.message : 'The choice was not saved.'; this.changed(); }
   }
+  async addAlbum(album: CatalogueAlbum, tracks: CatalogueTrack[]) {
+    if (!tracks.length || this.locked || this.loading) return;
+    // Snapshot this album before awaiting: browsing elsewhere must not change an in-flight addition.
+    const trackIds = tracks.map(track => track.id); const albumId = album.id; const title = album.name;
+    try { await this.ensureOwner(); await this.edit('add-album', { albumId, trackIds }, title); }
+    catch (error) { this.error = error instanceof Error ? error.message : 'The album was not saved.'; this.changed(); }
+  }
   async edit(path: Path, payload: Edit, title = '') {
     if (!this.view || this.saving || this.pending) return;
     if (!navigator.onLine) { this.error = 'Reconnect before editing. Your saved list is kept.'; this.changed(); return; }
@@ -147,9 +156,21 @@ export class PreparationController {
     try {
       const result = await this.request<PreparationResult>(`/${pending.path}`, pending.body);
       if (epoch !== this.epoch) return;
+      const references = pending.path === 'add-album' ? pending.body.trackIds! : pending.path === 'add' ? [pending.body.trackId!] : [];
+      const entryIds = pending.path === 'add-album' ? result.entryIds : [result.entryId];
+      if (references.length && (!Array.isArray(entryIds) || entryIds.length !== references.length || entryIds.some(id => typeof id !== 'string' || !id))) {
+        throw new Error('The save response was incomplete. Refresh the list before retrying.');
+      }
+      // A receipt may be older than an event already received (a song was played/removed on another
+      // device). A replay confirms that original save, never marks the removed song as still queued.
+      const latest = this.view && this.view.revision > result.view.revision ? this.view : result.view;
+      for (const [index, reference] of references.entries()) {
+        const entryId = entryIds![index]!;
+        if (latest.upcoming.some(entry => entry.id === entryId)) { this.added.add(reference); this.addedEntries.set(reference, entryId); }
+        else { this.added.delete(reference); this.addedEntries.delete(reference); }
+      }
       this.pending = undefined;
       try { localStorage.removeItem(this.storageKey(pending.ownerId)); } catch { /* A server receipt still prevents a duplicate if a stale local draft remains. */ }
-      if (pending.path === 'add' && pending.body.trackId) { this.added.add(pending.body.trackId); this.addedEntries.set(pending.body.trackId, result.entryId); }
       if (pending.path === 'add-upload' || pending.path === 'replace-upload') this.lastSavedUploadId = pending.body.uploadId;
       if (result.warning) this.warning = result.warning;
       this.accept(result.view);

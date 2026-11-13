@@ -136,6 +136,8 @@ export function createApp(engine: Engine, config: Config, webDirectory = resolve
     const key = `${publicContext(req)?.session ?? req.socket.remoteAddress}:${join ? 'join' : 'commands'}`;
     next(rates.hit(key, join ? 20 : 180) === 'limited' ? new AppError(429, 'Too many requests. Wait a minute and try again.') : undefined);
   });
+  // Album additions carry a bounded array of opaque track references; other JSON keeps its small limit.
+  app.post('/api/participant/preparations/add-album', express.json({ limit: '2mb' }));
   app.use(express.json({ limit: '16kb' }));
   app.use(compressJson);
   app.use('/api', async (_req, _res, next) => { try { await users.migrate(); await pictures.ready; next(); } catch (error) { next(error); } });

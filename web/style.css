@@ -399,7 +399,6 @@ body:has(.saved-tracks.is-sorting) { cursor:grabbing; }
   .list-bar-head { display:flex; align-items:baseline; gap:8px; min-width:0; font-size:.875rem; }
   .list-bar-count { flex-shrink:0; color:var(--muted); font-size:.75rem; }
   .list-bar-detail { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:.8125rem; }
-  .mobile-list-bar.is-flashing .list-bar-detail { color:var(--green); }
   .mobile-list-bar.needs-attention .list-bar-detail { color:var(--accent); }
   .list-bar-view { flex-shrink:0; min-height:44px; padding:8px 12px; font-size:.8125rem; }
   body:has(input:not([type='range']):focus,textarea:focus,select:focus) .mobile-list-bar { display:none; }

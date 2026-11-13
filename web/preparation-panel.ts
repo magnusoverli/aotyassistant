@@ -1,4 +1,4 @@
-import type { CatalogueTrack, View } from '../src/model';
+import type { CatalogueAlbum, CatalogueTrack, View } from '../src/model';
 import type { PreparedEntryView } from '../src/preparations';
 import { el } from './dom';
 import { artwork } from './media';
@@ -11,6 +11,7 @@ import { ListImport } from './list-import';
 import { ClearList } from './clear-list';
 import { ReplaceTrack } from './replace-track';
 import { ViewNodes, children, prop, text, attr } from './view-nodes';
+import { buttonIcon, updateButtonIcon } from './button-icon';
 
 type Options = { getView(): View | undefined; starting(): boolean; changed(): void; search(query: string): void;
   /** Phones: opens the full-screen search from the field at the top of the playlist. */
@@ -42,6 +43,7 @@ export class PreparationPanel {
   private nodes = new ViewNodes();
   private disclosures = new Map<string, HTMLDetailsElement>();
   private collection?: HTMLElement;
+  private albumAdd?: { button: HTMLButtonElement; album: CatalogueAlbum; tracks: CatalogueTrack[]; online: boolean };
   /** Phones: the playlist's one-line summary while browsing below it. */
   readonly bar = new ListBar(() => this.focusList());
   /** Imports a list shared from SuShe Online, through Music Assistant. */
@@ -93,11 +95,42 @@ export class PreparationPanel {
     const button = this.button('Add to list', async () => {
       if (this.library.added.has(track.id)) return;
       await this.library.add(track);
-      if (this.library.added.has(track.id)) { this.feedback.textContent = `Added ${track.title} to your list.`; this.bar.added(track.title); }
+      if (this.library.added.has(track.id)) this.feedback.textContent = `Added ${track.title} to your list.`;
     }, true, `save-${track.id}`);
+    button.classList.add('catalogue-action');
     button.dataset.preparationTrack = track.id;
+    const short = el('span', 'Add', 'catalogue-action-short'); attr(short, 'aria-hidden', 'true');
+    children(button, buttonIcon('add', 'catalogue-action-icon'), el('span', 'Add to list', 'catalogue-action-full'), short);
     this.updateAddButton(button);
     return button;
+  }
+  /** One persistent action for the album currently shown in the mobile search heading. */
+  albumButton(album: CatalogueAlbum, tracks: CatalogueTrack[], online: boolean) {
+    if (!this.albumAdd) {
+      const button = this.button('', async () => {
+        const current = this.albumAdd!;
+        const album = current.album; const tracks = [...current.tracks];
+        if (!current.online || this.library.locked || !tracks.length || tracks.every(track => this.library.added.has(track.id))) return;
+        await this.library.addAlbum(album, tracks);
+        if (tracks.every(track => this.library.added.has(track.id))) this.feedback.textContent = `${album.name} is in your playlist.`;
+      }, true, 'save-album');
+      button.classList.add('catalogue-action', 'album-add');
+      children(button, buttonIcon('add', 'catalogue-action-icon'), el('span', 'Add album', 'catalogue-action-short'));
+      this.albumAdd = { button, album, tracks, online };
+    } else Object.assign(this.albumAdd, { album, tracks, online });
+    this.updateAlbumButton(); return this.albumAdd.button;
+  }
+  private updateAlbumButton() {
+    if (!this.albumAdd) return;
+    const { button, album, tracks, online } = this.albumAdd;
+    const added = tracks.length > 0 && tracks.every(track => this.library.added.has(track.id));
+    const saving = this.library.saving && this.library.pending?.path === 'add-album' && this.library.pending.body.albumId === album.id;
+    const caption = saving ? 'Adding…' : added ? 'Added' : 'Add album';
+    text(button.querySelector('.catalogue-action-short')!, caption);
+    updateButtonIcon(button.querySelector<SVGSVGElement>('.catalogue-action-icon')!, saving ? 'progress' : added ? 'check' : 'add');
+    attr(button, 'aria-label', saving ? `Adding ${album.name} to your playlist` : added ? `Added ${album.name} to your playlist` : `Add album ${album.name} to your playlist`);
+    attr(button, 'aria-busy', saving ? 'true' : undefined); attr(button, 'aria-disabled', added ? 'true' : undefined);
+    prop(button, 'disabled', !online || !tracks.length || this.library.locked || this.library.loading || !this.library.view);
   }
   render(search?: HTMLElement, player?: HTMLElement) {
     this.replacer.refresh();
@@ -142,11 +175,19 @@ export class PreparationPanel {
     for (const button of document.querySelectorAll<HTMLButtonElement>('[data-preparation-track]')) {
       this.updateAddButton(button);
     }
+    if (this.albumAdd?.button.isConnected) this.updateAlbumButton();
   }
   stopUploads() { this.uploads.stop(); this.replacer.stop(); }
   updateAddButton(button: HTMLButtonElement) {
-    const added = this.library.added.has(button.dataset.preparationTrack!);
-    text(button, added ? 'Added ✓' : 'Add to list');
+    const trackId = button.dataset.preparationTrack!;
+    const added = this.library.added.has(trackId);
+    const saving = !added && this.library.saving && this.library.pending?.path === 'add' && this.library.pending.body.trackId === trackId;
+    // Only the pending song says Saving. Keep both captions and the SVG mounted across state changes.
+    text(button.querySelector('.catalogue-action-full')!, added ? 'Added ✓' : 'Add to list');
+    text(button.querySelector('.catalogue-action-short')!, added ? 'Added' : saving ? 'Saving' : 'Add');
+    updateButtonIcon(button.querySelector<SVGSVGElement>('.catalogue-action-icon')!, added ? 'check' : saving ? 'progress' : 'add');
+    attr(button, 'aria-label', added ? 'Added ✓' : saving ? 'Saving to list' : 'Add to list');
+    attr(button, 'aria-busy', saving ? 'true' : undefined);
     // Keep the acknowledgement focusable, so saving does not strand keyboard users on the page body.
     attr(button, 'aria-disabled', added ? 'true' : undefined);
     prop(button, 'disabled', this.library.locked || this.library.loading || !this.library.view || button.dataset.sourceSelectable === 'false');

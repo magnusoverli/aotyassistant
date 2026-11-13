@@ -578,7 +578,7 @@ function participant() {
   // it. The keyboard's Search key submits; the Search button stays for screen readers but out of sight.
   const icon = v.get('search-icon', () => searchIcon());
   children(form, icon, input, clear, submit);
-  // Phones: the field and Done stay at the top of the search sheet, and a toast confirms each added song.
+  // Phones: the field and Done stay at the top of search, with a notice only for saves needing attention.
   // Desktop lays these wrappers out as if absent (display:contents) and hides Done and the toast.
   const done = v.get('sheet-done', () => { const node = el('button', 'Done', 'search-sheet-done'); node.type = 'button'; node.onclick = () => closeSearch(); return node; });
   const sheetTop = v.el('sheet-top', 'div', undefined, 'search-sheet-top'); children(sheetTop, form, done);
@@ -623,7 +623,7 @@ function participant() {
   if (!catalogueBusy) for (const [index, notice] of notices.entries()) foundNodes.push(v.el(`notice-${index}`, 'p', notice, 'muted small'));
   if (chosenArtist) {
     const crumbs = v.el('crumbs', 'div', undefined, 'browse-crumbs');
-    const back = v.get('back', () => catalogueButton('', () => browseHistory?.back())); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists');
+    const back = v.get('back', () => { const node = catalogueButton('', () => browseHistory?.back()); node.classList.add('browse-back'); return node; }); text(back, chosenAlbum ? '← Albums' : '← Artists'); prop(back, 'disabled', !realtime || !view.connected); prop(back, 'id', chosenAlbum ? 'browse-albums' : 'browse-artists');
     attr(back, 'aria-label', chosenAlbum ? 'Back to albums' : 'Back to artists');
     // Phones (music-collection.css): a chevron, the cover, then the title over "Artist · Year" (or "Albums"),
     // in place of the one-line heading desktop keeps.
@@ -633,7 +633,8 @@ function participant() {
     children(heading, art.update(chosenAlbum ? chosenAlbum.artwork : chosenArtist.artwork),
       v.el('browse-heading-title', 'h3', chosenAlbum ? chosenAlbum.name : chosenArtist.name),
       v.el('browse-heading-sub', 'p', chosenAlbum ? [chosenArtist.name, chosenAlbum.year].filter(Boolean).join(' · ') : 'Albums', 'muted'));
-    children(crumbs, back, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`), heading);
+    children(crumbs, back, v.el('browse-title', 'h3', chosenAlbum ? `${chosenArtist.name} · ${chosenAlbum.name}` : `${chosenArtist.name} — albums`), heading,
+      chosenAlbum && !catalogueBusy && results.length > 0 ? music.albumButton(chosenAlbum, results, realtime && view.connected) : undefined);
     foundNodes.push(crumbs);
   }
   const rowIds = new Set<string>(); const occurrences = new Map<string, number>();

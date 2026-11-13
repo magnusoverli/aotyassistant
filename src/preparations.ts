@@ -12,6 +12,7 @@ import { recordingDescriptorSchema, sameRecordingEvidence } from './recording-id
 
 export const preparationLimits = {
   upcoming: 200, entries: 1000, receipts: 5000,
+  albumTracks: 2000, // The same bound as a merged album-track browse response.
   operationLifetime: 7 * 24 * 60 * 60_000, futureClockTolerance: 5 * 60_000,
 } as const;
 const id = z.string().uuid().regex(/^[a-f0-9-]+$/);
@@ -44,7 +45,9 @@ const entry = z.object({
 }).strict();
 export const preparationOperationSchema = z.object({ id, revision: z.number().int().nonnegative(), issuedAt: timestamp }).strict();
 export type PreparationOperation = z.infer<typeof preparationOperationSchema>;
-const receipt = z.object({ id, intent: digest, issuedAt: timestamp, revision: z.number().int().nonnegative(), entryId: id }).strict();
+const receipt = z.object({ id, intent: digest, issuedAt: timestamp, revision: z.number().int().nonnegative(), entryId: id,
+  entryIds: z.array(id).min(1).max(preparationLimits.albumTracks).optional(),
+}).strict().refine(value => !value.entryIds || value.entryIds[0] === value.entryId);
 export const preparationStateSchema = z.preprocess(value => {
   if (value && typeof value === 'object' && 'schema' in value && value.schema === 1 && 'recoveryHash' in value &&
     (value.recoveryHash === null || digest.validate(value.recoveryHash))) {
@@ -155,7 +158,7 @@ export type PreparationView = {
   /** The reserved entry is still starting (on any device, or by automatic play), not awaiting review. */
   starting?: true;
 };
-export type PreparationResult = { view: PreparationView; entryId: string; replayed: boolean; warning?: string };
+export type PreparationResult = { view: PreparationView; entryId: string; entryIds?: string[]; replayed: boolean; warning?: string };
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const sameHash = (a: string, b: string) => timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 function input<T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> {
@@ -186,7 +189,7 @@ export class PreparationManager {
   private queue = new KeyedSerialQueue();
   private playing = new Set<string>();
   private events = new EventEmitter();
-  private captures = new Map<string, { intent: string; selection: Promise<SavedSelection> }>();
+  private captures = new Map<string, { intent: string; selections: Promise<SavedSelection[]> }>();
   private pending = new Set<Promise<unknown>>();
   private cleanups = new Map<string, Promise<void>>();
   private track<T>(work: Promise<T>): Promise<T> {
@@ -274,19 +277,20 @@ export class PreparationManager {
     state.receipts = state.receipts.filter(receipt => now - receipt.issuedAt <= preparationLimits.operationLifetime);
     if (state.receipts.length >= preparationLimits.receipts) throw new AppError(409, 'Too many recent list changes. Try again later; your saved entries were kept.');
   }
-  private async mutate(credential: string, operation: PreparationOperation, kind: string, payload: unknown, change: (state: PreparationState) => string | Promise<string>): Promise<PreparationResult> {
+  private async mutate(credential: string, operation: PreparationOperation, kind: string, payload: unknown, change: (state: PreparationState) => string | string[] | Promise<string | string[]>): Promise<PreparationResult> {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);
     const intent = hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload]));
     return this.serial(access.ownerId, async () => {
       const state = await this.authorize(access.ownerId, access.secretHash);
       const previous = this.validateMutation(state, operation, intent, kind);
       if (previous) {
-        return { view: this.view(state), entryId: previous.entryId, replayed: true };
+        return { view: this.view(state), entryId: previous.entryId, ...(previous.entryIds ? { entryIds: previous.entryIds } : {}), replayed: true };
       }
-      const entryId = await change(state); state.revision++;
-      state.receipts.push({ id: operation.id, intent, issuedAt: operation.issuedAt, revision: state.revision, entryId });
+      const changed = await change(state); state.revision++;
+      const result = typeof changed === 'string' ? { entryId: changed } : { entryId: changed[0]!, entryIds: changed };
+      state.receipts.push({ id: operation.id, intent, issuedAt: operation.issuedAt, revision: state.revision, ...result });
       await this.save(state);
-      return { view: this.view(state), entryId, replayed: false };
+      return { view: this.view(state), ...result, replayed: false };
     });
   }
   /** Accept descriptors captured/validated by the backend, never raw request bodies from a browser. */
@@ -296,16 +300,27 @@ export class PreparationManager {
   }
   /** Capture runs only for a new operation: lost acknowledgements remain retryable even after browse references expire. */
   addCaptured(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>) {
-    return this.track(this.captureOutsideTransaction(credential, operation, reference, capture, 'capture', (state, selection) => this.appendSelection(state, selection)));
+    return this.track(this.captureOutsideTransaction(credential, operation, reference, async () => [await capture()], 'capture', (state, selections) => this.appendSelection(state, selections[0]!)));
+  }
+  /** Resolve the displayed album before entering the save lane. All missing songs and their ordered
+   * receipt commit together; a failed capture, capacity check or stale revision saves none of them. */
+  async addAlbumCaptured(credential: string, operation: PreparationOperation, albumId: string, references: string[], capture: () => Promise<SavedSelection[]>) {
+    albumId = input(z.string().min(1).max(1000), albumId);
+    references = input(z.array(z.string().min(1).max(1000)).min(1).max(preparationLimits.albumTracks), references);
+    return this.track(this.captureOutsideTransaction(credential, operation, JSON.stringify([albumId, references]), async () => {
+      const selections = await capture();
+      if (selections.length !== references.length) throw new AppError(502, 'The album could not be resolved completely. Your list was kept.');
+      return selections;
+    }, 'album', (state, selections) => selections.map(selection => this.appendSelection(state, selection))));
   }
   /** Swaps an upcoming song in place. Uploaded originals stay referenced in Removed;
    * any song with play history returns to Previously played. */
   replaceCaptured(credential: string, operation: PreparationOperation, entryId: string, reference: string, capture: () => Promise<SavedSelection>) {
     entryId = input(id, entryId);
-    return this.track(this.captureOutsideTransaction(credential, operation, `${entryId}:${reference}`, capture, 'replace', (state, selection) => this.replaceSelection(state, entryId, selection)));
+    return this.track(this.captureOutsideTransaction(credential, operation, `${entryId}:${reference}`, async () => [await capture()], 'replace', (state, selections) => this.replaceSelection(state, entryId, selections[0]!)));
   }
-  private async captureOutsideTransaction(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection>,
-    kind: 'capture' | 'replace', apply: (state: PreparationState, selection: SavedSelection) => string) {
+  private async captureOutsideTransaction(credential: string, operation: PreparationOperation, reference: string, capture: () => Promise<SavedSelection[]>,
+    kind: 'capture' | 'replace' | 'album', apply: (state: PreparationState, selections: SavedSelection[]) => string | string[]) {
     const access = identity(credential); operation = input(preparationOperationSchema, operation);
     const payload = hash(reference); const intent = hash(JSON.stringify([kind, operation.revision, operation.issuedAt, payload]));
     const key = `${access.ownerId}:${operation.id}`;
@@ -315,15 +330,15 @@ export class PreparationManager {
       const existing = this.captures.get(key);
       if (existing && existing.intent !== intent) throw new AppError(409, 'This list request was already used for a different change. Refresh the list before trying again.');
       if (!existing && this.captures.size >= 64) throw new AppError(429, 'Too many tracks are being captured. Try again when the current additions finish.');
-      const pending = existing ?? { intent, selection: Promise.resolve().then(capture) };
+      const pending = existing ?? { intent, selections: Promise.resolve().then(capture) };
       // Attach a rejection observer before releasing the owner lane.
-      void pending.selection.catch(() => {}); this.captures.set(key, pending); return pending;
+      void pending.selections.catch(() => {}); this.captures.set(key, pending); return pending;
     });
     try {
-      const selection = reservation ? input(savedSelectionSchema, await reservation.selection) : undefined;
+      const selections = reservation ? input(z.array(savedSelectionSchema).min(1).max(preparationLimits.albumTracks), await reservation.selections) : undefined;
       return await this.mutate(credential, operation, kind, payload, state => {
-        if (!selection) throw new AppError(409, 'The saved operation changed. Refresh your list.');
-        return apply(state, selection);
+        if (!selections) throw new AppError(409, 'The saved operation changed. Refresh your list.');
+        return apply(state, selections);
       });
     } finally { if (reservation && this.captures.get(key) === reservation) this.captures.delete(key); }
   }

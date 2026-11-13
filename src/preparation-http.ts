@@ -5,7 +5,7 @@ import { AppError } from './model.js';
 import type { Engine } from './engine.js';
 import type { IntegrationManager } from './integrations.js';
 import type { Config } from './config.js';
-import { PreparationManager, preparationOperationSchema } from './preparations.js';
+import { PreparationManager, preparationOperationSchema, preparationLimits } from './preparations.js';
 import { UploadAssets, uploadTextSchema } from './uploads.js';
 import { artworkSize, body, jsonBody, sendArtwork, setParticipantCookie } from './http-utils.js';
 import type { ArtworkData } from './music-assistant-transport.js';
@@ -57,6 +57,17 @@ export function mountPreparations(app: Express, manager: PreparationManager, eng
       const saved = await integrations.captureSaved(input.trackId, context);
       if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed. Your list was kept.'); return saved;
     }));
+  }));
+  app.post(`${prefix}/add-album`, jsonBody(z.strictObject({ operation: preparationOperationSchema, albumId: z.string().min(1).max(1000),
+    trackIds: z.array(z.string().min(1).max(1000)).min(1).max(preparationLimits.albumTracks),
+  }), async (input, req, res) => {
+    res.json(await operation('add-album', () => manager.addAlbumCaptured(credential(req), input.operation, input.albumId, input.trackIds, async () => {
+      const context = engine.catalogueContext(member(req));
+      if (!integrations?.configured) throw new AppError(409, 'Connect Music Assistant in Settings before adding songs. Your list was kept.');
+      const saved = await integrations.captureSavedAlbum(input.trackIds, context);
+      if (engine.catalogueContext(member(req)) !== context) throw new AppError(401, 'Room membership changed. Your list was kept.');
+      return saved;
+    }), 90_000));
   }));
   app.post(`${prefix}/uploads/:uploadId`, async (req, res) => {
     const uploadId = uuid.parse(req.params.uploadId);

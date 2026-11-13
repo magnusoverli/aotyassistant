@@ -30,7 +30,7 @@ const writeRoutes = [
   /^\/api\/participant\/(?:join|logout|finish|search|browse|play|control|seek|volume|reveal)$/,
   /^\/api\/participant\/picture(?:\/remove)?$/,
   /^\/api\/participant\/import\/(?:read|match)$/,
-  /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-upload|replace-upload|purge-upload|clear|move|remove|restore|review|play|import|import\/stop|album|replace)$/,
+  /^\/api\/participant\/preparations\/(?:join|pin|init|add|add-album|add-upload|replace-upload|purge-upload|clear|move|remove|restore|review|play|import|import\/stop|album|replace)$/,
   /^\/api\/participant\/preparations\/uploads\/[a-f0-9-]{36}(?:\/discard)?$/,
 ];
 export function publicRoute(method: string, path: string) {
